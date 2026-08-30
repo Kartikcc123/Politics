@@ -105,8 +105,8 @@ class _VoterManagementPageState extends State<VoterManagementPage> {
   void initState() {
     super.initState();
     searchFocus.addListener(() {
-      if (mounted && searchOptionsVisible != searchFocus.hasFocus) {
-        setState(() => searchOptionsVisible = searchFocus.hasFocus);
+      if (mounted && searchFocus.hasFocus && !searchOptionsVisible) {
+        setState(() => searchOptionsVisible = true);
       }
     });
     profileCompletionStatus = widget.initialProfileCompletionStatus ?? '';
@@ -1183,35 +1183,46 @@ class _VoterManagementPageState extends State<VoterManagementPage> {
           keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
           padding: const EdgeInsets.fromLTRB(16, 8, 16, 96),
           children: [
-            _EasyVoterSearchCard(
-              controller: search,
-              focusNode: searchFocus,
-              listening: listening,
-              selectedMode: queryMode,
-              selectedModeLabel: queryModeLabel,
-              showOptions: searchOptionsVisible,
-              onChanged: searchChanged,
-              onSubmitted: (_) => filtersChanged(),
-              onClear: () {
-                search.clear();
-                filtersChanged();
+            TapRegion(
+              groupId: 'search_filter_section',
+              onTapOutside: (_) {
+                if (searchFocus.hasFocus) {
+                  searchFocus.unfocus();
+                }
+                if (searchOptionsVisible) {
+                  setState(() => searchOptionsVisible = false);
+                }
               },
-              onMic: toggleVoiceSearch,
-              onQuickPick: useQuickSearch,
-              expandedFilters: api.user?['role'] == 'admin'
-                  ? _RollFilterStrip(
-                      rollType: rollType,
-                      matchStatus: matchStatus,
-                      wardController: municipalWardNumber,
-                      onChanged: (roll, match) => setState(() {
-                        rollType = roll;
-                        matchStatus = match;
-                        currentPage = 1;
-                        refreshVoters();
-                      }),
-                      onWardSubmitted: (_) => filtersChanged(),
-                    )
-                  : null,
+              child: _EasyVoterSearchCard(
+                controller: search,
+                focusNode: searchFocus,
+                listening: listening,
+                selectedMode: queryMode,
+                selectedModeLabel: queryModeLabel,
+                showOptions: searchOptionsVisible,
+                onChanged: searchChanged,
+                onSubmitted: (_) => filtersChanged(),
+                onClear: () {
+                  search.clear();
+                  filtersChanged();
+                },
+                onMic: toggleVoiceSearch,
+                onQuickPick: useQuickSearch,
+                expandedFilters: api.user?['role'] == 'admin'
+                    ? _RollFilterStrip(
+                        rollType: rollType,
+                        matchStatus: matchStatus,
+                        wardController: municipalWardNumber,
+                        onChanged: (roll, match) => setState(() {
+                          rollType = roll;
+                          matchStatus = match;
+                          currentPage = 1;
+                          refreshVoters();
+                        }),
+                        onWardSubmitted: (_) => filtersChanged(),
+                      )
+                    : null,
+              ),
             ),
             const SizedBox(height: 12),
             if (api.user?['role'] == 'booth')
@@ -2569,7 +2580,6 @@ class _EasyVoterSearchField extends StatelessWidget {
   Widget build(BuildContext context) => TextField(
         controller: controller,
         focusNode: focusNode,
-        onTapOutside: (_) => focusNode.unfocus(),
         onChanged: onChanged,
         textInputAction: TextInputAction.search,
         onSubmitted: onSubmitted,
