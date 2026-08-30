@@ -1,0 +1,18 @@
+version: '3.8'
+
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    container_name: politics_backend
+    restart: unless-stopped
+    ports:
+      - "5003:5000"
+    env_file:
+      - backend/.env
+    volumes:
+      - ./backend/uploads:/app/uploads
+      - ./backend/whatsapp-sessions:/app/whatsapp-sessions
+    environment:
+      - NODE_ENV=production

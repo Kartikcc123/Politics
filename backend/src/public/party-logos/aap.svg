@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="220" height="220" viewBox="0 0 220 220">
+  <rect width="220" height="220" rx="28" fill="#eff6ff"/>
+  <circle cx="110" cy="104" r="68" fill="#2563eb"/>
+  <path d="M72 126c24-42 52-42 76 0M92 76h36M110 74v70" stroke="#fff" stroke-width="14" stroke-linecap="round" fill="none"/>
+  <text x="110" y="204" text-anchor="middle" font-family="Arial, sans-serif" font-size="32" font-weight="700" fill="#1d4ed8">AAP</text>
+</svg>

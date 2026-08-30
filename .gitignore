@@ -1,0 +1,57 @@
+﻿# Secrets / environment
+.env
+.env.*
+!.env.example
+backend/.env
+backend/.env.*
+!backend/.env.example
+
+# Dependencies
+node_modules/
+backend/node_modules/
+
+# Flutter / Dart generated
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+.pub-cache/
+.pub/
+build/
+mobile/.dart_tool/
+mobile/build/
+mobile/.flutter-plugins
+mobile/.flutter-plugins-dependencies
+
+# Native generated noise
+mobile/ios/Flutter/ephemeral/
+mobile/macos/Flutter/ephemeral/
+mobile/windows/flutter/ephemeral/
+mobile/linux/flutter/ephemeral/
+
+# Runtime uploads / sessions / OCR output
+backend/uploads/
+backend/whatsapp-sessions/
+review-cards/
+tmp/
+
+# Logs and temporary responses
+*.log
+backend/*response.json
+backend/server-error.log
+backend/server.log
+backend/upload-test-server*.log
+politcs-acl-backup.txt
+Part_1_EPIC_Corrected.xlsx
+
+# IDE/local
+.vscode/
+.idea/
+*.iml
+.DS_Store
+Thumbs.db
+
+# Python generated
+__pycache__/
+*.pyc
+

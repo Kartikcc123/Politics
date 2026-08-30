@@ -1,0 +1,46 @@
+services:
+  - type: web
+    name: politics-backend
+    env: docker
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PYTHON_PATH
+        value: python3
+      - key: PDFTOPPM_PATH
+        value: pdftoppm
+      - key: PDFINFO_PATH
+        value: pdfinfo
+      - key: PDFIMAGES_PATH
+        value: pdfimages
+      - key: TESSERACT_PATH
+        value: tesseract
+      - key: IMAGEMAGICK_PATH
+        value: magick
+      - key: OCR_LANGUAGES
+        value: hin+eng
+      - key: OCR_DPI
+        value: 180
+      - key: OCR_CELL_CONCURRENCY
+        value: 1
+      - key: OCR_PAGE_CONCURRENCY
+        value: 1
+      - key: OCR_CARD_FALLBACKS_PER_PAGE
+        value: 1
+      - key: OCR_DEEP_RETRY
+        value: false
+      - key: IMPORT_JOB_STALE_MINUTES
+        value: 15
+      - key: IMAGE_CROP_CONCURRENCY
+        value: 1
+      - key: OMP_THREAD_LIMIT
+        value: 1
+      - key: USE_PYTHON_OCR
+        value: true
+      - key: MONGO_URI
+        sync: false
+      - key: JWT_SECRET
+        sync: false

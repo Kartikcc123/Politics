@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="220" height="220" viewBox="0 0 220 220">
+  <rect width="220" height="220" rx="28" fill="#fff7ed"/>
+  <circle cx="110" cy="112" r="72" fill="#f97316"/>
+  <path d="M110 54c17 28 44 45 73 49-26 9-48 26-62 50-5 9-17 9-22 0-14-24-36-41-62-50 29-4 56-21 73-49Z" fill="#ffffff"/>
+  <text x="110" y="194" text-anchor="middle" font-family="Arial, sans-serif" font-size="34" font-weight="700" fill="#9a3412">BJP</text>
+</svg>

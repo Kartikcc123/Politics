@@ -1,0 +1,307 @@
+{
+  "document": "01 bheeta.pdf",
+  "page": 8,
+  "verified": true,
+  "records": [
+    {
+      "voterSerial": "127",
+      "name": "कमला",
+      "guardianName": "नाहरमल",
+      "relationType": "husband",
+      "houseNumber": "31",
+      "age": 80,
+      "gender": "female",
+      "voterId": "KDY0955534"
+    },
+    {
+      "voterSerial": "128",
+      "name": "नेनु",
+      "guardianName": "मूलचन्द",
+      "relationType": "husband",
+      "houseNumber": "32",
+      "age": 81,
+      "gender": "female",
+      "voterId": "KDY1113539"
+    },
+    {
+      "voterSerial": "129",
+      "name": "प्यारा",
+      "guardianName": "मूला",
+      "relationType": "father",
+      "houseNumber": "32",
+      "age": 61,
+      "gender": "male",
+      "voterId": "KDY1113547"
+    },
+    {
+      "voterSerial": "130",
+      "name": "मोहनी",
+      "guardianName": "प्यारा",
+      "relationType": "husband",
+      "houseNumber": "32",
+      "age": 60,
+      "gender": "female",
+      "voterId": "KDY1113554"
+    },
+    {
+      "voterSerial": "131",
+      "name": "नाराणी",
+      "guardianName": "बालू राम",
+      "relationType": "husband",
+      "houseNumber": "32",
+      "age": 47,
+      "gender": "female",
+      "voterId": "KDY0955575"
+    },
+    {
+      "voterSerial": "132",
+      "name": "बालू लाल",
+      "guardianName": "मूल चंद्र",
+      "relationType": "mother",
+      "houseNumber": "32",
+      "age": 44,
+      "gender": "male",
+      "voterId": "SNE1586510"
+    },
+    {
+      "voterSerial": "133",
+      "name": "मोहनी",
+      "guardianName": "राम लाल",
+      "relationType": "husband",
+      "houseNumber": "32",
+      "age": 42,
+      "gender": "female",
+      "voterId": "KDY1348846"
+    },
+    {
+      "voterSerial": "134",
+      "name": "नन्द राम",
+      "guardianName": "मूल चन्द",
+      "relationType": "father",
+      "houseNumber": "32",
+      "age": 42,
+      "gender": "male",
+      "voterId": "KDY1348887"
+    },
+    {
+      "voterSerial": "135",
+      "name": "रामी",
+      "guardianName": "नन्दराम",
+      "relationType": "husband",
+      "houseNumber": "32",
+      "age": 41,
+      "gender": "female",
+      "voterId": "KDY1348853"
+    },
+    {
+      "voterSerial": "136",
+      "name": "सीमा देवी",
+      "guardianName": "किशन लाल",
+      "relationType": "husband",
+      "houseNumber": "32",
+      "age": 27,
+      "gender": "female",
+      "voterId": "SNE1652684"
+    },
+    {
+      "voterSerial": "137",
+      "name": "चंद्रा कुमारी",
+      "guardianName": "प्यारा",
+      "relationType": "father",
+      "houseNumber": "32",
+      "age": 26,
+      "gender": "female",
+      "voterId": "SNE1306885"
+    },
+    {
+      "voterSerial": "138",
+      "name": "किशन लाल",
+      "guardianName": "बालू लाल",
+      "relationType": "father",
+      "houseNumber": "32",
+      "age": 24,
+      "gender": "male",
+      "voterId": "SNE1652608"
+    },
+    {
+      "voterSerial": "139",
+      "name": "श्रवण लाल",
+      "guardianName": "प्यार चंद्र",
+      "relationType": "father",
+      "houseNumber": "32",
+      "age": 19,
+      "gender": "male",
+      "voterId": "SNE1901347"
+    },
+    {
+      "voterSerial": "140",
+      "name": "करमा",
+      "guardianName": "हमीरचन्द",
+      "relationType": "father",
+      "houseNumber": "33",
+      "age": 83,
+      "gender": "male",
+      "voterId": "KDY0955583"
+    },
+    {
+      "voterSerial": "141",
+      "name": "छोगालाल",
+      "guardianName": "हमीरचन्द",
+      "relationType": "father",
+      "houseNumber": "33",
+      "age": 80,
+      "gender": "male",
+      "voterId": "KDY1113562"
+    },
+    {
+      "voterSerial": "142",
+      "name": "चान्दी",
+      "guardianName": "करमा",
+      "relationType": "husband",
+      "houseNumber": "33",
+      "age": 79,
+      "gender": "female",
+      "voterId": "KDY0910075"
+    },
+    {
+      "voterSerial": "143",
+      "name": "भोजाराम",
+      "guardianName": "हमीरचन्द",
+      "relationType": "father",
+      "houseNumber": "33",
+      "age": 69,
+      "gender": "male",
+      "voterId": "KDY0955591"
+    },
+    {
+      "voterSerial": "144",
+      "name": "सोहनलाल",
+      "guardianName": "छोगालाल",
+      "relationType": "father",
+      "houseNumber": "33",
+      "age": 61,
+      "gender": "male",
+      "voterId": "KDY0955609"
+    },
+    {
+      "voterSerial": "145",
+      "name": "बाली",
+      "guardianName": "सोहनलाल",
+      "relationType": "husband",
+      "houseNumber": "33",
+      "age": 59,
+      "gender": "female",
+      "voterId": "KDY0955617"
+    },
+    {
+      "voterSerial": "146",
+      "name": "नौसर",
+      "guardianName": "छीतरमल",
+      "relationType": "husband",
+      "houseNumber": "33",
+      "age": 59,
+      "gender": "female",
+      "voterId": "KDY1113570"
+    },
+    {
+      "voterSerial": "147",
+      "name": "माधूलाल",
+      "guardianName": "छोगालाल",
+      "relationType": "father",
+      "houseNumber": "33",
+      "age": 56,
+      "gender": "male",
+      "voterId": "KDY0955625"
+    },
+    {
+      "voterSerial": "148",
+      "name": "पारसी",
+      "guardianName": "माधूलाल",
+      "relationType": "husband",
+      "houseNumber": "33",
+      "age": 54,
+      "gender": "female",
+      "voterId": "KDY0955633"
+    },
+    {
+      "voterSerial": "149",
+      "name": "लादूलाल",
+      "guardianName": "करमा",
+      "relationType": "father",
+      "houseNumber": "33",
+      "age": 53,
+      "gender": "male",
+      "voterId": "KDY0955641"
+    },
+    {
+      "voterSerial": "150",
+      "name": "नौसी",
+      "guardianName": "लादूलाल",
+      "relationType": "husband",
+      "houseNumber": "33",
+      "age": 53,
+      "gender": "female",
+      "voterId": "KDY0955658"
+    },
+    {
+      "voterSerial": "151",
+      "name": "नाराण",
+      "guardianName": "छोगा",
+      "relationType": "father",
+      "houseNumber": "33",
+      "age": 49,
+      "gender": "male",
+      "voterId": "KDY1113588"
+    },
+    {
+      "voterSerial": "152",
+      "name": "अणछी",
+      "guardianName": "नारायण",
+      "relationType": "husband",
+      "houseNumber": "33",
+      "age": 46,
+      "gender": "female",
+      "voterId": "KDY0955666"
+    },
+    {
+      "voterSerial": "153",
+      "name": "रतनलाल",
+      "guardianName": "छोगालाल",
+      "relationType": "father",
+      "houseNumber": "33",
+      "age": 39,
+      "gender": "male",
+      "voterId": "SNE0381004"
+    },
+    {
+      "voterSerial": "154",
+      "name": "लेहरूलाल",
+      "guardianName": "सोहनलाल",
+      "relationType": "father",
+      "houseNumber": "33",
+      "age": 33,
+      "gender": "male",
+      "voterId": "SNE0727610"
+    },
+    {
+      "voterSerial": "155",
+      "name": "मुकेश",
+      "guardianName": "भोजाराम",
+      "relationType": "father",
+      "houseNumber": "33",
+      "age": 32,
+      "gender": "male",
+      "voterId": "SNE0601161"
+    },
+    {
+      "voterSerial": "156",
+      "name": "संगीता देवी",
+      "guardianName": "लेहरू लाल",
+      "relationType": "husband",
+      "houseNumber": "33",
+      "age": 30,
+      "gender": "female",
+      "voterId": "SNE1307123"
+    }
+  ]
+}

@@ -1,0 +1,13 @@
+.git
+.vscode
+mobile/build
+mobile/.dart_tool
+mobile/android/.gradle
+backend/node_modules
+backend/uploads
+backend/whatsapp-sessions
+backend/.env
+backend/*.log
+backend/*-response.json
+tmp
+review-cards
