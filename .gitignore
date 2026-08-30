@@ -1,10 +1,14 @@
-﻿# Secrets / environment
+# Secrets / environment
 .env
 .env.*
 !.env.example
 backend/.env
 backend/.env.*
 !backend/.env.example
+
+# APK Binaries
+apk/
+*.apk
 
 # Dependencies
 node_modules/
