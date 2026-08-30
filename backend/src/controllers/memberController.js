@@ -1072,3 +1072,84 @@ exports.duplicates = async (req, res, next) => {
     next(error);
   }
 };
+
+exports.filterOptions = async (req, res, next) => {
+  try {
+    const { field = 'sectionName', q = '', limit = 160 } = req.query;
+    const scope = applyMemberScope(req.currentUser, {});
+
+    let dbField = field;
+    if (field === 'section') dbField = 'sectionName';
+    if (field === 'part' || field === 'booth') dbField = 'partNumber';
+    if (field === 'assembly') dbField = 'assemblyName';
+
+    const matchQuery = { ...scope };
+    if (q && String(q).trim()) {
+      matchQuery[dbField] = { $regex: String(q).trim(), $options: 'i' };
+    } else {
+      matchQuery[dbField] = { $nin: [null, ''] };
+    }
+
+    const items = await Member.aggregate([
+      { $match: matchQuery },
+      { $group: { _id: `$${dbField}`, count: { $sum: 1 } } },
+      { $sort: { count: -1, _id: 1 } },
+      { $limit: parseInt(limit, 10) || 160 },
+      {
+        $project: {
+          _id: 0,
+          label: '$_id',
+          value: '$_id',
+          count: 1,
+          filters: { [dbField]: '$_id' },
+        },
+      },
+    ]);
+
+    res.json({ items, total: items.length });
+  } catch (error) {
+    next(error);
+  }
+};
+
+exports.locationGroups = async (req, res, next) => {
+  try {
+    const scope = applyMemberScope(req.currentUser, {});
+    const groups = await Member.aggregate([
+      { $match: scope },
+      {
+        $group: {
+          _id: {
+            assemblyName: '$assemblyName',
+            partNumber: '$partNumber',
+            sectionName: '$sectionName',
+          },
+          count: { $sum: 1 },
+        },
+      },
+      { $sort: { count: -1 } },
+      { $limit: 200 },
+    ]);
+    res.json({ groups });
+  } catch (error) {
+    next(error);
+  }
+};
+
+exports.suggestions = async (req, res, next) => {
+  try {
+    const { q = '' } = req.query;
+    if (!q || !String(q).trim()) return res.json({ suggestions: [] });
+    const scope = applyMemberScope(req.currentUser, {
+      $or: [
+        { name: { $regex: String(q).trim(), $options: 'i' } },
+        { voterId: { $regex: String(q).trim(), $options: 'i' } },
+        { houseNumber: { $regex: String(q).trim(), $options: 'i' } },
+      ],
+    });
+    const members = await Member.find(scope).select('name voterId houseNumber age gender').limit(20).lean();
+    res.json({ suggestions: members });
+  } catch (error) {
+    next(error);
+  }
+};
