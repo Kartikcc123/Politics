@@ -70,6 +70,9 @@ def clean_person_name(value):
     text = re.sub(r"(?:\s+[.]?\s*)(?:का|की|के|न|अक|नो|यु|है|ः)$", "", text)
 
     # Devanagari OCR Spelling Fixes (common Tesseract misreads)
+    text = re.sub(r"\bबब्रा\b", "बन्ना", text)
+    text = re.sub(r"\bलाटुलाल\b", "लादूलाल", text)
+    text = re.sub(r"\bलाटु\b", "लादू", text)
     text = re.sub(r"(?<=\u0900-\u097F)ताल\b", "लाल", text)
     text = re.sub(r"(?<=\u0900-\u097F)ताम\b", "राम", text)
     text = re.sub(r"\bकुमारr\b|\bकुभार\b|\bकुसार\b|\bकुनार\b", "कुमार", text)
