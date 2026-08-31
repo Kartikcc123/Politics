@@ -1963,10 +1963,10 @@ def main():
                 rec["needsReview"] = True
                 rec.setdefault("reviewReasons", []).append("isolated_house_jump_review")
 
-    # Family Guardian Consistency Engine:
-    # Within the same houseNumber, if a member's father/husband name (e.g. 'नेनूराम' or 'नतराम')
-    # matches an established person in the same house (e.g. 'नेतराम') with fuzzy similarity >= 0.72,
-    # repair it to the exact family head spelling.
+    # Improvised Family Tree Consensus Engine:
+    # Group all records by houseNumber to construct family tree clusters.
+    # Within the same houseNumber, identify majority guardian names and established voter names.
+    # Align noisy OCR guardian names and head-of-family names to the consensus family head spelling.
     house_members = {}
     for rec in records:
         h = str(rec.get("houseNumber") or "").strip()
@@ -1974,18 +1974,50 @@ def main():
             house_members.setdefault(h, []).append(rec)
 
     for h, members in house_members.items():
-        established_names = [clean(m.get("name")) for m in members if clean(m.get("name"))]
+        if len(members) < 2:
+            continue
+
+        # Count guardian name occurrences in this family house
+        guardian_counts = {}
+        for m in members:
+            g = clean(m.get("guardianName"))
+            if g and len(g) >= 2:
+                guardian_counts[g] = guardian_counts.get(g, 0) + 1
+
+        # Majority guardian names (appears >= 2 times in the same house)
+        majority_guardians = [g for g, c in guardian_counts.items() if c >= 2]
+        established_voter_names = [clean(m.get("name")) for m in members if clean(m.get("name"))]
+
+        target_candidates = majority_guardians if majority_guardians else established_voter_names
+
+        # 1. Repair noisy guardian names in this family house
         for rec in members:
-            guardian = clean(rec.get("guardianName"))
-            if not guardian:
+            g = clean(rec.get("guardianName"))
+            if not g:
                 continue
-            for head_name in established_names:
-                if guardian != head_name and len(guardian) >= 3 and len(head_name) >= 3:
-                    sim = SequenceMatcher(None, guardian, head_name).ratio()
-                    if 0.72 <= sim < 1.0:
-                        rec["rawGuardianName"] = guardian
-                        rec["guardianName"] = head_name
-                        rec.setdefault("reviewReasons", []).append("family_guardian_name_repaired")
+            for cand in target_candidates:
+                if g != cand and len(g) >= 2 and len(cand) >= 3:
+                    sim = SequenceMatcher(None, g, cand).ratio()
+                    prefix_match = (len(g) >= 3 and len(cand) >= 3 and (g[:3] in cand or cand[:3] in g))
+                    if sim >= 0.65 or (prefix_match and sim >= 0.50):
+                        rec["rawGuardianName"] = g
+                        rec["guardianName"] = cand
+                        rec.setdefault("reviewReasons", []).append("family_tree_guardian_repaired")
+                        break
+
+        # 2. Repair voter's own name if it is a slightly noisy OCR variant of the family head (majority guardian)
+        for rec in members:
+            name = clean(rec.get("name"))
+            if not name:
+                continue
+            for cand in majority_guardians:
+                if name != cand and len(name) >= 3 and len(cand) >= 3:
+                    sim = SequenceMatcher(None, name, cand).ratio()
+                    prefix_match = (len(name) >= 3 and len(cand) >= 3 and (name[:3] in cand or cand[:3] in name))
+                    if sim >= 0.65 or (prefix_match and sim >= 0.52):
+                        rec["rawName"] = name
+                        rec["name"] = cand
+                        rec.setdefault("reviewReasons", []).append("family_tree_head_name_repaired")
                         break
 
     header_text = "\n".join(headers[:3])
