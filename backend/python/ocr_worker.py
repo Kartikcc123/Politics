@@ -370,8 +370,6 @@ def parse_card(text, epic_text, photo_path, page_no, cell_no, focused_house=""):
     husband = clean_person_name(raw_husband)
     mother = clean_person_name(raw_mother)
     house = focused_house or clean_house(field(text, r"(?:गृह|मकान)\s*संख्या\s*[:：;\-]?\s*([^\n]+)"))
-    # A missing house value must stay missing; never reuse the age line.
-    house = focused_house
     age_raw = field(
         text,
         r"(?:उम्र|उप्र|आयु)\s*[:：;\-]?\s*([0-9०-९OQILSZBG\]\|।]{1,3})",
