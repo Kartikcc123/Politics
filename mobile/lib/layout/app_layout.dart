@@ -27,20 +27,19 @@ class CongressMark extends StatelessWidget {
           ],
           border: Border.all(
               color: Colors.white.withValues(alpha: .75), width: 1.4),
-          gradient: const LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [orange, Colors.white, green],
-            stops: [0, .48, 1],
-          ),
         ),
         alignment: Alignment.center,
-        child: Text('INC',
-            style: TextStyle(
-                color: navy,
-                fontSize: size * .24,
-                fontWeight: FontWeight.w900,
-                letterSpacing: -.5)),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(size / 2),
+          child: Image.asset(
+            'assets/voter_phone_book_logo.png',
+            width: size,
+            height: size,
+            fit: BoxFit.cover,
+            errorBuilder: (_, __, ___) => Icon(Icons.contact_phone_rounded,
+                size: size * .6, color: royalBlue),
+          ),
+        ),
       );
 }
 
@@ -250,7 +249,7 @@ class DesktopSidebar extends StatelessWidget {
                   CongressMark(size: 42),
                   SizedBox(width: 10),
                   Expanded(
-                      child: Text('कांग्रेस संगठन\nप्रबंधन प्रणाली',
+                      child: Text('Voter Phone Book\nडिजिटल वोटर फ़ोन बुक',
                           style: TextStyle(
                               color: Colors.white,
                               height: 1.25,
@@ -363,7 +362,7 @@ class AppDrawer extends StatelessWidget {
                 SizedBox(width: 12),
                 Expanded(
                   child: Text(
-                    'कांग्रेस संगठन',
+                    'Voter Phone Book',
                     style: TextStyle(
                       fontSize: 18,
                       fontWeight: FontWeight.w900,

@@ -13,8 +13,8 @@ class LoginPage extends StatefulWidget {
 }
 
 class _LoginPageState extends State<LoginPage> {
-  final email = TextEditingController(text: 'admin@example.com');
-  final password = TextEditingController(text: 'AdminPass123');
+  final email = TextEditingController();
+  final password = TextEditingController();
   bool loading = false;
   String error = '';
 
@@ -57,12 +57,12 @@ class _LoginPageState extends State<LoginPage> {
                 child: Column(children: [
                   const CongressMark(size: 72),
                   const SizedBox(height: 12),
-                  const Text('कांग्रेस संगठन',
+                  const Text('Voter Phone Book',
                       style: TextStyle(
                           color: Colors.white,
-                          fontSize: 25,
+                          fontSize: 26,
                           fontWeight: FontWeight.w900)),
-                  const Text('संगठन ही शक्ति है',
+                  const Text('डिजिटल वोटर फ़ोन बुक निर्देशिका',
                       style: TextStyle(color: Colors.white70)),
                   const SizedBox(height: 28),
                   Card(

@@ -26,6 +26,7 @@ flutter:
   uses-material-design: true
   assets:
     - assets/party/
+    - assets/voter_phone_book_logo.png
   fonts:
     - family: NotoSansDevanagari
       fonts:
