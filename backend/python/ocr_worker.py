@@ -45,14 +45,25 @@ def clean(text):
 def clean_person_name(value):
     if not value:
         return ""
-    # Strip non-Devanagari noise (symbols, Latin letters, digits)
-    text = re.sub(r"[^\u0900-\u097F\s.-]", " ", value)
-    text = re.sub(r"[\u0964\u0965\u0966-\u096f]", " ", text)
+    # Split raw value on field label headers to prevent concatenating adjacent fields/labels
+    parts = re.split(
+        r"(?:निर्वाचक\s*(?:का)?\s*नाम|मतदाता\s*(?:का)?\s*नाम|(?:^|\s)नाम(?:\s|$)|(?:पिता|पति|पत्ति|पती|माता)\s*(?:का)?\s*नाम|गृह\s*संख्या|उम्र|लिंग|का\s+नाम)",
+        value,
+        flags=re.IGNORECASE,
+    )
+    target = ""
+    for part in parts:
+        part_clean = re.sub(r"[^\u0900-\u097F\s.-]", " ", part)
+        part_clean = clean(part_clean).strip(" .-|:")
+        if len(re.findall(r"[\u0900-\u097F]", part_clean)) >= 2:
+            target = part_clean
+            break
+    if not target:
+        target = re.sub(r"[^\u0900-\u097F\s.-]", " ", value)
+
+    text = re.sub(r"[\u0964\u0965\u0966-\u096f]", " ", target)
     text = clean(text).strip(" .-|:")
     if not text:
-        return ""
-    # Filter out label fragments
-    if re.search(r"(?:निर्वाचक\s*(?:का)?\s*नाम|(?:^|\s)नाम(?:\s|$))|(?:पिता|पति|पत्ति|पती|माता)\s*(?:का)?\s*नाम|गृह\s*संख्या|^(?:उम्र|लिंग)(?:\s|$)|(?:^|\s)का\s+नाम(?:\s|$)", text):
         return ""
     # Remove leading/trailing OCR noise tokens
     text = re.sub(r"^(?:ः|:|;|\s)+", "", text)
@@ -395,7 +406,7 @@ def parse_card(text, epic_text, photo_path, page_no, cell_no, focused_house=""):
         "rawGuardianName": raw_guardian if raw_guardian and clean(raw_guardian).strip(" .-|") != guardian else "",
         "relationType": relation,
         "houseNumber": house,
-        "age": int(age) if age.isdigit() else None,
+        "age": int(age) if age.isdigit() and 18 <= int(age) <= 120 else None,
         "gender": gender,
         "voterId": voter_id,
         "voterSerial": voter_serial,
