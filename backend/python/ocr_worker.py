@@ -383,11 +383,7 @@ def parse_card(text, epic_text, photo_path, page_no, cell_no, focused_house=""):
     voter_id = epic_from(epic_text + "\n" + text)
     serial_match = re.search(r"(?:^|\n)\s*[\[\(\|]?\s*(\d{1,4})\s*[\]\)\|]?", text or "")
     voter_serial = serial_match.group(1) if serial_match else ""
-    addition_match = re.search(
-        r"(?:^|\n)\D*(\d{1,4})\D+(\d{1,2})\D+(?:[A-Z]{2,4}|RJ/)",
-        text or "",
-        re.IGNORECASE,
-    )
+
     # Section/part metadata belongs to the page header, not the voter card.
     # The old heuristic treated serial/EPIC digits as section numbers.
     section_number = ""
@@ -1486,6 +1482,11 @@ def read_fixed_header(page_path, is_voter_page=True):
             if raw_map:
                 result["rawSectionMap"] = raw_map
                 result["sectionCorrections"] = corrections
+        pin_readings = []
+        for pin_text in fixed_region_variants(
+            image, pin_bounds, "eng", (6, 7, 10), "0123456789",
+        ):
+            pin_value = fixed_header_number(pin_text, 6)
             if len(pin_value) == 6:
                 pin_readings.append(pin_value)
         pin_code = consensus_value(pin_readings, 2)

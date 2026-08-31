@@ -12,11 +12,7 @@ String _defaultApiUrl() {
     final scheme = page.scheme == 'https' ? 'https' : 'http';
     return '$scheme://${page.host}:5000';
   }
-  if (defaultTargetPlatform == TargetPlatform.android ||
-      defaultTargetPlatform == TargetPlatform.iOS) {
-    return productionApiUrl;
-  }
-  return 'http://localhost:5000';
+  return productionApiUrl;
 }
 
 const configuredApiUrl = String.fromEnvironment('API_URL');
