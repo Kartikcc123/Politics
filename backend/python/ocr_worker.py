@@ -71,7 +71,7 @@ def clean_person_name(value):
 
     # Devanagari OCR Spelling Fixes (common Tesseract misreads)
     text = re.sub(r"(?:^|\s)बब्रा(?=$|\s)", " बन्ना ", text)
-    text = re.sub(r"(?:^|\s)(?:बंशीलाल|बंसीलाल|बंसिलाल|बंशिलाल|बब्रालाल)(?=$|\s)", " बन्नालाल ", text)
+    text = re.sub(r"(?:^|\s)बब्रालाल(?=$|\s)", " बन्नालाल ", text)
     text = re.sub(r"(?:^|\s)(?:लाटुलाल|लाडुलाल|लादुलाल)(?=$|\s)", " लादूलाल ", text)
     text = re.sub(r"(?:^|\s)(?:लाटु|लाडु|लादु)(?=$|\s)", " लादू ", text)
     text = re.sub(r"(?:^|\s)डालु(?=$|\s)", " डालू ", text)
