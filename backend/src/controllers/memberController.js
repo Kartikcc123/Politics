@@ -481,6 +481,7 @@ const addSmartLocationSearch = (filter, query) => {
 };
 exports.locationGroups = async (req, res, next) => {
   try {
+    const { rollType, contactType, matchStatus, municipalWard } = req.query;
     const filter = applyMemberScope(req.currentUser, {});
     const selectedRoll = String(rollType || "assembly").toLowerCase();
     if (contactType !== "personal") {
@@ -656,6 +657,7 @@ exports.bulkLocationCorrection = async (req, res, next) => {
 
 exports.filterOptions = async (req, res, next) => {
   try {
+    const { rollType, contactType, matchStatus, municipalWard } = req.query;
     const definition = optionDefinitions[req.query.field];
     if (!definition) return res.status(400).json({ message: 'Invalid filter field' });
     const filter = applyMemberScope(req.currentUser, {});
@@ -1112,29 +1114,6 @@ exports.filterOptions = async (req, res, next) => {
   }
 };
 
-exports.locationGroups = async (req, res, next) => {
-  try {
-    const scope = applyMemberScope(req.currentUser, {});
-    const groups = await Member.aggregate([
-      { $match: scope },
-      {
-        $group: {
-          _id: {
-            assemblyName: '$assemblyName',
-            partNumber: '$partNumber',
-            sectionName: '$sectionName',
-          },
-          count: { $sum: 1 },
-        },
-      },
-      { $sort: { count: -1 } },
-      { $limit: 200 },
-    ]);
-    res.json({ groups });
-  } catch (error) {
-    next(error);
-  }
-};
 
 exports.suggestions = async (req, res, next) => {
   try {

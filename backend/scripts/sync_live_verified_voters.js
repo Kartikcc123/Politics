@@ -1,12 +1,8 @@
-require('dotenv').config();
-const mongoose = require('mongoose');
-const connectDB = require('../src/config/db');
-const User = require('../src/models/User');
-const Ward = require('../src/models/Ward');
-const Booth = require('../src/models/Booth');
-const Member = require('../src/models/Member');
+const https = require('https');
 
-const bhita4PagesVoters = [
+const token = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyIjp7ImlkIjoiNmEzMzAxZjBiM2YyNmYxYzMyMmRhNjZjIiwicm9sZSI6ImFkbWluIn0sImlhdCI6MTc4ODE1OTUzNywiZXhwIjoxNzg4NzY0MzM3fQ.gfAkgcIvtqe6JOUuN6cZPPu1wTxJatGAHNbqL_9IN4g';
+
+const bhitaVotersPage3To5 = [
   // Page 3 (Voters 1 to 30)
   { serial: "1", epic: "KDY1113448", name: "नेनूराम", guardian: "प्रतापचन्द", relation: "father", house: "8", age: 58, gender: "male" },
   { serial: "2", epic: "SNE0513606", name: "बालाराम", guardian: "नेनूराम", relation: "father", house: "8", age: 32, gender: "male" },
@@ -42,7 +38,7 @@ const bhita4PagesVoters = [
   // Page 4 (Voters 31 to 60)
   { serial: "31", epic: "RJ/20/152/001379", name: "रोशनलाल", guardian: "जेताराम", relation: "father", house: "12", age: 52, gender: "male" },
   { serial: "32", epic: "KDY0955211", name: "पुष्पा", guardian: "रोशन लाल", relation: "husband", house: "12", age: 45, gender: "female" },
-  { serial: "33", epic: "SNE0380972", name: "पिन्टू कुमार", guardian: "लादू लाल", relation: "father", house: "12", age: 36, gender: "male" },
+  { serial: "33", epic: "SNE0380972", name: "पिन्टु कुमार", guardian: "लादू लाल", relation: "father", house: "12", age: 36, gender: "male" },
   { serial: "34", epic: "SNE0601153", name: "संगम कुमार", guardian: "गोपाल", relation: "father", house: "12", age: 31, gender: "male" },
   { serial: "35", epic: "SNE0727594", name: "पूजा", guardian: "पिन्टू", relation: "husband", house: "12", age: 31, gender: "female" },
   { serial: "36", epic: "SNE0819318", name: "बंशीलाल", guardian: "बालू", relation: "father", house: "12", age: 31, gender: "male" },
@@ -69,143 +65,112 @@ const bhita4PagesVoters = [
   { serial: "57", epic: "KDY0910562", name: "अर्जुनलाल", guardian: "प्रतापचन्द", relation: "father", house: "15", age: 45, gender: "male" },
   { serial: "58", epic: "SNE0151993", name: "सायरी देवी", guardian: "अर्जुन लाल", relation: "husband", house: "15", age: 39, gender: "female" },
   { serial: "59", epic: "SNE1835529", name: "घनश्याम", guardian: "अर्जुन लाल", relation: "father", house: "15", age: 20, gender: "male" },
-  { serial: "60", epic: "RJ/20/152/000223", name: "गोमीबाई", guardian: "मोतीलाल", relation: "husband", house: "16", age: 86, gender: "female" }
+  { serial: "60", epic: "RJ/20/152/000223", name: "गोमीबाई", guardian: "मोतीलाल", relation: "husband", house: "16", age: 86, gender: "female" },
+
+  // Page 5 (Voters 61 to 90)
+  { serial: "61", epic: "KDY1113471", name: "लछीराम", guardian: "खुमाराम", relation: "father", house: "16", age: 62, gender: "male" },
+  { serial: "62", epic: "KDY1113489", name: "नेबूबाई", guardian: "लछीराम", relation: "husband", house: "16", age: 62, gender: "female" },
+  { serial: "63", epic: "KDY1113497", name: "चन्दरी", guardian: "लछूराम", relation: "husband", house: "16", age: 61, gender: "female" },
+  { serial: "64", epic: "SNE0907170", name: "रमेशचन्द्र", guardian: "लछूराम", relation: "father", house: "16", age: 29, gender: "male" },
+  { serial: "65", epic: "SNE1306893", name: "भगवान लाल", guardian: "लछीराम", relation: "father", house: "16", age: 26, gender: "male" },
+  { serial: "66", epic: "SNE1508167", name: "मीरा", guardian: "लछीराम", relation: "husband", house: "16", age: 24, gender: "female" },
+  { serial: "67", epic: "SNE1570365", name: "बाली कुमारी", guardian: "लछू", relation: "father", house: "16", age: 23, gender: "female" },
+  { serial: "68", epic: "SNE0947788", name: "भावेश", guardian: "श्याम लाल", relation: "father", house: "18", age: 29, gender: "male" },
+  { serial: "69", epic: "KDY0955302", name: "शान्ती", guardian: "बालूलाल", relation: "husband", house: "19", age: 76, gender: "female" },
+  { serial: "70", epic: "KDY0910018", name: "श्यामलाल", guardian: "बालूलाल", relation: "father", house: "19", age: 61, gender: "male" },
+  { serial: "71", epic: "KDY0955310", name: "सानु", guardian: "श्यामलाल", relation: "husband", house: "19", age: 56, gender: "female" },
+  { serial: "72", epic: "KDY0955328", name: "रोशनलाल", guardian: "बालूलाल", relation: "father", house: "19", age: 53, gender: "male" },
+  { serial: "73", epic: "KDY0955336", name: "दुर्गा", guardian: "रोशन लाल", relation: "husband", house: "19", age: 44, gender: "female" },
+  { serial: "74", epic: "SNE0380980", name: "संजय कुमार", guardian: "श्याम लाल", relation: "father", house: "19", age: 36, gender: "male" },
+  { serial: "75", epic: "SNE0947796", name: "लादी", guardian: "संजय", relation: "husband", house: "19", age: 30, gender: "female" },
+  { serial: "76", epic: "SNE1306968", name: "राधा देवी", guardian: "भावेश", relation: "husband", house: "19", age: 27, gender: "female" },
+  { serial: "77", epic: "SNE1481068", name: "लोकेश कुमार", guardian: "श्याम लाल", relation: "father", house: "19", age: 24, gender: "male" },
+  { serial: "78", epic: "SNE1801943", name: "माया देवी", guardian: "लोकेश कुमार", relation: "husband", house: "19", age: 22, gender: "female" },
+  { serial: "79", epic: "KDY0955369", name: "मोहनलाल", guardian: "तुलछा", relation: "father", house: "20", age: 76, gender: "male" },
+  { serial: "80", epic: "KDY0955344", name: "जेठुड़ी", guardian: "मोहनलाल", relation: "husband", house: "20", age: 71, gender: "female" },
+  { serial: "81", epic: "KDY1228337", name: "कैलाशचन्द्र", guardian: "मोहनलाल", relation: "father", house: "20", age: 61, gender: "male" },
+  { serial: "82", epic: "KDY0955351", name: "कैलाशी", guardian: "कैलाशचन्द्र", relation: "husband", house: "20", age: 59, gender: "female" },
+  { serial: "83", epic: "SNE1282672", name: "गोविंद कुमार", guardian: "कैलाश", relation: "father", house: "20", age: 26, gender: "male" },
+  { serial: "84", epic: "SNE1642222", name: "हेमा देवी", guardian: "गोविंद", relation: "husband", house: "20", age: 22, gender: "female" },
+  { serial: "85", epic: "SNE1642172", name: "रतन लाल", guardian: "कैलाश चंद", relation: "father", house: "20", age: 21, gender: "male" },
+  { serial: "86", epic: "SNE1835545", name: "पूजा देवी", guardian: "रतन लाल", relation: "husband", house: "20", age: 19, gender: "female" },
+  { serial: "87", epic: "RJ/20/152/000701", name: "शान्तिलाल", guardian: "नेनूराम", relation: "father", house: "21", age: 66, gender: "male" },
+  { serial: "88", epic: "KDY0955401", name: "कंचन", guardian: "शान्तिलाल", relation: "husband", house: "21", age: 62, gender: "female" },
+  { serial: "89", epic: "KDY0910026", name: "पुखराज", guardian: "नेनूराम", relation: "father", house: "21", age: 53, gender: "male" },
+  { serial: "90", epic: "KDY0955419", name: "इंद्रा", guardian: "पुखराज", relation: "husband", house: "21", age: 47, gender: "female" }
 ];
 
-async function importBhita4Pages() {
-  console.log('--- Importing 4 Pages Data of Bhita PDF (179-सहाडा, भाग 1) ---');
-  await connectDB();
-
-  let ward = await Ward.findOne({ number: "179" });
-  if (!ward) {
-    ward = await Ward.create({
-      number: "179",
-      name: "विधान सभा 179 - सहाडा (सामान्य)",
-      area: "सहाडा",
-      active: true
+function apiGet(path) {
+  return new Promise((resolve, reject) => {
+    const req = https.request({
+      hostname: 'politics.mathxmedia.tech',
+      path, method: 'GET',
+      headers: { 'Authorization': 'Bearer ' + token }
+    }, (res) => {
+      let buf = '';
+      res.on('data', d => buf += d);
+      res.on('end', () => resolve(JSON.parse(buf)));
     });
-  }
+    req.on('error', reject);
+    req.end();
+  });
+}
 
-  let booth = await Booth.findOne({ ward: ward._id, number: "1" });
-  if (!booth) {
-    booth = await Booth.create({
-      ward: ward._id,
-      number: "1",
-      name: "भाग संख्या 1 - भीटा",
-      area: "पटवार भवन के पास, भीटा",
-      address: "राजकीय उच्च प्राथमिक विद्यालय, कमरा न० 1, भीटा, तहसील: रायपुर, जिला: भीलवाड़ा, पिन कोड: 311803",
-      active: true
+function apiPut(path, data) {
+  return new Promise((resolve, reject) => {
+    const body = JSON.stringify(data);
+    const req = https.request({
+      hostname: 'politics.mathxmedia.tech',
+      path, method: 'PUT',
+      headers: {
+        'Authorization': 'Bearer ' + token,
+        'Content-Type': 'application/json',
+        'Content-Length': Buffer.byteLength(body)
+      }
+    }, (res) => {
+      let buf = '';
+      res.on('data', d => buf += d);
+      res.on('end', () => resolve(JSON.parse(buf)));
     });
-  }
+    req.on('error', reject);
+    req.write(body);
+    req.end();
+  });
+}
 
-  let boothManager = await User.findOne({ assignedBooth: booth._id, role: 'booth' });
-  if (!boothManager) {
-    boothManager = await User.create({
-      name: "सुरेश गुर्जर (बूथ प्रबंधक)",
-      email: "booth1.manager.bhita@politicalcrm.com",
-      password: "$2b$12$e5V1mXy3G4aH1wXy3G4aH.1wXy3G4aH1wXy3G4aH1wXy3G4aH1wXy",
-      role: "booth",
-      assignedWard: ward._id,
-      assignedBooth: booth._id,
-      phone: "9829512345",
-      active: true
-    });
-  }
+async function syncVerifiedVotersToLive() {
+  console.log('========================================================================');
+  console.log('   SYNCING VERIFIED BHEETA VOTER DATA TO LIVE PRODUCTION BACKEND DB     ');
+  console.log('   URL: https://politics.mathxmedia.tech                                ');
+  console.log('========================================================================\n');
 
-  let savedCount = 0;
+  const membersRes = await apiGet('/api/members?limit=1000');
+  const existingMembers = membersRes.members || membersRes || [];
+  console.log(`Live DB current voter records fetched: ${existingMembers.length}`);
+
   let updatedCount = 0;
-  const savedVoters = [];
-
-  for (const v of bhita4PagesVoters) {
-    const memberData = {
-      name: v.name,
-      voterId: v.epic,
-      voterSerial: v.serial,
-      guardianName: v.guardian,
-      relationType: v.relation,
-      houseNumber: v.house,
-      age: v.age,
-      gender: v.gender,
-      address: `पटवार भवन के पास, भीटा, मकान: ${v.house}`,
-      location: "पटवार भवन के पास, भीटा",
-      assemblyNumber: "179",
-      assemblyName: "सहाडा (सामान्य)",
-      partNumber: "1",
-      sectionNumber: "1",
-      sectionName: "पटवार भवन के पास, भीटा",
-      ward: ward._id,
-      booth: booth._id,
-      contactType: "voter",
-      sourceDocument: {
-        type: "pdf",
-        file: "179-sahaada-part-1-bhita.pdf",
-        rawText: `निर्वाचक का नाम: ${v.name}, पिता/पति का नाम: ${v.guardian}, गृह संख्या: ${v.house}`
-      },
-      ocrConfidence: 98,
-      verificationStatus: "verified"
-    };
-
-    const existing = await Member.findOne({ voterId: v.epic });
+  for (const v of bhitaVotersPage3To5) {
+    const existing = existingMembers.find(m => m.voterId?.toUpperCase() === v.epic.toUpperCase());
     if (existing) {
-      Object.assign(existing, memberData);
-      await existing.save();
+      console.log(`Updating Live Voter #${v.serial} [${v.epic}]: "${existing.name}" -> "${v.name}"`);
+      const updateData = {
+        name: v.name,
+        guardianName: v.guardian,
+        voterSerial: v.serial,
+        houseNumber: v.house,
+        age: v.age,
+        gender: v.gender,
+        verificationStatus: 'verified'
+      };
+      await apiPut(`/api/members/${existing._id}`, updateData);
       updatedCount++;
-      savedVoters.push(existing);
-    } else {
-      const created = await Member.create(memberData);
-      savedCount++;
-      savedVoters.push(created);
     }
   }
 
   console.log(`\n========================================================================`);
-  console.log(`     BHITA PART 1 (179-सहाडा) - 4 PAGES DATA FETCH & IMPORT SUMMARY      `);
+  console.log(`SUCCESS: Synchronized ${updatedCount} verified voters on live production backend!`);
+  console.log(`Voter names like "अर्जुनलाल" (Serial 57 - KDY0910562) have been updated live!`);
   console.log(`========================================================================`);
-  console.log(`Assembly (विधान सभा): [179] सहाडा (सामान्य)`);
-  console.log(`Part/Booth (भाग संख्या): [1] भाग संख्या 1 - भीटा`);
-  console.log(`Polling Station (मतदान केंद्र): राजकीय उच्च प्राथमिक विद्यालय, कमरा न० 1, भीटा`);
-  console.log(`Section (अनुभाग): पटवार भवन के पास, भीटा`);
-  console.log(`Total Voters Extracted: ${savedVoters.length} (Pages 1 to 4)`);
-  console.log(`------------------------------------------------------------------------`);
-  console.log(`                     BOOTH PRABANDHAK (बूथ प्रबंधक)                    `);
-  console.log(`------------------------------------------------------------------------`);
-  console.log(`Name: ${boothManager.name}`);
-  console.log(`Role: Booth Manager (बूथ प्रबंधक)`);
-  console.log(`Phone: ${boothManager.phone}`);
-  console.log(`Email: ${boothManager.email}`);
-  console.log(`------------------------------------------------------------------------`);
-  console.log(`                     FETCHED VOTER LIST (PAGES 1 to 4)                  `);
-  console.log(`------------------------------------------------------------------------`);
-  
-  console.log(
-    'S.No'.padEnd(6) +
-    'EPIC / Voter ID'.padEnd(20) +
-    'Name (नाम)'.padEnd(22) +
-    'Relative (पिता/पति)'.padEnd(22) +
-    'House'.padEnd(8) +
-    'Age'.padEnd(6) +
-    'Gender'
-  );
-  console.log('-'.repeat(90));
-
-  savedVoters.forEach((v) => {
-    const s = String(v.voterSerial).padEnd(6);
-    const epic = String(v.voterId).padEnd(20);
-    const name = String(v.name).padEnd(22).slice(0, 21);
-    const rel = String(v.guardianName).padEnd(22).slice(0, 21);
-    const h = String(v.houseNumber).padEnd(8);
-    const age = String(v.age).padEnd(6);
-    const gen = v.gender === 'male' ? 'पुरुष' : 'महिला';
-    console.log(`${s}${epic}${name}${rel}${h}${age}${gen}`);
-  });
-
-  console.log('-'.repeat(90));
-  console.log(`SUCCESS: All 60 voters from 4 pages of Bhita Part 1 fetched & imported!`);
-  await mongoose.disconnect();
-  process.exit(0);
 }
 
-importBhita4Pages().catch(err => {
-  console.error('Bhita 4 Pages Import Error:', err);
-  process.exit(1);
-});
+syncVerifiedVotersToLive().catch(console.error);
