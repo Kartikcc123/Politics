@@ -231,8 +231,8 @@ exports.list = async (req, res, next) => {
     if (assemblyName) filter.assemblyName = searchRegex(assemblyName);
     if (partNumber) filter.partNumber = partNumber;
     if (voterSerial) {
-      if (!partNumber && !village) {
-        return res.status(400).json({ message: 'क्रम संख्या खोजने से पहले भाग / गाँव चुनें।' });
+      if (!village && !partNumber && !booth && !sectionName && !gramPanchayat) {
+        return res.status(400).json({ message: 'क्रम संख्या खोजने से पहले भाग / गाँव या अनुभाग चुनें।' });
       }
       const serial = String(voterSerial).replace(/[०-९]/g, (digit) => String('०१२३४५६७८९'.indexOf(digit))).replace(/\D/g, '');
       if (serial) filter.voterSerial = new RegExp(`^${escapeRegex(serial)}$`, 'i');
@@ -274,10 +274,27 @@ exports.list = async (req, res, next) => {
       }
       filter.$and = [...(filter.$and || []), ...conditions];
     }
+
+    const sortParam = String(req.query.sortBy || req.query.sort || '').toLowerCase();
+    const hasLocationScope = Boolean(village || partNumber || booth || sectionName || gramPanchayat);
+    let sortObj = { name: 1, surname: 1, houseNumber: 1 };
+
+    if (sortParam === 'recent') {
+      sortObj = { updatedAt: -1 };
+    } else if (['voterserial', 'serial', 'serialnumber', 'matdatakram', 'kram'].includes(sortParam)) {
+      if (hasLocationScope) {
+        sortObj = { voterSerial: 1, name: 1 };
+      } else {
+        sortObj = { village: 1, partNumber: 1, voterSerial: 1, name: 1 };
+      }
+    } else if (['house', 'housenumber', 'makan'].includes(sortParam)) {
+      sortObj = { houseNumber: 1, voterSerial: 1 };
+    }
+
     const listQuery = (query) => Member.find(query)
       .select('contactType photo name surname mobile altMobile dob estimatedDob anniversary voterId voterSerial guardianName houseNumber address location area tehsil gramPanchayat village municipality caste subCaste organizationPost organizationLevel influenceLevel occupation workplaceState workplaceCity workplaceVillage spouseName marriageState marriageCity marriageVillage education extraDetails supportLevel partyPreference isFavorite ward booth updatedAt age gender sectionNumber sectionName assemblyNumber assemblyName partNumber partName postOffice policeStation district pinCode verificationStatus profileCompletionStatus profileCompletedBy profileCompletedAt ocrConfidence houseNumberConfidence locationMatchConfidence locationResolution ocrReviewReasons ocrValidationPassed ocrFieldConfidence ocrValues sourceDocument hasAssemblyMembership hasMunicipalMembership municipalWardNumbers')
       .populate(populate)
-      .sort(req.query.sort === 'recent' ? { updatedAt: -1 } : { name: 1, surname: 1, houseNumber: 1 })
+      .sort(sortObj)
       .collation({ locale: 'en', numericOrdering: true, strength: 1 });
     const start = paged ? (page - 1) * limit : 0;
     let members;
@@ -355,8 +372,16 @@ const optionDefinitions = {
     }),
   },
   section: {
-    // Older imports can miss sectionNumber even when the mohalla name is the
-    // same. Group by the stable name so one mohalla is shown only once.
+    group: '$sectionName',
+    match: { sectionName: { $nin: ['', null] } },
+    option: (id, count) => ({
+      value: id,
+      label: id,
+      count,
+      filters: { sectionName: id },
+    }),
+  },
+  sectionName: {
     group: '$sectionName',
     match: { sectionName: { $nin: ['', null] } },
     option: (id, count) => ({
@@ -387,17 +412,66 @@ const optionDefinitions = {
       },
     }),
   },
+  booth: {
+    group: { number: '$partNumber', name: '$partName', village: '$village' },
+    match: {
+      $or: [
+        { partNumber: { $nin: ['', null] } },
+        { partName: { $nin: ['', null] } },
+        { village: { $nin: ['', null] } },
+      ],
+    },
+    option: (id, count) => ({
+      value: id.number || id.village || id.name || '',
+      label: [
+        id.number ? `भाग ${id.number}` : '',
+        id.village || id.name || '',
+      ].filter(Boolean).join(' - ') || 'भाग / गाँव',
+      count,
+      filters: {
+        ...(id.number ? { partNumber: id.number } : {}),
+        ...(id.village ? { village: id.village } : {}),
+        ...(id.name ? { partName: id.name } : {}),
+      },
+    }),
+  },
+  part: {
+    group: { number: '$partNumber', name: '$partName', village: '$village' },
+    match: {
+      $or: [
+        { partNumber: { $nin: ['', null] } },
+        { partName: { $nin: ['', null] } },
+        { village: { $nin: ['', null] } },
+      ],
+    },
+    option: (id, count) => ({
+      value: id.number || id.village || id.name || '',
+      label: [
+        id.number ? `भाग ${id.number}` : '',
+        id.village || id.name || '',
+      ].filter(Boolean).join(' - ') || 'भाग / गाँव',
+      count,
+      filters: {
+        ...(id.number ? { partNumber: id.number } : {}),
+        ...(id.village ? { village: id.village } : {}),
+      },
+    }),
+  },
+  partName: { field: 'partName' },
   village: { field: 'village' },
   pinCode: { field: 'pinCode' },
   gramPanchayat: { field: 'gramPanchayat' },
   tehsil: { field: 'tehsil' },
   municipality: { field: 'municipality' },
   partNumber: {
-    group: { number: '$partNumber', name: '$sectionName' },
+    group: { number: '$partNumber', name: '$sectionName', village: '$village' },
     match: { partNumber: { $nin: ['', null] } },
     option: (id, count) => ({
-      value: id.number || id.name,
-      label: id.name && id.number ? `${id.name} · भाग ${id.number}` : id.name || `Part ${id.number || '-'}`,
+      value: id.number || id.village || id.name,
+      label: [
+        id.number ? `भाग ${id.number}` : '',
+        id.village || id.name || '',
+      ].filter(Boolean).join(' - ') || `Part ${id.number || '-'}`,
       count,
       filters: id.number ? { partNumber: id.number } : { sectionName: id.name },
     }),
@@ -409,9 +483,9 @@ const optionDefinitions = {
 
 function addOptionFilter(filter, key, value) {
   if (!value) return;
-  if (['assemblyNumber', 'partNumber', 'sectionNumber', 'pinCode', 'supportLevel', 'verificationStatus', 'gender'].includes(key)) {
+  if (['assemblyNumber', 'partNumber', 'sectionNumber', 'pinCode', 'supportLevel', 'verificationStatus', 'gender', 'booth'].includes(key)) {
     filter[key] = value;
-  } else if (['assemblyName', 'sectionName', 'village', 'gramPanchayat', 'tehsil', 'municipality', 'caste', 'occupation', 'organizationPost'].includes(key)) {
+  } else if (['assemblyName', 'sectionName', 'partName', 'village', 'gramPanchayat', 'tehsil', 'municipality', 'caste', 'occupation', 'organizationPost'].includes(key)) {
     filter[key] = new RegExp(String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
   }
 }

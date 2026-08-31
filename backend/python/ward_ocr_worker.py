@@ -125,6 +125,26 @@ def card_text_from_page_data(data, left, top, right, bottom):
     )
 
 
+def clean_person_name(value):
+    if not value:
+        return ""
+    text = re.sub(r"[^\u0900-\u097F\s.-]", " ", value)
+    text = clean(text).strip(" .-")
+    text = re.sub(r"(?<=\u0900-\u097F)ताल\b", "लाल", text)
+    text = re.sub(r"(?<=\u0900-\u097F)ताम\b", "राम", text)
+    text = re.sub(r"\bकुमारr\b|\bकुभार\b|\bकुसार\b|\bकुनार\b", "कुमार", text)
+    text = re.sub(r"\bदेबी\b", "देवी", text)
+    text = re.sub(r"\bगोर्धघन\b|\bगोवर्धण\b", "गोवर्धन", text)
+    text = re.sub(r"(?<=\u0900-\u097F)चित्\b|(?<=\u0900-\u097F)चन्त\b|(?<=\u0900-\u097F)चन्च\b", "चन्द", text)
+    text = re.sub(r"\bप्रिाप\b|\bप्रिा\b|\bप्रताश\b", "प्रताप", text)
+    text = re.sub(r"\bकन्द्रया\b|\bकन्हेया\b", "कन्हैया", text)
+    text = re.sub(r"\bरतनी ब्\b|\bरतनी ब्र\b|\bकेली ब्\b", lambda m: m.group(0).replace("ब्", "बाई").replace("ब्र", "बाई"), text)
+    text = re.sub(r"\bपुशपा\b", "पुष्पा", text)
+    text = re.sub(r"\bकुमावतत\b", "कुमावत", text)
+    text = re.sub(r"\bपूजा क्र\b", "पूजा", text)
+    return clean(text).strip(" .-")
+
+
 def parse_card(text, epic_text, epic_hint, page_no, cell_no):
     value = digits(text)
     serial_match = re.search(r"(?:^|\n)\s*[\[|(_-]*\s*(\d{1,4})\b", value)
@@ -164,8 +184,8 @@ def parse_card(text, epic_text, epic_hint, page_no, cell_no):
     name = re.split(r"\s+(?:पिता|पति|माता|मकान|आयु|लिंग)\b", name, maxsplit=1)[0]
     name = re.sub(r"\s+नाम$", "", clean(name)).strip(" -,:;|।")
     guardian = re.split(r"\s+(?:मकान|आयु|लिंग)\b", guardian, maxsplit=1)[0]
-    name = clean(re.sub(r"[^\u0900-\u097F\s.-]", " ", name)).strip(" .-")
-    guardian = clean(re.sub(r"[^\u0900-\u097F\s.-]", " ", guardian)).strip(" .-")
+    name = clean_person_name(name)
+    guardian = clean_person_name(guardian)
     if re.search(r"पूरक|नामावली|नगरपालिका|विधानसभा|निर्वाचन", name):
         return None
     if not name or len(re.findall(r"[\u0900-\u097F]", name)) < 2:

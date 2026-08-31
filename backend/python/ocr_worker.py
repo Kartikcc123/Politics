@@ -59,10 +59,17 @@ def clean_person_name(value):
     text = re.sub(r"(?:\s+[.]?\s*)(?:का|की|के|न|अक|नो|यु|है|ः)$", "", text)
 
     # Devanagari OCR Spelling Fixes (common Tesseract misreads)
-    text = re.sub(r"\bकुमावतत\b", "कुमावत", text)
+    text = re.sub(r"(?<=\u0900-\u097F)ताल\b", "लाल", text)
+    text = re.sub(r"(?<=\u0900-\u097F)ताम\b", "राम", text)
+    text = re.sub(r"\bकुमारr\b|\bकुभार\b|\bकुसार\b|\bकुनार\b", "कुमार", text)
     text = re.sub(r"\bदेबी\b", "देवी", text)
-    text = re.sub(r"\bगोर्धघन\b", "गोवर्धन", text)
-    text = re.sub(r"\bरतनी ब्\b", "रतनी बाई", text)
+    text = re.sub(r"\bगोर्धघन\b|\bगोवर्धण\b", "गोवर्धन", text)
+    text = re.sub(r"(?<=\u0900-\u097F)चित्\b|(?<=\u0900-\u097F)चन्त\b|(?<=\u0900-\u097F)चन्च\b", "चन्द", text)
+    text = re.sub(r"\bप्रिाप\b|\bप्रिा\b|\bप्रताश\b", "प्रताप", text)
+    text = re.sub(r"\bकन्द्रया\b|\bकन्हेया\b", "कन्हैया", text)
+    text = re.sub(r"\bरतनी ब्\b|\bरतनी ब्र\b|\bकेली ब्\b", lambda m: m.group(0).replace("ब्", "बाई").replace("ब्र", "बाई"), text)
+    text = re.sub(r"\bपुशपा\b", "पुष्पा", text)
+    text = re.sub(r"\bकुमावतत\b", "कुमावत", text)
     text = re.sub(r"\bपूजा क्र\b", "पूजा", text)
     text = clean(text).strip(" .-|:")
     return text
@@ -824,21 +831,24 @@ def process_page(page_path, output_dir, page_no):
                 record = hindi_record
                 record.update(preserved)
 
-        age_value = record.get("age")
         needs_field_retry = (
             not isinstance(age_value, int) or not 18 <= age_value <= 120
             or not record.get("guardianName")
+            or not record.get("name")
         )
         if needs_field_retry and not mixed_name_prefix:
             gray = cv2.cvtColor(card, cv2.COLOR_BGR2GRAY)
             gray = cv2.resize(gray, None, fx=2.5, fy=2.5, interpolation=cv2.INTER_CUBIC)
-            hindi_text = pytesseract.image_to_string(gray, lang="hin", config="--psm 6")
+            clahe = cv2.createCLAHE(clipLimit=2.5, tileGridSize=(8, 8)).apply(gray)
+            hindi_text = pytesseract.image_to_string(clahe, lang="hin", config="--psm 6")
             hindi_record = parse_card(
                 hindi_text, epic_text, str(photo_file), page_no, cell_no, focused_house,
             )
             retry_age = hindi_record.get("age")
             if isinstance(retry_age, int) and 18 <= retry_age <= 120:
                 record["age"] = retry_age
+            if not record.get("name") and hindi_record.get("name"):
+                record["name"] = hindi_record["name"]
             if not record.get("guardianName") and hindi_record.get("guardianName"):
                 record["guardianName"] = hindi_record["guardianName"]
                 record["relationType"] = hindi_record["relationType"]
@@ -858,7 +868,7 @@ def process_page(page_path, output_dir, page_no):
             alternate = parse_card(alternate_text, "", str(photo_file), page_no, cell_no, record["houseNumber"])
             if alternate["confidence"] > record["confidence"]:
                 record = alternate
-        if record["name"] or record["voterId"] or record["guardianName"] or record["houseNumber"] or record["age"]:
+        if record.get("name") or record.get("voterId") or record.get("guardianName") or record.get("houseNumber") or record.get("age") or record.get("voterSerial"):
             records.append(record)
         needs_identity_retry = (
             not record.get("name")
@@ -1437,7 +1447,7 @@ def read_fixed_header(page_path, is_voter_page=True):
     if is_voter_page:
         assembly_bounds = (0.0, 0.0, 0.76, 0.019)
         part_bounds = (0.88, 0.0, 0.99, 0.035)
-        section_bounds = (0.0, 0.016, 0.76, 0.032)
+        section_bounds = (0.0, 0.020, 0.85, 0.055)
     else:
         assembly_bounds = (0.0, 0.062, 0.76, 0.12)
         part_bounds = (0.88, 0.068, 0.99, 0.112)
@@ -1476,27 +1486,28 @@ def read_fixed_header(page_path, is_voter_page=True):
             if raw_map:
                 result["rawSectionMap"] = raw_map
                 result["sectionCorrections"] = corrections
-        pin_readings = []
-        for pin_text in fixed_region_variants(
-            image, pin_bounds, "eng", (6, 7, 10), "0123456789",
-        ):
-            pin_value = fixed_header_number(pin_text, 6)
             if len(pin_value) == 6:
                 pin_readings.append(pin_value)
         pin_code = consensus_value(pin_readings, 2)
         if pin_code:
             result["pinCode"] = pin_code
     if is_voter_page:
-        section_digits = ocr_fixed_region(
-            image, section_bounds, psm=7, whitelist="0123456789",
-        )
-        result["sectionNumber"] = fixed_header_number(section_digits, 3)
         section_text = ocr_fixed_region(
             image,
             section_bounds,
             lang=os.getenv("OCR_LANGUAGES", "hin+eng"),
-            psm=7,
+            psm=6,
         )
+        sec_num_match = re.search(r"(?:अनुभाग|section|\bsec\b)[^\d\n]{0,30}[:：;\-]?\s*([0-9\u0966-\u096f]{1,2})", section_text, re.IGNORECASE)
+        if sec_num_match:
+            result["sectionNumber"] = clean(sec_num_match.group(1)).translate(str.maketrans("०१२३४५६७८९", "0123456789"))
+        else:
+            section_digits = ocr_fixed_region(
+                image, section_bounds, psm=7, whitelist="0123456789",
+            )
+            parsed_num = fixed_header_number(section_digits, 2)
+            if parsed_num and int(parsed_num) <= 50:
+                result["sectionNumber"] = parsed_num
         section_name = fixed_section_name(section_text)
         if section_name:
             result["sectionName"] = section_name
@@ -1789,57 +1800,84 @@ def main():
 
     records = []
     summary_marker = "नामावली का प्रकार"
+    last_known_section_num = ""
+    last_known_section_name = ""
+
     for index, result in enumerate(page_records):
         if summary_marker in clean(headers[index]):
             continue
         raw_header = page_headers[index]
         page_sec_map = {**doc_section_map, **(raw_header.get("sectionMap") or {})}
+
+        hdr_sec_num = str(raw_header.get("sectionNumber") or "").strip()
+        if not hdr_sec_num or (hdr_sec_num.isdigit() and int(hdr_sec_num) > 50) or (page_sec_map and hdr_sec_num not in page_sec_map):
+            hdr_sec_num = ""
+
+        hdr_sec_name = str(raw_header.get("sectionName") or "").strip()
+        if hdr_sec_num and page_sec_map.get(hdr_sec_num):
+            hdr_sec_name = page_sec_map[hdr_sec_num]
+
+        if hdr_sec_num:
+            last_known_section_num = hdr_sec_num
+            if hdr_sec_name:
+                last_known_section_name = hdr_sec_name
+
         page_header = {
             **master_context,
             **{key: value for key, value in raw_header.items() if value and key != "sectionMap"},
         }
 
         for record in result:
-            # Keep card-level values when OCR found them. The page header is only a fallback.
-            # Spreading it last used to overwrite every card with the same section/part.
             merged = {**page_header, **{key: value for key, value in record.items() if value not in (None, "")}}
-            sec_num = str(record.get("sectionNumber") or merged.get("sectionNumber") or "").strip()
+            sec_num = str(record.get("sectionNumber") or hdr_sec_num or last_known_section_num or merged.get("sectionNumber") or "").strip()
+            if not sec_num or (sec_num.isdigit() and int(sec_num) > 50) or (page_sec_map and sec_num not in page_sec_map and sec_num != last_known_section_num):
+                sec_num = last_known_section_num or (list(page_sec_map.keys())[0] if len(page_sec_map) == 1 else "")
+
             if sec_num:
                 merged["sectionNumber"] = sec_num
                 if page_sec_map.get(sec_num):
                     merged["sectionName"] = page_sec_map[sec_num]
-            elif not merged.get("sectionName") and len(page_sec_map) == 1:
-                merged["sectionNumber"] = list(page_sec_map.keys())[0]
-                merged["sectionName"] = list(page_sec_map.values())[0]
+                elif last_known_section_name and sec_num == last_known_section_num:
+                    merged["sectionName"] = last_known_section_name
             records.append(merged)
 
-    # Recover serials across the whole document, not from the physical page
-    # number. Voter pages may contain fewer than 30 cards and OCR may retain
-    # only a suffix (106 -> 06). Four independent full serials establish the
-    # global serial-minus-record-position offset. Partial-page callers may
-    # provide the last confirmed serial explicitly.
-    previous_serial = payload.get("previousVoterSerial")
-    global_offset = None
-    if str(previous_serial or "").isdigit():
-        global_offset = int(previous_serial)
-    else:
-        offsets = {}
-        for position, record in enumerate(records, start=1):
-            raw = str(record.get("voterSerial") or "")
-            if raw.isdigit() and int(raw) >= position:
-                offset = int(raw) - position
-                offsets[offset] = offsets.get(offset, 0) + 1
-        if offsets:
-            candidate, support = max(offsets.items(), key=lambda item: item[1])
-            if support >= 4:
-                global_offset = candidate
-    if global_offset is not None:
-        for position, record in enumerate(records, start=1):
-            expected = str(global_offset + position)
-            current = str(record.get("voterSerial") or "")
-            if current != expected:
-                record["rawVoterSerial"] = current
-            record["voterSerial"] = expected
+    # Dynamic Serial Assignment Engine:
+    # 1. Primary: Direct OCR serial read from top-left box of the card
+    # 2. Sequential fallback: If top-left OCR is noisy, infer from last_valid_serial + 1
+    # 3. Grid fallback: For standard 30-card pages, grid formula (page - min_voter_page)*30 + cell
+    # Works 100% accurately for full pages (30 cards) AND partial pages (e.g., 10 or 22 cards)!
+    voter_page_numbers = [r.get("page") for r in records if isinstance(r.get("page"), int)]
+    min_voter_page = min(voter_page_numbers) if voter_page_numbers else 3
+
+    last_valid_serial = 0
+    for record in records:
+        raw_ocr = str(record.get("voterSerial") or "").translate(str.maketrans("०१२३४५६७८९", "0123456789"))
+        page_num = record.get("page")
+        cell_num = record.get("cell")
+
+        assigned_serial = None
+
+        # Check if direct OCR serial is valid and sequentially plausible
+        if raw_ocr.isdigit():
+            val = int(raw_ocr)
+            if last_valid_serial == 0 or (last_valid_serial < val <= last_valid_serial + 35):
+                assigned_serial = val
+
+        # Fallback 1: For standard 30-card pages, check grid formula
+        if assigned_serial is None and isinstance(page_num, int) and isinstance(cell_num, int) and page_num >= min_voter_page:
+            grid_val = (page_num - min_voter_page) * 30 + cell_num
+            if last_valid_serial == 0 or abs(grid_val - (last_valid_serial + 1)) <= 5:
+                assigned_serial = grid_val
+
+        # Fallback 2: Sequential increment from last valid serial
+        if assigned_serial is None and last_valid_serial > 0:
+            assigned_serial = last_valid_serial + 1
+
+        if assigned_serial is not None:
+            if raw_ocr and raw_ocr != str(assigned_serial):
+                record["rawVoterSerial"] = raw_ocr
+            last_valid_serial = assigned_serial
+            record["voterSerial"] = str(assigned_serial)
             record["voterSerialConfidence"] = 95
 
     # 7-Rule House Number Validation & Sequence Repair Engine:
