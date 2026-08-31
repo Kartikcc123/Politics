@@ -1981,40 +1981,39 @@ def main():
         guardian_counts = {}
         for m in members:
             g = clean(m.get("guardianName"))
-            if g and len(g) >= 2:
+            if g and len(g) >= 3:
                 guardian_counts[g] = guardian_counts.get(g, 0) + 1
 
-        # Majority guardian names (appears >= 2 times in the same house)
+        # Strict Guard: Only activate family repair if a guardian name REPEATS >= 2 times in the SAME house
         majority_guardians = [g for g, c in guardian_counts.items() if c >= 2]
-        established_voter_names = [clean(m.get("name")) for m in members if clean(m.get("name"))]
+        if not majority_guardians:
+            continue
 
-        target_candidates = majority_guardians if majority_guardians else established_voter_names
-
-        # 1. Repair noisy guardian names in this family house
+        # 1. Repair noisy guardian names in this family house (High similarity >= 0.72 required)
         for rec in members:
             g = clean(rec.get("guardianName"))
             if not g:
                 continue
-            for cand in target_candidates:
-                if g != cand and len(g) >= 2 and len(cand) >= 3:
+            for cand in majority_guardians:
+                if g != cand and len(g) >= 3 and len(cand) >= 3:
                     sim = SequenceMatcher(None, g, cand).ratio()
                     prefix_match = (len(g) >= 3 and len(cand) >= 3 and (g[:3] in cand or cand[:3] in g))
-                    if sim >= 0.65 or (prefix_match and sim >= 0.50):
+                    if sim >= 0.72 or (prefix_match and sim >= 0.65):
                         rec["rawGuardianName"] = g
                         rec["guardianName"] = cand
                         rec.setdefault("reviewReasons", []).append("family_tree_guardian_repaired")
                         break
 
-        # 2. Repair voter's own name if it is a slightly noisy OCR variant of the family head (majority guardian)
+        # 2. Repair voter's own name only if it matches the repeated family head with high similarity >= 0.72
         for rec in members:
             name = clean(rec.get("name"))
             if not name:
                 continue
             for cand in majority_guardians:
-                if name != cand and len(name) >= 3 and len(cand) >= 3:
+                if name != cand and len(name) >= 3 and len(cand) >= 3 and abs(len(name) - len(cand)) <= 2:
                     sim = SequenceMatcher(None, name, cand).ratio()
                     prefix_match = (len(name) >= 3 and len(cand) >= 3 and (name[:3] in cand or cand[:3] in name))
-                    if sim >= 0.65 or (prefix_match and sim >= 0.52):
+                    if sim >= 0.72 or (prefix_match and sim >= 0.68):
                         rec["rawName"] = name
                         rec["name"] = cand
                         rec.setdefault("reviewReasons", []).append("family_tree_head_name_repaired")
