@@ -827,6 +827,7 @@ def process_page(page_path, output_dir, page_no):
                 record = hindi_record
                 record.update(preserved)
 
+        age_value = record.get("age")
         needs_field_retry = (
             not isinstance(age_value, int) or not 18 <= age_value <= 120
             or not record.get("guardianName")
