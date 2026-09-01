@@ -1554,7 +1554,7 @@ def read_fixed_header(page_path, is_voter_page=True):
             lang=os.getenv("OCR_LANGUAGES", "hin+eng"),
             psm=6,
         )
-        sec_num_match = re.search(r"(?:अनुभाग|section|\bsec\b)[^\d\n]{0,30}[:：;\-]?\s*([0-9\u0966-\u096f]{1,2})", section_text, re.IGNORECASE)
+        sec_num_match = re.search(r"(?:अनुभाग|अिुभाग|अनुमाग|section|\bsec\b)[^\d\n]{0,40}[:：;\-]?\s*([0-9\u0966-\u096f]{1,2})", section_text, re.IGNORECASE)
         if sec_num_match:
             result["sectionNumber"] = clean(sec_num_match.group(1)).translate(str.maketrans("०१२३४५६७८९", "0123456789"))
         else:

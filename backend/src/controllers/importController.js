@@ -1005,18 +1005,38 @@ const parsePdfMembers = async (filePath, importFileName, onOcrProgress) => {
     const headerSectionMap = header.sectionMap && typeof header.sectionMap === 'object' ? header.sectionMap : {};
     const useHeaderSectionFallback = Object.keys(headerSectionMap).length <= 1;
     const ocrMembers = (ocr.voterRecords || []).map((record) => {
-      const sectionNumber = record.sectionNumber || (useHeaderSectionFallback ? header.sectionNumber : '');
-      const sectionKey = String(sectionNumber || '');
-      const mappedSectionName = sectionKey ? headerSectionMap[sectionKey] : '';
-      const sectionName = mappedSectionName || sectionNames.get(sectionKey) || record.sectionName || (useHeaderSectionFallback ? header.sectionName : '');
-      if (sectionKey && sectionName && !sectionNames.has(sectionKey)) sectionNames.set(sectionKey, sectionName);
+      let recSecName = cleanSectionName(record.sectionName || '');
+      let sectionNumber = record.sectionNumber;
+      let sectionName = '';
+
+      if (recSecName && headerSectionMap && Object.keys(headerSectionMap).length > 0) {
+        const entry = Object.entries(headerSectionMap).find(([k, v]) => {
+          const cv = cleanSectionName(v);
+          return cv === recSecName || cv.includes(recSecName) || recSecName.includes(cv);
+        });
+        if (entry) {
+          sectionNumber = entry[0];
+          sectionName = entry[1];
+        } else {
+          sectionName = recSecName;
+        }
+      }
+
+      if (!sectionName) {
+        const secKey = String(sectionNumber || (useHeaderSectionFallback ? header.sectionNumber : ''));
+        const mappedName = secKey ? headerSectionMap[secKey] : '';
+        sectionName = mappedName || sectionNames.get(secKey) || recSecName || (useHeaderSectionFallback ? header.sectionName : '');
+      }
+      if (!sectionNumber && useHeaderSectionFallback) sectionNumber = header.sectionNumber;
+      const finalSecKey = String(sectionNumber || '');
+      if (finalSecKey && sectionName && !sectionNames.has(finalSecKey)) sectionNames.set(finalSecKey, sectionName);
       return {
         ...header,
         assemblyNumber: header.assemblyNumber || record.assemblyNumber,
         assemblyName: header.assemblyName || record.assemblyName,
         partNumber: header.partNumber || record.partNumber,
-        sectionNumber,
-        sectionName,
+        sectionNumber: sectionNumber || record.sectionNumber || '',
+        sectionName: sectionName || header.sectionName || '',
         name: record.name || '',
         guardianName: record.guardianName || '',
         relationType: record.relationType || '',
