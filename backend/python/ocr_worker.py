@@ -1929,22 +1929,19 @@ def main():
         cell_num = record.get("cell")
 
         assigned_serial = None
-        expected_grid_val = None
-        if isinstance(page_num, int) and isinstance(cell_num, int) and page_num >= 3:
-            expected_grid_val = (page_num - 3) * 30 + cell_num
 
+        # Primary: Direct top-left card serial box OCR
         if raw_ocr.isdigit():
             val = int(raw_ocr)
-            if expected_grid_val is not None and abs(val - expected_grid_val) <= 5:
-                assigned_serial = val
-            elif last_valid_serial > 0 and (last_valid_serial < val <= last_valid_serial + 35):
+            if last_valid_serial == 0 or (last_valid_serial < val <= last_valid_serial + 40):
                 assigned_serial = val
 
-        if assigned_serial is None and expected_grid_val is not None and expected_grid_val > 0:
-            assigned_serial = expected_grid_val
-
+        # Fallback 1: Sequential increment from last valid serial
         if assigned_serial is None and last_valid_serial > 0:
             assigned_serial = last_valid_serial + 1
+        # Fallback 2: Page grid estimation for start of roll
+        elif assigned_serial is None and isinstance(page_num, int) and isinstance(cell_num, int) and page_num >= 3:
+            assigned_serial = (page_num - 3) * 30 + cell_num
 
         if assigned_serial is not None:
             if raw_ocr and raw_ocr != str(assigned_serial):
