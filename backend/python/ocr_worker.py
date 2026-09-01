@@ -76,6 +76,7 @@ def clean_person_name(value):
     text = re.sub(r"(?:^|\s)(?:लाटु|लाडु|लादु)(?=$|\s)", " लादू ", text)
     text = re.sub(r"(?:^|\s)डालु(?=$|\s)", " डालू ", text)
     text = re.sub(r"(?<=\u0900-\u097F)ताल\b", "लाल", text)
+    text = re.sub(r"\bअजपुर्नताल\b|\bअजपुर्नलाल\b|\bअर्जुुनलाल\b", "अर्जुनलाल", text)
     text = re.sub(r"(?<=\u0900-\u097F)ताम\b", "राम", text)
     text = re.sub(r"\bकुमारr\b|\bकुभार\b|\bकुसार\b|\bकुनार\b", "कुमार", text)
     text = re.sub(r"\bदेबी\b", "देवी", text)
@@ -1928,20 +1929,20 @@ def main():
         cell_num = record.get("cell")
 
         assigned_serial = None
+        expected_grid_val = None
+        if isinstance(page_num, int) and isinstance(cell_num, int) and page_num >= 3:
+            expected_grid_val = (page_num - 3) * 30 + cell_num
 
-        # Check if direct OCR serial is valid and sequentially plausible
         if raw_ocr.isdigit():
             val = int(raw_ocr)
-            if last_valid_serial == 0 or (last_valid_serial < val <= last_valid_serial + 35):
+            if expected_grid_val is not None and abs(val - expected_grid_val) <= 5:
+                assigned_serial = val
+            elif last_valid_serial > 0 and (last_valid_serial < val <= last_valid_serial + 35):
                 assigned_serial = val
 
-        # Fallback 1: For standard 30-card pages, check grid formula
-        if assigned_serial is None and isinstance(page_num, int) and isinstance(cell_num, int) and page_num >= min_voter_page:
-            grid_val = (page_num - min_voter_page) * 30 + cell_num
-            if last_valid_serial == 0 or abs(grid_val - (last_valid_serial + 1)) <= 5:
-                assigned_serial = grid_val
+        if assigned_serial is None and expected_grid_val is not None and expected_grid_val > 0:
+            assigned_serial = expected_grid_val
 
-        # Fallback 2: Sequential increment from last valid serial
         if assigned_serial is None and last_valid_serial > 0:
             assigned_serial = last_valid_serial + 1
 

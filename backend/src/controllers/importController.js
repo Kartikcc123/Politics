@@ -232,8 +232,9 @@ const looksLikeBadLatinSection = (value = '') => {
 const cleanSectionName = (value = '') => {
   let text = cleanHeaderName(value);
   if (!text) return '';
-  text = text.replace(/\s*(?:ore|hier|uzar|sifer|zadt|merit|oiler|freran|after|aftet)\b.*$/gi, '').trim();
-  if (/EPIC|RJ\/|Google|Polling|Station|Map|View/i.test(text)) return '';
+  text = text.replace(/\s*(?:we\s*,?\s*fer|wrefer|ore|hier|uzar|sifer|zadt|merit|oiler|freran|after|aftet)\b.*$/gi, '').trim();
+  if (/EPIC|RJ\/|Google|Polling|Station|Map|View|[\[\]{}|\\&_~]/i.test(text)) return '';
+  if (text.length > 75) return '';
   if (devanagariTextCount(text) < 2 || looksLikeBadLatinSection(text)) return '';
   return text;
 };
