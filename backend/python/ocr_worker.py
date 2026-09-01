@@ -10,6 +10,20 @@ from pathlib import Path
 import cv2
 import pytesseract
 
+# Auto-configure tesseract binary path on Windows if not in PATH
+if sys.platform.startswith("win"):
+    for tess_path in [
+        r"C:\Program Files\Tesseract-OCR\tesseract.exe",
+        r"C:\Program Files (x86)\Tesseract-OCR\tesseract.exe",
+        Path.home() / "AppData" / "Local" / "Programs" / "Tesseract-OCR" / "tesseract.exe",
+    ]:
+        if Path(tess_path).exists():
+            pytesseract.pytesseract.tesseract_cmd = str(tess_path)
+            tess_dir = str(Path(tess_path).parent)
+            if tess_dir not in os.environ.get("PATH", ""):
+                os.environ["PATH"] = tess_dir + os.pathsep + os.environ.get("PATH", "")
+            break
+
 # Auto-configure bundled Hindi OCR data path if missing or invalid
 current_tessdata = os.environ.get("TESSDATA_PREFIX", "")
 if not current_tessdata or not (Path(current_tessdata) / "hin.traineddata").exists():
