@@ -431,12 +431,35 @@ const lowMemoryOcrPdf = async (pdfPath, importFileName, pageRange = {}) => {
     'postOffice', 'policeStation', 'tehsil', 'district',
     'gramPanchayat', 'village', 'pinCode',
   ];
+  const docSectionMap = header.sectionMap && typeof header.sectionMap === 'object' ? header.sectionMap : {};
+  const defaultSecNum = docSectionMap['1'] ? '1' : (Object.keys(docSectionMap)[0] || '');
+
+  let lastKnownSecNum = '';
   const inheritedRecords = records.map((record) => {
     const inherited = { ...record };
     for (const field of masterContextFields) {
       if ((inherited[field] === undefined || inherited[field] === null || String(inherited[field]).trim() === '') && header[field]) {
         inherited[field] = header[field];
       }
+    }
+    let secNum = String(inherited.sectionNumber || '').trim();
+    if (!secNum || !docSectionMap[secNum]) {
+      if (secNum && docSectionMap) {
+        const matchEntry = Object.entries(docSectionMap).find(([k, v]) => v && inherited.sectionName && (v.includes(inherited.sectionName) || inherited.sectionName.includes(v)));
+        if (matchEntry) secNum = matchEntry[0];
+      }
+      if (!secNum || !docSectionMap[secNum]) {
+        if (lastKnownSecNum && docSectionMap[lastKnownSecNum]) {
+          secNum = lastKnownSecNum;
+        } else if (defaultSecNum) {
+          secNum = defaultSecNum;
+        }
+      }
+    }
+    if (secNum && docSectionMap[secNum]) {
+      inherited.sectionNumber = secNum;
+      inherited.sectionName = docSectionMap[secNum];
+      lastKnownSecNum = secNum;
     }
     return inherited;
   });

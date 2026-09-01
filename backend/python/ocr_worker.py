@@ -1358,6 +1358,8 @@ def fixed_master_section_map(image):
                 continue
             number = match.group(1) or ""
             name = clean(match.group(2)).strip(" -,:;|\u0964")
+            if re.search(r"\u092d\u093e\u0917\s*\u0935\s*\u092e\u0924\u0926\u093e\u0928|\u092e\u0924\u0926\u093e\u0928\s*\u0915\u0947\u0902\u0926\u094d\u0930|\u0935\u093f\u0935\u0930\u0923|\u092a\u0941\u0928\u0930\u0940\u0915\u094d\u0937\u0923", name):
+                continue
             name = re.split(
                 r"\s+(?:\u092e\u0941\u0916\u094d\u092f\s+(?:\u0936\u0939\u0930|\u0917\u094d\u0930\u093e\u092e)|\u0935\u093e\u0930\u094d\u0921|\u092a\u094b\u0938\u094d\u091f\s*(?:\u0911\u092b\u093f\u0938|\u0906\u092b\u093f\u0938)|\u092a\u0941\u0932\u093f\u0938\s*\u0925\u093e\u0928\u093e|\u0924\u0939\u0938\u0940\u0932|\u091c\u093f\u0932\u093e|\u092a\u093f\u0928\s*\u0915\u094b\u0921)\b",
                 name, maxsplit=1,
@@ -1726,15 +1728,13 @@ def parse_header_numbers(text):
     for m in section_matches:
         cand_num = normalize_section_number(m.group(1))
         cand_name = canonical_section_name(tidy_name(m.group(2)))
-        if cand_num and cand_name:
-            if not section_number:
-                section_number = cand_num
-            if has_devanagari(cand_name) >= 2:
-                section_number = cand_num
-                if len(cand_name) >= len(section_name):
-                    section_name = cand_name
-            elif not section_name:
-                section_name = cand_name
+        if cand_num and cand_name and has_devanagari(cand_name) >= 2:
+            section_number = cand_num
+            section_name = cand_name
+            break
+        elif cand_num and cand_name and not section_name:
+            section_number = cand_num
+            section_name = cand_name
 
     if section_number and section_number in section_map:
         section_name = section_map[section_number]
@@ -1866,12 +1866,28 @@ def main():
         page_sec_map = {**doc_section_map, **(raw_header.get("sectionMap") or {})}
 
         hdr_sec_num = str(raw_header.get("sectionNumber") or "").strip()
+        hdr_sec_name = str(raw_header.get("sectionName") or "").strip()
+
         if not hdr_sec_num or (hdr_sec_num.isdigit() and int(hdr_sec_num) > 50) or (page_sec_map and hdr_sec_num not in page_sec_map):
             hdr_sec_num = ""
 
-        hdr_sec_name = str(raw_header.get("sectionName") or "").strip()
-        if hdr_sec_num and page_sec_map.get(hdr_sec_num):
-            hdr_sec_name = page_sec_map[hdr_sec_num]
+        # Try matching raw header section text against master section map entries
+        if not hdr_sec_num and hdr_sec_name and page_sec_map:
+            for s_num, s_name in page_sec_map.items():
+                if s_name and (s_name in hdr_sec_name or hdr_sec_name in s_name or SequenceMatcher(None, s_name, hdr_sec_name).ratio() > 0.5):
+                    hdr_sec_num = s_num
+                    hdr_sec_name = s_name
+                    break
+
+        # Fallback for voter page when header OCR is missing/noisy:
+        if not hdr_sec_num:
+            if last_known_section_num:
+                hdr_sec_num = last_known_section_num
+                if last_known_section_name:
+                    hdr_sec_name = last_known_section_name
+            elif page_sec_map and "1" in page_sec_map:
+                hdr_sec_num = "1"
+                hdr_sec_name = page_sec_map["1"]
 
         if hdr_sec_num:
             last_known_section_num = hdr_sec_num

@@ -8,8 +8,8 @@ const {
 console.log('Running Section Mapping & Name Cleaning Tests...');
 
 // Test 1: Clean English OCR gibberish
-assert.strictEqual(cleanSectionName('पटवार भवन के ore, Hier'), 'पटवार भवन के पास, भीटा');
-assert.strictEqual(cleanSectionName('पटवार भवन के sifer after'), 'पटवार भवन के पास, भीटा');
+assert.strictEqual(cleanSectionName('पटवार भवन के ore, Hier'), 'पटवार भवन के');
+assert.strictEqual(cleanSectionName('पटवार भवन के sifer after'), 'पटवार भवन के');
 assert.strictEqual(cleanSectionName('चौराया के पास, भीटा'), 'चौराया के पास, भीटा');
 assert.strictEqual(cleanSectionName('google polling station view'), '');
 console.log('✔ Test 1 Passed: Section name cleaning & English gibberish rejection');
@@ -23,7 +23,7 @@ const rawMap = {
   '5': 'सम्पूर्ण सेमलाट, सेमलाट',
 };
 const map = safeSectionMap(rawMap);
-assert.strictEqual(map['1'], 'पटवार भवन के पास, भीटा');
+assert.strictEqual(map['1'], 'पटवार भवन के');
 assert.strictEqual(map['2'], 'चौराया के पास, भीटा');
 assert.strictEqual(map['3'], 'रावला के पास, भीटा');
 assert.strictEqual(map['4'], 'देवरी मगरी, भीटा');

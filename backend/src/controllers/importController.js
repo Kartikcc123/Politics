@@ -234,9 +234,6 @@ const cleanSectionName = (value = '') => {
   if (!text) return '';
   text = text.replace(/\s*(?:ore|hier|uzar|sifer|zadt|merit|oiler|freran|after|aftet)\b.*$/gi, '').trim();
   if (/EPIC|RJ\/|Google|Polling|Station|Map|View/i.test(text)) return '';
-  if ((/भवन/i.test(text) || /पटवार/i.test(text)) && /ore|hier|sifer|after|uzar|भीट/i.test(value)) {
-    return 'पटवार भवन के पास, भीटा';
-  }
   if (devanagariTextCount(text) < 2 || looksLikeBadLatinSection(text)) return '';
   return text;
 };
@@ -750,7 +747,7 @@ const parseHeader = (text) => {
     /(?:भाग|part)\s*(?:संख्या|नं\.?|number|no\.?)?\s*[:：-]*\s*([0-9O]{1,4})/i,
   );
   const section = normalized.match(
-    /(?:अनुभाग|section|SUT|UM|UT|SU|अिुभाग|अनुमाग)\s*(?:की)?\s*(?:संख्या|नं\.?|number|no\.?)?\s*(?:व|एवं|and)?\s*(?:नाम|name)?\s*[:：;\-]*\s*([0-9O]{1,3})?\s*(?:[-–:]\s*)?(.+?)(?=\s*(?:भाग\s*(?:संख्या|नं)|निर्वाचक|मतदाता|part\s*(?:number|no))|$)/i,
+    /(?:अनुभाग|section|SUT|UM|UT|SU|अिुभाग|अनुमाग)\s*(?:की)?\s*(?:संख्या|नं\.?|number|no\.?)?\s*(?:व|एवं|and)?\s*(?:नाम|name)?\s*[:：;\-]*\s*([0-9O\u0966-\u096f]{1,3})?\s*(?:[-–:]\s*)?(.+?)(?=\s*(?:भाग\s*(?:संख्या|नं)|निर्वाचक|मतदाता|part\s*(?:number|no))|$)/i,
   );
   const digits = (value) => value?.replace(/O/gi, '0').replace(/[०-९]/g, (digit) => '०१२३४५६७८९'.indexOf(digit));
   return {
