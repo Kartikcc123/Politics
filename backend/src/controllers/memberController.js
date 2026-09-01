@@ -732,8 +732,11 @@ exports.bulkLocationCorrection = async (req, res, next) => {
 exports.filterOptions = async (req, res, next) => {
   try {
     const { rollType, contactType, matchStatus, municipalWard } = req.query;
-    const definition = optionDefinitions[req.query.field];
-    if (!definition) return res.status(400).json({ message: 'Invalid filter field' });
+    let field = req.query.field;
+    if (field === 'gav' || field === 'gaon' || field === 'gaw') field = 'village';
+    if (field === 'part' || field === 'boothNumber') field = 'booth';
+    if (field === 'section') field = 'sectionName';
+
     const filter = applyMemberScope(req.currentUser, {});
     const selectedRoll = String(rollType || "assembly").toLowerCase();
     if (contactType !== "personal") {
@@ -768,6 +771,38 @@ exports.filterOptions = async (req, res, next) => {
     if (req.query.missingHouse === 'true') filter.$and = [...(filter.$and || []), { $or: [{ houseNumber: '' }, { houseNumber: null }, { houseNumber: { $exists: false } }] }];
 
     const search = String(req.query.q || '').trim();
+    const normalizedSearch = search.toLocaleLowerCase('hi-IN');
+
+    // If no specific field requested, build options for all major location filter categories
+    if (!field) {
+      const keysToFetch = ['village', 'booth', 'sectionName', 'assembly', 'gramPanchayat', 'caste', 'occupation'];
+      const result = {};
+      let allItems = [];
+      for (const k of keysToFetch) {
+        const def = optionDefinitions[k];
+        if (!def) continue;
+        const gId = def.group || `$${def.field}`;
+        const nonE = def.match || { [def.field]: { $nin: ['', null] } };
+        const rows = await Member.aggregate([
+          { $match: { ...filter, ...nonE } },
+          { $group: { _id: gId, count: { $sum: 1 } } },
+          { $sort: { count: -1, _id: 1 } },
+          { $limit: 200 },
+        ]);
+        const opts = rows.map((row) => def.option
+          ? def.option(row._id || {}, row.count)
+          : ({ value: String(row._id), label: String(row._id), count: row.count, filters: { [def.field]: String(row._id) } }))
+          .filter((item) => item.value && (!normalizedSearch || item.label.toLocaleLowerCase('hi-IN').includes(normalizedSearch)));
+        result[k] = opts;
+        allItems = allItems.concat(opts);
+      }
+      result.items = allItems;
+      return res.json(result);
+    }
+
+    const definition = optionDefinitions[field];
+    if (!definition) return res.status(400).json({ message: 'Invalid filter field' });
+
     const groupId = definition.group || `$${definition.field}`;
     const nonEmpty = definition.match || { [definition.field]: { $nin: ['', null] } };
     const rows = await Member.aggregate([
@@ -776,7 +811,6 @@ exports.filterOptions = async (req, res, next) => {
       { $sort: { count: -1, _id: 1 } },
       { $limit: 500 },
     ]);
-    const normalizedSearch = search.toLocaleLowerCase('hi-IN');
     const items = rows.map((row) => definition.option
       ? definition.option(row._id || {}, row.count)
       : ({ value: String(row._id), label: String(row._id), count: row.count, filters: { [definition.field]: String(row._id) } }))
@@ -789,7 +823,7 @@ exports.filterOptions = async (req, res, next) => {
         return compareLabels(a, b);
       })
       .slice(0, Math.min(Math.max(Number(req.query.limit) || 80, 1), 200));
-    res.json({ items });
+    res.json({ items, [field]: items });
   } catch (error) { next(error); }
 };
 exports.suggestions = async (req, res, next) => {
@@ -1149,44 +1183,7 @@ exports.duplicates = async (req, res, next) => {
   }
 };
 
-exports.filterOptions = async (req, res, next) => {
-  try {
-    const { field = 'sectionName', q = '', limit = 160 } = req.query;
-    const scope = applyMemberScope(req.currentUser, {});
 
-    let dbField = field;
-    if (field === 'section') dbField = 'sectionName';
-    if (field === 'part' || field === 'booth') dbField = 'partNumber';
-    if (field === 'assembly') dbField = 'assemblyName';
-
-    const matchQuery = { ...scope };
-    if (q && String(q).trim()) {
-      matchQuery[dbField] = { $regex: String(q).trim(), $options: 'i' };
-    } else {
-      matchQuery[dbField] = { $nin: [null, ''] };
-    }
-
-    const items = await Member.aggregate([
-      { $match: matchQuery },
-      { $group: { _id: `$${dbField}`, count: { $sum: 1 } } },
-      { $sort: { count: -1, _id: 1 } },
-      { $limit: parseInt(limit, 10) || 160 },
-      {
-        $project: {
-          _id: 0,
-          label: '$_id',
-          value: '$_id',
-          count: 1,
-          filters: { [dbField]: '$_id' },
-        },
-      },
-    ]);
-
-    res.json({ items, total: items.length });
-  } catch (error) {
-    next(error);
-  }
-};
 
 
 exports.suggestions = async (req, res, next) => {

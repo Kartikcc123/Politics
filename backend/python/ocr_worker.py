@@ -84,7 +84,7 @@ def clean_person_name(value):
     text = re.sub(r"\bप्रिाप\b|\bप्रिा\b|\bप्रताश\b", "प्रताप", text)
     text = re.sub(r"\bकन्द्रया\b|\bकन्हेया\b", "कन्हैया", text)
     text = re.sub(r"\bरतनी ब्\b|\bरतनी ब्र\b|\bकेली ब्\b", lambda m: m.group(0).replace("ब्", "बाई").replace("ब्र", "बाई"), text)
-    text = re.sub(r"\bपुशपा\b", "पुष्पा", text)
+    text = re.sub(r"(?:^|\s)(?:पुशपा|पुष्या|पुषपा)(?=$|\s)", " पुष्पा ", text)
     text = re.sub(r"\bकुमावतत\b", "कुमावत", text)
     text = re.sub(r"\bपूजा क्र\b", "पूजा", text)
     text = clean(text).strip(" .-|:")
@@ -160,7 +160,7 @@ def ocr_house(card):
     height, width = card.shape[:2]
     region = card[
         round(height * 0.45):round(height * 0.63),
-        round(width * 0.17):round(width * 0.27),
+        round(width * 0.23):round(width * 0.58),
     ]
     if region.size == 0:
         return ""
@@ -173,10 +173,14 @@ def ocr_house(card):
     values = []
     for variant in variants:
         text = pytesseract.image_to_string(
-            variant, lang="eng", config="--psm 7 -c tessedit_char_whitelist=0123456789/-",
+            variant, lang="eng", config="--psm 6 -c tessedit_char_whitelist=0123456789/-",
         )
-        values.append(clean_house(text))
-    return values[0] if values[0] and values[0] == values[1] else ""
+        cleaned = clean_house(text)
+        if cleaned:
+            values.append(cleaned)
+    if len(values) >= 2 and values[0] == values[1]:
+        return values[0]
+    return values[0] if len(values) == 1 else ""
 
 def _dual_fixed_choice(card, y1, y2, x1, x2, extractor, language="eng", whitelist=""):
     """Return a fixed-region value only when two preprocessing passes agree."""
@@ -1018,8 +1022,21 @@ def process_page(page_path, output_dir, page_no):
         else:
             index += 1
 
-    # Recover a dropped leading digit only when both adjacent cards provide the
-    # same anchor and the OCR value is its exact suffix (34, 4, 34 -> 34).
+    # Repair an isolated hyphenated/noisy value surrounded by equal house anchors (e.g., 13, 5-13, 13 -> 13).
+    for index in range(1, len(ordered_records) - 1):
+        previous = str(ordered_records[index - 1].get("houseNumber") or "")
+        current = str(ordered_records[index].get("houseNumber") or "")
+        following = str(ordered_records[index + 1].get("houseNumber") or "")
+        if previous and previous.isdigit() and following == previous and current != previous:
+            clean_curr = re.sub(r"[^\d]", "", current)
+            if current.endswith(previous) or clean_curr.endswith(previous) or clean_curr == previous:
+                target = ordered_records[index]
+                target["rawHouseNumber"] = target.get("rawHouseNumber") or current
+                target["houseNumber"] = previous
+                target["houseNumberConfidence"] = 90
+                target["houseOcrDisagreement"] = True
+
+    # Recover a dropped leading digit when current is a suffix of previous (e.g., 11, 1, 11 -> 11 or 11, 1, 12 -> 11).
     for index in range(1, len(ordered_records) - 1):
         previous = str(ordered_records[index - 1].get("houseNumber") or "")
         current = str(ordered_records[index].get("houseNumber") or "")
@@ -1028,15 +1045,15 @@ def process_page(page_path, output_dir, page_no):
         if (
             previous.isdigit()
             and current.isdigit()
-            and following == previous
             and 1 <= missing_prefix <= 2
             and previous.endswith(current)
         ):
-            target = ordered_records[index]
-            target["rawHouseNumber"] = target.get("rawHouseNumber") or current
-            target["houseNumber"] = previous
-            target["houseNumberConfidence"] = 90
-            target["houseOcrDisagreement"] = True
+            if following.isdigit() and int(previous) <= int(following) <= int(previous) + 2:
+                target = ordered_records[index]
+                target["rawHouseNumber"] = target.get("rawHouseNumber") or current
+                target["houseNumber"] = previous
+                target["houseNumberConfidence"] = 90
+                target["houseOcrDisagreement"] = True
 
     # Correct a single prefixed value at a real house transition, for example
     # 37, 538, 38. The suffix must exactly equal the following anchor and that
@@ -1055,6 +1072,29 @@ def process_page(page_path, output_dir, page_no):
             target["houseNumber"] = following
             target["houseNumberConfidence"] = 90
             target["houseOcrDisagreement"] = True
+
+    # Correct a prefixed house number on the last card of the page (e.g., previous cards 15, current 516 -> 16).
+    if len(ordered_records) >= 2:
+        last = ordered_records[-1]
+        prev = ordered_records[-2]
+        last_val = str(last.get("houseNumber") or "")
+        prev_val = str(prev.get("houseNumber") or "")
+        if last_val.isdigit() and prev_val.isdigit():
+            prev_num = int(prev_val)
+            last_num = int(last_val)
+            if last_num > prev_num + 20:
+                cand_next = str(prev_num + 1)
+                cand_same = prev_val
+                if last_val.endswith(cand_next) and len(last_val) > len(cand_next):
+                    last["rawHouseNumber"] = last.get("rawHouseNumber") or last_val
+                    last["houseNumber"] = cand_next
+                    last["houseNumberConfidence"] = 90
+                    last["houseOcrDisagreement"] = True
+                elif last_val.endswith(cand_same) and len(last_val) > len(cand_same):
+                    last["rawHouseNumber"] = last.get("rawHouseNumber") or last_val
+                    last["houseNumber"] = cand_same
+                    last["houseNumberConfidence"] = 90
+                    last["houseOcrDisagreement"] = True
 
     # A large house jump is legitimate when it forms a repeated run (for
     # example 39, 115, 115, 115). A one-card jump has insufficient evidence:
