@@ -745,7 +745,7 @@ const parseHeader = (text) => {
     /(?:विधान\s*सभा\s*(?:क्षेत्र)?|assembly\s*(?:constituency)?|AC)[^:：\n]{0,110}[:：-]?\s*([0-9O०-९]{1,3})\s*(?:[-–:]\s*)?(.+?)(?=\s*(?:अनुभाग|भाग\s*(?:संख्या|नं)|section|part\s*(?:number|no)|निर्वाचक)|$)/i,
   );
   const part = normalized.match(
-    /(?:भाग|part)\s*(?:संख्या|नं\.?|number|no\.?)?\s*[:：-]*\s*([0-9O]{1,4})/i,
+    /(?:भाग|part)\s*(?:संख्या|नं\.?|number|no\.?)?\s*[:：-]*\s*([0-9O\u0966-\u096f]{1,4})/i,
   );
   const section = normalized.match(
     /(?:अनुभाग|section|SUT|UM|UT|SU|अिुभाग|अनुमाग)\s*(?:की)?\s*(?:संख्या|नं\.?|number|no\.?)?\s*(?:व|एवं|and)?\s*(?:नाम|name)?\s*[:：;\-]*\s*([0-9O\u0966-\u096f]{1,3})?\s*(?:[-–:]\s*)?(.+?)(?=\s*(?:भाग\s*(?:संख्या|नं)|निर्वाचक|मतदाता|part\s*(?:number|no))|$)/i,
