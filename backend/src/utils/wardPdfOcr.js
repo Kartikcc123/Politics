@@ -117,11 +117,24 @@ exports.ocrWardPdf = async (pdfPath, importFileName, { onProgress } = {}) => {
     }
     onProgress?.({ phase: 'rendering', processedPages: page, totalPages });
   }
+  const photoDir = path.join(workDir, 'photos');
+  fs.mkdirSync(photoDir, { recursive: true });
   let processed = 0;
-  const result = await runWorker({ pages, pageNumbers, epicHints: hints }, (event) => {
+  const result = await runWorker({ pages, pageNumbers, epicHints: hints, photoOutputDir: photoDir }, (event) => {
     processed += 1;
     onProgress?.({ phase: 'ocr', processedPages: processed, totalPages });
   });
+
+  // Convert cropped photo disk paths to public web URLs
+  const { uploadPublicPath } = require('./uploadPath');
+  for (const record of result.records || []) {
+    if (record.photo && fs.existsSync(record.photo)) {
+      const relPath = path.relative(workDir, record.photo).replace(/\\/g, '/');
+      const baseSub = path.basename(workDir);
+      record.photo = `/uploads/ward-ocr/${baseSub}/${relPath}`;
+    }
+  }
+
   const assemblyHint = embeddedCover.match(/(?:^|\s)(1\d{2})\s*-/m);
   const wardPartHint = embeddedCover.match(/:\s*(\d{1,3})\s+[^:\n]{1,120}:\s*(\d{1,3})\s*$/m);
   result.header ||= {};

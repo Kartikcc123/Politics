@@ -12,6 +12,20 @@ sys.stdin.reconfigure(encoding="utf-8")
 sys.stdout.reconfigure(encoding="utf-8")
 sys.stderr.reconfigure(encoding="utf-8")
 
+# Auto-configure tesseract binary path on Windows if not in PATH
+if sys.platform.startswith("win"):
+    for tess_path in [
+        r"C:\Program Files\Tesseract-OCR\tesseract.exe",
+        r"C:\Program Files (x86)\Tesseract-OCR\tesseract.exe",
+        Path.home() / "AppData" / "Local" / "Programs" / "Tesseract-OCR" / "tesseract.exe",
+    ]:
+        if Path(tess_path).exists():
+            pytesseract.pytesseract.tesseract_cmd = str(tess_path)
+            tess_dir = str(Path(tess_path).parent)
+            if tess_dir not in os.environ.get("PATH", ""):
+                os.environ["PATH"] = tess_dir + os.pathsep + os.environ.get("PATH", "")
+            break
+
 
 def clean(value):
     return re.sub(r"\s+", " ", value or "").strip()
@@ -29,14 +43,19 @@ def field(text, labels):
 
 def normalize_epic(value):
     raw = re.sub(r"[^A-Z0-9/]", "", str(value or "").upper())
-    modern = re.search(r"([A-Z]{3})([0-9OILSZBG]{7})", raw)
+    letter_map = str.maketrans({"0": "O", "1": "I", "2": "Z", "4": "A", "5": "S", "6": "G", "7": "T", "8": "B", "3": "E"})
+    digit_map = str.maketrans({"O": "0", "Q": "0", "D": "0", "I": "1", "L": "1", "Z": "2", "S": "5", "B": "8", "G": "6", "T": "7", "A": "4", "E": "3"})
+    modern = re.search(r"([A-Z0-9]{3})([A-Z0-9]{7})", raw)
     if modern:
-        tail = modern.group(2).translate(str.maketrans("OILSZBG", "0115286"))
-        return modern.group(1) + tail
-    legacy = re.search(r"R[A-Z]/([0-9OIL]{1,3})/([0-9OIL]{1,3})/([0-9OIL]{4,8})", raw)
+        prefix = modern.group(1).translate(letter_map)
+        tail = modern.group(2).translate(digit_map)
+        if re.fullmatch(r"[A-Z]{3}", prefix) and re.fullmatch(r"\d{7}", tail):
+            return prefix + tail
+    legacy = re.search(r"([A-Z]{2,3})/([0-9OILSZBG]{1,3})/([0-9OILSZBG]{1,3})/([0-9OILSZBG]{4,8})", raw)
     if legacy:
-        parts = [part.translate(str.maketrans("OIL", "011")) for part in legacy.groups()]
-        return "RJ/" + "/".join(parts)
+        prefix = legacy.group(1)
+        parts = [part.translate(digit_map) for part in legacy.groups()[1:]]
+        return prefix + "/" + "/".join(parts)
     return ""
 
 
@@ -58,6 +77,43 @@ def parse_header(text):
         "partNumber": part.group(1) if part else "",
         "pollingStation": station,
     }
+
+
+def opencv_contour_grid_segmentation(image):
+    """Detect voter card bounding rectangles using OpenCV Morphological Line & Contour Analysis.
+    Works for any page size (A4, A3, letter) and any grid layout (2-col x 8-row, 3-col x 10-row, etc.)."""
+    try:
+        gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+        height, width = gray.shape[:2]
+        thresh = cv2.adaptiveThreshold(gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY_INV, 15, 2)
+        
+        kernel_h = cv2.getStructuringElement(cv2.MORPH_RECT, (max(10, width // 25), 1))
+        kernel_v = cv2.getStructuringElement(cv2.MORPH_RECT, (1, max(10, height // 35)))
+        
+        horizontal = cv2.morphologyEx(thresh, cv2.MORPH_OPEN, kernel_h)
+        vertical = cv2.morphologyEx(thresh, cv2.MORPH_OPEN, kernel_v)
+        
+        table_grid = cv2.add(horizontal, vertical)
+        contours, _ = cv2.findContours(table_grid, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+        
+        card_boxes = []
+        min_area = (width * height) * 0.005
+        max_area = (width * height) * 0.15
+        
+        for cnt in contours:
+            x, y, w, h = cv2.boundingRect(cnt)
+            area = w * h
+            aspect_ratio = w / float(h)
+            if min_area <= area <= max_area and 1.2 <= aspect_ratio <= 4.5:
+                card_boxes.append((y, x, w, h))
+                
+        if len(card_boxes) >= 4:
+            row_bin = max(10, int(height * 0.04))
+            card_boxes.sort(key=lambda b: (b[0] // row_bin, b[1]))
+            return card_boxes
+    except Exception:
+        pass
+    return []
 
 
 def voter_name_anchors(image):
@@ -125,12 +181,57 @@ def card_text_from_page_data(data, left, top, right, bottom):
     )
 
 
+# Load Master Hindi Voter Name Dictionary (69,000+ entries) for fast OCR lookup
+HINDI_NAME_DICT = set()
+try:
+    dict_file_path = os.path.join(os.path.dirname(__file__), "hindi_voter_names_dict.json")
+    if os.path.exists(dict_file_path):
+        with open(dict_file_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+            HINDI_NAME_DICT = set(data.get("names", []))
+except Exception as e:
+    pass
+
+
+def correct_name_with_dictionary(name_text):
+    if not name_text or not HINDI_NAME_DICT:
+        return name_text
+    tokens = name_text.split()
+    corrected = []
+    for token in tokens:
+        clean_tok = re.sub(r"[^\u0900-\u097F]", "", token)
+        if not clean_tok or len(clean_tok) < 2:
+            corrected.append(token)
+            continue
+        if clean_tok in HINDI_NAME_DICT:
+            corrected.append(clean_tok)
+            continue
+        best_match = None
+        best_ratio = 0.85
+        len_tok = len(clean_tok)
+        candidates = [w for w in HINDI_NAME_DICT if abs(len(w) - len_tok) <= 1 and w[0] == clean_tok[0]]
+        for candidate in candidates:
+            r = pytesseract.difflib.SequenceMatcher(None, clean_tok, candidate).ratio() if hasattr(pytesseract, "difflib") else 0
+            if r > best_ratio:
+                best_ratio = r
+                best_match = candidate
+        corrected.append(best_match if best_match else token)
+    return " ".join(corrected)
+
+
 def clean_person_name(value):
     if not value:
         return ""
     text = re.sub(r"[^\u0900-\u097F\s.-]", " ", value)
     text = clean(text).strip(" .-")
+    text = re.sub(r"(?:^|\s)(?:सुगणी|सुगी)(?=$|\s)", " सुखी ", text)
+    text = re.sub(r"(?:^|\s)बब्रा(?=$|\s)", " बन्ना ", text)
+    text = re.sub(r"(?:^|\s)बब्रालाल(?=$|\s)", " बन्नालाल ", text)
+    text = re.sub(r"(?:^|\s)(?:लाटुलाल|लाडुलाल|लादुलाल)(?=$|\s)", " लादूलाल ", text)
+    text = re.sub(r"(?:^|\s)(?:लाटु|लाडु|लादु)(?=$|\s)", " लादू ", text)
+    text = re.sub(r"(?:^|\s)डालु(?=$|\s)", " डालू ", text)
     text = re.sub(r"(?<=\u0900-\u097F)ताल\b", "लाल", text)
+    text = re.sub(r"\bअजपुर्नताल\b|\bअजपुर्नलाल\b|\bअर्जुुनलाल\b", "अर्जुनलाल", text)
     text = re.sub(r"(?<=\u0900-\u097F)ताम\b", "राम", text)
     text = re.sub(r"\bकुमारr\b|\bकुभार\b|\bकुसार\b|\bकुनार\b", "कुमार", text)
     text = re.sub(r"\bदेबी\b", "देवी", text)
@@ -142,7 +243,8 @@ def clean_person_name(value):
     text = re.sub(r"\bपुशपा\b", "पुष्पा", text)
     text = re.sub(r"\bकुमावतत\b", "कुमावत", text)
     text = re.sub(r"\bपूजा क्र\b", "पूजा", text)
-    return clean(text).strip(" .-")
+    text = clean(text).strip(" .-")
+    return correct_name_with_dictionary(text)
 
 
 def parse_card(text, epic_text, epic_hint, page_no, cell_no):
@@ -190,6 +292,10 @@ def parse_card(text, epic_text, epic_hint, page_no, cell_no):
         return None
     if not name or len(re.findall(r"[\u0900-\u097F]", name)) < 2:
         return None
+    
+    # Check for DELETED / निरस्त / विलोपित watermark or label text
+    is_deleted = bool(re.search(r"निरस्त|विलोपित|निरस्तीकरण|विलोपन|DELETED|DELETION|CANCELLED|EXPIRED", value, re.IGNORECASE))
+
     # Summary/certificate pages also contain isolated name labels. A real voter
     # card must carry either an exact EPIC hint or normal voter fields.
     has_voter_fields = bool(serial_match and age_match and (house_match or guardian))
@@ -208,6 +314,8 @@ def parse_card(text, epic_text, epic_hint, page_no, cell_no):
         "cell": cell_no,
         "photo": "",
         "rawText": clean(text),
+        "isDeleted": is_deleted,
+        "sourceAction": "delete" if is_deleted else "upsert",
         "ocrNeedsReview": not bool(epic),
         "ocrReviewReasons": [] if epic else ["ward_epic_missing_or_invalid"],
     }
@@ -222,21 +330,43 @@ def process_page(page_path, page_no, epic_hints, photo_output_dir=None):
     header_text = pytesseract.image_to_string(
         header_region, lang=os.getenv("OCR_LANGUAGES", "hin+eng"), config="--psm 6",
     )
+    
+    # Layer 1: Try OpenCV Morphological Contour Grid Segmentation first
+    contour_boxes = opencv_contour_grid_segmentation(image)
     anchors, page_data = voter_name_anchors(image)
     records = []
     seen = set()
-    column_width = width / 3
+    
+    # Dynamic Column & Layout Detection (Supports 2-Column or 3-Column Ward PDFs)
+    detected_cols = set(col for _, col in anchors)
+    cols_count = 2 if (detected_cols and max(detected_cols) <= 1) else 3
+    col_w = width / cols_count
+
     row_tops = []
     for anchor_top, _ in anchors:
         if not any(abs(anchor_top - row_top) < height * 0.025 for row_top in row_tops):
             row_tops.append(anchor_top)
     row_tops.sort()
+    
+    # Calculate dynamic row height spacing if multiple rows exist
+    avg_row_h = (row_tops[-1] - row_tops[0]) / max(1, len(row_tops) - 1) if len(row_tops) > 1 else height * 0.09
+    
+    # Build card bounding slices (OpenCV Contour Bounding Boxes vs Anchor Grid Slices)
+    card_regions = []
+    if contour_boxes:
+        for idx, (cy, cx, cw, ch) in enumerate(contour_boxes, start=1):
+            column = min(cols_count - 1, max(0, int((cx + cw / 2) / (width / cols_count))))
+            card_regions.append((cy + ch * 0.35, column, cy, cy + ch, cx, cx + cw))
+    else:
+        for name_top, column in anchors:
+            top = max(0, round(name_top - avg_row_h * 0.35))
+            bottom = min(height, round(name_top + avg_row_h * 0.65))
+            left = max(0, round(column * col_w + col_w * 0.02))
+            right = min(width, round(left + col_w * 0.96))
+            card_regions.append((name_top, column, top, bottom, left, right))
+
     hint_position_offset = None
-    for anchor_index, (name_top, column) in enumerate(anchors, start=1):
-        top = max(0, round(name_top - height * 0.032))
-        bottom = min(height, round(name_top + height * 0.062))
-        left = max(0, round(width * 0.03 + column * width * 0.292))
-        right = min(width, round(left + width * 0.30))
+    for anchor_index, (name_top, column, top, bottom, left, right) in enumerate(card_regions, start=1):
         card = image[top:bottom, left:right]
         if card.size == 0:
             continue
@@ -247,7 +377,7 @@ def process_page(page_path, page_no, epic_hints, photo_output_dir=None):
         hint_item = {}
         if isinstance(epic_hints, list):
             row_index = min(range(len(row_tops)), key=lambda index: abs(row_tops[index] - name_top)) if row_tops else 0
-            geometric_index = row_index * 3 + column
+            geometric_index = row_index * cols_count + column
             matched_index = next((index for index, item in enumerate(epic_hints) if serial and str(item.get("serial") or "") == serial), None)
             if matched_index is not None:
                 hint_item = epic_hints[matched_index]
@@ -294,10 +424,12 @@ def process_page(page_path, page_no, epic_hints, photo_output_dir=None):
             continue
         seen.add(identity)
         if photo_output_dir:
-            photo_left = max(left, round(left + (right - left) * 0.790))
-            photo_right = max(photo_left + 1, round(left + (right - left) * 0.985))
-            photo_top = max(0, round(name_top - height * 0.020))
-            photo_bottom = min(height, round(name_top + height * 0.062))
+            card_h = max(1, bottom - top)
+            card_w = max(1, right - left)
+            photo_left = max(left, round(left + card_w * 0.720))
+            photo_right = min(right, round(left + card_w * 0.985))
+            photo_top = max(0, round(top + card_h * 0.12))
+            photo_bottom = min(height, round(bottom - card_h * 0.05))
             portrait = image[photo_top:photo_bottom, photo_left:photo_right]
             if portrait.size:
                 portrait = cv2.resize(portrait, (160, 200), interpolation=cv2.INTER_AREA)
@@ -334,6 +466,35 @@ def main():
                 header[key] = value
     for record in records:
         record.update({key: value for key, value in header.items() if value})
+
+    # Household Family Tree Consensus Repair Engine for Ward PDFs
+    from difflib import SequenceMatcher
+    house_groups = {}
+    for r in records:
+        h = str(r.get("houseNumber") or "").strip()
+        if h and h not in ("0", "-", "00"):
+            house_groups.setdefault(h, []).append(r)
+    
+    for h, group in house_groups.items():
+        if len(group) >= 2:
+            counts = {}
+            for rec in group:
+                g = clean(rec.get("guardianName"))
+                v = clean(rec.get("name"))
+                if g and len(g) >= 3:
+                    counts[g] = counts.get(g, 0) + 1
+                if v and len(v) >= 3:
+                    counts[v] = counts.get(v, 0) + 1
+            sorted_cands = [g for g, c in sorted(counts.items(), key=lambda x: (-x[1], -len(x[0]))) if len(g) >= 3]
+            if sorted_cands:
+                anchor = sorted_cands[0]
+                for rec in group:
+                    g = clean(rec.get("guardianName"))
+                    if g and g != anchor and len(g) >= 2:
+                        sim = SequenceMatcher(None, g, anchor).ratio()
+                        if sim >= 0.65 or (g[:2] == anchor[:2] and (g in anchor or anchor in g)):
+                            rec["guardianName"] = anchor
+
     print(json.dumps({"header": header, "headerText": "\n".join(headers), "records": records}, ensure_ascii=False))
 
 

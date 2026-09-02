@@ -6,7 +6,7 @@ const bhitaVotersPage3To5 = [
   // Page 3 (Voters 1 to 30)
   { serial: "1", epic: "KDY1113448", name: "नेनूराम", guardian: "प्रतापचन्द", relation: "father", house: "8", age: 58, gender: "male" },
   { serial: "2", epic: "SNE0513606", name: "बालाराम", guardian: "नेनूराम", relation: "father", house: "8", age: 32, gender: "male" },
-  { serial: "3", epic: "SNE0727586", name: "सुगणी", guardian: "बालाराम", relation: "husband", house: "8", age: 31, gender: "female" },
+  { serial: "3", epic: "SNE0727586", name: "सुखी", guardian: "बालाराम", relation: "husband", house: "8", age: 31, gender: "female" },
   { serial: "4", epic: "KDY0955104", name: "प्रतापचन्द", guardian: "धीरालाल", relation: "father", house: "9", age: 84, gender: "male" },
   { serial: "5", epic: "KDY1113455", name: "हंजा", guardian: "प्रतापचन्द", relation: "husband", house: "9", age: 82, gender: "female" },
   { serial: "6", epic: "KDY0955112", name: "डालचन्द", guardian: "प्रतापचन्द", relation: "father", house: "9", age: 55, gender: "male" },

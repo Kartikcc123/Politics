@@ -1501,6 +1501,14 @@ const runWardPdfImport = async ({ file, body, currentUser }, uploadId) => {
       const epic = normalizeEpic(rawEpic);
       const hasValidEpic = isValidEpic(epic);
       const voterSerial = cleanValue(item.voterSerial);
+      const isDeleted = Boolean(item.isDeleted || item.sourceAction === 'delete' || /निरस्त|विलोपित|DELETED/i.test(item.rawText || ''));
+      if (isDeleted) {
+        skipped.push({ voterSerial, voterId: rawEpic, reason: 'Ward voter card marked DELETED/विलोपित' });
+        review += 1;
+        processed += 1;
+        setProgress(uploadId, { processed, imported: importedIds.length, skipped: review });
+        continue;
+      }
       const invalidRecord = !item.name || (rawEpic && !hasValidEpic) || (!hasValidEpic && !voterSerial);
       if (invalidRecord) {
         const reason = !item.name
@@ -1557,7 +1565,7 @@ const runWardPdfImport = async ({ file, body, currentUser }, uploadId) => {
           contactType: 'voter', voterId: hasValidEpic ? epic : undefined, name: item.name,
           guardianName: item.guardianName || '', relationType: item.relationType || '',
           houseNumber: item.houseNumber || '', age: item.age, estimatedDob: estimateDobFromAge(item.age),
-          gender: item.gender || '', municipality: header.municipality,
+          gender: item.gender || '', photo: item.photo || '', municipality: header.municipality,
           hasAssemblyMembership: false, hasMunicipalMembership: true,
           municipalWardNumbers: [header.wardNumber],
           verificationStatus: item.ocrNeedsReview || !hasValidEpic ? 'needs_review' : 'pending',

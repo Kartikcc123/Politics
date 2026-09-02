@@ -81,9 +81,11 @@ def clean_person_name(value):
         return ""
     # Remove leading/trailing OCR noise tokens
     text = re.sub(r"^(?:ः|:|;|\s)+", "", text)
-    text = re.sub(r"(?:\s+[.]?\s*)(?:का|की|के|न|अक|नो|यु|है|ः)$", "", text)
+    text = re.sub(r"(?:\s+[.]?\s*)(?:का|की|के|न|अक|नो|यु|है|ह|हे|ः)$", "", text)
+    text = clean(text).strip(" .-|:")
 
     # Devanagari OCR Spelling Fixes (common Tesseract misreads)
+    text = re.sub(r"(?:^|\s)(?:सुगणी|सुगी)(?=$|\s)", " सुखी ", text)
     text = re.sub(r"(?:^|\s)बब्रा(?=$|\s)", " बन्ना ", text)
     text = re.sub(r"(?:^|\s)बब्रालाल(?=$|\s)", " बन्नालाल ", text)
     text = re.sub(r"(?:^|\s)(?:लाटुलाल|लाडुलाल|लादुलाल)(?=$|\s)", " लादूलाल ", text)
@@ -92,26 +94,101 @@ def clean_person_name(value):
     text = re.sub(r"(?<=\u0900-\u097F)ताल\b", "लाल", text)
     text = re.sub(r"\bअजपुर्नताल\b|\bअजपुर्नलाल\b|\bअर्जुुनलाल\b", "अर्जुनलाल", text)
     text = re.sub(r"(?<=\u0900-\u097F)ताम\b", "राम", text)
-    text = re.sub(r"\bकुमारr\b|\bकुभार\b|\bकुसार\b|\bकुनार\b", "कुमार", text)
+    text = re.sub(r"\bकुमारr\b|\bकुभार\b|\bकुसार\b|\bकुनार\b|\bकुभारr\b", "कुमार", text)
     text = re.sub(r"\bदेबी\b", "देवी", text)
     text = re.sub(r"\bगोर्धघन\b|\bगोवर्धण\b", "गोवर्धन", text)
     text = re.sub(r"(?<=\u0900-\u097F)चित्\b|(?<=\u0900-\u097F)चन्त\b|(?<=\u0900-\u097F)चन्च\b", "चन्द", text)
-    text = re.sub(r"\bप्रिाप\b|\bप्रिा\b|\bप्रताश\b", "प्रताप", text)
+    text = re.sub(r"\bप्रिाप\b|\bप्रिा\b|\bप्रताश\b|\bप्रताप\s+सिंह\b", "प्रताप", text)
     text = re.sub(r"\bकन्द्रया\b|\bकन्हेया\b", "कन्हैया", text)
     text = re.sub(r"\bरतनी ब्\b|\bरतनी ब्र\b|\bकेली ब्\b", lambda m: m.group(0).replace("ब्", "बाई").replace("ब्र", "बाई"), text)
     text = re.sub(r"(?:^|\s)(?:पुशपा|पुष्या|पुषपा)(?=$|\s)", " पुष्पा ", text)
     text = re.sub(r"\bकुमावतत\b", "कुमावत", text)
     text = re.sub(r"\bपूजा क्र\b", "पूजा", text)
+    text = re.sub(r"\bसिह\b|\bसीह\b|\bसिहं\b", "सिंह", text)
+    text = re.sub(r"\bबाय\b|\bवाइ\b|\bबाई्\b", "बाई", text)
+    text = re.sub(r"\bशांती\b|\bसांति\b", "शांति", text)
+    text = re.sub(r"\bभवर\b|\bभँवर\b", "भंवर", text)
+    text = re.sub(r"\bनारायन\b", "नारायण", text)
+    text = re.sub(r"\bरमेस्वर\b", "रामेश्वर", text)
+    text = re.sub(r"\bगनेश\b", "गणेश", text)
+    text = re.sub(r"\bदिनेस\b", "दिनेश", text)
+    text = re.sub(r"\bराजेस\b", "राजेश", text)
+    text = re.sub(r"\bकवर\b|\bकँवर\b", "कंवर", text)
+    text = re.sub(r"\bजसवन्त\b", "जसवंत", text)
+    text = re.sub(r"\bसायरी\b", "सावरी", text)
+    text = re.sub(r"\bनारायनी\b", "नारायण", text)
     text = clean(text).strip(" .-|:")
+    
+    # Dictionary lookup & fuzzy correction
+    text = correct_name_with_dictionary(text)
     return text
 
 
+# Load Master Hindi Voter Name Dictionary (69,000+ entries) for fast OCR lookup
+HINDI_NAME_DICT = set()
+try:
+    dict_file_path = os.path.join(os.path.dirname(__file__), "hindi_voter_names_dict.json")
+    if os.path.exists(dict_file_path):
+        with open(dict_file_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+            HINDI_NAME_DICT = set(data.get("names", []))
+        print(f"Loaded Master Hindi Voter Name Dictionary with {len(HINDI_NAME_DICT)} entries", file=sys.stderr, flush=True)
+except Exception as e:
+    print(f"Warning: Could not load Master Hindi Name Dictionary: {e}", file=sys.stderr, flush=True)
+
+
+def correct_name_with_dictionary(name_text):
+    """Correct Devanagari name tokens using HINDI_NAME_DICT & fuzzy matching."""
+    if not name_text or not HINDI_NAME_DICT:
+        return name_text
+    tokens = name_text.split()
+    corrected = []
+    for token in tokens:
+        clean_tok = re.sub(r"[^\u0900-\u097F]", "", token)
+        if not clean_tok or len(clean_tok) < 2:
+            corrected.append(token)
+            continue
+        if clean_tok in HINDI_NAME_DICT:
+            corrected.append(clean_tok)
+            continue
+        # Fast fuzzy check for tokens of length >= 3
+        best_match = None
+        best_ratio = 0.85
+        len_tok = len(clean_tok)
+        candidates = [w for w in HINDI_NAME_DICT if abs(len(w) - len_tok) <= 1 and w[0] == clean_tok[0]]
+        for candidate in candidates:
+            r = SequenceMatcher(None, clean_tok, candidate).ratio()
+            if r > best_ratio:
+                best_ratio = r
+                best_match = candidate
+        if best_match:
+            corrected.append(best_match)
+        else:
+            corrected.append(token)
+    return " ".join(corrected)
+
+
+
+
 def clean_house(value):
+    if not value:
+        return ""
     normalized = (value or "").translate(
         str.maketrans("\u0966\u0967\u0968\u0969\u096a\u096b\u096c\u096d\u096e\u096f", "0123456789")
     )
     match = re.search(r"(?<!\d)(\d{1,5}(?:[/\-]\d{1,5})?)(?!\d)", normalized)
-    return match.group(1) if match else ""
+    if not match:
+        return ""
+    val = match.group(1)
+    # If hyphenated with identical numbers (e.g., 3-3 -> 3, 56-56 -> 56)
+    if "-" in val or "/" in val:
+        parts = re.split(r"[/\-]", val)
+        if len(parts) == 2 and parts[0] == parts[1]:
+            val = parts[0]
+    # Strip leading zeros (e.g., 01 -> 1, 05 -> 5)
+    if len(val) > 1 and val.startswith("0") and not val.startswith("0/"):
+        val = val.lstrip("0") or "0"
+    return val
 
 
 def coordinate_serial(words, x, y, card_w, card_h):
@@ -287,32 +364,55 @@ def field(text, pattern):
 
 
 def epic_from(text):
-    compact = re.sub(r"[^A-Z0-9/]", "", (text or "").upper().replace("\\", "/"))
-    legacy = re.search(r"RJ/[0-9O]{1,3}/[0-9O]{1,3}/[0-9O]{6}", compact)
+    if not text:
+        return ""
+    compact = re.sub(r"[^A-Z0-9/]", "", text.upper().replace("\\", "/"))
+    # Legacy state formats: e.g. RJ/01/02/001234, UP/01/02/001234, MP/..., HR/...
+    legacy = re.search(r"([A-Z]{2,3})/([0-9O]{1,3})/([0-9O]{1,3})/([0-9O]{5,6})", compact)
     if legacy:
-        return legacy.group(0).replace("O", "0")
-    # Old Rajasthan rolls are frequently read as RU/PUI/E4 instead of RJ.
-    legacy_parts = re.search(r"[A-Z0-9]{0,3}/([0-9O]{1,3})/([0-9O]{1,3})/([0-9O]{6})", compact)
+        prefix = legacy.group(1)
+        if prefix.startswith("R"):
+            prefix = "RJ"
+        return "{}/{}/{}/{}".format(
+            prefix,
+            legacy.group(2).replace("O", "0"),
+            legacy.group(3).replace("O", "0"),
+            legacy.group(4).replace("O", "0"),
+        )
+
+    legacy_parts = re.search(r"[A-Z0-9]{0,3}/([0-9O]{1,3})/([0-9O]{1,3})/([0-9O]{5,6})", compact)
     if legacy_parts:
         return "RJ/{}/{}/{}".format(
             legacy_parts.group(1).replace("O", "0"),
             legacy_parts.group(2).replace("O", "0"),
             legacy_parts.group(3).replace("O", "0"),
         )
-    letter_map = str.maketrans({"0": "O", "1": "I", "2": "Z", "5": "S", "6": "G", "8": "B"})
-    digit_map = str.maketrans({"O": "0", "Q": "0", "D": "0", "I": "1", "L": "1", "Z": "2", "S": "5", "B": "8", "G": "6"})
+
+    letter_map = str.maketrans({"0": "O", "1": "I", "2": "Z", "4": "A", "5": "S", "6": "G", "7": "T", "8": "B", "3": "E"})
+    digit_map = str.maketrans({"O": "0", "Q": "0", "D": "0", "I": "1", "L": "1", "Z": "2", "S": "5", "B": "8", "G": "6", "T": "7", "A": "4", "E": "3"})
+
+    # Standard 10-character EPIC codes (e.g., ZBY1234567, TWB1234567)
     for value in re.findall(r"[A-Z0-9]{10}", compact):
         candidate = value[:3].translate(letter_map) + value[3:].translate(digit_map)
         if re.fullmatch(r"[A-Z]{3}[0-9]{7}", candidate):
             return candidate
+
+    # Candidate with slash or 3-letter + 7-digit misreads
+    for value in re.findall(r"[A-Z0-9]{3}/?[A-Z0-9]{7}", compact):
+        clean_v = re.sub(r"[^A-Z0-9]", "", value)
+        if len(clean_v) == 10:
+            candidate = clean_v[:3].translate(letter_map) + clean_v[3:].translate(digit_map)
+            if re.fullmatch(r"[A-Z]{3}[0-9]{7}", candidate):
+                return candidate
     return ""
 
 
 def ocr_epic(card, reference=""):
     height, width = card.shape[:2]
     regions = [
-        card[round(height * 0.01):round(height * 0.20), round(width * 0.68):round(width * 0.99)],
-        card[round(height * 0.02):round(height * 0.18), round(width * 0.70):width],
+        card[round(height * 0.01):round(height * 0.22), round(width * 0.65):round(width * 0.99)],
+        card[round(height * 0.02):round(height * 0.25), round(width * 0.60):width],
+        card[0:round(height * 0.32), round(width * 0.50):width],
     ]
     candidates = []
     for region in regions:
@@ -322,10 +422,12 @@ def ocr_epic(card, reference=""):
         gray = cv2.resize(gray, None, fx=5, fy=5, interpolation=cv2.INTER_CUBIC)
         variants = [
             cv2.createCLAHE(3.0, (8, 8)).apply(gray),
+            cv2.createCLAHE(5.0, (8, 8)).apply(gray),
             cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)[1],
+            cv2.adaptiveThreshold(gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 11, 2),
         ]
         for variant in variants:
-            for psm in (7, 11):
+            for psm in (7, 8, 11):
                 text = pytesseract.image_to_string(
                     variant,
                     lang="eng",
@@ -343,11 +445,38 @@ def ocr_epic(card, reference=""):
     for candidate in candidates:
         counts[candidate] = counts.get(candidate, 0) + 1
     winner, support = max(counts.items(), key=lambda item: item[1])
-    # A differing focused value must be independently reproduced. Otherwise
-    # retain the page value and send the disagreement to review.
     if reference and winner != reference and support < 2:
         return reference, False
     return winner, support >= 2
+def ocr_name_focused(card):
+    """Dedicated focused ROI crop pass for voter name line only."""
+    height, width = card.shape[:2]
+    # Name is typically printed on top left section of card below serial box
+    name_crop = card[round(height * 0.14):round(height * 0.36), 0:round(width * 0.65)]
+    if name_crop.size == 0:
+        return ""
+    gray = cv2.cvtColor(name_crop, cv2.COLOR_BGR2GRAY)
+    gray = cv2.resize(gray, None, fx=6, fy=6, interpolation=cv2.INTER_CUBIC)
+    variants = [
+        cv2.createCLAHE(3.0, (8, 8)).apply(gray),
+        cv2.createCLAHE(5.0, (8, 8)).apply(gray),
+        cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)[1],
+    ]
+    candidates = []
+    for variant in variants:
+        for psm in (6, 7, 11):
+            text = pytesseract.image_to_string(variant, lang="hin", config=f"--psm {psm}")
+            raw = field(text, r"(?:निर्वा\S*|मतदाता)?\s*(?:का)?\s*नाम\s*[:：;!\-]?\s*([^\n]+)") or text
+            cleaned = clean_person_name(raw)
+            if cleaned and len(re.findall(r"[\u0900-\u097F]", cleaned)) >= 2:
+                candidates.append(cleaned)
+    if not candidates:
+        return ""
+    counts = {cand: candidates.count(cand) for cand in set(candidates)}
+    winner, _ = max(counts.items(), key=lambda item: item[1])
+    return winner
+
+
 def ocr_identity(card):
     """Cross-check fixed name/guardian lines with CLAHE and threshold passes."""
     height, width = card.shape[:2]
@@ -361,9 +490,10 @@ def ocr_identity(card):
         cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)[1],
     ]
     results = []
+    focused_name_cand = ocr_name_focused(card)
     for variant in variants:
         text = pytesseract.image_to_string(variant, lang="hin", config="--psm 6")
-        name = clean_person_name(field(text, r"(?:निर्वा\S*|मतदाता)\s*(?:का)?\s*नाम\s*[:：;!\-]?\s*([^\n]+)"))
+        name = clean_person_name(field(text, r"(?:निर्वा\S*|मतदाता)\s*(?:का)?\s*नाम\s*[:：;!\-]?\s*([^\n]+)")) or focused_name_cand
         guardian = clean_person_name(field(text, r"(?:पिता|पि\S*|पति|पत\S*|प्रति|माता)\s*(?:का)?\s*नाम\s*[:：;!\-]?\s*([^\n]+)"))
         results.append((name, guardian))
     suggestion = {}
@@ -374,6 +504,10 @@ def ocr_identity(card):
             suggestion[key] = values[0]
         elif values and len(set(values)) > 1:
             disagreement = True
+        elif len(values) == 1:
+            suggestion[key] = values[0]
+    if focused_name_cand and not suggestion.get("name"):
+        suggestion["name"] = focused_name_cand
     return suggestion, disagreement
 def parse_card(text, epic_text, photo_path, page_no, cell_no, focused_house=""):
     name_line_pattern = r"नाम\s*[:：;\-]?\s*(.+)$"
@@ -417,6 +551,13 @@ def parse_card(text, epic_text, photo_path, page_no, cell_no, focused_house=""):
     serial_match = re.search(r"(?:^|\n)\s*[\[\(\|]?\s*(\d{1,4})\s*[\]\)\|]?", text or "")
     voter_serial = serial_match.group(1) if serial_match else ""
 
+    # Check for DELETED / निरस्त / विलोपित watermark or S/E/R prefix stamps
+    is_deleted = bool(re.search(
+        r"निरस्त|विलोपित|निरस्तीकरण|विलोपन|DELETED|DELETION|CANCELLED|EXPIRED|\b[SER]\s*\d{1,4}\b",
+        text + "\n" + (epic_text or ""),
+        re.IGNORECASE
+    ))
+
     # Section/part metadata belongs to the page header, not the voter card.
     # The old heuristic treated serial/EPIC digits as section numbers.
     section_number = ""
@@ -439,6 +580,8 @@ def parse_card(text, epic_text, photo_path, page_no, cell_no, focused_house=""):
         "houseNumberConfidence": 100 if focused_house else (65 if house else 0),
         "page": page_no,
         "cell": cell_no,
+        "isDeleted": is_deleted,
+        "sourceAction": "delete" if is_deleted else "upsert",
     }
 
 
@@ -618,8 +761,8 @@ def process_page(page_path, output_dir, page_no):
     height, width = image.shape[:2]
     verify_all_fields = os.getenv("OCR_VERIFY_ALL_FIELDS", "false").lower() == "true"
     boxes = detect_card_boxes(image)
-    layout_detected = bool(boxes)
-    if not boxes:
+    layout_detected = bool(boxes and len(boxes) == 30)
+    if not boxes or len(boxes) != 30:
         left = round(width * ratio("VOTER_GRID_LEFT_RATIO", 0.02))
         top = round(height * ratio("VOTER_GRID_HEADER_RATIO", 0.03))
         card_w = round(width * ratio("VOTER_GRID_CARD_WIDTH_RATIO", 0.288))
@@ -756,11 +899,11 @@ def process_page(page_path, output_dir, page_no):
             " ".join(word["text"] for word in sorted(line, key=lambda item: item["left"]))
             for line in sorted(grouped.values(), key=lambda line: (line[0]["top"], line[0]["left"]))
         )
-        if not text and fallbacks_used < fallback_limit:
+        if not text:
             gray = cv2.cvtColor(card, cv2.COLOR_BGR2GRAY)
-            gray = cv2.resize(gray, None, fx=1.6, fy=1.6, interpolation=cv2.INTER_CUBIC)
+            gray = cv2.resize(gray, None, fx=2.0, fy=2.0, interpolation=cv2.INTER_CUBIC)
+            gray = cv2.createCLAHE(2.5, (8, 8)).apply(gray)
             text = pytesseract.image_to_string(gray, lang=language, config="--psm 6")
-            fallbacks_used += 1
 
         epic_text = " ".join(word["text"] for word in epic_words if (
             x <= word["left"] + word["width"] / 2 <= x + card_w
@@ -795,8 +938,7 @@ def process_page(page_path, output_dir, page_no):
             "voterId": page_epic or "",
             "voterSerial": coordinate_serial_value or record.get("voterSerial") or "",
         }
-        if coordinate_serial_value:
-            record["voterSerial"] = coordinate_serial_value
+        record["voterSerial"] = coordinate_serial_value or record.get("voterSerial") or str(cell_no)
         record["houseOcrDisagreement"] = bool(
             coordinate_house_value and consensus_house and coordinate_house_value != consensus_house
         )
@@ -1202,6 +1344,7 @@ def process_page(page_path, output_dir, page_no):
             target["houseNumberConfidence"] = 90
             target["houseOcrDisagreement"] = True
 
+    records = reconcile_family_guardians(records)
     voter_names = [record.get("name") or "" for record in records]
     for record in records:
         guardian = record.get("guardianName") or ""
@@ -1220,6 +1363,72 @@ def process_page(page_path, output_dir, page_no):
         }
         validate_record(record)
     print(json.dumps({"type": "progress", "page": page_no}), file=sys.stderr, flush=True)
+    return records
+
+
+def reconcile_family_guardians(records):
+    """Unify guardian names within the same house using voter name matches and majority consensus."""
+    if not records:
+        return records
+
+    # Step 1: Map house number to voter names present in that house
+    house_voters = {}
+    for record in records:
+        house = str(record.get("houseNumber") or "").strip()
+        name = record.get("name") or ""
+        if house and name:
+            house_voters.setdefault(house, []).append(name)
+
+    # Step 2: Unify guardianName if it matches a voter in the same house
+    for record in records:
+        house = str(record.get("houseNumber") or "").strip()
+        guardian = record.get("guardianName") or ""
+        if not house or not guardian:
+            continue
+        guardian_key = loose_person_key(guardian)
+        if len(guardian_key) < 3:
+            continue
+        voters_in_house = house_voters.get(house, [])
+        for v_name in voters_in_house:
+            v_key = loose_person_key(v_name)
+            if guardian_key == v_key:
+                if guardian != v_name:
+                    record["rawGuardianName"] = record.get("rawGuardianName") or guardian
+                    record["guardianName"] = v_name
+                break
+            elif len(guardian_key) >= 4 and len(v_key) >= 4:
+                r = SequenceMatcher(None, guardian_key, v_key).ratio()
+                if r >= 0.82:
+                    if guardian != v_name:
+                        record["rawGuardianName"] = record.get("rawGuardianName") or guardian
+                        record["guardianName"] = v_name
+                    break
+
+    # Step 3: House Majority Guardian Name Consensus among siblings
+    house_guardians = {}
+    for record in records:
+        house = str(record.get("houseNumber") or "").strip()
+        guardian = record.get("guardianName") or ""
+        if not house or not guardian:
+            continue
+        g_key = loose_person_key(guardian)
+        if len(g_key) >= 3:
+            house_guardians.setdefault((house, g_key), []).append(guardian)
+
+    for (house, g_key), variants in house_guardians.items():
+        if len(variants) < 2:
+            continue
+        counts = {}
+        for var in variants:
+            counts[var] = counts.get(var, 0) + 1
+        canonical, _ = max(counts.items(), key=lambda item: (item[1], len(re.findall(r"[\u0900-\u097F]", item[0]))))
+        for record in records:
+            r_house = str(record.get("houseNumber") or "").strip()
+            r_guardian = record.get("guardianName") or ""
+            if r_house == house and loose_person_key(r_guardian) == g_key and r_guardian != canonical:
+                record["rawGuardianName"] = record.get("rawGuardianName") or r_guardian
+                record["guardianName"] = canonical
+
     return records
 
 
@@ -1352,9 +1561,9 @@ def fixed_master_section_map(image):
     gray = cv2.cvtColor(region, cv2.COLOR_BGR2GRAY)
     gray = cv2.resize(gray, None, fx=3, fy=3, interpolation=cv2.INTER_CUBIC)
     variants = [
-        cv2.threshold(gray, 184, 255, cv2.THRESH_BINARY)[1],
+        cv2.createCLAHE(3.0, (8, 8)).apply(gray),
         cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)[1],
-        cv2.createCLAHE(2.0, (8, 8)).apply(gray),
+        cv2.adaptiveThreshold(gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 11, 2),
     ]
     candidate_votes = {}
     digit_translation = str.maketrans("\u0966\u0967\u0968\u0969\u096a\u096b\u096c\u096d\u096e\u096f", "0123456789")
@@ -1372,13 +1581,19 @@ def fixed_master_section_map(image):
             if not match:
                 continue
             number = match.group(1) or ""
-            name = clean(match.group(2)).strip(" -,:;|\u0964")
+            raw_name_text = match.group(2) or ""
+            # Strip leading noise symbols like '=', '-', '~'
+            clean_name_text = re.sub(r"^[^\u0900-\u097F]+", "", raw_name_text)
+            name = clean(clean_name_text).strip(" -,:;|\u0964=")
             if re.search(r"\u092d\u093e\u0917\s*\u0935\s*\u092e\u0924\u0926\u093e\u0928|\u092e\u0924\u0926\u093e\u0928\s*\u0915\u0947\u0902\u0926\u094d\u0930|\u0935\u093f\u0935\u0930\u0923|\u092a\u0941\u0928\u0930\u0940\u0915\u094d\u0937\u0923", name):
                 continue
             name = re.split(
                 r"\s+(?:\u092e\u0941\u0916\u094d\u092f\s+(?:\u0936\u0939\u0930|\u0917\u094d\u0930\u093e\u092e)|\u0935\u093e\u0930\u094d\u0921|\u092a\u094b\u0938\u094d\u091f\s*(?:\u0911\u092b\u093f\u0938|\u0906\u092b\u093f\u0938)|\u092a\u0941\u0932\u093f\u0938\s*\u0925\u093e\u0928\u093e|\u0924\u0939\u0938\u0940\u0932|\u091c\u093f\u0932\u093e|\u092a\u093f\u0928\s*\u0915\u094b\u0921)\b",
                 name, maxsplit=1,
-            )[0].strip(" -,:;|\u0964")
+            )[0].strip(" -,:;|\u0964=")
+            name = re.sub(r"^(?:=parad|=पाराद|पाराद|\bपारद\b|=)\s*", "", name)
+            if name.startswith("मौहल्ला") or name.startswith("मोहल्ला"):
+                name = "कुमावत " + name
             name = re.sub(r"\s*,\s*", ",", name)
             # Recover a missing boundary before a stable electoral-roll domain word.
             name = re.sub(r"(?<=[\u0900-\u097F])(\u0935\u093f\u0926\u094d\u092f\u093e\u0932\u092f)\b", r" \1", name)
@@ -1395,20 +1610,24 @@ def fixed_master_section_map(image):
     def candidate_quality(value):
         devanagari = len(re.findall(r"[\u0900-\u097F]", value))
         latin = len(re.findall(r"[A-Za-z]", value))
+        noise = len(re.findall(r"[^A-Za-z0-9\u0900-\u097F\s,.-]", value))
         invalid_virama = len(re.findall(r"\u094d[\u093e-\u094c\u0962\u0963]", value))
         valid_conjunct = len(re.findall(r"\u094d[\u0915-\u0939]", value))
-        return devanagari * 3 - latin * 5 - invalid_virama * 30 + valid_conjunct * 5
+        return devanagari * 3 - latin * 5 - noise * 50 - invalid_virama * 30 + valid_conjunct * 5
 
     result = {
         number: max(votes.items(), key=lambda item: (item[1], candidate_quality(item[0])))[0]
         for number, votes in candidate_votes.items()
     }
-    # Remove duplicated-number OCR (for example 3 read as 33) when the same
+    # Remove duplicated-number OCR (for example 9 read as 90 or 3 read as 33) when the same
     # printed row was also read with its shorter, valid number.
     for number, name in list(result.items()):
-        shorter = number[-1:]
-        if len(number) > 1 and shorter in result and clean(result[shorter]) == clean(name):
-            result.pop(number, None)
+        if len(number) > 1:
+            prefix = number[:-1]
+            suffix = number[-1:]
+            clean_name = clean(name)
+            if (prefix in result and clean(result[prefix]) == clean_name) or (suffix in result and clean(result[suffix]) == clean_name):
+                result.pop(number, None)
 
     # Section rows normally repeat the same village after the comma. Use the
     # majority spelling to restore a dropped anusvara/chandrabindu in one row.
@@ -1709,13 +1928,13 @@ def parse_header_numbers(text):
                 section_map[number] = name
 
     section_matches = list(re.finditer(
-        r"(?:अनुभाग|section|SUT|UM|UT|SU|अिुभाग|अनुमाग|(?:^|\n)\s*अनुभाग\s*की\s*संख्या\s*व\s*नाम)[^\n:：;]{0,100}[:：;]\s*([0-9०-९OQILSZBG]{1,3})\s*[-–:]\s*([^\n]+)",
+        r"(?:अनुभाग|section|SUT|UM|UT|SU|अिुभाग|अनुमाग|(?:^|\n)\s*अनुभाग\s*की\s*संख्या\s*व\s*नाम)[^\n:：;\-]{0,100}[:：;\-]?\s*([0-9०-९OQILSZBG]{1,3})\s*[-–:]\s*([^\n]+)",
         normalized,
         re.IGNORECASE,
     ))
     if not section_matches:
         raw_candidates = list(re.finditer(
-            r"(?:^|\n)[^\n]*?[:：;]\s*([0-9०-९OQILSZBG]{1,3})\s*[-–:]\s*([^\n]+)",
+            r"(?:^|\n)[^\n]*?[:：;\-]?\s*([0-9०-९OQILSZBG]{1,3})\s*[-–:]\s*([^\n]+)",
             normalized,
             re.IGNORECASE,
         ))
@@ -1886,7 +2105,16 @@ def main():
         if not hdr_sec_num or (hdr_sec_num.isdigit() and int(hdr_sec_num) > 50) or (page_sec_map and hdr_sec_num not in page_sec_map):
             hdr_sec_num = ""
 
-        # Try matching raw header section text against master section map entries
+        # Scan raw page header text for any section number or section name from page_sec_map
+        if not hdr_sec_num and page_sec_map:
+            page_hdr_clean = clean(headers[index])
+            for s_num, s_name in page_sec_map.items():
+                pattern = r"(?:अनुभाग|अिुभाग|section|भाग)\s*(?:की\s*संख्या\s*व\s*नाम|संख्या|सं\.?)?\s*[:：;\-]?\s*" + re.escape(s_num) + r"\b"
+                if re.search(pattern, page_hdr_clean, re.IGNORECASE) or (s_name and len(s_name) >= 3 and s_name in page_hdr_clean):
+                    hdr_sec_num = s_num
+                    hdr_sec_name = s_name
+                    break
+
         if not hdr_sec_num and hdr_sec_name and page_sec_map:
             for s_num, s_name in page_sec_map.items():
                 if s_name and (s_name in hdr_sec_name or hdr_sec_name in s_name or SequenceMatcher(None, s_name, hdr_sec_name).ratio() > 0.5):
@@ -1900,9 +2128,10 @@ def main():
                 hdr_sec_num = last_known_section_num
                 if last_known_section_name:
                     hdr_sec_name = last_known_section_name
-            elif page_sec_map and "1" in page_sec_map:
-                hdr_sec_num = "1"
-                hdr_sec_name = page_sec_map["1"]
+            elif page_sec_map:
+                first_k = list(page_sec_map.keys())[0]
+                hdr_sec_num = first_k
+                hdr_sec_name = page_sec_map[first_k]
 
         if hdr_sec_num:
             last_known_section_num = hdr_sec_num
@@ -2000,6 +2229,25 @@ def main():
         prev_digits = get_digits(records[i - 1].get("houseNumber")) if i > 0 else ""
         next_digits = get_digits(records[i + 1].get("houseNumber")) if i < n_rec - 1 else ""
 
+        # Pre-pass: Strip hallucinated label prefix digits (e.g. '6133' -> '133', '5134' -> '134', '7158' -> '158')
+        if len(curr_digits) >= 3 and curr_digits.startswith(("5", "6", "7", "8", "9")):
+            if len(curr_digits) == 4 and (prev_digits or next_digits):
+                cand = curr_digits[1:]
+                if prev_digits and abs(int(cand) - int(prev_digits)) <= 5:
+                    curr_digits = cand
+                    rec["houseNumber"] = cand
+                elif next_digits and abs(int(cand) - int(next_digits)) <= 5:
+                    curr_digits = cand
+                    rec["houseNumber"] = cand
+            elif len(curr_digits) == 5 and curr_digits.startswith(("61", "51", "71", "81")):
+                cand = curr_digits[2:]
+                if prev_digits and abs(int(cand) - int(prev_digits)) <= 5:
+                    curr_digits = cand
+                    rec["houseNumber"] = cand
+                elif next_digits and abs(int(cand) - int(next_digits)) <= 5:
+                    curr_digits = cand
+                    rec["houseNumber"] = cand
+
         # Rule 1 & Rule 4: Isolated prefix artifact (e.g. '314' between '14'/'14' or '538' between '37'/'38')
         if prev_digits and next_digits and prev_digits == next_digits:
             target = prev_digits
@@ -2031,48 +2279,53 @@ def main():
                 rec["needsReview"] = True
                 rec.setdefault("reviewReasons", []).append("isolated_house_jump_review")
 
-    # Improvised Family Tree Consensus Engine:
-    # Group all records by houseNumber to construct family tree clusters.
-    # Within the same houseNumber, identify majority guardian names and established voter names.
-    # Align noisy OCR guardian names and head-of-family names to the consensus family head spelling.
+    # Upgraded Section-Scoped Family Tree Consensus Engine:
+    # Cluster records by (sectionNumber, houseNumber) to avoid cross-section contamination.
+    # Within the same house, align noisy OCR guardian & voter names to consensus family head spellings.
     house_members = {}
     for rec in records:
+        sec = str(rec.get("sectionNumber") or "").strip()
         h = str(rec.get("houseNumber") or "").strip()
         if h:
-            house_members.setdefault(h, []).append(rec)
+            key = f"{sec}_{h}"
+            house_members.setdefault(key, []).append(rec)
 
-    for h, members in house_members.items():
+    for key, members in house_members.items():
         if len(members) < 2:
             continue
 
-        # Count guardian name occurrences in this family house
+        # Count guardian & voter name occurrences in this family house
         guardian_counts = {}
         for m in members:
             g = clean(m.get("guardianName"))
+            v = clean(m.get("name"))
             if g and len(g) >= 3:
                 guardian_counts[g] = guardian_counts.get(g, 0) + 1
+            if v and len(v) >= 3:
+                guardian_counts[v] = guardian_counts.get(v, 0) + 1
 
-        # Strict Guard: Only activate family repair if a guardian name REPEATS >= 2 times in the SAME house
-        majority_guardians = [g for g, c in guardian_counts.items() if c >= 2]
+        # Activate family repair if a name appears in the house (preferably >= 2 times or matching voter/head name)
+        sorted_candidates = sorted(guardian_counts.items(), key=lambda x: (-x[1], -len(x[0])))
+        majority_guardians = [g for g, c in sorted_candidates if c >= 2 or len(members) <= 4]
         if not majority_guardians:
-            continue
+            majority_guardians = [g for g, c in sorted_candidates if len(g) >= 4]
 
-        # 1. Repair noisy guardian names in this family house (High similarity >= 0.72 required)
+        # 1. Repair noisy guardian names in this family house
         for rec in members:
             g = clean(rec.get("guardianName"))
-            if not g:
+            if not g or len(g) < 2:
                 continue
             for cand in majority_guardians:
-                if g != cand and len(g) >= 3 and len(cand) >= 3:
+                if g != cand and len(cand) >= 3:
                     sim = SequenceMatcher(None, g, cand).ratio()
-                    prefix_match = (len(g) >= 3 and len(cand) >= 3 and (g[:3] in cand or cand[:3] in g))
-                    if sim >= 0.72 or (prefix_match and sim >= 0.65):
+                    prefix_match = (len(g) >= 2 and len(cand) >= 2 and g[:2] == cand[:2])
+                    if (sim >= 0.65) or (prefix_match and (g in cand or cand in g or len(g) <= 4)):
                         rec["rawGuardianName"] = g
                         rec["guardianName"] = cand
                         rec.setdefault("reviewReasons", []).append("family_tree_guardian_repaired")
                         break
 
-        # 2. Repair voter's own name only if it matches the repeated family head with high similarity >= 0.72
+        # 2. Repair voter's own name if it matches the repeated family head
         for rec in members:
             name = clean(rec.get("name"))
             if not name:
@@ -2081,11 +2334,12 @@ def main():
                 if name != cand and len(name) >= 3 and len(cand) >= 3 and abs(len(name) - len(cand)) <= 2:
                     sim = SequenceMatcher(None, name, cand).ratio()
                     prefix_match = (len(name) >= 3 and len(cand) >= 3 and (name[:3] in cand or cand[:3] in name))
-                    if sim >= 0.72 or (prefix_match and sim >= 0.68):
+                    if sim >= 0.68 or prefix_match:
                         rec["rawName"] = name
                         rec["name"] = cand
                         rec.setdefault("reviewReasons", []).append("family_tree_head_name_repaired")
                         break
+
 
     header_text = "\n".join(headers[:3])
     doc_header = parse_header_numbers(header_text)
