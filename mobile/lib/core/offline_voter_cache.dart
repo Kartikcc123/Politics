@@ -226,6 +226,24 @@ class OfflineVoterCache {
       }
       return true;
     }).toList();
+
+    filtered.sort((a, b) {
+      final mapA = a is Map ? a : {};
+      final mapB = b is Map ? b : {};
+      final sA = _parseSerial(mapA['voterSerial']);
+      final sB = _parseSerial(mapB['voterSerial']);
+      if (sA != sB) return sA.compareTo(sB);
+      return String.fromCharCodes('${mapA['name'] ?? ''}'.codeUnits)
+          .compareTo(String.fromCharCodes('${mapB['name'] ?? ''}'.codeUnits));
+    });
+
+    return filtered;
+  }
+
+  static int _parseSerial(dynamic val) {
+    if (val == null) return 9999999;
+    final digits = _normalize(val.toString()).replaceAll(RegExp(r'\D'), '');
+    return int.tryParse(digits) ?? 9999999;
   }
 
   static bool _hasActiveFilters(Map<String, String?> query) {

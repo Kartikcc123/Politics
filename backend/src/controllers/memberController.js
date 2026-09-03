@@ -277,10 +277,12 @@ exports.list = async (req, res, next) => {
 
     const sortParam = String(req.query.sortBy || req.query.sort || '').toLowerCase();
     const hasLocationScope = Boolean(village || partNumber || booth || sectionName || gramPanchayat);
-    let sortObj = { name: 1, surname: 1, houseNumber: 1 };
+    let sortObj = { voterSerial: 1, name: 1 };
 
     if (sortParam === 'recent') {
       sortObj = { updatedAt: -1 };
+    } else if (['name', 'alphabetic', 'alphabetical'].includes(sortParam)) {
+      sortObj = { name: 1, surname: 1, houseNumber: 1 };
     } else if (['voterserial', 'serial', 'serialnumber', 'matdatakram', 'kram'].includes(sortParam)) {
       if (hasLocationScope) {
         sortObj = { voterSerial: 1, name: 1 };
