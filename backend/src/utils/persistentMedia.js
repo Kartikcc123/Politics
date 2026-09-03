@@ -18,8 +18,8 @@ const persistLocalImage = async (filePath, userId, removeOriginal = false) => {
     : original;
   if (!source || !fs.existsSync(source)) return source;
   const stat = fs.statSync(source);
-  if (!stat.isFile() || stat.size < 1 || stat.size > 5 * 1024 * 1024) {
-    throw new Error('Photo must be a non-empty image smaller than 5 MB.');
+  if (!stat.isFile() || stat.size < 1 || stat.size > 10 * 1024 * 1024) {
+    return source;
   }
   const extension = path.extname(source).toLowerCase();
   const contentType = contentTypes[extension] || 'image/jpeg';
