@@ -1,4 +1,4 @@
-FROM node:20-bookworm-slim
+FROM node:22-bookworm-slim
 
 WORKDIR /app
 
@@ -48,5 +48,6 @@ ENV OCR_CELL_CONCURRENCY=1
 ENV OCR_CARD_FALLBACKS_PER_PAGE=1
 ENV IMAGE_CROP_CONCURRENCY=1
 ENV OMP_THREAD_LIMIT=1
+ENV NODE_OPTIONS="--no-warnings"
 
 CMD ["npm", "start"]
