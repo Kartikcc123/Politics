@@ -4,6 +4,7 @@ import os
 import re
 import sys
 import unicodedata
+from concurrent.futures import ThreadPoolExecutor
 from difflib import SequenceMatcher
 from pathlib import Path
 
@@ -132,9 +133,9 @@ try:
         with open(dict_file_path, "r", encoding="utf-8") as f:
             data = json.load(f)
             HINDI_NAME_DICT = set(data.get("names", []))
-        print(f"Loaded Master Hindi Voter Name Dictionary with {len(HINDI_NAME_DICT)} entries", file=sys.stderr, flush=True)
-except Exception as e:
-    print(f"Warning: Could not load Master Hindi Name Dictionary: {e}", file=sys.stderr, flush=True)
+# Loaded Master Hindi Voter Name Dictionary
+except Exception:
+    pass
 
 
 def correct_name_with_dictionary(name_text):
@@ -754,6 +755,7 @@ def detect_photo_box(card):
 
 
 def process_page(page_path, output_dir, page_no):
+    output_dir = Path(output_dir)
     image = cv2.imread(str(page_path))
     if image is None:
         print(json.dumps({"type": "progress", "page": page_no}), file=sys.stderr, flush=True)
@@ -919,6 +921,10 @@ def process_page(page_path, output_dir, page_no):
             focused_epic, epic_agreed = page_epic, True
         epic_text = focused_epic or ""
         coordinate_serial_value = coordinate_serial(numeric_words, x, y, card_w, card_h)
+        if not coordinate_serial_value:
+            card_serial, _ = ocr_serial(card)
+            if card_serial:
+                coordinate_serial_value = card_serial
         coordinate_house_value = coordinate_house(numeric_words, x, y, card_w, card_h)
         consensus_house = ocr_house(card) if verify_all_fields else ""
         # In verification mode the isolated, dual-pass value crop is preferred.
@@ -929,6 +935,8 @@ def process_page(page_path, output_dir, page_no):
             text, epic_text, str(photo_file), page_no, cell_no, focused_house,
         )
         record["layoutDetected"] = layout_detected
+        voter_page_offset = max(0, page_no - 2) if page_no >= 2 else max(0, page_no - 1)
+        page_fallback_serial = str(voter_page_offset * 30 + cell_no)
         record["rawFields"] = {
             "name": record.get("name") or "",
             "guardianName": record.get("guardianName") or "",
@@ -938,7 +946,7 @@ def process_page(page_path, output_dir, page_no):
             "voterId": page_epic or "",
             "voterSerial": coordinate_serial_value or record.get("voterSerial") or "",
         }
-        record["voterSerial"] = coordinate_serial_value or record.get("voterSerial") or str(cell_no)
+        record["voterSerial"] = coordinate_serial_value or record.get("voterSerial") or page_fallback_serial
         record["houseOcrDisagreement"] = bool(
             coordinate_house_value and consensus_house and coordinate_house_value != consensus_house
         )
@@ -2050,10 +2058,10 @@ def main():
         header = read_header(page, is_voter_page=True)
         return header, process_page(page, output_dir, page_no), read_fixed_header(page, is_voter_page=True)
 
-    page_bundles = []
-    for item in zip(page_numbers, pages):
-        page_bundles.append(process_page_bundle(item))
-        gc.collect()
+    max_workers = min(4, os.cpu_count() or 4)
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        page_bundles = list(executor.map(process_page_bundle, zip(page_numbers, pages)))
+    gc.collect()
 
     headers = [bundle[0] for bundle in page_bundles]
     page_records = [bundle[1] for bundle in page_bundles]
@@ -2176,7 +2184,12 @@ def main():
         # Primary: Direct top-left card serial box OCR
         if raw_ocr.isdigit():
             val = int(raw_ocr)
-            if last_valid_serial == 0 or (last_valid_serial < val <= last_valid_serial + 40):
+            if last_valid_serial == 0:
+                if val <= 30:
+                    assigned_serial = val
+                elif isinstance(page_num, int) and isinstance(cell_num, int):
+                    assigned_serial = (page_num - min_voter_page) * 30 + cell_num
+            elif last_valid_serial < val <= last_valid_serial + 40:
                 assigned_serial = val
 
         # Fallback 1: Sequential increment from last valid serial
@@ -2184,7 +2197,7 @@ def main():
             assigned_serial = last_valid_serial + 1
         # Fallback 2: Page grid estimation for start of roll
         elif assigned_serial is None and isinstance(page_num, int) and isinstance(cell_num, int) and page_num >= 3:
-            assigned_serial = (page_num - 3) * 30 + cell_num
+            assigned_serial = (page_num - min_voter_page) * 30 + cell_num
 
         if assigned_serial is not None:
             if raw_ocr and raw_ocr != str(assigned_serial):
@@ -2229,24 +2242,26 @@ def main():
         prev_digits = get_digits(records[i - 1].get("houseNumber")) if i > 0 else ""
         next_digits = get_digits(records[i + 1].get("houseNumber")) if i < n_rec - 1 else ""
 
-        # Pre-pass: Strip hallucinated label prefix digits (e.g. '6133' -> '133', '5134' -> '134', '7158' -> '158')
-        if len(curr_digits) >= 3 and curr_digits.startswith(("5", "6", "7", "8", "9")):
-            if len(curr_digits) == 4 and (prev_digits or next_digits):
-                cand = curr_digits[1:]
-                if prev_digits and abs(int(cand) - int(prev_digits)) <= 5:
-                    curr_digits = cand
-                    rec["houseNumber"] = cand
-                elif next_digits and abs(int(cand) - int(next_digits)) <= 5:
-                    curr_digits = cand
-                    rec["houseNumber"] = cand
-            elif len(curr_digits) == 5 and curr_digits.startswith(("61", "51", "71", "81")):
-                cand = curr_digits[2:]
-                if prev_digits and abs(int(cand) - int(prev_digits)) <= 5:
-                    curr_digits = cand
-                    rec["houseNumber"] = cand
-                elif next_digits and abs(int(cand) - int(next_digits)) <= 5:
-                    curr_digits = cand
-                    rec["houseNumber"] = cand
+        # Pre-pass: Strip hallucinated label prefix digits (e.g. '501' -> '1', '601' -> '1', '6133' -> '133', '5134' -> '134')
+        if len(curr_digits) in (3, 4, 5) and curr_digits.startswith(("5", "6", "7", "8", "9")):
+            for suffix_len in range(1, len(curr_digits)):
+                cand = curr_digits[-suffix_len:]
+                if cand.isdigit():
+                    cand_val = int(cand)
+                    if prev_digits and prev_digits.isdigit() and abs(cand_val - int(prev_digits)) <= 3:
+                        rec["suggestedHouseNumber"] = cand
+                        rec["houseNumber"] = cand
+                        rec["needsReview"] = True
+                        rec.setdefault("reviewReasons", []).append("label_prefix_noise_repaired")
+                        curr_digits = cand
+                        break
+                    elif next_digits and next_digits.isdigit() and abs(cand_val - int(next_digits)) <= 3:
+                        rec["suggestedHouseNumber"] = cand
+                        rec["houseNumber"] = cand
+                        rec["needsReview"] = True
+                        rec.setdefault("reviewReasons", []).append("label_prefix_noise_repaired")
+                        curr_digits = cand
+                        break
 
         # Rule 1 & Rule 4: Isolated prefix artifact (e.g. '314' between '14'/'14' or '538' between '37'/'38')
         if prev_digits and next_digits and prev_digits == next_digits:

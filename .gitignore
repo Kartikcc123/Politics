@@ -59,3 +59,10 @@ Thumbs.db
 __pycache__/
 *.pyc
 
+# Temporary scratch images and directories
+backend/scratch/
+scratch_page-*.png
+page-3-*.jpg
+page-3-*.png
+
+
