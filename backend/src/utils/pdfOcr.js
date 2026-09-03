@@ -485,8 +485,8 @@ const lowMemoryOcrPdf = async (pdfPath, importFileName, pageRange = {}) => {
     words: [],
     voterRecords: inheritedRecords.map((record) => ({
       ...record,
-      photo: uploadPublicPath('ocr', workId, path.basename(record.photo)),
-            cardImage: record.cardImage ? uploadPublicPath('ocr', workId, path.basename(record.cardImage)) : '',
+      photo: record.photo ? uploadPublicPath('ocr', workId, path.basename(record.photo)) : '',
+      cardImage: record.cardImage ? uploadPublicPath('ocr', workId, path.basename(record.cardImage)) : '',
     })),
     images: photos.map((photo) => uploadPublicPath('ocr', workId, path.basename(photo))),
     header,

@@ -1803,8 +1803,12 @@ const runPdfImport = async ({ file, body, currentUser }, uploadId) => {
           'sectionNumber',
           'sectionName',
         ]);
-        if (item.voterSerial && (!existing.voterSerial || String(existing.voterSerial).trim() === '')) {
-          existing.voterSerial = String(item.voterSerial).trim();
+        const cleanSerial = (val) => {
+          const s = String(val || '').trim();
+          return ['undefined', 'null', 'none', '-', 'n/a', ''].includes(s.toLowerCase()) ? '' : s;
+        };
+        if (item.voterSerial && (!cleanSerial(existing.voterSerial) || !hasVerifiedOcr)) {
+          existing.voterSerial = cleanSerial(item.voterSerial);
         }
         if (item.sectionName) existing.sectionName = item.sectionName;
         else if (existing.sectionNumber && docSectionMap[existing.sectionNumber]) existing.sectionName = docSectionMap[existing.sectionNumber];
