@@ -982,18 +982,9 @@ const parsePdfTextLayerMembers = async (filePath) => {
 };
 const parsePdfMembers = async (filePath, importFileName, onOcrProgress) => {
   const textLayer = await parsePdfTextLayerMembers(filePath);
-  if (textLayer.members.length && !textLayer.imageOnlyPages.length) {
-    return { text: textLayer.text, members: textLayer.members, ocr: null };
-  }
-  if (textLayer.members.length && textLayer.imageOnlyPages.length) {
-    const firstPage = Math.min(...textLayer.imageOnlyPages);
-    const lastPage = Math.max(...textLayer.imageOnlyPages);
-    const ocr = await ocrPdf(filePath, importFileName, {
-      firstPage,
-      lastPage,
-      onProgress: onOcrProgress,
-    });
-    const header = { ...(ocr.header || {}), ...textLayer.header };
+  // Always run Python OCR pipeline to extract voter photos, card images, and 7-rule house numbers
+  const ocr = await ocrPdf(filePath, importFileName, { onProgress: onOcrProgress });
+  const header = { ...(ocr.header || {}), ...textLayer.header };
     const sectionNames = new Map();
     for (const member of textLayer.members) {
       if (member.sectionNumber && member.sectionName && !sectionNames.has(String(member.sectionNumber))) {
@@ -1074,8 +1065,11 @@ const parsePdfMembers = async (filePath, importFileName, onOcrProgress) => {
       merged.set(key, {
         ...prev,
         ...member,
-        voterId: epic || member.voterId,
+        voterId: epic || member.voterId || prev.voterId,
         voterSerial: member.voterSerial || prev.voterSerial,
+        houseNumber: member.houseNumber || prev.houseNumber,
+        photo: member.photo || prev.photo,
+        cardImage: member.cardImage || prev.cardImage,
       });
     });
     return { text: `${textLayer.text}\n${ocr.text || ''}`, members: [...merged.values()], ocr };
