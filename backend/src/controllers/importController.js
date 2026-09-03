@@ -1069,7 +1069,14 @@ const parsePdfMembers = async (filePath, importFileName, onOcrProgress) => {
     const merged = new Map();
     [...textLayer.members, ...ocrMembers].forEach((member, index) => {
       const epic = normalizeEpic(member.voterId);
-      merged.set(epic || `review-${index}`, { ...member, voterId: epic || member.voterId });
+      const key = epic || `review-${index}`;
+      const prev = merged.get(key) || {};
+      merged.set(key, {
+        ...prev,
+        ...member,
+        voterId: epic || member.voterId,
+        voterSerial: member.voterSerial || prev.voterSerial,
+      });
     });
     return { text: `${textLayer.text}\n${ocr.text || ''}`, members: [...merged.values()], ocr };
   }
