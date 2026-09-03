@@ -1606,6 +1606,14 @@ const runWardPdfImport = async ({ file, body, currentUser }, uploadId) => {
         } else {
           if (!member.photo && item.photo) member.photo = item.photo;
         }
+        if (item.cardImage) {
+          member.sourceDocument = {
+            ...(member.sourceDocument?.toObject?.() || member.sourceDocument || {}),
+            type: 'pdf',
+            file: `/uploads/${file.filename}`,
+            ocrCardImage: item.cardImage,
+          };
+        }
         member.updatedBy = currentUser._id;
         await member.save();
         if (matchedAssembly) matched += 1;
@@ -1621,7 +1629,13 @@ const runWardPdfImport = async ({ file, body, currentUser }, uploadId) => {
           verificationStatus: item.ocrNeedsReview || !hasValidEpic ? 'needs_review' : 'pending',
           ocrReviewReasons: item.ocrReviewReasons || [],
           createdBy: currentUser._id, updatedBy: currentUser._id,
-          sourceDocument: { type: 'pdf', file: `/uploads/${file.filename}`, rawText: item.rawText || '', imageExtractionStatus: item.photo ? 'Ward voter portrait cropped.' : 'Ward portrait unavailable.' },
+          sourceDocument: {
+            type: 'pdf',
+            file: `/uploads/${file.filename}`,
+            rawText: item.rawText || '',
+            imageExtractionStatus: item.photo ? 'Ward voter portrait cropped.' : 'Ward portrait unavailable.',
+            ocrCardImage: item.cardImage || '',
+          },
         });
         wardOnly += 1;
       }

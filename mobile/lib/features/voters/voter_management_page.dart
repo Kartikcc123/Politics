@@ -5797,6 +5797,57 @@ class _VoterPhoto extends StatelessWidget {
                     const Icon(Icons.person, color: muted),
               ),
       ),
+class _VoterCardImageSection extends StatelessWidget {
+  const _VoterCardImageSection({required this.voter});
+  final Map<String, dynamic> voter;
+
+  @override
+  Widget build(BuildContext context) {
+    final source = voter['sourceDocument'];
+    final path = (source is Map ? '${source['ocrCardImage'] ?? ''}' : '${voter['ocrCardImage'] ?? ''}').trim();
+    if (path.isEmpty) return const SizedBox.shrink();
+    final url = voterPhotoUrl(path);
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Row(children: [
+            Icon(Icons.document_scanner_outlined, color: blue, size: 20),
+            SizedBox(width: 8),
+            Text('मूल मतदाता कार्ड (Voter Card Image)',
+                style: TextStyle(fontWeight: FontWeight.w900, color: navy, fontSize: 15)),
+          ]),
+          const SizedBox(height: 10),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(8),
+            child: SizedBox(
+              height: 220,
+              width: double.infinity,
+              child: InteractiveViewer(
+                minScale: 1,
+                maxScale: 5,
+                child: Image.network(
+                  url,
+                  headers: voterPhotoHeaders(url),
+                  fit: BoxFit.contain,
+                  alignment: Alignment.center,
+                  errorBuilder: (_, __, ___) => const Center(
+                    child: Text('कार्ड इमेज लोड नहीं हो सकी',
+                        style: TextStyle(color: muted, fontSize: 12)),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -6006,6 +6057,7 @@ class _VoterDetailPageState extends State<VoterDetailPage> {
                 last: true),
           ]),
           const SizedBox(height: 18),
+          _VoterCardImageSection(voter: voter),
           _ProfileSection(
               title: 'पूरी जानकारी', child: DetailList(voter: voter)),
           const SizedBox(height: 12),
