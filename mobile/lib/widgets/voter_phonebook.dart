@@ -7,8 +7,21 @@ import '../core/api_client.dart';
 import '../core/contact_actions.dart';
 import '../core/theme.dart';
 
-String voterPhotoUrl(dynamic value) {
-  final photo = '${value ?? ''}'.trim().replaceAll('\\', '/');
+String voterPhotoUrl(dynamic value, [dynamic fallback]) {
+  var photo = '';
+  if (value is Map) {
+    photo = '${value['photo'] ?? value['sourceDocument']?['ocrCardImage'] ?? value['ocrCardImage'] ?? ''}'.trim();
+  } else {
+    photo = '${value ?? ''}'.trim();
+    if (photo.isEmpty && fallback != null) {
+      if (fallback is Map) {
+        photo = '${fallback['photo'] ?? fallback['sourceDocument']?['ocrCardImage'] ?? fallback['ocrCardImage'] ?? ''}'.trim();
+      } else {
+        photo = '${fallback ?? ''}'.trim();
+      }
+    }
+  }
+  photo = photo.replaceAll('\\', '/');
   if (photo.isEmpty) return '';
   if (photo.startsWith('http://') || photo.startsWith('https://')) {
     final uri = Uri.tryParse(photo);
@@ -37,7 +50,7 @@ class VoterAvatar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final url = voterPhotoUrl(voter['photo']);
+    final url = voterPhotoUrl(voter);
     final name = '${voter['name'] ?? ''}'.trim();
     final fallback = name.isEmpty ? '?' : name.characters.first.toUpperCase();
     return ClipOval(

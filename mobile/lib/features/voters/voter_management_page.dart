@@ -5772,21 +5772,21 @@ class _InfoPill extends StatelessWidget {
 }
 
 class _VoterPhoto extends StatelessWidget {
-  const _VoterPhoto({required this.photo, required this.radius});
+  const _VoterPhoto({required this.photo, required this.radius, this.cardImage});
   final dynamic photo;
   final double radius;
+  final dynamic cardImage;
 
   @override
   Widget build(BuildContext context) {
-    final path = '${photo ?? ''}'.trim();
-    final url = voterPhotoUrl(path);
+    final url = voterPhotoUrl(photo, cardImage);
     return ClipRRect(
       borderRadius: BorderRadius.circular(8),
       child: Container(
         width: radius * 2,
         height: radius * 2,
         color: const Color(0xffeef3ff),
-        child: path.isEmpty
+        child: url.isEmpty
             ? const Icon(Icons.person, color: muted)
             : Image.network(
                 url,

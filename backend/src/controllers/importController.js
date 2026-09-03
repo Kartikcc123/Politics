@@ -695,19 +695,23 @@ const getOrCreateImportScope = async ({ user, body, firstMember }) => {
   }
 
   let ward = await resolveWard(body.ward);
-  if (!ward && firstMember?.assemblyNumber) {
+  const targetWardNumber = firstMember?.wardNumber || firstMember?.assemblyNumber;
+  if (!ward && targetWardNumber) {
     const wardSet = { active: true };
     const wardInsert = {
-      number: String(firstMember.assemblyNumber),
+      number: String(targetWardNumber),
     };
-    if (firstMember.assemblyName) {
+    if (firstMember.wardNumber) {
+      wardSet.name = `Ward ${firstMember.wardNumber}`;
+      wardSet.area = firstMember.assemblyName || firstMember.sectionName || `Ward ${firstMember.wardNumber}`;
+    } else if (firstMember.assemblyName) {
       wardSet.name = firstMember.assemblyName;
       wardSet.area = firstMember.assemblyName;
     } else {
       wardInsert.name = `Assembly ${firstMember.assemblyNumber}`;
     }
     const createdWard = await Ward.findOneAndUpdate(
-      { number: String(firstMember.assemblyNumber) },
+      { number: String(targetWardNumber) },
       {
         $set: wardSet,
         $setOnInsert: wardInsert,
@@ -745,10 +749,13 @@ const parseHeader = (text) => {
     /(?:विधान\s*सभा\s*(?:क्षेत्र)?|assembly\s*(?:constituency)?|AC)[^:：\n]{0,110}[:：-]?\s*([0-9O०-९]{1,3})\s*(?:[-–:]\s*)?(.+?)(?=\s*(?:अनुभाग|भाग\s*(?:संख्या|नं)|section|part\s*(?:number|no)|निर्वाचक)|$)/i,
   );
   const part = normalized.match(
-    /(?:भाग|part)\s*(?:संख्या|नं\.?|number|no\.?)?\s*[:：-]*\s*([0-9O\u0966-\u096f]{1,4})/i,
+    /(?:भाग|part)\s*(?:संख्या|नं\.?|number|no\.?)?\s*[:：\s-]+\s*([0-9O\u0966-\u096f]{1,4})/i,
   );
   const section = normalized.match(
     /(?:अनुभाग|section|SUT|UM|UT|SU|अिुभाग|अनुमाग)\s*(?:की)?\s*(?:संख्या|नं\.?|number|no\.?)?\s*(?:व|एवं|and)?\s*(?:नाम|name)?\s*[:：;\-]*\s*([0-9O\u0966-\u096f]{1,3})?\s*(?:[-–:]\s*)?(.+?)(?=\s*(?:भाग\s*(?:संख्या|नं)|निर्वाचक|मतदाता|part\s*(?:number|no))|$)/i,
+  );
+  const wardMatch = normalized.match(
+    /(?:वार्ड\s*(?:संख्या|नं\.?|number|no\.?)?|ward)\s*[:：-]*\s*(?:वार्ड\s*संख्या\s*)?([0-9O\u0966-\u096f]{1,4})/i,
   );
   const digits = (value) => value?.replace(/O/gi, '0').replace(/[०-९]/g, (digit) => '०१२३४५६७८९'.indexOf(digit));
   return {
@@ -757,6 +764,7 @@ const parseHeader = (text) => {
     partNumber: digits(part?.[1]),
     sectionNumber: digits(section?.[1]),
     sectionName: cleanValue(section?.[2]),
+    wardNumber: digits(wardMatch?.[1]),
   };
 };
 
@@ -1058,22 +1066,53 @@ const parsePdfMembers = async (filePath, importFileName, onOcrProgress) => {
         },
       };
     });
-    const merged = new Map();
-    [...textLayer.members, ...ocrMembers].forEach((member, index) => {
+    const mergedMap = new Map();
+    const serialMap = new Map();
+
+    for (const member of textLayer.members) {
       const epic = normalizeEpic(member.voterId);
-      const key = epic || `review-${index}`;
-      const prev = merged.get(key) || {};
-      merged.set(key, {
-        ...prev,
-        ...member,
-        voterId: epic || member.voterId || prev.voterId,
-        voterSerial: member.voterSerial || prev.voterSerial,
-        houseNumber: member.houseNumber || prev.houseNumber,
-        photo: member.photo || prev.photo,
-        cardImage: member.cardImage || prev.cardImage,
-      });
-    });
-    return { text: `${textLayer.text}\n${ocr.text || ''}`, members: [...merged.values()], ocr };
+      const key = epic || `text-${member.voterSerial || Math.random()}`;
+      mergedMap.set(key, { ...member, voterId: epic || member.voterId });
+      const serial = Number(member.voterSerial);
+      if (!isNaN(serial) && serial > 0) {
+        serialMap.set(serial, key);
+      }
+    }
+
+    for (const ocrMem of ocrMembers) {
+      const ocrEpic = normalizeEpic(ocrMem.voterId);
+      const serial = Number(ocrMem.voterSerial);
+
+      let targetKey = ocrEpic && mergedMap.has(ocrEpic) ? ocrEpic : null;
+      if (!targetKey && !isNaN(serial) && serial > 0 && serialMap.has(serial)) {
+        targetKey = serialMap.get(serial);
+      }
+
+      if (targetKey && mergedMap.has(targetKey)) {
+        const prev = mergedMap.get(targetKey);
+        const preferredEpic = isValidEpic(ocrEpic) ? ocrEpic : (isValidEpic(prev.voterId) ? prev.voterId : (ocrEpic || prev.voterId));
+        mergedMap.set(targetKey, {
+          ...ocrMem,
+          ...prev,
+          voterId: preferredEpic,
+          voterSerial: prev.voterSerial || ocrMem.voterSerial,
+          houseNumber: cleanValue(ocrMem.houseNumber) || cleanValue(prev.houseNumber),
+          photo: ocrMem.photo || prev.photo || '',
+          cardImage: ocrMem.cardImage || prev.cardImage || '',
+          ocrValues: ocrMem.ocrValues || prev.ocrValues,
+          ocrConfidence: ocrMem.ocrConfidence || prev.ocrConfidence,
+          locationResolution: ocrMem.locationResolution || prev.locationResolution,
+        });
+      } else {
+        const key = ocrEpic || `ocr-${serial || Math.random()}`;
+        mergedMap.set(key, {
+          ...ocrMem,
+          voterId: ocrEpic || ocrMem.voterId,
+        });
+      }
+    }
+
+    return { text: `${textLayer.text}\n${ocr.text || ''}`, members: [...mergedMap.values()], ocr };
   }
   const extracted = await extractTextWithFallback(filePath, importFileName, onOcrProgress);
   let text = String(extracted?.text || '');
@@ -1561,8 +1600,11 @@ const runWardPdfImport = async ({ file, body, currentUser }, uploadId) => {
             member.estimatedDob = estimateDobFromAge(item.age);
           }
           if (item.gender) member.gender = item.gender;
+          if (item.photo) member.photo = item.photo;
           member.verificationStatus = item.ocrNeedsReview || !hasValidEpic ? 'needs_review' : member.verificationStatus;
           member.ocrReviewReasons = item.ocrReviewReasons || member.ocrReviewReasons || [];
+        } else {
+          if (!member.photo && item.photo) member.photo = item.photo;
         }
         member.updatedBy = currentUser._id;
         await member.save();
@@ -2026,6 +2068,7 @@ exports.importPdfMembers = async (req, res, next) => {
 exports.cleanSectionName = cleanSectionName;
 exports.safeSectionMap = safeSectionMap;
 exports.sectionHeaderForRecord = sectionHeaderForRecord;
+exports.parseHeader = parseHeader;
 
 
 
