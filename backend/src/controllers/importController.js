@@ -1796,6 +1796,9 @@ const runPdfImport = async ({ file, body, currentUser }, uploadId) => {
           'sectionNumber',
           'sectionName',
         ]);
+        if (item.voterSerial && (!existing.voterSerial || String(existing.voterSerial).trim() === '')) {
+          existing.voterSerial = String(item.voterSerial).trim();
+        }
         if (item.sectionName) existing.sectionName = item.sectionName;
         else if (existing.sectionNumber && docSectionMap[existing.sectionNumber]) existing.sectionName = docSectionMap[existing.sectionNumber];
         else existing.sectionName = cleanSectionName(existing.sectionName);
