@@ -131,8 +131,8 @@ exports.uploadPdfChunk = (req, res, next) => {
   try {
     const id = safeUploadId(req.params.uploadId);
     const index = Number(req.params.index);
-    const totalChunks = Number(req.header('x-total-chunks'));
-    const totalBytes = Number(req.header('x-total-bytes'));
+    const totalChunks = Number(req.header('x-total-chunks') || req.header('X-Total-Chunks'));
+    const totalBytes = Number(req.header('x-total-bytes') || req.header('X-Total-Bytes'));
     if (!id || !Number.isInteger(index) || index < 0 || !Number.isInteger(totalChunks)
       || totalChunks < 1 || index >= totalChunks || !Buffer.isBuffer(req.body) || !req.body.length) {
       const error = new Error('Invalid PDF upload chunk.'); error.status = 400; throw error;
@@ -375,7 +375,7 @@ const normalize = (inputRow) => {
       ? undefined
       : String(pick(row, 'supportLevel', 'Support Level')).toLowerCase(),
     voterId: pick(row, 'voterId', 'Voter ID', 'EPIC No', 'EPIC Number', 'EPIC', 'मतदाता ID', 'मतदाता पहचान पत्र'),
-    voterSerial: pick(row, 'voterSerial', 'Serial', 'Serial No', 'Sl. No. In Part', 'क्रमांक'),
+    voterSerial: pick(row, 'voterSerial', 'Serial', 'Serial No', 'Sl. No. In Part', 'क्रमांक', 'मतदाता क्रमांक', 'क्र', 'क्र.', 'क्रं', 'क्रं.', 'क', 'क.', 'मतदाता क्र.', 'मतदाता क्रं.', 'सरियल', 'सीरियल'),
     guardianName: pick(row, 'guardianName', 'Father/Husband', 's/o, d/o, w/o Name', 'पिता/पति का नाम', 'पिता का नाम', 'पति का नाम'),
     relationType: pick(row, 'relationType', 'RLN Type'),
     houseNumber: pick(row, 'houseNumber', 'House Number', 'घर संख्या', 'गृह संख्या'),
@@ -1509,7 +1509,7 @@ const runWardPdfImport = async ({ file, body, currentUser }, uploadId) => {
         setProgress(uploadId, { processed, imported: importedIds.length, skipped: review });
         continue;
       }
-      const invalidRecord = !item.name || (rawEpic && !hasValidEpic) || (!hasValidEpic && !voterSerial);
+      const invalidRecord = !item.name || (!hasValidEpic && !voterSerial);
       if (invalidRecord) {
         const reason = !item.name
           ? 'Ward voter name missing or unreadable'
@@ -1968,7 +1968,9 @@ exports.importPdfMembers = async (req, res, next) => {
       body: { ...req.body },
       currentUser: req.currentUser,
     };
-    const useBackgroundImport = String(req.body?.asyncImport || req.query?.asyncImport || '').toLowerCase() === 'true';
+    const useBackgroundImport = req.body?.asyncImport === true
+      || String(req.body?.asyncImport || req.query?.asyncImport || '').toLowerCase() === 'true'
+      || Boolean(uploadId);
     if (!useBackgroundImport) {
       const result = await runPdfImport(context, uploadId);
       return res.json(result);

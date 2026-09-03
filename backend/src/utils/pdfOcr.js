@@ -94,7 +94,10 @@ const renderPage = async (pdfPath, outputDir, pageNumber, dpi = process.env.OCR_
   return rendered;
 };
 
-const runPythonWorker = (pages, outputDir, pageNumbers, onProgress) => new Promise((resolve, reject) => {
+const runPythonWorker = (pages, outputDir, arg3, arg4, options = {}) => new Promise((resolve, reject) => {
+  const pageNumbers = Array.isArray(arg3) ? arg3 : (Array.isArray(arg4) ? arg4 : []);
+  const onProgress = typeof arg3 === 'function' ? arg3 : (typeof arg4 === 'function' ? arg4 : null);
+  const globalStartSerial = options.globalStartSerial || (typeof arg3 === 'object' && !Array.isArray(arg3) ? arg3.globalStartSerial : undefined);
   const python = process.env.PYTHON_PATH || 'python';
   const script = path.join(__dirname, '../../python/ocr_worker.py');
   const child = spawn(python, [script], {
@@ -117,7 +120,7 @@ const runPythonWorker = (pages, outputDir, pageNumbers, onProgress) => new Promi
       try {
         const event = JSON.parse(line);
         if (event.type === 'progress' || event.type === 'card_progress') {
-          onProgress?.(event);
+          if (typeof onProgress === 'function') onProgress(event);
           continue;
         }
       } catch (_) {}
@@ -134,7 +137,7 @@ const runPythonWorker = (pages, outputDir, pageNumbers, onProgress) => new Promi
       return reject(new Error(`Python OCR returned invalid JSON: ${error.message}`));
     }
   });
-  child.stdin.end(JSON.stringify({ pages, pageNumbers, outputDir }));
+  child.stdin.end(JSON.stringify({ pages, pageNumbers, outputDir, globalStartSerial }));
 });
 
 const cropVoterPage = async (page, pageIndex, outputDir) => {
@@ -372,8 +375,7 @@ const lowMemoryOcrPdf = async (pdfPath, importFileName, pageRange = {}) => {
   const headerTexts = [];
   const header = {};
   let processedCards = 0;
-  onProgress?.({ phase: 'rendering', processedPages: 0, totalPages, processedCards: 0, totalCards });
-
+  let lastTrackedSerial = 0;
   for (let offset = 0; offset < totalPages; offset += 1) {
     const pageNumber = startPage + offset;
     let rendered;
@@ -387,6 +389,9 @@ const lowMemoryOcrPdf = async (pdfPath, importFileName, pageRange = {}) => {
         processedCards,
         totalCards,
       });
+      const globalStartSerial = pageNumber >= 3
+        ? (lastTrackedSerial > 0 ? lastTrackedSerial + 1 : (pageNumber - 3) * 30 + 1)
+        : undefined;
       const result = await runPythonWorker(
         [rendered],
         workDir,
@@ -402,8 +407,16 @@ const lowMemoryOcrPdf = async (pdfPath, importFileName, pageRange = {}) => {
             totalCards,
           });
         },
+        { globalStartSerial },
       );
-      records.push(...(result.records || []));
+      const pageRecs = result.records || [];
+      records.push(...pageRecs);
+      for (const rec of pageRecs) {
+        const s = Number(rec.voterSerial);
+        if (Number.isFinite(s) && s > lastTrackedSerial) {
+          lastTrackedSerial = s;
+        }
+      }
       if (headerTexts.length < 3 && result.headerText) headerTexts.push(result.headerText);
       for (const [key, value] of Object.entries(result.header || {})) {
         if (key === 'sectionMap' && value && typeof value === 'object') {

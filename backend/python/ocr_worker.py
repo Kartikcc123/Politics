@@ -139,7 +139,7 @@ except Exception:
 
 
 def correct_name_with_dictionary(name_text):
-    """Correct Devanagari name tokens using HINDI_NAME_DICT & fuzzy matching."""
+    """Correct Devanagari name tokens using HINDI_NAME_DICT & fuzzy matching conservatively."""
     if not name_text or not HINDI_NAME_DICT:
         return name_text
     tokens = name_text.split()
@@ -152,9 +152,9 @@ def correct_name_with_dictionary(name_text):
         if clean_tok in HINDI_NAME_DICT:
             corrected.append(clean_tok)
             continue
-        # Fast fuzzy check for tokens of length >= 3
+        # Fast fuzzy check for tokens of length >= 3 with high threshold (0.90) to prevent overwriting valid names
         best_match = None
-        best_ratio = 0.85
+        best_ratio = 0.90
         len_tok = len(clean_tok)
         candidates = [w for w in HINDI_NAME_DICT if abs(len(w) - len_tok) <= 1 and w[0] == clean_tok[0]]
         for candidate in candidates:
@@ -203,7 +203,7 @@ def coordinate_serial(words, x, y, card_w, card_h):
         if not (0.0 <= relative_x <= 0.42 and 0.0 <= relative_y <= 0.25):
             continue
         value = clean_house(word["text"])
-        if value and value.isdigit() and 1 <= int(value) <= 9999:
+        if value and value.isdigit() and 1 <= int(value) <= 99999:
             candidates.append((abs(relative_y - 0.11), -relative_x, value))
     if not candidates:
         return ""
@@ -218,7 +218,7 @@ def coordinate_house(words, x, y, card_w, card_h):
         center_y = word["top"] + word["height"] / 2
         relative_x = (center_x - x) / max(card_w, 1)
         relative_y = (center_y - y) / max(card_h, 1)
-        if not (0.05 <= relative_x <= 0.58 and 0.47 <= relative_y <= 0.68):
+        if not (0.22 <= relative_x <= 0.60 and 0.47 <= relative_y <= 0.68):
             continue
         value = clean_house(word["text"])
         if value:
@@ -227,6 +227,7 @@ def coordinate_house(words, x, y, card_w, card_h):
         return ""
     candidates.sort(key=lambda item: (item[0], item[1]))
     return candidates[0][2]
+
 
 
 def coordinate_age(words, x, y, card_w, card_h):
@@ -298,7 +299,7 @@ def _dual_fixed_choice(card, y1, y2, x1, x2, extractor, language="eng", whitelis
 
 def ocr_serial(card):
     def extract(text):
-        match = re.search(r"(?<!\d)(\d{1,4})(?!\d)", text or "")
+        match = re.search(r"(?<!\d)(\d{1,5})(?!\d)", text or "")
         return match.group(1) if match else ""
     return _dual_fixed_choice(card, 0.0, 0.23, 0.0, 0.38, extract, whitelist="0123456789")
 
@@ -392,19 +393,27 @@ def epic_from(text):
     letter_map = str.maketrans({"0": "O", "1": "I", "2": "Z", "4": "A", "5": "S", "6": "G", "7": "T", "8": "B", "3": "E"})
     digit_map = str.maketrans({"O": "0", "Q": "0", "D": "0", "I": "1", "L": "1", "Z": "2", "S": "5", "B": "8", "G": "6", "T": "7", "A": "4", "E": "3"})
 
-    # Standard 10-character EPIC codes (e.g., ZBY1234567, TWB1234567)
+    # Standard 10-character EPIC codes (e.g., ZBY1234567, TWB1234567, RWR1234567, UPX1234567)
     for value in re.findall(r"[A-Z0-9]{10}", compact):
-        candidate = value[:3].translate(letter_map) + value[3:].translate(digit_map)
-        if re.fullmatch(r"[A-Z]{3}[0-9]{7}", candidate):
-            return candidate
+        prefix = value[:3]
+        suffix = value[3:].translate(digit_map)
+        if re.fullmatch(r"[A-Z]{3}", prefix) and re.fullmatch(r"[0-9]{7}", suffix):
+            return prefix + suffix
+        translated_prefix = prefix.translate(letter_map)
+        if re.fullmatch(r"[A-Z]{3}", translated_prefix) and re.fullmatch(r"[0-9]{7}", suffix):
+            return translated_prefix + suffix
 
     # Candidate with slash or 3-letter + 7-digit misreads
     for value in re.findall(r"[A-Z0-9]{3}/?[A-Z0-9]{7}", compact):
         clean_v = re.sub(r"[^A-Z0-9]", "", value)
         if len(clean_v) == 10:
-            candidate = clean_v[:3].translate(letter_map) + clean_v[3:].translate(digit_map)
-            if re.fullmatch(r"[A-Z]{3}[0-9]{7}", candidate):
-                return candidate
+            prefix = clean_v[:3]
+            suffix = clean_v[3:].translate(digit_map)
+            if re.fullmatch(r"[A-Z]{3}", prefix) and re.fullmatch(r"[0-9]{7}", suffix):
+                return prefix + suffix
+            translated_prefix = prefix.translate(letter_map)
+            if re.fullmatch(r"[A-Z]{3}", translated_prefix) and re.fullmatch(r"[0-9]{7}", suffix):
+                return translated_prefix + suffix
     return ""
 
 
@@ -549,12 +558,12 @@ def parse_card(text, epic_text, photo_path, page_no, cell_no, focused_house=""):
     confidence += 10 if age else 0
     confidence += 10 if gender else 0
     voter_id = epic_from(epic_text + "\n" + text)
-    serial_match = re.search(r"(?:^|\n)\s*[\[\(\|]?\s*(\d{1,4})\s*[\]\)\|]?", text or "")
+    serial_match = re.search(r"(?:^|\n)\s*[\[\(\|]?\s*(\d{1,5})\s*[\]\)\|]?", text or "")
     voter_serial = serial_match.group(1) if serial_match else ""
 
-    # Check for DELETED / निरस्त / विलोपित watermark or S/E/R prefix stamps
+    # Check for DELETED / निरस्त / विलोपित watermark
     is_deleted = bool(re.search(
-        r"निरस्त|विलोपित|निरस्तीकरण|विलोपन|DELETED|DELETION|CANCELLED|EXPIRED|\b[SER]\s*\d{1,4}\b",
+        r"निरस्त|विलोपित|निरस्तीकरण|विलोपन|\bDELETED\b|\bDELETION\b|\bCANCELLED\b|\bEXPIRED\b",
         text + "\n" + (epic_text or ""),
         re.IGNORECASE
     ))
@@ -831,7 +840,7 @@ def process_page(page_path, output_dir, page_no):
     for box_x, box_y, box_w, box_h in boxes:
         numeric_regions = (
             (0.0, 0.25, 0.0, 0.42),
-            (0.47, 0.68, 0.05, 0.58),
+            (0.47, 0.68, 0.22, 0.58),
             (0.66, 0.94, 0.05, 0.58),
         )
         for top_ratio, bottom_ratio, left_ratio, right_ratio in numeric_regions:
@@ -926,16 +935,14 @@ def process_page(page_path, output_dir, page_no):
             if card_serial:
                 coordinate_serial_value = card_serial
         coordinate_house_value = coordinate_house(numeric_words, x, y, card_w, card_h)
-        consensus_house = ocr_house(card) if verify_all_fields else ""
-        # In verification mode the isolated, dual-pass value crop is preferred.
-        # Disagreement still forces review and is never silently verified.
-        focused_house = consensus_house if verify_all_fields and consensus_house else coordinate_house_value
+        consensus_house = ocr_house(card)
+        focused_house = consensus_house if consensus_house else coordinate_house_value
         focused_age = coordinate_age(numeric_words, x, y, card_w, card_h)
         record = parse_card(
             text, epic_text, str(photo_file), page_no, cell_no, focused_house,
         )
         record["layoutDetected"] = layout_detected
-        voter_page_offset = max(0, page_no - 2) if page_no >= 2 else max(0, page_no - 1)
+        voter_page_offset = max(0, page_no - 3) if page_no >= 3 else 0
         page_fallback_serial = str(voter_page_offset * 30 + cell_no)
         record["rawFields"] = {
             "name": record.get("name") or "",
@@ -1293,7 +1300,7 @@ def process_page(page_path, output_dir, page_no):
         if raw_serial.isdigit():
             serial = int(raw_serial)
             offset = serial - int(record["cell"])
-            if 0 <= offset <= 5000:
+            if 0 <= offset <= 100000:
                 serial_offsets[offset] = serial_offsets.get(offset, 0) + 1
     if serial_offsets:
         serial_offset, support = max(serial_offsets.items(), key=lambda item: item[1])
@@ -2143,7 +2150,9 @@ def main():
 
         if hdr_sec_num:
             last_known_section_num = hdr_sec_num
-            if hdr_sec_name:
+            if page_sec_map.get(hdr_sec_num):
+                last_known_section_name = page_sec_map[hdr_sec_num]
+            elif hdr_sec_name:
                 last_known_section_name = hdr_sec_name
 
         page_header = {
@@ -2166,15 +2175,34 @@ def main():
             records.append(merged)
 
     # Dynamic Serial Assignment Engine:
-    # 1. Primary: Direct OCR serial read from top-left box of the card
-    # 2. Sequential fallback: If top-left OCR is noisy, infer from last_valid_serial + 1
-    # 3. Grid fallback: For standard 30-card pages, grid formula (page - min_voter_page)*30 + cell
-    # Works 100% accurately for full pages (30 cards) AND partial pages (e.g., 10 or 22 cards)!
+    # 1. Consensus Start Finding: Pre-scan records to calculate candidate global starting offsets (S - index).
+    #    This supports partial PDFs starting at ANY voter serial (e.g. 301, 421, 1201) while rejecting isolated OCR noise on Card 1.
+    # 2. Primary: Direct OCR serial read from top-left box of the card (if aligned with consensus or valid progression).
+    # 3. Sequential fallback: If top-left OCR is noisy/missing, infer from last_valid_serial + 1.
+    # 4. Grid fallback: For standard pages, grid formula (page - min_voter_page)*30 + cell or globalStartSerial.
+    global_start_serial = payload.get("globalStartSerial")
     voter_page_numbers = [r.get("page") for r in records if isinstance(r.get("page"), int)]
     min_voter_page = min(voter_page_numbers) if voter_page_numbers else 3
 
+    start_offsets = {}
+    for idx, r in enumerate(records):
+        raw_val = str(r.get("voterSerial") or "").translate(str.maketrans("०१२३४५६७८९", "0123456789"))
+        if raw_val.isdigit():
+            val = int(raw_val)
+            expected_start = val - idx
+            if expected_start >= 1:
+                start_offsets[expected_start] = start_offsets.get(expected_start, 0) + 1
+
+    consensus_start = None
+    if start_offsets:
+        best_start, count = max(start_offsets.items(), key=lambda item: item[1])
+        if count >= 2 or len(records) < 4:
+            consensus_start = best_start
+    if consensus_start is None and isinstance(global_start_serial, int) and global_start_serial > 0:
+        consensus_start = global_start_serial
+
     last_valid_serial = 0
-    for record in records:
+    for idx, record in enumerate(records):
         raw_ocr = str(record.get("voterSerial") or "").translate(str.maketrans("०१२३४५६७८९", "0123456789"))
         page_num = record.get("page")
         cell_num = record.get("cell")
@@ -2185,19 +2213,26 @@ def main():
         if raw_ocr.isdigit():
             val = int(raw_ocr)
             if last_valid_serial == 0:
-                if val <= 30:
+                if consensus_start is not None and abs((val - idx) - consensus_start) <= 2:
                     assigned_serial = val
-                elif isinstance(page_num, int) and isinstance(cell_num, int):
-                    assigned_serial = (page_num - min_voter_page) * 30 + cell_num
+                elif consensus_start is not None:
+                    assigned_serial = consensus_start + idx
+                else:
+                    assigned_serial = val
             elif last_valid_serial < val <= last_valid_serial + 40:
                 assigned_serial = val
 
         # Fallback 1: Sequential increment from last valid serial
         if assigned_serial is None and last_valid_serial > 0:
             assigned_serial = last_valid_serial + 1
-        # Fallback 2: Page grid estimation for start of roll
-        elif assigned_serial is None and isinstance(page_num, int) and isinstance(cell_num, int) and page_num >= 3:
-            assigned_serial = (page_num - min_voter_page) * 30 + cell_num
+        # Fallback 2: Consensus / Page grid estimation
+        elif assigned_serial is None:
+            if consensus_start is not None:
+                assigned_serial = consensus_start + idx
+            elif isinstance(global_start_serial, int) and global_start_serial > 0 and isinstance(cell_num, int):
+                assigned_serial = global_start_serial + (cell_num - 1)
+            elif isinstance(page_num, int) and isinstance(cell_num, int) and page_num >= 3:
+                assigned_serial = (page_num - min_voter_page) * 30 + cell_num
 
         if assigned_serial is not None:
             if raw_ocr and raw_ocr != str(assigned_serial):
@@ -2205,6 +2240,13 @@ def main():
             last_valid_serial = assigned_serial
             record["voterSerial"] = str(assigned_serial)
             record["voterSerialConfidence"] = 95
+
+    # Section Name Auto-Repair: Sync sectionName from doc_section_map
+    if doc_section_map:
+        for record in records:
+            sec_k = str(record.get("sectionNumber") or "").strip()
+            if sec_k and doc_section_map.get(sec_k):
+                record["sectionName"] = doc_section_map[sec_k]
 
     # 7-Rule House Number Validation & Sequence Repair Engine:
     # 1. Neighbor Evidence: '37 -> 538 -> 38' suffix '38' matches next confirmed '38' -> suggested '38'
@@ -2239,8 +2281,8 @@ def main():
         rec["rawHouseNumber"] = raw_house
         curr_digits = get_digits(raw_house)
 
-        prev_digits = get_digits(records[i - 1].get("houseNumber")) if i > 0 else ""
-        next_digits = get_digits(records[i + 1].get("houseNumber")) if i < n_rec - 1 else ""
+        prev_digits = get_digits(records[i - 1].get("houseNumber")) if i > 0 and records[i - 1].get("sectionNumber") == rec.get("sectionNumber") else ""
+        next_digits = get_digits(records[i + 1].get("houseNumber")) if i < n_rec - 1 and records[i + 1].get("sectionNumber") == rec.get("sectionNumber") else ""
 
         # Pre-pass: Strip hallucinated label prefix digits (e.g. '501' -> '1', '601' -> '1', '6133' -> '133', '5134' -> '134')
         if len(curr_digits) in (3, 4, 5) and curr_digits.startswith(("5", "6", "7", "8", "9")):
@@ -2340,20 +2382,7 @@ def main():
                         rec.setdefault("reviewReasons", []).append("family_tree_guardian_repaired")
                         break
 
-        # 2. Repair voter's own name if it matches the repeated family head
-        for rec in members:
-            name = clean(rec.get("name"))
-            if not name:
-                continue
-            for cand in majority_guardians:
-                if name != cand and len(name) >= 3 and len(cand) >= 3 and abs(len(name) - len(cand)) <= 2:
-                    sim = SequenceMatcher(None, name, cand).ratio()
-                    prefix_match = (len(name) >= 3 and len(cand) >= 3 and (name[:3] in cand or cand[:3] in name))
-                    if sim >= 0.68 or prefix_match:
-                        rec["rawName"] = name
-                        rec["name"] = cand
-                        rec.setdefault("reviewReasons", []).append("family_tree_head_name_repaired")
-                        break
+
 
 
     header_text = "\n".join(headers[:3])

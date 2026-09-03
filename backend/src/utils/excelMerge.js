@@ -14,7 +14,7 @@ const headerAliases = {
   mobile: ['mobile', 'mobile no', 'mobile number', 'phone', 'phone no', 'phone number', 'मोबाइल', 'मोबाइल नंबर', 'फोन', 'फोन नंबर'],
   altMobile: ['alternate mobile', 'alternative mobile', 'alt mobile', 'alternate phone', 'दूसरा मोबाइल', 'वैकल्पिक मोबाइल'],
   voterId: ['voter id', 'epic', 'epic no', 'epic number', 'मतदाता id', 'मतदाता आईडी', 'मतदाता पहचान पत्र', 'पहचान पत्र संख्या'],
-  voterSerial: ['serial', 'serial no', 'serial number', 'sl no in part', 'क्रमांक', 'मतदाता क्रमांक'],
+  voterSerial: ['serial', 'serial no', 'serial number', 'sl no in part', 'क्रमांक', 'मतदाता क्रमांक', 'क्र', 'क्र.', 'क्रं', 'क्रं.', 'क', 'क.', 'मतदाता क्र.', 'मतदाता क्रं.', 'सरियल', 'सीरियल'],
   houseNumber: ['house number', 'house no', 'house', 'मकान संख्या', 'घर संख्या', 'गृह संख्या'],
   address: ['address', 'full address', 'पता', 'पूरा पता'],
   gender: ['gender', 'sex', 'लिंग'],
