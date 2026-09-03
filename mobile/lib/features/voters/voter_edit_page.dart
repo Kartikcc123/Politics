@@ -557,6 +557,7 @@ class _VoterEditPageState extends State<VoterEditPage> {
               minScale: 1,
               maxScale: 5,
               child: Image.network(url,
+                  headers: api.headers,
                   fit: BoxFit.contain,
                   errorBuilder: (_, __, ___) => const Center(
                       child: Text('मूल कार्ड image उपलब्ध नहीं है'))),
