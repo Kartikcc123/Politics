@@ -982,9 +982,10 @@ const parsePdfTextLayerMembers = async (filePath) => {
 };
 const parsePdfMembers = async (filePath, importFileName, onOcrProgress) => {
   const textLayer = await parsePdfTextLayerMembers(filePath);
-  // Always run Python OCR pipeline to extract voter photos, card images, and 7-rule house numbers
-  const ocr = await ocrPdf(filePath, importFileName, { onProgress: onOcrProgress });
-  const header = { ...(ocr.header || {}), ...textLayer.header };
+  if (textLayer.members.length) {
+    // Always run Python OCR pipeline to extract voter photos, card images, and 7-rule house numbers
+    const ocr = await ocrPdf(filePath, importFileName, { onProgress: onOcrProgress });
+    const header = { ...(ocr.header || {}), ...textLayer.header };
     const sectionNames = new Map();
     for (const member of textLayer.members) {
       if (member.sectionNumber && member.sectionName && !sectionNames.has(String(member.sectionNumber))) {
