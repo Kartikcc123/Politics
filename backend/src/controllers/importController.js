@@ -1525,6 +1525,12 @@ const runWardPdfImport = async ({ file, body, currentUser }, uploadId) => {
         setProgress(uploadId, { processed, imported: importedIds.length, skipped: review });
         continue;
       }
+      if (item.photo) {
+        item.photo = await persistLocalImage(item.photo, currentUser._id, true);
+      }
+      if (item.cardImage) {
+        item.cardImage = await persistLocalImage(item.cardImage, currentUser._id, true);
+      }
       const sourceRecordKey = hasValidEpic
         ? `epic:${epic}`
         : `serial:${header.municipality}:${header.wardNumber}:${header.partNumber || ''}:${voterSerial}`;
@@ -1749,6 +1755,9 @@ const runPdfImport = async ({ file, body, currentUser }, uploadId) => {
       }
       if (item.photo) {
         item.photo = await persistLocalImage(item.photo, currentUser._id, true);
+      }
+      if (item.cardImage) {
+        item.cardImage = await persistLocalImage(item.cardImage, currentUser._id, true);
       }
       const docSectionMap = safeSectionMap(parsed.ocr?.header?.sectionMap || detectedHeader.sectionMap);
       const itemSectionHeader = sectionHeaderForRecord(item, detectedHeader, docSectionMap);
