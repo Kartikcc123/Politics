@@ -11,20 +11,24 @@ const syncMemberFamily = async (member, userId) => {
   await Family.deleteMany({ members: { $size: 0 } });
 
   const houseNumber = clean(member.houseNumber);
+  const secNum = clean(member.sectionNumber);
+  const secName = clean(member.sectionName);
+  const sectionFilter = secNum ? { sectionNumber: secNum } : (secName ? { sectionName: secName } : {});
   const group = houseNumber
     ? await Member.find({
       booth: member.booth,
-      sectionNumber: clean(member.sectionNumber),
-      sectionName: clean(member.sectionName),
+      ...sectionFilter,
       houseNumber,
     })
     : [member];
   const head = [...group].sort((a, b) => (Number(b.age) || 0) - (Number(a.age) || 0))[0];
+  const headSecNum = clean(head.sectionNumber);
+  const headSecName = clean(head.sectionName);
+  const headSectionFilter = headSecNum ? { sectionNumber: headSecNum } : (headSecName ? { sectionName: headSecName } : {});
   const filter = houseNumber
     ? {
       booth: head.booth,
-      sectionNumber: clean(head.sectionNumber),
-      sectionName: clean(head.sectionName),
+      ...headSectionFilter,
       houseNumber,
     }
     : { booth: head.booth, members: head._id };

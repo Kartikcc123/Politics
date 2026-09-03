@@ -151,7 +151,7 @@ class OfflineVoterCache {
     final q = _normalize(query['q'] ?? '');
     final queryTokens =
         q.split(' ').where((token) => token.isNotEmpty).toList();
-    return items.where((raw) {
+    final filtered = items.where((raw) {
       final item = Map<String, dynamic>.from(raw);
       if (queryTokens.isNotEmpty) {
         final mode = (query['qMode'] ?? '').trim().toLowerCase();
