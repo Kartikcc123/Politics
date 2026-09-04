@@ -1971,7 +1971,7 @@ def parse_header_numbers(text):
                 section_map[number] = name
 
     section_matches = list(re.finditer(
-        r"(?:अनुभाग|section|SUT|UM|UT|SU|अिुभाग|अनुमाग|(?:^|\n)\s*अनुभाग\s*की\s*संख्या\s*व\s*नाम)[^\n:：;\-]{0,100}[:：;\-]?\s*([0-9०-९OQILSZBG]{1,3})\s*[-–:]\s*([^\n]+)",
+        r"(?:अनुभाग|section|SUT|UM|UT|SU|अिुभाग|अनुमाग|(?:^|\n)\s*अनुभाग\s*की\s*संख्या\s*व\s*नाम)[^\n:：;\-0-9,]{0,60}[:：;\-]?\s*([0-9०-९OQILSZBG]{1,2})\s*[-–:]\s*([^\n]+)",
         normalized,
         re.IGNORECASE,
     ))
