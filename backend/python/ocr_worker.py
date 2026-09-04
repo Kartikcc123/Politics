@@ -273,24 +273,38 @@ def ocr_house(card):
         cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)[1],
     ]
     values = []
+    c1_values = []
     for variant in variants:
         t_hin = pytesseract.image_to_string(variant, lang="hin+eng", config="--psm 6")
-        house_line = field(t_hin, r"(?:गृह|गह|गुह|ग्ह|गृ|गृ\.|मकान|House|H\.No|Te|\S*ह|\S*स)\s*(?:संख्या|सख्या|सं\.?|सं०|नं\.?|क्र\.?|Number|No\.?)?\s*[:：;\-]?\s*([^\n]+)")
+        house_line = field(t_hin, r"(?:गृह|गह|गुह|ग्ह|गृ|गृ\.|मकान|House|H\.No|Te|\S*ह|\S*स)\s*(?:संख्या|सख्या|सं\.?|सं०|नं\.?|क्र\.?|Number|No\.?)?\s*[:：;\-।|]?\s*([^\n]+)")
         c1 = clean_house(house_line or t_hin)
         if c1:
             values.append(c1)
+            c1_values.append(c1)
         t_eng = pytesseract.image_to_string(
             variant, lang="eng", config="--psm 6 -c tessedit_char_whitelist=0123456789/-",
         )
         c2 = clean_house(t_eng)
         if c2:
+            # If t_eng prepended colon noise '1' or '14' before valid c1 (e.g. c1='8', c2='18'), discard colon noise c2
+            if c1 and (c2 == "1" + c1 or c2 == "14" + c1):
+                continue
             values.append(c2)
     if not values:
         return ""
+    if c1_values:
+        most_common_c1 = max(set(c1_values), key=c1_values.count)
+        # If c1 produced a clean 1-digit or 2-digit number (e.g. '8', '9', '10') and a 1-prepended candidate exists (e.g. '18', '19'), prefer c1
+        for v in values:
+            if v in ("1" + most_common_c1, "14" + most_common_c1):
+                return most_common_c1
+
     # Prefer full-length house number candidate over truncated suffix candidate (e.g. 4194 over 194)
     longest_cand = max(values, key=lambda v: len(re.sub(r"\D", "", v)))
     for v in values:
         if v != longest_cand and longest_cand.endswith(v) and len(longest_cand) > len(v):
+            if longest_cand == "1" + v or longest_cand == "14" + v:
+                return v
             return longest_cand
     counts = {v: values.count(v) for v in set(values)}
     winner, _ = max(counts.items(), key=lambda x: x[1])
