@@ -197,8 +197,9 @@ def clean_house(value):
     normalized = (value or "").translate(
         str.maketrans("\u0966\u0967\u0968\u0969\u096a\u096b\u096c\u096d\u096e\u096fOQILSZBGil|!][", "012345678900112586111111")
     )
-    # Remove leading noise prefixes like '1-', '7-', '1/', '7/', ': ', '| ', '/ ' before digit search
-    normalized = re.sub(r"^(?:[174:\|/\-\.]+\s*)+", "", normalized.strip())
+    # Remove leading non-digit symbols like ':', '|', '/', '-', '.' or hyphenated prefixes like '1-', '7-'
+    normalized = re.sub(r"^(?:[:\|/\-\.]+\s*)+", "", normalized.strip())
+    normalized = re.sub(r"^(?:[174][\-/|:]+\s*)+", "", normalized.strip())
     match = re.search(r"(?<!\d)(\d{1,5}(?:[/\-]\d{1,5})?)(?!\d)", normalized)
     if not match:
         return ""
@@ -210,10 +211,18 @@ def clean_house(value):
             val = parts[0]
 
     # Strip OCR colon/label noise prepended to 4-digit or 3-digit house numbers (e.g., 14194 -> 4194, 124194 -> 4194, 74194 -> 4194)
+    if len(val) > 1 and val.startswith("0") and val not in ("00", "000"):
+        val = val.lstrip("0")
     if len(val) == 6 and val[0:2] in ("12", "14", "15", "17", "44", "47") and val[2:].isdigit():
         val = val[2:]
-    elif len(val) == 5 and val[0] in ("1", "7", "4", ":", "|", "l", "i") and val[1:].isdigit():
+    elif len(val) == 5 and val[0] in (":", "|", "l", "i") and val[1:].isdigit():
         val = val[1:]
+    elif len(val) == 5 and val[0:2] in ("14", "17", "44", "74", "15") and val[1:].isdigit():
+        val = val[1:]
+    elif len(val) == 4 and val[0:2] in ("44", "47") and val[2:].isdigit() and int(val[2:]) >= 50:
+        val = "41" + val[2:]
+    elif len(val) == 3 and val[0] in ("4", "7") and val[1:].isdigit() and int(val[1:]) >= 10:
+        val = "41" + val[1:]
     elif len(val) == 3 and val in ("100", "120", "150"):
         val = "0" if val in ("120", "100") else "00"
     return val
@@ -278,41 +287,18 @@ def coordinate_age(words, x, y, card_w, card_h):
 
 
 def ocr_house(card):
-    """Read only the value area of the fixed house-number row."""
+    """Read the full house-number row and parse the value using regex."""
     height, width = card.shape[:2]
     
-    # 1. Primary: Focused value crop pass on the right side of house row (excluding left Hindi label "मकान संख्या :")
-    val_region = card[
-        round(height * 0.48):round(height * 0.72),
-        round(width * 0.32):round(width * 0.75),
-    ]
-    if val_region.size > 0:
-        val_gray = cv2.cvtColor(val_region, cv2.COLOR_BGR2GRAY)
-        val_gray = cv2.resize(val_gray, None, fx=2.0, fy=2.0, interpolation=cv2.INTER_CUBIC)
-        val_variants = [
-            cv2.createCLAHE(3.0, (8, 8)).apply(val_gray),
-            cv2.threshold(val_gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)[1],
-        ]
-        focused_cands = []
-        for vvar in val_variants:
-            t_val = safe_image_to_string(vvar, lang="eng", config="--psm 6 -c tessedit_char_whitelist=0123456789/-")
-            cv = clean_house(t_val)
-            if cv:
-                focused_cands.append(cv)
-        if focused_cands:
-            counts = {v: focused_cands.count(v) for v in set(focused_cands)}
-            winner, _ = max(counts.items(), key=lambda x: x[1])
-            return winner
-
-    # 2. Fallback: Broader region pass if focused right-side crop returned empty
+    # Crop the exact house number line (excluding top serial and bottom age)
     region = card[
-        round(height * 0.48):round(height * 0.75),
-        round(width * 0.15):round(width * 0.82),
+        round(height * 0.49):round(height * 0.70),
+        round(width * 0.10):round(width * 0.78),
     ]
     if region.size == 0:
         return ""
     gray = cv2.cvtColor(region, cv2.COLOR_BGR2GRAY)
-    gray = cv2.resize(gray, None, fx=1.5, fy=1.5, interpolation=cv2.INTER_CUBIC)
+    gray = cv2.resize(gray, None, fx=2.0, fy=2.0, interpolation=cv2.INTER_CUBIC)
     variants = [
         cv2.createCLAHE(3.0, (8, 8)).apply(gray),
         cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)[1],
@@ -621,8 +607,13 @@ def parse_card(text, epic_text, photo_path, page_no, cell_no, focused_house="", 
         field(text, r"(?:गृह|गह|गुह|ग्ह|गृ|गृ\.|मकान|House|H\.No|Te|\S*ह|\S*स)\s*(?:संख्या|सख्या|सं\.?|सं०|नं\.?|क्र\.?|Number|No\.?)?\s*[:：;\-]?\s*([^\n]+)")
         or field(text, r"(?:संख्या|सख्या)\s*[:：;\-]\s*([^\n]+)")
     )
-    if focused_house and re.fullmatch(r"\d{1,5}(?:[/\-]\d{1,5})?", focused_house):
-        house = focused_house
+    if raw_house and focused_house:
+        if len(raw_house) > len(focused_house) and raw_house.endswith(focused_house):
+            house = raw_house
+        elif len(raw_house) >= 2 and len(focused_house) == 1 and focused_house in ("1", "2", "7", "4"):
+            house = raw_house
+        else:
+            house = focused_house
     elif raw_house != "":
         house = raw_house
     else:
@@ -1126,8 +1117,19 @@ def process_page(page_path, output_dir, page_no):
                 record["houseNumber"] = str(num)
                 record["houseNumberConfidence"] = 95
             elif last_house > 0 and num < last_house:
-                record["rawHouseNumber"] = record.get("rawHouseNumber") or record.get("houseNumber")
-                record["houseOcrDisagreement"] = True
+                if last_house >= 100 and num < 100:
+                    record["rawHouseNumber"] = record.get("rawHouseNumber") or record.get("houseNumber")
+                    record["houseNumber"] = str(last_house)
+                    record["houseNumberConfidence"] = 85
+                elif last_house >= 1000 and len(str(num)) == 3 and str(last_house)[:2] + str(num)[1:] >= str(last_house):
+                    cand_str = str(last_house)[:2] + str(num)[1:]
+                    record["rawHouseNumber"] = record.get("rawHouseNumber") or record.get("houseNumber")
+                    record["houseNumber"] = cand_str
+                    last_house = int(cand_str)
+                    record["houseNumberConfidence"] = 90
+                else:
+                    record["rawHouseNumber"] = record.get("rawHouseNumber") or record.get("houseNumber")
+                    record["houseOcrDisagreement"] = True
         elif last_house > 0 and (not val or not str(val).strip()):
             record["rawHouseNumber"] = record.get("rawHouseNumber") or record.get("houseNumber")
             record["houseNumber"] = str(last_house)
@@ -2160,6 +2162,27 @@ def main():
                 rec["needsReview"] = True
                 rec.setdefault("reviewReasons", []).append("prepended_colon_one_repaired")
                 curr_digits = cand
+
+        # Repair truncated 3-digit or single/double digit noise when flanked by 4-digit numbers starting with 41 (e.g. 497 -> 4197, 97 -> 4197, 6 -> 4196)
+        if curr_digits and len(curr_digits) < 4:
+            ref_4digit = prev_digits if (len(prev_digits) == 4 and prev_digits.startswith("41")) else (next_digits if (len(next_digits) == 4 and next_digits.startswith("41")) else "")
+            if ref_4digit:
+                prefix = ref_4digit[:2]
+                if len(curr_digits) == 3 and curr_digits[0] in ("4", "7") and curr_digits[1:].isdigit():
+                    cand = prefix + curr_digits[1:]
+                    rec["suggestedHouseNumber"] = cand
+                    rec["houseNumber"] = cand
+                    curr_digits = cand
+                elif len(curr_digits) == 2 and curr_digits.isdigit():
+                    cand = prefix + curr_digits
+                    rec["suggestedHouseNumber"] = cand
+                    rec["houseNumber"] = cand
+                    curr_digits = cand
+                elif len(curr_digits) == 1 and prev_digits:
+                    cand = prev_digits
+                    rec["suggestedHouseNumber"] = cand
+                    rec["houseNumber"] = cand
+                    curr_digits = cand
 
         # Sandwich rule: if prev and next are identical (e.g. 10, X, 10 -> X becomes 10)
         if prev_digits and next_digits and prev_digits == next_digits and len(prev_digits) >= 1:
