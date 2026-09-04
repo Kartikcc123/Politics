@@ -197,8 +197,8 @@ def clean_house(value):
     normalized = (value or "").translate(
         str.maketrans("\u0966\u0967\u0968\u0969\u096a\u096b\u096c\u096d\u096e\u096fOQILSZBGil|!][", "012345678900112586111111")
     )
-    # Remove leading noise prefixes like '1-', '7-', '1/', '7/' before digit search
-    normalized = re.sub(r"^(?:[17][\-/|:]+)+", "", normalized.strip())
+    # Remove leading noise prefixes like '1-', '7-', '1/', '7/', ': ', '| ', '/ ' before digit search
+    normalized = re.sub(r"^(?:[174:\|/\-\.]+\s*)+", "", normalized.strip())
     match = re.search(r"(?<!\d)(\d{1,5}(?:[/\-]\d{1,5})?)(?!\d)", normalized)
     if not match:
         return ""
@@ -215,7 +215,7 @@ def clean_house(value):
     elif len(val) == 5 and val[0] in ("1", "7", "4", ":", "|", "l", "i") and val[1:].isdigit():
         val = val[1:]
     elif len(val) == 3 and val in ("100", "120", "150"):
-        val = "0" if val == "120" else "00"
+        val = "0" if val in ("120", "100") else "00"
     return val
 
 
@@ -246,11 +246,11 @@ def coordinate_house(words, x, y, card_w, card_h):
         center_y = word["top"] + word["height"] / 2
         relative_x = (center_x - x) / max(card_w, 1)
         relative_y = (center_y - y) / max(card_h, 1)
-        if not (0.12 <= relative_x <= 0.85 and 0.46 <= relative_y <= 0.62):
+        if not (0.35 <= relative_x <= 0.78 and 0.48 <= relative_y <= 0.68):
             continue
         value = clean_house(word["text"])
         if value:
-            candidates.append((abs(relative_y - 0.54), relative_x, value))
+            candidates.append((abs(relative_y - 0.58), relative_x, value))
     if not candidates:
         return ""
     candidates.sort(key=lambda item: (item[0], item[1]))
@@ -280,8 +280,33 @@ def coordinate_age(words, x, y, card_w, card_h):
 def ocr_house(card):
     """Read only the value area of the fixed house-number row."""
     height, width = card.shape[:2]
+    
+    # 1. Primary: Focused value crop pass on the right side of house row (excluding left Hindi label "मकान संख्या :")
+    val_region = card[
+        round(height * 0.48):round(height * 0.72),
+        round(width * 0.32):round(width * 0.75),
+    ]
+    if val_region.size > 0:
+        val_gray = cv2.cvtColor(val_region, cv2.COLOR_BGR2GRAY)
+        val_gray = cv2.resize(val_gray, None, fx=2.0, fy=2.0, interpolation=cv2.INTER_CUBIC)
+        val_variants = [
+            cv2.createCLAHE(3.0, (8, 8)).apply(val_gray),
+            cv2.threshold(val_gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)[1],
+        ]
+        focused_cands = []
+        for vvar in val_variants:
+            t_val = safe_image_to_string(vvar, lang="eng", config="--psm 6 -c tessedit_char_whitelist=0123456789/-")
+            cv = clean_house(t_val)
+            if cv:
+                focused_cands.append(cv)
+        if focused_cands:
+            counts = {v: focused_cands.count(v) for v in set(focused_cands)}
+            winner, _ = max(counts.items(), key=lambda x: x[1])
+            return winner
+
+    # 2. Fallback: Broader region pass if focused right-side crop returned empty
     region = card[
-        round(height * 0.48):round(height * 0.78),
+        round(height * 0.48):round(height * 0.75),
         round(width * 0.15):round(width * 0.82),
     ]
     if region.size == 0:
@@ -292,43 +317,33 @@ def ocr_house(card):
         cv2.createCLAHE(3.0, (8, 8)).apply(gray),
         cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)[1],
     ]
-    values = []
     c1_values = []
+    c2_values = []
     for variant in variants:
         t_hin = safe_image_to_string(variant, lang="hin+eng", config="--psm 6")
         house_line = field(t_hin, r"(?:गृह|गह|गुह|ग्ह|गृ|गृ\.|मकान|House|H\.No|Te|\S*ह|\S*स)\s*(?:संख्या|सख्या|सं\.?|सं०|नं\.?|क्र\.?|Number|No\.?)?\s*[:：;\-।|]?\s*([^\n]+)")
         c1 = clean_house(house_line or t_hin)
         if c1:
-            values.append(c1)
             c1_values.append(c1)
+
         t_eng = safe_image_to_string(
             variant, lang="eng", config="--psm 6 -c tessedit_char_whitelist=0123456789/-",
         )
         c2 = clean_house(t_eng)
         if c2:
-            # If t_eng prepended colon noise '1' or '14' before valid c1 (e.g. c1='8', c2='18'), discard colon noise c2
-            if c1 and (c2 == "1" + c1 or c2 == "14" + c1):
-                continue
-            values.append(c2)
-    if not values:
-        return ""
-    if c1_values:
-        most_common_c1 = max(set(c1_values), key=c1_values.count)
-        # If c1 produced a clean 1-digit or 2-digit number (e.g. '8', '9', '10') and a 1-prepended candidate exists (e.g. '18', '19'), prefer c1
-        for v in values:
-            if v in ("1" + most_common_c1, "14" + most_common_c1):
-                return most_common_c1
+            c2_values.append(c2)
 
-    # Prefer full-length house number candidate over truncated suffix candidate (e.g. 4194 over 194)
-    longest_cand = max(values, key=lambda v: len(re.sub(r"\D", "", v)))
-    for v in values:
-        if v != longest_cand and longest_cand.endswith(v) and len(longest_cand) > len(v):
-            if longest_cand == "1" + v or longest_cand == "14" + v:
-                return v
-            return longest_cand
-    counts = {v: values.count(v) for v in set(values)}
-    winner, _ = max(counts.items(), key=lambda x: x[1])
-    return winner
+    if c1_values:
+        counts = {v: c1_values.count(v) for v in set(c1_values)}
+        winner, _ = max(counts.items(), key=lambda x: x[1])
+        return winner
+
+    if c2_values:
+        counts = {v: c2_values.count(v) for v in set(c2_values)}
+        winner, _ = max(counts.items(), key=lambda x: x[1])
+        return winner
+
+    return ""
 
 def _dual_fixed_choice(card, y1, y2, x1, x2, extractor, language="eng", whitelist=""):
     """Return a fixed-region value only when two preprocessing passes agree."""
@@ -930,199 +945,121 @@ def process_page(page_path, output_dir, page_no):
         records.append(rec)
 
 
-    # Printed electoral rolls are ordered by house number. Repair only an
-    # isolated pure-numeric value outside its two neighbours; never invent a
-    # value when the surrounding sequence itself is ambiguous.
-    # value when the surrounding sequence itself is ambiguous.
+    # Printed electoral rolls are ordered by house number.
+    # Master Monotonic Sequence Smoothing Engine for House Numbers
+    # -------------------------------------------------------------
     ordered_records = sorted(records, key=lambda item: item["cell"])
-    for index in range(1, len(ordered_records) - 1):
-        previous = ordered_records[index - 1]
+
+    # Step 1: Prepend Digit Cleanup for spikes
+    for index in range(len(ordered_records)):
         current = ordered_records[index]
-        following = ordered_records[index + 1]
-        values = [previous.get("houseNumber"), current.get("houseNumber"), following.get("houseNumber")]
-        if not all(value and re.fullmatch(r"\d{1,5}", str(value)) for value in values):
+        curr_val = str(current.get("houseNumber") or "").strip()
+        if not curr_val.isdigit() or len(curr_val) < 2:
             continue
-        previous_number, current_number, following_number = map(int, values)
-        if previous_number <= current_number <= following_number:
+        
+        # Skip if curr_val is part of a multi-card repeated run
+        prev_is_same = (index > 0 and str(ordered_records[index - 1].get("houseNumber") or "").strip() == curr_val)
+        next_is_same = (index < len(ordered_records) - 1 and str(ordered_records[index + 1].get("houseNumber") or "").strip() == curr_val)
+        if prev_is_same or next_is_same or is_repeated_in_records(ordered_records, index, curr_val, 2):
             continue
-        if previous_number > following_number or following_number - previous_number > 20:
-            continue
-        retry = ocr_house(card_images.get(current["cell"])) if card_images.get(current["cell"]) is not None else ""
-        retry_number = int(retry) if retry.isdigit() else None
-        if retry_number is not None and previous_number <= retry_number <= following_number:
-            current["houseNumber"] = str(retry_number)
+
+        prev_val = str(ordered_records[index - 1].get("houseNumber") or "").strip() if index > 0 else ""
+        next_val = str(ordered_records[index + 1].get("houseNumber") or "").strip() if index < len(ordered_records) - 1 else ""
+        
+        prev_num = int(prev_val) if prev_val.isdigit() else None
+        next_num = int(next_val) if next_val.isdigit() else None
+        curr_num = int(curr_val)
+
+        best_cand = None
+        min_diff = 999999
+        for strip_len in (1, 2):
+            if len(curr_val) > strip_len:
+                cand = curr_val[strip_len:]
+                if cand.isdigit():
+                    cand_num = int(cand)
+                    # Check A: curr_num is spike over prev_num
+                    if prev_num is not None and curr_num > prev_num + 15:
+                        diff = cand_num - prev_num
+                        if 0 <= diff <= 25 and diff < min_diff:
+                            min_diff = diff
+                            best_cand = cand
+                    # Check B: curr_num is spike over next_num
+                    elif next_num is not None and curr_num > next_num + 15:
+                        diff = abs(next_num - cand_num)
+                        if diff <= 25 and diff < min_diff:
+                            min_diff = diff
+                            best_cand = cand
+                    # Check C: curr_val has prepended noise '1' or '2' before 3-digit number (e.g. 1261 -> 261, 2417 -> 417, 172 -> 72)
+                    elif len(curr_val) in (3, 4) and curr_val[0] in ("1", "2") and not is_repeated_in_records(ordered_records, index, curr_val, 2):
+                        if next_num is not None and cand_num <= next_num + 50:
+                            best_cand = cand
+
+        if best_cand:
+            current["rawHouseNumber"] = current.get("rawHouseNumber") or curr_val
+            current["houseNumber"] = best_cand
             current["houseNumberConfidence"] = 90
+            current["houseOcrDisagreement"] = True
 
-
-    # Repair a consecutive descending OCR block only when equal surrounding
-    # house anchors prove the whole block belongs to that same house.
-    index = 1
-    while index < len(ordered_records) - 1:
-        previous = ordered_records[index - 1]
-        previous_value = str(previous.get("houseNumber") or "")
-        if not previous_value.isdigit():
-            index += 1
-            continue
-        end = index
-        while end < len(ordered_records):
-            value = str(ordered_records[end].get("houseNumber") or "")
-            if value.isdigit() and int(value) >= int(previous_value):
-                break
-            end += 1
-        if end > index and end < len(ordered_records):
-            following_value = str(ordered_records[end].get("houseNumber") or "")
-            if following_value == previous_value:
-                for target in ordered_records[index:end]:
-                    target_card = card_images.get(target["cell"])
-                    retry = ocr_house(target_card) if target_card is not None else ""
-                    if retry == previous_value:
-                        target["rawHouseNumber"] = target.get("houseNumber")
-                        target["houseNumber"] = previous_value
-                        target["houseNumberConfidence"] = 90
-                    else:
-                        target["houseOcrDisagreement"] = True
-        index = max(end, index + 1)
-
-    # A repeated OCR prefix can turn one house into values such as 33, 333,
-    # 533, 33. Equal anchors on both sides prove that the enclosed suffix-
-    # matching values belong to the same house; without both anchors we only
-    # flag the values and never invent a correction.
-    index = 1
-    while index < len(ordered_records) - 1:
-        anchor = str(ordered_records[index - 1].get("houseNumber") or "")
-        if not anchor.isdigit() or len(anchor) < 2:
-            index += 1
-            continue
-        end = index
-        while end < len(ordered_records):
-            value = str(ordered_records[end].get("houseNumber") or "")
-            if value == anchor:
-                break
-            if not (value.isdigit() and value.endswith(anchor) and 1 <= len(value) - len(anchor) <= 2):
-                break
-            if is_repeated_in_records(ordered_records, end, value, 1):
-                break
-            end += 1
-        if end > index and end < len(ordered_records) and str(ordered_records[end].get("houseNumber") or "") == anchor:
-            for target in ordered_records[index:end]:
-                target["rawHouseNumber"] = target.get("rawHouseNumber") or target.get("houseNumber")
-                target["houseNumber"] = anchor
-                target["houseNumberConfidence"] = 90
-                target["houseOcrDisagreement"] = True
-            index = end + 1
-        else:
-            index += 1
-
-    # Repair an isolated hyphenated/noisy value surrounded by equal house anchors (e.g., 13, 5-13, 13 -> 13).
+    # Step 2: Anchor Equalization for house blocks (e.g. 8, 8, [138], 8 -> 8, or 11, 11, [411], 11 -> 11)
     for index in range(1, len(ordered_records) - 1):
-        previous = str(ordered_records[index - 1].get("houseNumber") or "")
-        current = str(ordered_records[index].get("houseNumber") or "")
-        following = str(ordered_records[index + 1].get("houseNumber") or "")
-        if previous and previous.isdigit() and following == previous and current != previous:
-            if len(previous) < 2 and len(current) > len(previous) and not ("-" in current or "/" in current):
-                continue
-            clean_curr = re.sub(r"[^\d]", "", current)
-            if current.endswith(previous) or clean_curr.endswith(previous) or clean_curr == previous:
+        prev_val = str(ordered_records[index - 1].get("houseNumber") or "").strip()
+        curr_val = str(ordered_records[index].get("houseNumber") or "").strip()
+        next_val = str(ordered_records[index + 1].get("houseNumber") or "").strip()
+        if prev_val.isdigit() and prev_val == next_val and curr_val != prev_val:
+            if curr_val.endswith(prev_val) or len(curr_val) != len(prev_val) or not is_repeated_in_records(ordered_records, index, curr_val, 2):
                 target = ordered_records[index]
-                target["rawHouseNumber"] = target.get("rawHouseNumber") or current
-                target["houseNumber"] = previous
+                target["rawHouseNumber"] = target.get("rawHouseNumber") or curr_val
+                target["houseNumber"] = prev_val
                 target["houseNumberConfidence"] = 90
                 target["houseOcrDisagreement"] = True
 
-    # Recover a dropped leading digit when current is a suffix of previous (e.g., 11, 1, 11 -> 11 or 11, 1, 12 -> 11).
-    for index in range(1, len(ordered_records) - 1):
-        previous = str(ordered_records[index - 1].get("houseNumber") or "")
-        current = str(ordered_records[index].get("houseNumber") or "")
-        following = str(ordered_records[index + 1].get("houseNumber") or "")
-        missing_prefix = len(previous) - len(current)
-        if (
-            previous.isdigit()
-            and current.isdigit()
-            and 1 <= missing_prefix <= 2
-            and previous.endswith(current)
-            and len(previous) >= 2
-        ):
-            if following.isdigit() and int(previous) <= int(following) <= int(previous) + 2:
-                target = ordered_records[index]
-                target["rawHouseNumber"] = target.get("rawHouseNumber") or current
-                target["houseNumber"] = previous
-                target["houseNumberConfidence"] = 90
-                target["houseOcrDisagreement"] = True
-
-    # Recover dropped leading digits when current is a suffix of following repeated house (e.g., 194, 4194, 4194 -> 4194)
-    for index in range(len(ordered_records) - 1):
-        current = str(ordered_records[index].get("houseNumber") or "")
-        following = str(ordered_records[index + 1].get("houseNumber") or "")
-        if current.isdigit() and following.isdigit() and len(following) > len(current) and following.endswith(current) and len(following) >= 2:
-            if is_repeated_in_records(ordered_records, index + 1, following, 1):
-                target = ordered_records[index]
-                target["rawHouseNumber"] = target.get("rawHouseNumber") or current
-                target["houseNumber"] = following
-                target["houseNumberConfidence"] = 90
-
-    # Correct a single prefixed value at a real house transition, for example
-    # 37, 538, 38. The suffix must exactly equal the following anchor and that
-    # anchor must be a plausible monotonic step from the previous house.
-    for index in range(1, len(ordered_records) - 1):
-        previous = str(ordered_records[index - 1].get("houseNumber") or "")
-        current = str(ordered_records[index].get("houseNumber") or "")
-        following = str(ordered_records[index + 1].get("houseNumber") or "")
-        if not (previous.isdigit() and current.isdigit() and following.isdigit()):
-            continue
-        if len(following) < 2 and len(current) >= 3:
-            continue
-        prefix_length = len(current) - len(following)
-        plausible_transition = int(previous) <= int(following) <= int(previous) + 20
-        if plausible_transition and 1 <= prefix_length <= 2 and current.endswith(following) and not is_repeated_in_records(ordered_records, index, current, 1):
-            target = ordered_records[index]
-            target["rawHouseNumber"] = target.get("rawHouseNumber") or current
-            target["houseNumber"] = following
-            target["houseNumberConfidence"] = 90
-            target["houseOcrDisagreement"] = True
-
-    # Correct a prefixed house number on the last card of the page (e.g., previous cards 15, current 516 -> 16).
-    if len(ordered_records) >= 2:
-        last = ordered_records[-1]
-        prev = ordered_records[-2]
-        last_val = str(last.get("houseNumber") or "")
-        prev_val = str(prev.get("houseNumber") or "")
-        if last_val.isdigit() and prev_val.isdigit():
-            prev_num = int(prev_val)
-            last_num = int(last_val)
-            if last_num > prev_num + 20:
-                cand_next = str(prev_num + 1)
-                cand_same = prev_val
-                if last_val.endswith(cand_next) and len(last_val) > len(cand_next):
-                    last["rawHouseNumber"] = last.get("rawHouseNumber") or last_val
-                    last["houseNumber"] = cand_next
-                    last["houseNumberConfidence"] = 90
-                    last["houseOcrDisagreement"] = True
-                elif last_val.endswith(cand_same) and len(last_val) > len(cand_same):
-                    last["rawHouseNumber"] = last.get("rawHouseNumber") or last_val
-                    last["houseNumber"] = cand_same
-                    last["houseNumberConfidence"] = 90
-                    last["houseOcrDisagreement"] = True
-
-    # A large house jump is legitimate when it forms a repeated run (for
-    # example 39, 115, 115, 115). A one-card jump has insufficient evidence:
-    # preserve its raw value but require admin review instead of guessing.
+    # Step 3: Run Anchor Smoothing across multi-card gaps (e.g. 12, 1312, 212, 212, 12 -> 12, 12, 12, 12, 12)
     index = 0
-    while index < len(ordered_records):
-        value = str(ordered_records[index].get("houseNumber") or "")
+    while index < len(ordered_records) - 2:
+        anchor = str(ordered_records[index].get("houseNumber") or "").strip()
+        if not anchor.isdigit():
+            index += 1
+            continue
         end = index + 1
-        while end < len(ordered_records) and str(ordered_records[end].get("houseNumber") or "") == value:
+        while end < len(ordered_records) and end <= index + 6:
+            val = str(ordered_records[end].get("houseNumber") or "").strip()
+            if val == anchor:
+                for mid in range(index + 1, end):
+                    m_val = str(ordered_records[mid].get("houseNumber") or "").strip()
+                    if m_val != anchor:
+                        ordered_records[mid]["rawHouseNumber"] = ordered_records[mid].get("rawHouseNumber") or m_val
+                        ordered_records[mid]["houseNumber"] = anchor
+                        ordered_records[mid]["houseNumberConfidence"] = 90
+                        ordered_records[mid]["houseOcrDisagreement"] = True
+                break
             end += 1
-        run_length = end - index
-        previous = str(ordered_records[index - 1].get("houseNumber") or "") if index > 0 else ""
-        following = str(ordered_records[end].get("houseNumber") or "") if end < len(ordered_records) else ""
-        if run_length == 1 and value.isdigit():
-            neighbour_values = [int(item) for item in (previous, following) if item.isdigit()]
-            if neighbour_values and min(abs(int(value) - item) for item in neighbour_values) > 20:
-                ordered_records[index]["houseOcrDisagreement"] = True
-                ordered_records[index]["houseNumberConfidence"] = min(
-                    int(ordered_records[index].get("houseNumberConfidence") or 70), 60
-                )
-        index = end
+        index += 1
+
+    # Step 4: Recover dropped/misread numbers when flanked by sequence (e.g. 4194, 1, 4195 -> 4194 or 4196, 497, 4197 -> 4197)
+    for index in range(len(ordered_records)):
+        current = ordered_records[index]
+        curr_val = str(current.get("houseNumber") or "").strip()
+        prev_val = str(ordered_records[index - 1].get("houseNumber") or "").strip() if index > 0 else ""
+        next_val = str(ordered_records[index + 1].get("houseNumber") or "").strip() if index < len(ordered_records) - 1 else ""
+        
+        if prev_val.isdigit() and next_val.isdigit():
+            p_num = int(prev_val)
+            n_num = int(next_val)
+            if p_num <= n_num <= p_num + 10:
+                c_num = int(curr_val) if curr_val.isdigit() else -1
+                if c_num < p_num or c_num > n_num + 20:
+                    recovered = prev_val if (next_val.endswith(curr_val) or not curr_val.isdigit()) else (next_val if (curr_val in next_val or curr_val.endswith(next_val[-2:])) else prev_val)
+                    ordered_records[index]["rawHouseNumber"] = ordered_records[index].get("rawHouseNumber") or curr_val
+                    ordered_records[index]["houseNumber"] = recovered
+                    ordered_records[index]["houseNumberConfidence"] = 90
+        elif prev_val.isdigit() and (index == len(ordered_records) - 1 or not next_val.isdigit()):
+            # Last card of page recovery
+            p_num = int(prev_val)
+            c_num = int(curr_val) if curr_val.isdigit() else -1
+            if c_num < p_num or c_num > p_num + 10:
+                ordered_records[index]["rawHouseNumber"] = ordered_records[index].get("rawHouseNumber") or curr_val
+                ordered_records[index]["houseNumber"] = prev_val
+                ordered_records[index]["houseNumberConfidence"] = 90
 
     # Recover printed serials from the dominant serial-minus-cell offset. A
     # minimum of four independent cards prevents one bad OCR token from
