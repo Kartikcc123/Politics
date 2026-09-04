@@ -1858,6 +1858,11 @@ def parse_header_numbers(text):
         section_name = section_map[section_number]
     elif section_number and section_name and section_number not in section_map:
         section_map[section_number] = section_name
+    elif not section_number and section_name:
+        for num, name in section_map.items():
+            if name == section_name or name.startswith(section_name) or section_name.startswith(name):
+                section_number = num
+                break
 
     village = labeled_value([
         r"\u0917\u094d\u0930\u093e\u092e\s*(?:\u0915\u093e\s*)?(?:\u0928\u093e\u092e|name)",
@@ -1871,6 +1876,8 @@ def parse_header_numbers(text):
         r"(?:\u092a\u093e\u0938|\u092e\u0917\u0930\u0940)\s*[,،]?\s*", village
     ):
         village = ""
+    if village:
+        village = re.sub(r"\bभीटा\b", "भींटा", village)
 
     raw_pin = labeled_value(
         [r"\u092a\u093f\u0928\s*\u0915\u094b\u0921", r"pin\s*code"], numeric=True
