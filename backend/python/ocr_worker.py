@@ -177,6 +177,8 @@ def clean_house(value):
     normalized = (value or "").translate(
         str.maketrans("\u0966\u0967\u0968\u0969\u096a\u096b\u096c\u096d\u096e\u096fOQILSZBG", "012345678900112586")
     )
+    # Remove leading noise prefixes like '1-', '7-', '1/', '7/' before digit search
+    normalized = re.sub(r"^(?:[17][\-/|:]+)+", "", normalized.strip())
     match = re.search(r"(?<!\d)(\d{1,5}(?:[/\-]\d{1,5})?)(?!\d)", normalized)
     if not match:
         return ""
@@ -187,8 +189,10 @@ def clean_house(value):
         if len(parts) == 2 and parts[0] == parts[1]:
             val = parts[0]
 
-    # Strip OCR colon noise prepended to house numbers (e.g., 12112 -> 112, 15112 -> 112, 14215 -> 4215, 1261 -> 261, 100 -> 00, 120 -> 0)
-    if len(val) == 5 and val[0:2] in ("12", "15", "14", "13", "10") and val[2:].isdigit():
+    # Strip OCR colon noise prepended to house numbers (e.g., 12112 -> 112, 15112 -> 112, 74194 -> 4194, 14215 -> 4215, 1261 -> 261, 100 -> 00, 120 -> 0)
+    if len(val) == 5 and val.startswith("74"):
+        val = val[1:]
+    elif len(val) == 5 and val[0:2] in ("12", "15", "14", "13", "10") and val[2:].isdigit():
         val = val[2:]
     elif len(val) == 4 and val[0:2] in ("12", "15", "14", "13") and val[2:].isdigit() and int(val[2:]) >= 10:
         val = val[2:]
@@ -223,11 +227,11 @@ def coordinate_house(words, x, y, card_w, card_h):
         center_y = word["top"] + word["height"] / 2
         relative_x = (center_x - x) / max(card_w, 1)
         relative_y = (center_y - y) / max(card_h, 1)
-        if not (0.12 <= relative_x <= 0.85 and 0.40 <= relative_y <= 0.74):
+        if not (0.12 <= relative_x <= 0.85 and 0.46 <= relative_y <= 0.62):
             continue
         value = clean_house(word["text"])
         if value:
-            candidates.append((abs(relative_y - 0.565), relative_x, value))
+            candidates.append((abs(relative_y - 0.54), relative_x, value))
     if not candidates:
         return ""
     candidates.sort(key=lambda item: (item[0], item[1]))
@@ -258,8 +262,8 @@ def ocr_house(card):
     """Read only the value area of the fixed house-number row."""
     height, width = card.shape[:2]
     region = card[
-        round(height * 0.40):round(height * 0.74),
-        round(width * 0.15):round(width * 0.82),
+        round(height * 0.44):round(height * 0.70),
+        round(width * 0.35):round(width * 0.68),
     ]
     if region.size == 0:
         return ""
@@ -546,9 +550,11 @@ def parse_card(text, epic_text, photo_path, page_no, cell_no, focused_house=""):
     father = clean_person_name(raw_father)
     husband = clean_person_name(raw_husband)
     mother = clean_person_name(raw_mother)
-    house = focused_house or clean_house(
-        field(text, r"(?:गृह|मकान|गह|गुह|House|H\.No)\s*(?:संख्या|सं\.?|सं०|नं\.?|क्र\.?|Number|No\.?)?\s*[:：;\-]?\s*([^\n]+)")
+    raw_house = clean_house(
+        field(text, r"(?:गृह|गह|गुह|ग्ह|गृ|गृ\.|मकान|House|H\.No|Te|\S*ह|\S*स)\s*(?:संख्या|सख्या|सं\.?|सं०|नं\.?|क्र\.?|Number|No\.?)?\s*[:：;\-]?\s*([^\n]+)")
+        or field(text, r"(?:संख्या|सख्या)\s*[:：;\-]\s*([^\n]+)")
     )
+    house = raw_house if raw_house != "" else focused_house
     age_raw = field(
         text,
         r"(?:उम्र|उप्र|आयु)\s*[:：;\-]?\s*([0-9०-९OQILSZBG]{1,3})",
@@ -558,6 +564,10 @@ def parse_card(text, epic_text, photo_path, page_no, cell_no, focused_house=""):
         str.maketrans("०१२३४५६७८९OQILSZBG", "012345678900112586")
     )
     age = "".join(re.findall(r"\d", age))
+    
+    # Discard fallback focused_house if it equals voter age
+    if not raw_house and house and age and house == age:
+        house = ""
     gender = "female" if "महिला" in text else "male" if "पुरुष" in text else ""
     guardian = father or husband or mother
     raw_guardian = raw_father or raw_husband or raw_mother
