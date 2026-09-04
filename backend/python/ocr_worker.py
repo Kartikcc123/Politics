@@ -189,18 +189,10 @@ def clean_house(value):
         if len(parts) == 2 and parts[0] == parts[1]:
             val = parts[0]
 
-    # Strip OCR colon/label noise prepended to house numbers (e.g., 4494 -> 194/94, 4794 -> 194/94, 4194 -> 194, 772 -> 72)
-    if len(val) == 5 and val.startswith("74"):
-        val = val[1:]
-    elif len(val) == 5 and val[0:2] in ("12", "15", "14", "13", "10") and val[2:].isdigit():
+    # Strip OCR colon/label noise prepended to 4-digit or 3-digit house numbers (e.g., 14194 -> 4194, 124194 -> 4194, 74194 -> 4194)
+    if len(val) == 6 and val[0:2] in ("12", "14", "15", "17", "44", "47") and val[2:].isdigit():
         val = val[2:]
-    elif len(val) == 4 and val[0:2] in ("44", "47", "12", "15", "14", "13") and val[2:].isdigit():
-        val = val[2:]
-    elif len(val) == 4 and val.startswith("4") and val[1:].isdigit():
-        val = val[1:]
-    elif len(val) == 3 and val.startswith("7") and val[1:] in ("72", "12"):
-        val = val[1:]
-    elif len(val) == 3 and val.startswith("4") and val[1:].isdigit() and int(val[1:]) > 10:
+    elif len(val) == 5 and val[0] in ("1", "7", "4", ":", "|", "l", "i") and val[1:].isdigit():
         val = val[1:]
     elif len(val) == 3 and val in ("100", "120", "150"):
         val = "0" if val == "120" else "00"
@@ -269,8 +261,8 @@ def ocr_house(card):
     """Read only the value area of the fixed house-number row."""
     height, width = card.shape[:2]
     region = card[
-        round(height * 0.50):round(height * 0.78),
-        round(width * 0.18):round(width * 0.72),
+        round(height * 0.48):round(height * 0.78),
+        round(width * 0.15):round(width * 0.82),
     ]
     if region.size == 0:
         return ""
@@ -295,6 +287,11 @@ def ocr_house(card):
             values.append(c2)
     if not values:
         return ""
+    # Prefer full-length house number candidate over truncated suffix candidate (e.g. 4194 over 194)
+    longest_cand = max(values, key=lambda v: len(re.sub(r"\D", "", v)))
+    for v in values:
+        if v != longest_cand and longest_cand.endswith(v) and len(longest_cand) > len(v):
+            return longest_cand
     counts = {v: values.count(v) for v in set(values)}
     winner, _ = max(counts.items(), key=lambda x: x[1])
     return winner
@@ -813,6 +810,21 @@ def detect_photo_box(card):
     )
 
 
+def is_repeated_in_records(records_list, idx, val, count=1):
+    if not val:
+        return False
+    n = len(records_list)
+    matches = 0
+    val_str = str(val).strip()
+    for j in range(idx + 1, min(n, idx + 1 + count)):
+        other = str(records_list[j].get("houseNumber") or "").strip()
+        clean_other = re.sub(r"\D", "", other)
+        clean_val = re.sub(r"\D", "", val_str)
+        if clean_other and clean_val and (clean_other == clean_val or (len(clean_other) > len(clean_val) and clean_other.endswith(clean_val))):
+            matches += 1
+    return matches >= 1
+
+
 def process_page(page_path, output_dir, page_no):
     image = cv2.imread(str(page_path))
     if image is None:
@@ -933,7 +945,7 @@ def process_page(page_path, output_dir, page_no):
     index = 1
     while index < len(ordered_records) - 1:
         anchor = str(ordered_records[index - 1].get("houseNumber") or "")
-        if not anchor.isdigit():
+        if not anchor.isdigit() or len(anchor) < 2:
             index += 1
             continue
         end = index
@@ -942,6 +954,8 @@ def process_page(page_path, output_dir, page_no):
             if value == anchor:
                 break
             if not (value.isdigit() and value.endswith(anchor) and 1 <= len(value) - len(anchor) <= 2):
+                break
+            if is_repeated_in_records(ordered_records, end, value, 1):
                 break
             end += 1
         if end > index and end < len(ordered_records) and str(ordered_records[end].get("houseNumber") or "") == anchor:
@@ -960,6 +974,8 @@ def process_page(page_path, output_dir, page_no):
         current = str(ordered_records[index].get("houseNumber") or "")
         following = str(ordered_records[index + 1].get("houseNumber") or "")
         if previous and previous.isdigit() and following == previous and current != previous:
+            if len(previous) < 2 and len(current) > len(previous) and not ("-" in current or "/" in current):
+                continue
             clean_curr = re.sub(r"[^\d]", "", current)
             if current.endswith(previous) or clean_curr.endswith(previous) or clean_curr == previous:
                 target = ordered_records[index]
@@ -979,6 +995,7 @@ def process_page(page_path, output_dir, page_no):
             and current.isdigit()
             and 1 <= missing_prefix <= 2
             and previous.endswith(current)
+            and len(previous) >= 2
         ):
             if following.isdigit() and int(previous) <= int(following) <= int(previous) + 2:
                 target = ordered_records[index]
@@ -986,6 +1003,17 @@ def process_page(page_path, output_dir, page_no):
                 target["houseNumber"] = previous
                 target["houseNumberConfidence"] = 90
                 target["houseOcrDisagreement"] = True
+
+    # Recover dropped leading digits when current is a suffix of following repeated house (e.g., 194, 4194, 4194 -> 4194)
+    for index in range(len(ordered_records) - 1):
+        current = str(ordered_records[index].get("houseNumber") or "")
+        following = str(ordered_records[index + 1].get("houseNumber") or "")
+        if current.isdigit() and following.isdigit() and len(following) > len(current) and following.endswith(current) and len(following) >= 2:
+            if is_repeated_in_records(ordered_records, index + 1, following, 1):
+                target = ordered_records[index]
+                target["rawHouseNumber"] = target.get("rawHouseNumber") or current
+                target["houseNumber"] = following
+                target["houseNumberConfidence"] = 90
 
     # Correct a single prefixed value at a real house transition, for example
     # 37, 538, 38. The suffix must exactly equal the following anchor and that
@@ -996,9 +1024,11 @@ def process_page(page_path, output_dir, page_no):
         following = str(ordered_records[index + 1].get("houseNumber") or "")
         if not (previous.isdigit() and current.isdigit() and following.isdigit()):
             continue
+        if len(following) < 2 and len(current) >= 3:
+            continue
         prefix_length = len(current) - len(following)
         plausible_transition = int(previous) <= int(following) <= int(previous) + 20
-        if plausible_transition and 1 <= prefix_length <= 2 and current.endswith(following):
+        if plausible_transition and 1 <= prefix_length <= 2 and current.endswith(following) and not is_repeated_in_records(ordered_records, index, current, 1):
             target = ordered_records[index]
             target["rawHouseNumber"] = target.get("rawHouseNumber") or current
             target["houseNumber"] = following
@@ -2159,16 +2189,6 @@ def main():
                 rec["needsReview"] = True
                 rec.setdefault("reviewReasons", []).append("prepended_colon_one_repaired")
                 curr_digits = cand
-
-        # Fix 3-digit noise where leading digit is symbol artifact (e.g., 312 -> 12 or 212 -> 12 when neighbor is 12 or 11)
-        if len(curr_digits) == 3 and curr_digits[0] in "123456789" and curr_digits[1:].isdigit():
-            tail = str(int(curr_digits[1:]))
-            if prev_digits == tail or next_digits == tail or (prev_digits.isdigit() and abs(int(prev_digits) - int(tail)) <= 1):
-                rec["suggestedHouseNumber"] = tail
-                rec["houseNumber"] = tail
-                rec["needsReview"] = True
-                rec.setdefault("reviewReasons", []).append("denoised_house_number_tail")
-                curr_digits = tail
 
         # Sandwich rule: if prev and next are identical (e.g. 10, X, 10 -> X becomes 10)
         if prev_digits and next_digits and prev_digits == next_digits and len(prev_digits) >= 1:

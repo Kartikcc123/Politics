@@ -5797,6 +5797,9 @@ class _VoterPhoto extends StatelessWidget {
                     const Icon(Icons.person, color: muted),
               ),
       ),
+    );
+  }
+}
 class _VoterCardImageSection extends StatelessWidget {
   const _VoterCardImageSection({required this.voter});
   final Map<String, dynamic> voter;
