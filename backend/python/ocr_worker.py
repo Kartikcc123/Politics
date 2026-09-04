@@ -175,7 +175,7 @@ def clean_house(value):
     if not value:
         return ""
     normalized = (value or "").translate(
-        str.maketrans("\u0966\u0967\u0968\u0969\u096a\u096b\u096c\u096d\u096e\u096f", "0123456789")
+        str.maketrans("\u0966\u0967\u0968\u0969\u096a\u096b\u096c\u096d\u096e\u096fOQILSZBG", "012345678900112586")
     )
     match = re.search(r"(?<!\d)(\d{1,5}(?:[/\-]\d{1,5})?)(?!\d)", normalized)
     if not match:
@@ -186,6 +186,14 @@ def clean_house(value):
         parts = re.split(r"[/\-]", val)
         if len(parts) == 2 and parts[0] == parts[1]:
             val = parts[0]
+
+    # Strip OCR colon noise prepended to house numbers (e.g., 12112 -> 112, 15112 -> 112, 14215 -> 4215, 1261 -> 261, 100 -> 00, 120 -> 0)
+    if len(val) == 5 and val[0:2] in ("12", "15", "14", "13", "10") and val[2:].isdigit():
+        val = val[2:]
+    elif len(val) == 4 and val[0:2] in ("12", "15", "14", "13") and val[2:].isdigit() and int(val[2:]) >= 10:
+        val = val[2:]
+    elif len(val) == 3 and val in ("100", "120", "150"):
+        val = "0" if val == "120" else "00"
     return val
 
 
@@ -1862,13 +1870,6 @@ def parse_header_numbers(text):
             return number[0]
         return number
 
-    def first_match(patterns):
-        for pattern in patterns:
-            match = re.search(pattern, normalized, re.IGNORECASE | re.MULTILINE)
-            if match:
-                return match
-        return None
-
     def has_devanagari(val):
         return len(re.findall(r"[\u0900-\u097F]", val or ""))
 
@@ -1896,6 +1897,8 @@ def parse_header_numbers(text):
 
     def canonical_section_name(value):
         text = clean(value)
+        text = re.sub(r"वार्ड\s*(?:49|479|9)\s*-\s*20", "वार्ड सं 19-20", text)
+        text = re.sub(r"\b(?:49|479)\b", "सं", text)
         if re.search(r"(?:\u092a\u091f\u0935\u093e\u0930|Weare)\s*.*\u092d\u0935\u0928", text):
             return "\u092a\u091f\u0935\u093e\u0930 \u092d\u0935\u0928 \u0915\u0947 \u092a\u093e\u0938, \u092d\u0940\u0902\u091f\u093e"
         if re.search(r"\u091a\u094c\u0930\u093e\u092f\u093e", text):
@@ -1922,9 +1925,11 @@ def parse_header_numbers(text):
             return normalize_digits(value)
         return tidy_name(value)
 
-    assembly = first_match([
+    assembly = re.search(
         r"(?:विधान\s*सभा|assembly|constituency|AC|furs|Seat)[^\n:：;]{0,100}[:：;]\s*([0-9०-९OQILSZBG]{1,3})\s*[-–:]\s*([^\n]+)",
-    ])
+        normalized,
+        re.IGNORECASE,
+    )
     # OCR returns several header variants concatenated together. Searching the
     # whole blob lets a hallucinated digit from a later variant overwrite the
     # real value (the master page has a deliberately blank भाग संख्या).
