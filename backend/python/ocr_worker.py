@@ -1145,43 +1145,25 @@ def process_page(page_path, output_dir, page_no):
                     return str(cand)
         return str(val)
 
-    # Correct an OCR label-prefix & solve monotonic house sequence per row
+    # Solve monotonic house sequence card-by-card (respecting individual card OCR and house boundary transitions)
     last_house = 0
-    for row_start in range(1, len(boxes) + 1, 3):
-        row_records = [record for record in ordered_records if row_start <= record["cell"] < row_start + 3]
-        all_row_cands = []
-        for record in row_records:
-            for val in [record.get("houseNumber"), record.get("rawHouseNumber")]:
-                fixed = repair_house_7_misreads(val, last_house)
-                if fixed and fixed.isdigit() and int(fixed) > 0 and len(fixed) <= 4:
-                    all_row_cands.append(int(fixed))
-        
-        valid_cands = [c for c in all_row_cands if last_house == 0 or (last_house <= c <= last_house + 2)]
-        row_consensus = None
-        if valid_cands:
-            counts = {c: valid_cands.count(c) for c in set(valid_cands)}
-            winner, votes = max(counts.items(), key=lambda x: x[1])
-            if votes >= 2 or (last_house > 0 and winner >= last_house):
-                row_consensus = winner
-        elif all_row_cands:
-            for c in all_row_cands:
-                fixed = repair_house_7_misreads(str(c), last_house)
-                if fixed and fixed.isdigit() and (last_house == 0 or last_house <= int(fixed) <= last_house + 2):
-                    row_consensus = int(fixed)
-                    break
-        
-        if row_consensus is not None:
-            last_house = row_consensus
-            for record in row_records:
+    for record in ordered_records:
+        val = record.get("houseNumber") or record.get("rawHouseNumber")
+        fixed = repair_house_7_misreads(val, last_house)
+        if fixed and fixed.isdigit() and int(fixed) > 0 and len(fixed) <= 5:
+            num = int(fixed)
+            if last_house == 0 or (last_house <= num <= last_house + 20):
+                last_house = num
                 record["rawHouseNumber"] = record.get("rawHouseNumber") or record.get("houseNumber")
-                record["houseNumber"] = str(row_consensus)
+                record["houseNumber"] = str(num)
                 record["houseNumberConfidence"] = 95
-        else:
-            if last_house > 0:
-                for record in row_records:
-                    record["rawHouseNumber"] = record.get("rawHouseNumber") or record.get("houseNumber")
-                    record["houseNumber"] = str(last_house)
-                    record["houseNumberConfidence"] = 85
+            elif last_house > 0 and num < last_house:
+                record["rawHouseNumber"] = record.get("rawHouseNumber") or record.get("houseNumber")
+                record["houseOcrDisagreement"] = True
+        elif last_house > 0 and (not val or not str(val).strip()):
+            record["rawHouseNumber"] = record.get("rawHouseNumber") or record.get("houseNumber")
+            record["houseNumber"] = str(last_house)
+            record["houseNumberConfidence"] = 80
 
     records = reconcile_family_tree_houses(records)
     records = reconcile_family_guardians(records)
