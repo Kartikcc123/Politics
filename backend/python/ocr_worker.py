@@ -1956,12 +1956,16 @@ def parse_header_numbers(text):
     )
     section_source = section_block.group(1) if section_block else normalized
     for match in re.finditer(
-        r"(?:^|\n)\s*([0-9०-९OQILSZBG]{1,3})\s*[-–.)]\s*([^\n]+)",
+        r"(?:^|\n)\s*([0-9०-९OQILSZBG]{1,2})\s*[-–.)]\s*([^\n]+)",
         section_source,
         re.IGNORECASE,
     ):
         number = normalize_section_number(match.group(1))
-        name = canonical_section_name(tidy_name(match.group(2)))
+        raw_name_val = match.group(2)
+        # Skip matched substrings that occur inside a ward description (e.g. '19-20' inside 'वार्ड सं 19-20')
+        if re.search(r"^\s*\d{1,2}\s*गंगापुर", raw_name_val) or re.search(r"(?:वार्ड|Ward)\s*सं?\s*$", match.group(0)[:match.start(1)] if hasattr(match, 'start') else ""):
+            continue
+        name = canonical_section_name(tidy_name(raw_name_val))
         if number and name and not re.search(r"(?:EPIC|RJ/|मतदाता|निर्वाचक)", name, re.IGNORECASE) and has_devanagari(name) >= 2:
             if len(name) >= len(section_map.get(number, '')):
                 section_map[number] = name
