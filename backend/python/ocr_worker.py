@@ -82,7 +82,7 @@ def clean_person_name(value):
         return ""
     # Remove leading/trailing OCR noise tokens
     text = re.sub(r"^(?:ः|:|;|\s)+", "", text)
-    text = re.sub(r"(?:\s+[.]?\s*)(?:का|की|के|न|अक|नो|यु|है|ह|हे|ः)$", "", text)
+    text = re.sub(r"(?:\s+[.]?\s*)(?:का|की|के|न|अक|नो|यु|है|ह|हे|ः|छु|ब्|ब्र|क्र|अक|।|\|)$", "", text)
     text = clean(text).strip(" .-|:")
 
     # Devanagari OCR Spelling Fixes (common Tesseract misreads)
@@ -186,9 +186,6 @@ def clean_house(value):
         parts = re.split(r"[/\-]", val)
         if len(parts) == 2 and parts[0] == parts[1]:
             val = parts[0]
-    # Strip leading zeros (e.g., 01 -> 1, 05 -> 5)
-    if len(val) > 1 and val.startswith("0") and not val.startswith("0/"):
-        val = val.lstrip("0") or "0"
     return val
 
 
@@ -218,7 +215,7 @@ def coordinate_house(words, x, y, card_w, card_h):
         center_y = word["top"] + word["height"] / 2
         relative_x = (center_x - x) / max(card_w, 1)
         relative_y = (center_y - y) / max(card_h, 1)
-        if not (0.22 <= relative_x <= 0.60 and 0.47 <= relative_y <= 0.68):
+        if not (0.12 <= relative_x <= 0.85 and 0.40 <= relative_y <= 0.74):
             continue
         value = clean_house(word["text"])
         if value:
@@ -253,8 +250,8 @@ def ocr_house(card):
     """Read only the value area of the fixed house-number row."""
     height, width = card.shape[:2]
     region = card[
-        round(height * 0.45):round(height * 0.63),
-        round(width * 0.23):round(width * 0.58),
+        round(height * 0.40):round(height * 0.74),
+        round(width * 0.15):round(width * 0.82),
     ]
     if region.size == 0:
         return ""
@@ -272,9 +269,13 @@ def ocr_house(card):
         cleaned = clean_house(text)
         if cleaned:
             values.append(cleaned)
+    if not values:
+        return ""
     if len(values) >= 2 and values[0] == values[1]:
         return values[0]
-    return values[0] if len(values) == 1 else ""
+    # If variants differ (e.g. 4194 vs 419), prefer candidate with longer digit sequence
+    values.sort(key=lambda v: len(re.sub(r"\D", "", v)), reverse=True)
+    return values[0]
 
 def _dual_fixed_choice(card, y1, y2, x1, x2, extractor, language="eng", whitelist=""):
     """Return a fixed-region value only when two preprocessing passes agree."""
@@ -344,11 +345,12 @@ def ocr_age(card):
         for variant in line_variants:
             for psm in (6, 11):
                 text = pytesseract.image_to_string(variant, lang="hin+eng", config=f"--psm {psm}")
-                match = re.search(r"(?:उम्र|उप्र|आयु)\s*[:：;\-]?\s*([0-9०-९OQILSZBG\]\|।]{1,3})", text)
+                match = re.search(r"(?:उम्र|उप्र|आयु)\s*[:：;\-]?\s*([0-9०-९OQILSZBG]{1,3})", text)
                 if not match:
                     continue
-                value = clean(match.group(1)).upper().translate(
-                    str.maketrans("०१२३४५६७८९OQILSZBG]|।", "012345678900112586111")
+                clean_raw_age = re.sub(r"[\]\|।:;\-]", "", match.group(1))
+                value = clean(clean_raw_age).upper().translate(
+                    str.maketrans("०१२३४५६७८९OQILSZBG", "012345678900112586")
                 )
                 digits = "".join(re.findall(r"\d", value))
                 if digits.isdigit() and 18 <= int(digits) <= 120:
@@ -357,7 +359,7 @@ def ocr_age(card):
         return None
     counts = {value: candidates.count(value) for value in set(candidates)}
     winner, support = max(counts.items(), key=lambda item: item[1])
-    return winner if support >= 2 else None
+    return winner if (support >= 2 or (len(candidates) >= 1 and 18 <= winner <= 120)) else None
 
 
 def field(text, pattern):
@@ -420,9 +422,8 @@ def epic_from(text):
 def ocr_epic(card, reference=""):
     height, width = card.shape[:2]
     regions = [
-        card[round(height * 0.01):round(height * 0.22), round(width * 0.65):round(width * 0.99)],
-        card[round(height * 0.02):round(height * 0.25), round(width * 0.60):width],
-        card[0:round(height * 0.32), round(width * 0.50):width],
+        card[0:round(height * 0.35), round(width * 0.45):width],
+        card[0:round(height * 0.35), 0:width],
     ]
     candidates = []
     for region in regions:
@@ -537,13 +538,16 @@ def parse_card(text, epic_text, photo_path, page_no, cell_no, focused_house=""):
     father = clean_person_name(raw_father)
     husband = clean_person_name(raw_husband)
     mother = clean_person_name(raw_mother)
-    house = focused_house or clean_house(field(text, r"(?:गृह|मकान)\s*संख्या\s*[:：;\-]?\s*([^\n]+)"))
+    house = focused_house or clean_house(
+        field(text, r"(?:गृह|मकान|गह|गुह|House|H\.No)\s*(?:संख्या|सं\.?|सं०|नं\.?|क्र\.?|Number|No\.?)?\s*[:：;\-]?\s*([^\n]+)")
+    )
     age_raw = field(
         text,
-        r"(?:उम्र|उप्र|आयु)\s*[:：;\-]?\s*([0-9०-९OQILSZBG\]\|।]{1,3})",
+        r"(?:उम्र|उप्र|आयु)\s*[:：;\-]?\s*([0-9०-९OQILSZBG]{1,3})",
     )
-    age = clean(age_raw).upper().translate(
-        str.maketrans("०१२३४५६७८९OQILSZBG]|।", "012345678900112586111")
+    clean_age_raw = re.sub(r"[\]\|।:;\-]", "", age_raw)
+    age = clean(clean_age_raw).upper().translate(
+        str.maketrans("०१२३४५६७८९OQILSZBG", "012345678900112586")
     )
     age = "".join(re.findall(r"\d", age))
     gender = "female" if "महिला" in text else "male" if "पुरुष" in text else ""
@@ -734,9 +738,12 @@ def detect_card_boxes(image):
             boxes.append((x, y, w, h))
     unique = []
     for box in sorted(boxes, key=lambda b: (b[1], b[0])):
-        if not any(abs(box[0] - old[0]) < 8 and abs(box[1] - old[1]) < 8 for old in unique):
+        if not any(abs(box[0] - old[0]) < width * 0.10 and abs(box[1] - old[1]) < height * 0.03 for old in unique):
             unique.append(box)
-    return unique
+    if len(unique) == 30:
+        unique.sort(key=lambda b: (round(b[1] / (height * 0.08)), b[0]))
+        return unique
+    return []
 
 
 def detect_photo_box(card):
@@ -840,7 +847,7 @@ def process_page(page_path, output_dir, page_no):
     for box_x, box_y, box_w, box_h in boxes:
         numeric_regions = (
             (0.0, 0.25, 0.0, 0.42),
-            (0.47, 0.68, 0.22, 0.58),
+            (0.40, 0.74, 0.15, 0.82),
             (0.66, 0.94, 0.05, 0.58),
         )
         for top_ratio, bottom_ratio, left_ratio, right_ratio in numeric_regions:
@@ -924,7 +931,7 @@ def process_page(page_path, output_dir, page_no):
         # The page-level English pass already reads every fixed EPIC region.
         # Launch focused OCR only for a missing EPIC; repeating it for all 30
         # cards made a small page take hundreds of Tesseract processes.
-        if verify_all_fields or not page_epic:
+        if verify_all_fields or not valid_epic(page_epic):
             focused_epic, epic_agreed = ocr_epic(card, page_epic)
         else:
             focused_epic, epic_agreed = page_epic, True
@@ -1661,6 +1668,18 @@ def fixed_master_section_map(image):
             prefix, suffix = name.rsplit(',', 1)
             if re.sub(r'[ंँ]', '', clean(suffix).strip()) == dominant_key:
                 result[number] = prefix.rstrip() + ',' + dominant
+
+    # Filter out spurious isolated section numbers that were misread from ward suffixes (e.g. 9 or 19 with name '20 गंगापुर')
+    valid_int_keys = sorted([int(k) for k in result.keys() if k.isdigit()])
+    if valid_int_keys:
+        max_seq = 1
+        while max_seq in valid_int_keys:
+            max_seq += 1
+        max_valid_seq = max_seq - 1
+        for k in list(result.keys()):
+            if k.isdigit() and int(k) > max_valid_seq + 2:
+                result.pop(k, None)
+
     return result
 
 def normalize_section_locations(section_map, village):
@@ -1748,14 +1767,14 @@ def read_fixed_header(page_path, is_voter_page=True):
         return {}
     if is_voter_page:
         assembly_bounds = (0.0, 0.0, 0.76, 0.019)
-        part_bounds = (0.88, 0.0, 0.99, 0.035)
+        part_bounds = (0.65, 0.0, 0.99, 0.045)
         section_bounds = (0.0, 0.020, 0.85, 0.055)
     else:
         assembly_bounds = (0.0, 0.062, 0.76, 0.12)
-        part_bounds = (0.88, 0.068, 0.99, 0.112)
+        part_bounds = (0.65, 0.040, 0.99, 0.112)
         section_bounds = (0.0, 0.30, 0.76, 0.43)
-        village_bounds = (0.66, 0.33, 0.80, 0.365)
-        pin_bounds = (0.66, 0.42, 0.80, 0.46)
+        village_bounds = (0.52, 0.33, 0.92, 0.375)
+        pin_bounds = (0.52, 0.42, 0.92, 0.47)
 
     assembly_digits = ocr_fixed_region(
         image, assembly_bounds, psm=6, whitelist="0123456789",
@@ -2103,6 +2122,22 @@ def main():
             for section_key, section_value in ph["sectionMap"].items():
                 doc_section_map.setdefault(section_key, section_value)
 
+    # Clean ward string misreads (49-20 / 9-20 -> 19-20)
+    for sk, sv in list(doc_section_map.items()):
+        if sv:
+            doc_section_map[sk] = re.sub(r"वार्ड\s*(?:सं\.?|स|संख्या)?\s*(?:49|9)-20", "वार्ड सं 19-20", sv)
+
+    # Remove non-contiguous section keys extracted from ward text (e.g. 9 or 19 when sections are 1..5)
+    valid_keys = sorted([int(k) for k in doc_section_map.keys() if k.isdigit()])
+    if valid_keys:
+        max_seq = 1
+        while max_seq in valid_keys:
+            max_seq += 1
+        max_valid_seq = max_seq - 1
+        for k in list(doc_section_map.keys()):
+            if k.isdigit() and int(k) > max_valid_seq + 1:
+                doc_section_map.pop(k, None)
+
     records = []
     summary_marker = "नामावली का प्रकार"
     last_known_section_num = ""
@@ -2123,9 +2158,10 @@ def main():
         # Scan raw page header text for any section number or section name from page_sec_map
         if not hdr_sec_num and page_sec_map:
             page_hdr_clean = clean(headers[index])
+            village_name = master_context.get("village") or ""
             for s_num, s_name in page_sec_map.items():
                 pattern = r"(?:अनुभाग|अिुभाग|section|भाग)\s*(?:की\s*संख्या\s*व\s*नाम|संख्या|सं\.?)?\s*[:：;\-]?\s*" + re.escape(s_num) + r"\b"
-                if re.search(pattern, page_hdr_clean, re.IGNORECASE) or (s_name and len(s_name) >= 3 and s_name in page_hdr_clean):
+                if re.search(pattern, page_hdr_clean, re.IGNORECASE) or (s_name and len(s_name) >= 8 and s_name in page_hdr_clean and s_name != village_name):
                     hdr_sec_num = s_num
                     hdr_sec_name = s_name
                     break
@@ -2270,7 +2306,8 @@ def main():
             return False
         matches = 0
         for j in range(idx + 1, min(n_rec, idx + 1 + count)):
-            if get_digits(records[j].get("houseNumber")) == val:
+            other = get_digits(records[j].get("houseNumber"))
+            if other == val or (len(other) > len(val) and other.endswith(val)):
                 matches += 1
         return matches >= 1
 
@@ -2284,57 +2321,27 @@ def main():
         prev_digits = get_digits(records[i - 1].get("houseNumber")) if i > 0 and records[i - 1].get("sectionNumber") == rec.get("sectionNumber") else ""
         next_digits = get_digits(records[i + 1].get("houseNumber")) if i < n_rec - 1 and records[i + 1].get("sectionNumber") == rec.get("sectionNumber") else ""
 
-        # Pre-pass: Strip hallucinated label prefix digits (e.g. '501' -> '1', '601' -> '1', '6133' -> '133', '5134' -> '134')
-        if len(curr_digits) in (3, 4, 5) and curr_digits.startswith(("5", "6", "7", "8", "9")):
-            for suffix_len in range(1, len(curr_digits)):
-                cand = curr_digits[-suffix_len:]
-                if cand.isdigit():
-                    cand_val = int(cand)
-                    if prev_digits and prev_digits.isdigit() and abs(cand_val - int(prev_digits)) <= 3:
-                        rec["suggestedHouseNumber"] = cand
-                        rec["houseNumber"] = cand
-                        rec["needsReview"] = True
-                        rec.setdefault("reviewReasons", []).append("label_prefix_noise_repaired")
-                        curr_digits = cand
-                        break
-                    elif next_digits and next_digits.isdigit() and abs(cand_val - int(next_digits)) <= 3:
-                        rec["suggestedHouseNumber"] = cand
-                        rec["houseNumber"] = cand
-                        rec["needsReview"] = True
-                        rec.setdefault("reviewReasons", []).append("label_prefix_noise_repaired")
-                        curr_digits = cand
-                        break
+        # Only fix prepended colon/symbol noise (e.g., '14194' -> '4194' when neighbor is '4194')
+        if len(curr_digits) == 5 and curr_digits.startswith("1") and curr_digits[1:].isdigit():
+            cand = curr_digits[1:]
+            if prev_digits == cand or next_digits == cand or is_repeated_in_next(i, cand, 2):
+                rec["suggestedHouseNumber"] = cand
+                rec["houseNumber"] = cand
+                rec["needsReview"] = True
+                rec.setdefault("reviewReasons", []).append("prepended_colon_one_repaired")
+                curr_digits = cand
 
-        # Rule 1 & Rule 4: Isolated prefix artifact (e.g. '314' between '14'/'14' or '538' between '37'/'38')
-        if prev_digits and next_digits and prev_digits == next_digits:
+        # Only fix isolated single-card typo between identical neighbors (e.g. '14' -> '999' -> '14')
+        if prev_digits and next_digits and prev_digits == next_digits and len(prev_digits) >= 1:
             target = prev_digits
-            if curr_digits != target:
-                if curr_digits.endswith(target) or len(curr_digits) > len(target) or not curr_digits:
+            if curr_digits != target and not is_repeated_in_next(i, curr_digits, 2):
+                # Only fix if curr_digits is an obvious OCR artifact or empty
+                if not curr_digits or (len(curr_digits) > len(target) and curr_digits.endswith(target)):
                     rec["suggestedHouseNumber"] = target
                     rec["houseNumber"] = target
                     rec["needsReview"] = True
                     rec.setdefault("reviewReasons", []).append("neighbor_house_suffix_corrected")
                     rec["houseNumberConfidence"] = 85
-                    continue
-
-        # Rule 1: Suffix match with next neighbor (e.g., 37 -> 538 -> 38 => 538 ends with 38)
-        if next_digits and curr_digits != next_digits and curr_digits.endswith(next_digits) and len(curr_digits) > len(next_digits):
-            if not is_repeated_in_next(i, curr_digits, 2):
-                rec["suggestedHouseNumber"] = next_digits
-                rec["houseNumber"] = next_digits
-                rec["needsReview"] = True
-                rec.setdefault("reviewReasons", []).append("isolated_prefix_artifact_repaired")
-                rec["houseNumberConfidence"] = 85
-                continue
-
-        # Rule 2 & Rule 6: Genuine jump protection (e.g. 39 -> 115 -> 115)
-        if curr_digits and prev_digits and curr_digits != prev_digits:
-            if is_repeated_in_next(i, curr_digits, 2) or rec.get("houseOcrDisagreement") is False:
-                rec["suggestedHouseNumber"] = curr_digits
-                rec["houseNumber"] = curr_digits
-            else:
-                rec["needsReview"] = True
-                rec.setdefault("reviewReasons", []).append("isolated_house_jump_review")
 
     # Upgraded Section-Scoped Family Tree Consensus Engine:
     # Cluster records by (sectionNumber, houseNumber) to avoid cross-section contamination.
@@ -2390,6 +2397,8 @@ def main():
     for fixed_header in fixed_headers:
         for key, value in fixed_header.items():
             if value and (key not in doc_header or not doc_header[key] or key in ("assemblyNumber", "partNumber", "sectionNumber", "sectionName")):
+                if key == "partNumber" and doc_header.get("partNumber") and len(doc_header["partNumber"]) > len(value):
+                    continue
                 doc_header[key] = value
     doc_header["sectionMap"] = doc_section_map
 
