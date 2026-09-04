@@ -88,10 +88,8 @@ app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 app.use('/uploads', express.static(uploadRoot()));
 app.use('/party-logos', express.static(path.join(__dirname, 'src/public/party-logos')));
-app.get('/media/s3/:key', require('./src/controllers/mediaController').getS3);
+app.get('/media/s3/*', require('./src/controllers/mediaController').getS3);
 app.get('/media/:id', require('./src/controllers/mediaController').get);
-
-app.get('/', (req, res) => res.json({ name: 'Political Booth Management CRM API', status: 'ok' }));
 // Render calls this endpoint frequently. Keep it dependency-free so a health
 // probe never starts five OCR processes or marks a busy OCR server unhealthy.
 app.get('/api/health', (req, res) => res.json({ status: 'ok' }));

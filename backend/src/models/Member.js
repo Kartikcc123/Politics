@@ -171,6 +171,8 @@ const MemberSchema = new mongoose.Schema({
     label: { type: String, trim: true },
     value: { type: String, trim: true },
   }],
+  ocrCardImage: String,
+  cardImage: String,
   sourceDocument: {
     type: { type: String, enum: ['manual', 'excel', 'csv', 'pdf'], default: 'manual' },
     file: String,

@@ -1091,12 +1091,20 @@ const parsePdfMembers = async (filePath, importFileName, onOcrProgress) => {
       if (targetKey && mergedMap.has(targetKey)) {
         const prev = mergedMap.get(targetKey);
         const preferredEpic = isValidEpic(ocrEpic) ? ocrEpic : (isValidEpic(prev.voterId) ? prev.voterId : (ocrEpic || prev.voterId));
+        const textHouse = cleanValue(prev.houseNumber);
+        const ocrHouse = cleanValue(ocrMem.houseNumber);
+        const ageStr = String(prev.age || ocrMem.age || '');
+
+        const validTextHouse = (textHouse && textHouse !== ageStr) ? textHouse : '';
+        const validOcrHouse = (ocrHouse && ocrHouse !== ageStr) ? ocrHouse : '';
+        let preferredHouse = validOcrHouse || validTextHouse || '';
+
         mergedMap.set(targetKey, {
-          ...ocrMem,
           ...prev,
+          ...ocrMem,
           voterId: preferredEpic,
           voterSerial: prev.voterSerial || ocrMem.voterSerial,
-          houseNumber: cleanValue(ocrMem.houseNumber) || cleanValue(prev.houseNumber),
+          houseNumber: preferredHouse || ocrMem.houseNumber || '',
           photo: ocrMem.photo || prev.photo || '',
           cardImage: ocrMem.cardImage || prev.cardImage || '',
           ocrValues: ocrMem.ocrValues || prev.ocrValues,
@@ -1917,12 +1925,14 @@ const runPdfImport = async ({ file, body, currentUser }, uploadId) => {
         existing.ocrFieldConfidence = item.ocrFieldConfidence || {};
         if (item.ocrNeedsReview && !hasVerifiedOcr && existing.verificationStatus !== 'duplicate') existing.verificationStatus = 'needs_review';
         existing.updatedBy = currentUser._id;
+        existing.ocrCardImage = item.cardImage || existing.ocrCardImage || existing.sourceDocument?.ocrCardImage || '';
+        existing.cardImage = existing.ocrCardImage;
         existing.sourceDocument = {
           type: 'pdf',
           file: `/uploads/${file.filename}`,
           rawText: item.rawText || parsed.text.slice(0, 1000),
           imageExtractionStatus: extractedImages.status,
-          ocrCardImage: item.cardImage || existing.sourceDocument?.ocrCardImage || '',
+          ocrCardImage: existing.ocrCardImage,
         };
         await existing.save();
         created.push(existing);
@@ -1933,6 +1943,8 @@ const runPdfImport = async ({ file, body, currentUser }, uploadId) => {
       const duplicates = [];
       const member = await Member.create({
         photo: item.photo || '',
+        ocrCardImage: item.cardImage || '',
+        cardImage: item.cardImage || '',
         hasAssemblyMembership: true,
         name: item.name,
         surname: item.surname,

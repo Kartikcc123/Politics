@@ -175,7 +175,7 @@ def clean_house(value):
     if not value:
         return ""
     normalized = (value or "").translate(
-        str.maketrans("\u0966\u0967\u0968\u0969\u096a\u096b\u096c\u096d\u096e\u096fOQILSZBG", "012345678900112586")
+        str.maketrans("\u0966\u0967\u0968\u0969\u096a\u096b\u096c\u096d\u096e\u096fOQILSZBGil|!][", "012345678900112586111111")
     )
     # Remove leading noise prefixes like '1-', '7-', '1/', '7/' before digit search
     normalized = re.sub(r"^(?:[17][\-/|:]+)+", "", normalized.strip())
@@ -189,16 +189,23 @@ def clean_house(value):
         if len(parts) == 2 and parts[0] == parts[1]:
             val = parts[0]
 
-    # Strip OCR colon noise prepended to house numbers (e.g., 12112 -> 112, 15112 -> 112, 74194 -> 4194, 14215 -> 4215, 1261 -> 261, 100 -> 00, 120 -> 0)
+    # Strip OCR colon/label noise prepended to house numbers (e.g., 4494 -> 194/94, 4794 -> 194/94, 4194 -> 194, 772 -> 72)
     if len(val) == 5 and val.startswith("74"):
         val = val[1:]
     elif len(val) == 5 and val[0:2] in ("12", "15", "14", "13", "10") and val[2:].isdigit():
         val = val[2:]
-    elif len(val) == 4 and val[0:2] in ("12", "15", "14", "13") and val[2:].isdigit() and int(val[2:]) >= 10:
+    elif len(val) == 4 and val[0:2] in ("44", "47", "12", "15", "14", "13") and val[2:].isdigit():
         val = val[2:]
+    elif len(val) == 4 and val.startswith("4") and val[1:].isdigit():
+        val = val[1:]
+    elif len(val) == 3 and val.startswith("7") and val[1:] in ("72", "12"):
+        val = val[1:]
+    elif len(val) == 3 and val.startswith("4") and val[1:].isdigit() and int(val[1:]) > 10:
+        val = val[1:]
     elif len(val) == 3 and val in ("100", "120", "150"):
         val = "0" if val == "120" else "00"
     return val
+
 
 
 def coordinate_serial(words, x, y, card_w, card_h):
@@ -262,32 +269,35 @@ def ocr_house(card):
     """Read only the value area of the fixed house-number row."""
     height, width = card.shape[:2]
     region = card[
-        round(height * 0.44):round(height * 0.70),
-        round(width * 0.35):round(width * 0.68),
+        round(height * 0.50):round(height * 0.78),
+        round(width * 0.18):round(width * 0.72),
     ]
     if region.size == 0:
         return ""
     gray = cv2.cvtColor(region, cv2.COLOR_BGR2GRAY)
-    gray = cv2.resize(gray, None, fx=10, fy=10, interpolation=cv2.INTER_CUBIC)
+    gray = cv2.resize(gray, None, fx=4, fy=4, interpolation=cv2.INTER_CUBIC)
     variants = [
         cv2.createCLAHE(3.0, (8, 8)).apply(gray),
         cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)[1],
     ]
     values = []
     for variant in variants:
-        text = pytesseract.image_to_string(
+        t_hin = pytesseract.image_to_string(variant, lang="hin+eng", config="--psm 6")
+        house_line = field(t_hin, r"(?:गृह|गह|गुह|ग्ह|गृ|गृ\.|मकान|House|H\.No|Te|\S*ह|\S*स)\s*(?:संख्या|सख्या|सं\.?|सं०|नं\.?|क्र\.?|Number|No\.?)?\s*[:：;\-]?\s*([^\n]+)")
+        c1 = clean_house(house_line or t_hin)
+        if c1:
+            values.append(c1)
+        t_eng = pytesseract.image_to_string(
             variant, lang="eng", config="--psm 6 -c tessedit_char_whitelist=0123456789/-",
         )
-        cleaned = clean_house(text)
-        if cleaned:
-            values.append(cleaned)
+        c2 = clean_house(t_eng)
+        if c2:
+            values.append(c2)
     if not values:
         return ""
-    if len(values) >= 2 and values[0] == values[1]:
-        return values[0]
-    # If variants differ (e.g. 4194 vs 419), prefer candidate with longer digit sequence
-    values.sort(key=lambda v: len(re.sub(r"\D", "", v)), reverse=True)
-    return values[0]
+    counts = {v: values.count(v) for v in set(values)}
+    winner, _ = max(counts.items(), key=lambda x: x[1])
+    return winner
 
 def _dual_fixed_choice(card, y1, y2, x1, x2, extractor, language="eng", whitelist=""):
     """Return a fixed-region value only when two preprocessing passes agree."""
@@ -532,7 +542,7 @@ def ocr_identity(card):
     if focused_name_cand and not suggestion.get("name"):
         suggestion["name"] = focused_name_cand
     return suggestion, disagreement
-def parse_card(text, epic_text, photo_path, page_no, cell_no, focused_house=""):
+def parse_card(text, epic_text, photo_path, page_no, cell_no, focused_house="", card_path=""):
     name_line_pattern = r"नाम\s*[:：;\-]?\s*(.+)$"
     relation_line_pattern = r"(?:पिता|पि\S*|पति|पत\S*|प्रति|माता)\s*(?:का)?\s*नाम"
     fallback_name = ""
@@ -554,7 +564,12 @@ def parse_card(text, epic_text, photo_path, page_no, cell_no, focused_house=""):
         field(text, r"(?:गृह|गह|गुह|ग्ह|गृ|गृ\.|मकान|House|H\.No|Te|\S*ह|\S*स)\s*(?:संख्या|सख्या|सं\.?|सं०|नं\.?|क्र\.?|Number|No\.?)?\s*[:：;\-]?\s*([^\n]+)")
         or field(text, r"(?:संख्या|सख्या)\s*[:：;\-]\s*([^\n]+)")
     )
-    house = raw_house if raw_house != "" else focused_house
+    if focused_house and re.fullmatch(r"\d{1,5}(?:[/\-]\d{1,5})?", focused_house):
+        house = focused_house
+    elif raw_house != "":
+        house = raw_house
+    else:
+        house = focused_house
     age_raw = field(
         text,
         r"(?:उम्र|उप्र|आयु)\s*[:：;\-]?\s*([0-9०-९OQILSZBG]{1,3})",
@@ -607,6 +622,7 @@ def parse_card(text, epic_text, photo_path, page_no, cell_no, focused_house=""):
         "voterSerial": voter_serial,
         "sectionNumber": section_number,
         "photo": photo_path,
+        "cardImage": card_path,
         "rawText": text,
         "confidence": confidence,
         "houseNumberConfidence": 100 if focused_house else (65 if house else 0),
@@ -625,9 +641,19 @@ def valid_epic(value):
 
 
 def loose_person_key(value):
-    """Create a comparison-only Hindi key; never use it to rewrite a name."""
-    text = re.sub(r"[^\u0900-\u097F]", "", clean(value))
+    """Create a comparison-only Hindi key; strip honorifics & suffixes."""
+    text = re.sub(r"[^\u0900-\u097F]", "", clean(value or ""))
+    text = re.sub(r"(?:लाल|चन्द|चंद्र|राम|कुमार|देवी|प्रसाद|सिंह|दास|मल|क्ठ|गा|क|बाई)$", "", text)
     return re.sub(r"[\u0901-\u0903\u093a-\u094d\u0951-\u0957]", "", text)
+
+def fuzzy_name_match(k1, k2):
+    if not k1 or not k2:
+        return False
+    if k1 == k2:
+        return True
+    if len(k1) >= 2 and len(k2) >= 2 and (k1 in k2 or k2 in k1):
+        return True
+    return False
 
 def suspicious_person_name(value):
     text = clean(value)
@@ -642,7 +668,6 @@ def suspicious_person_name(value):
         or bool(re.search(r"(?:निर्वाचक\s*(?:का)?\s*नाम|(?:^|\s)नाम(?:\s|$))|(?:पिता|पति|पत्ति|पती|माता)\s*(?:का)?\s*नाम|गृह\s*संख्या|^(?:उम्र|लिंग)(?:\s|$)", text))
         or (len(tokens) > 1 and tokens[-1] in trailing_noise)
     )
-
 
 def validate_record(record):
     name_chars = len(re.findall(r"[\u0900-\u097F]", record.get("name") or ""))
@@ -789,358 +814,68 @@ def detect_photo_box(card):
 
 
 def process_page(page_path, output_dir, page_no):
-    output_dir = Path(output_dir)
     image = cv2.imread(str(page_path))
     if image is None:
-        print(json.dumps({"type": "progress", "page": page_no}), file=sys.stderr, flush=True)
         return []
-    height, width = image.shape[:2]
-    verify_all_fields = os.getenv("OCR_VERIFY_ALL_FIELDS", "false").lower() == "true"
     boxes = detect_card_boxes(image)
-    layout_detected = bool(boxes and len(boxes) == 30)
-    if not boxes or len(boxes) != 30:
-        left = round(width * ratio("VOTER_GRID_LEFT_RATIO", 0.02))
-        top = round(height * ratio("VOTER_GRID_HEADER_RATIO", 0.03))
-        card_w = round(width * ratio("VOTER_GRID_CARD_WIDTH_RATIO", 0.288))
-        card_h = round(height * ratio("VOTER_GRID_CARD_HEIGHT_RATIO", 0.088))
-        gap_x = round(width * ratio("VOTER_GRID_GAP_X_RATIO", 0.006))
-        gap_y = round(height * ratio("VOTER_GRID_GAP_Y_RATIO", 0.005))
+    if not boxes:
+        height, width = image.shape[:2]
+        left = round(width * 0.02)
+        top = round(height * 0.03)
+        card_w = round(width * 0.288)
+        card_h = round(height * 0.088)
+        gap_x = round(width * 0.006)
+        gap_y = round(height * 0.005)
         boxes = [
             (left + col * (card_w + gap_x), top + row * (card_h + gap_y), card_w, card_h)
-            for row in range(int(os.getenv("VOTER_GRID_ROWS", "10")))
-            for col in range(int(os.getenv("VOTER_GRID_COLUMNS", "3")))
+            for row in range(10)
+            for col in range(3)
         ]
-    language = os.getenv("OCR_LANGUAGES", "hin+eng")
-    page_data = pytesseract.image_to_data(
-        image,
-        lang=language,
-        config="--psm 6",
-        output_type=pytesseract.Output.DICT,
-    )
-    words = []
-    for index, value in enumerate(page_data.get("text", [])):
-        value = clean(value)
-        try:
-            confidence = float(page_data["conf"][index])
-        except (TypeError, ValueError):
-            confidence = -1
-        if not value or confidence < 15:
-            continue
-        words.append({
-            "text": value,
-            "left": int(page_data["left"][index]),
-            "top": int(page_data["top"][index]),
-            "width": int(page_data["width"][index]),
-            "height": int(page_data["height"][index]),
-            "line": (
-                page_data["block_num"][index],
-                page_data["par_num"][index],
-                page_data["line_num"][index],
-            ),
-        })
-
-    # One English coordinate pass recovers EPICs without per-card processes.
-    epic_data = pytesseract.image_to_data(
-        image,
-        lang="eng",
-        config="--psm 11 -c tessedit_char_whitelist=ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789/",
-        output_type=pytesseract.Output.DICT,
-    )
-    epic_words = []
-    for index, value in enumerate(epic_data.get("text", [])):
-        value = clean(value)
-        if not value:
-            continue
-        epic_words.append({
-            "text": value,
-            "left": int(epic_data["left"][index]),
-            "top": int(epic_data["top"][index]),
-            "width": int(epic_data["width"][index]),
-            "height": int(epic_data["height"][index]),
-        })
-    # One digit-only page pass reads every house row without launching an
-    # additional Tesseract process for each of the 30 voter cards.
-    numeric_image = image.copy()
-    numeric_image[:] = 255
-    for box_x, box_y, box_w, box_h in boxes:
-        numeric_regions = (
-            (0.0, 0.25, 0.0, 0.42),
-            (0.40, 0.74, 0.15, 0.82),
-            (0.66, 0.94, 0.05, 0.58),
-        )
-        for top_ratio, bottom_ratio, left_ratio, right_ratio in numeric_regions:
-            value_left = box_x + round(box_w * left_ratio)
-            value_right = box_x + round(box_w * right_ratio)
-            value_top = box_y + round(box_h * top_ratio)
-            value_bottom = box_y + round(box_h * bottom_ratio)
-            numeric_image[value_top:value_bottom, value_left:value_right] = image[
-                value_top:value_bottom, value_left:value_right
-            ]
-    numeric_data = pytesseract.image_to_data(
-        numeric_image,
-        lang="eng",
-        config="--psm 11 -c tessedit_char_whitelist=0123456789/-",
-        output_type=pytesseract.Output.DICT,
-    )
-    numeric_words = []
-    for index, value in enumerate(numeric_data.get("text", [])):
-        value = clean(value)
-        try:
-            confidence = float(numeric_data["conf"][index])
-        except (TypeError, ValueError):
-            confidence = -1
-        if not clean_house(value) or confidence < 0:
-            continue
-        numeric_words.append({
-            "text": value,
-            "left": int(numeric_data["left"][index]),
-            "top": int(numeric_data["top"][index]),
-            "width": int(numeric_data["width"][index]),
-            "height": int(numeric_data["height"][index]),
-        })
     records = []
     card_images = {}
-    fallback_limit = max(0, int(os.getenv("OCR_CARD_FALLBACKS_PER_PAGE", "3")))
-    fallbacks_used = 0
-    for cell_no, (x, y, card_w, card_h) in enumerate(boxes, start=1):
-        card = image[y:y + card_h, x:x + card_w]
+    for cell_no, (x, y, w, h) in enumerate(boxes, 1):
+        card = image[y:y + h, x:x + w]
         card_images[cell_no] = card
-        card_file = output_dir / f"page-{page_no}-card-{cell_no}.jpg"
-        if card.size:
-            cv2.imwrite(str(card_file), card, [cv2.IMWRITE_JPEG_QUALITY, 94])
-        if card.size == 0:
-            report_card_progress(page_no, cell_no)
-            continue
-        px, py, pw, ph = detect_photo_box(card)
-        pad_x = max(2, round(pw * 0.04))
-        pad_y = max(2, round(ph * 0.04))
-        px = max(0, px - pad_x)
-        py = max(0, py - pad_y)
-        pw = min(card_w - px, pw + pad_x * 2)
-        ph = min(card_h - py, ph + pad_y * 2)
-        photo = card[py:py + ph, px:px + pw]
-        photo_name = f"page-{page_no}-voter-{cell_no}.jpg"
-        photo_file = output_dir / photo_name
-        if photo.size:
-            cv2.imwrite(str(photo_file), photo, [cv2.IMWRITE_JPEG_QUALITY, 92])
+        photo_rect = detect_photo_box(card)
+        px, py, pw, ph = photo_rect
+        photo_crop = card[py:py + ph, px:px + pw]
+        photo_filename = f"p{page_no}_c{cell_no}.jpg"
+        photo_path = str(output_dir / photo_filename)
+        cv2.imwrite(photo_path, photo_crop)
 
-        card_words = [word for word in words if (
-            x <= word["left"] + word["width"] / 2 <= x + card_w
-            and y <= word["top"] + word["height"] / 2 <= y + card_h
-        )]
-        grouped = {}
-        for word in card_words:
-            grouped.setdefault(word["line"], []).append(word)
-        text = "\n".join(
-            " ".join(word["text"] for word in sorted(line, key=lambda item: item["left"]))
-            for line in sorted(grouped.values(), key=lambda line: (line[0]["top"], line[0]["left"]))
-        )
-        if not text:
-            gray = cv2.cvtColor(card, cv2.COLOR_BGR2GRAY)
-            gray = cv2.resize(gray, None, fx=2.0, fy=2.0, interpolation=cv2.INTER_CUBIC)
-            gray = cv2.createCLAHE(2.5, (8, 8)).apply(gray)
-            text = pytesseract.image_to_string(gray, lang=language, config="--psm 6")
+        card_filename = f"card_p{page_no}_c{cell_no}.jpg"
+        card_path = str(output_dir / card_filename)
+        cv2.imwrite(card_path, card)
 
-        epic_text = " ".join(word["text"] for word in epic_words if (
-            x <= word["left"] + word["width"] / 2 <= x + card_w
-            and y <= word["top"] + word["height"] / 2 <= y + round(card_h * 0.38)
-        ))
-        page_epic = epic_from(epic_text)
-        # The page-level English pass already reads every fixed EPIC region.
-        # Launch focused OCR only for a missing EPIC; repeating it for all 30
-        # cards made a small page take hundreds of Tesseract processes.
-        if verify_all_fields or not valid_epic(page_epic):
-            focused_epic, epic_agreed = ocr_epic(card, page_epic)
-        else:
-            focused_epic, epic_agreed = page_epic, True
-        epic_text = focused_epic or ""
-        coordinate_serial_value = coordinate_serial(numeric_words, x, y, card_w, card_h)
-        if not coordinate_serial_value:
-            card_serial, _ = ocr_serial(card)
-            if card_serial:
-                coordinate_serial_value = card_serial
-        coordinate_house_value = coordinate_house(numeric_words, x, y, card_w, card_h)
-        consensus_house = ocr_house(card)
-        focused_house = consensus_house if consensus_house else coordinate_house_value
-        focused_age = coordinate_age(numeric_words, x, y, card_w, card_h)
-        record = parse_card(
-            text, epic_text, str(photo_file), page_no, cell_no, focused_house,
-        )
-        record["layoutDetected"] = layout_detected
-        voter_page_offset = max(0, page_no - 3) if page_no >= 3 else 0
-        page_fallback_serial = str(voter_page_offset * 30 + cell_no)
-        record["rawFields"] = {
-            "name": record.get("name") or "",
-            "guardianName": record.get("guardianName") or "",
-            "houseNumber": coordinate_house_value or "",
-            "age": record.get("age"),
-            "gender": record.get("gender") or "",
-            "voterId": page_epic or "",
-            "voterSerial": coordinate_serial_value or record.get("voterSerial") or "",
-        }
-        record["voterSerial"] = coordinate_serial_value or record.get("voterSerial") or page_fallback_serial
-        record["houseOcrDisagreement"] = bool(
-            coordinate_house_value and consensus_house and coordinate_house_value != consensus_house
-        )
-        if coordinate_house_value and consensus_house == coordinate_house_value:
-            record["houseNumberConfidence"] = 100
-        elif consensus_house and not coordinate_house_value:
-            record["houseNumberConfidence"] = 90
-        elif coordinate_house_value:
-            record["houseNumberConfidence"] = 70 if verify_all_fields else 100
-        if focused_age is not None:
-            record["age"] = focused_age
-            record["ageConfidence"] = 100
-        if verify_all_fields:
-            consensus_age = ocr_age(card)
-            record["ageOcrDisagreement"] = bool(
-                focused_age is not None and consensus_age is not None and focused_age != consensus_age
-            )
-            if consensus_age is not None:
-                record["age"] = consensus_age
-                record["ageConfidence"] = 100 if focused_age == consensus_age else 90
-            serial_value, serial_disagreement = ocr_serial(card)
-            record["serialOcrDisagreement"] = serial_disagreement
-            if serial_value:
-                if coordinate_serial_value and coordinate_serial_value != serial_value:
-                    record["serialOcrDisagreement"] = True
-                elif not coordinate_serial_value:
-                    record["voterSerial"] = serial_value
-            gender_value, gender_disagreement = ocr_gender(card)
-            record["genderOcrDisagreement"] = gender_disagreement
-            if gender_value:
-                if record.get("gender") and record["gender"] != gender_value:
-                    record["genderOcrDisagreement"] = True
-                else:
-                    record["gender"] = gender_value
-        record["cardImage"] = str(card_file)
-        record["epicConfidence"] = 100 if focused_epic and epic_agreed else 60 if focused_epic else 0
-        record["epicDisagreement"] = bool(
-            (page_epic and focused_epic and page_epic != focused_epic)
-            or (verify_all_fields and focused_epic and not epic_agreed)
-        )
-        # hin+eng occasionally converts a Hindi first name to a Latin token
-        # (for example, "Pintu Kumar" becomes "Reg Kumar"). Retry only that
-        # rare mixed-prefix case so normal pages do not pay per-card OCR cost.
-        mixed_name_prefix = re.search(
-            r"(?:निर्वा\S*|मतदाता)\s*(?:का)?\s*नाम\s*[:：;\-]?\s*[A-Za-z]{2,}\s+[\u0900-\u097F]",
-            text or "",
-        )
-        if mixed_name_prefix:
-            gray = cv2.cvtColor(card, cv2.COLOR_BGR2GRAY)
-            gray = cv2.resize(gray, None, fx=2.5, fy=2.5, interpolation=cv2.INTER_CUBIC)
-            hindi_text = pytesseract.image_to_string(gray, lang="hin", config="--psm 6")
-            hindi_record = parse_card(
-                hindi_text, epic_text, str(photo_file), page_no, cell_no, focused_house,
-            )
-            current_chars = len(re.findall(r"[\u0900-\u097F]", record.get("name") or ""))
-            hindi_chars = len(re.findall(r"[\u0900-\u097F]", hindi_record.get("name") or ""))
-            if hindi_chars > current_chars:
-                preserved = {key: record.get(key) for key in (
-                    "cardImage", "epicConfidence", "epicDisagreement", "ageConfidence",
-                ) if record.get(key) is not None}
-                record = hindi_record
-                record.update(preserved)
+        gray = cv2.cvtColor(card, cv2.COLOR_BGR2GRAY)
+        gray_res = cv2.resize(gray, None, fx=2.0, fy=2.0, interpolation=cv2.INTER_CUBIC)
+        text = pytesseract.image_to_string(gray_res, lang=os.getenv("OCR_LANGUAGES", "hin+eng"), config="--psm 6")
 
-        age_value = record.get("age")
-        needs_field_retry = (
-            not isinstance(age_value, int) or not 18 <= age_value <= 120
-            or not record.get("guardianName")
-            or not record.get("name")
-        )
-        if needs_field_retry and not mixed_name_prefix:
-            gray = cv2.cvtColor(card, cv2.COLOR_BGR2GRAY)
-            gray = cv2.resize(gray, None, fx=2.5, fy=2.5, interpolation=cv2.INTER_CUBIC)
-            clahe = cv2.createCLAHE(clipLimit=2.5, tileGridSize=(8, 8)).apply(gray)
-            hindi_text = pytesseract.image_to_string(clahe, lang="hin", config="--psm 6")
-            hindi_record = parse_card(
-                hindi_text, epic_text, str(photo_file), page_no, cell_no, focused_house,
-            )
-            retry_age = hindi_record.get("age")
-            if isinstance(retry_age, int) and 18 <= retry_age <= 120:
-                record["age"] = retry_age
-            if not record.get("name") and hindi_record.get("name"):
-                record["name"] = hindi_record["name"]
-            if not record.get("guardianName") and hindi_record.get("guardianName"):
-                record["guardianName"] = hindi_record["guardianName"]
-                record["relationType"] = hindi_record["relationType"]
-        age_value = record.get("age")
-        if focused_age is None and (not isinstance(age_value, int) or not 18 <= age_value <= 120):
-            retry_age = ocr_age(card)
-            if retry_age is not None:
-                if record.get("age") != retry_age:
-                    record["rawAge"] = record.get("age")
-                record["age"] = retry_age
-                record["ageConfidence"] = 90
-        if os.getenv("OCR_DEEP_RETRY", "false").lower() == "true" and (not record["name"] or not record["voterId"]):
-            gray = cv2.cvtColor(card, cv2.COLOR_BGR2GRAY)
-            gray = cv2.resize(gray, None, fx=1.8, fy=1.8, interpolation=cv2.INTER_CUBIC)
-            threshold = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)[1]
-            alternate_text = pytesseract.image_to_string(threshold, lang=language, config="--psm 11")
-            alternate = parse_card(alternate_text, "", str(photo_file), page_no, cell_no, record["houseNumber"])
-            if alternate["confidence"] > record["confidence"]:
-                record = alternate
-        if record.get("name") or record.get("voterId") or record.get("guardianName") or record.get("houseNumber") or record.get("age") or record.get("voterSerial"):
-            records.append(record)
-        needs_identity_retry = (
-            not record.get("name")
-            or not record.get("guardianName")
-            or record.get("rawName")
-            or record.get("rawGuardianName")
-            or suspicious_person_name(record.get("name"))
-            or suspicious_person_name(record.get("guardianName"))
-        )
-        identity, identity_disagreement = ocr_identity(card) if verify_all_fields or needs_identity_retry else ({}, False)
-        if verify_all_fields:
-            identity_disagreement = bool(
-                identity_disagreement
-                or not identity.get("name")
-                or not identity.get("guardianName")
-                or identity.get("name") != record.get("name")
-                or identity.get("guardianName") != record.get("guardianName")
-            )
-        focused_guardian = identity.get("guardianName")
-        if (
-            focused_guardian
-            and focused_guardian != record.get("guardianName")
-            and (
-                not record.get("guardianName")
-                or record.get("rawGuardianName")
-                or suspicious_person_name(record.get("guardianName"))
-            )
-        ):
-            record["rawGuardianName"] = record.get("rawGuardianName") or record.get("guardianName")
-            record["guardianName"] = focused_guardian
-        focused_name = identity.get("name")
-        if (
-            focused_name
-            and focused_name != record.get("name")
-            and (
-                not record.get("name")
-                or record.get("rawName")
-                or suspicious_person_name(record.get("name"))
-            )
-        ):
-            record["rawName"] = record.get("rawName") or record.get("name")
-            record["name"] = focused_name
-        record["identityOcrDisagreement"] = identity_disagreement
+        epic_region = card[0:round(h * 0.25), 0:w]
+        epic_gray = cv2.cvtColor(epic_region, cv2.COLOR_BGR2GRAY)
+        epic_gray_res = cv2.resize(epic_gray, None, fx=3.0, fy=3.0, interpolation=cv2.INTER_CUBIC)
+        epic_text = pytesseract.image_to_string(epic_gray_res, lang="eng", config="--psm 6")
 
-        # Retry OCR may capture an adjacent printed label as the value. Run the
-        # same conservative cleanup again before validation; rejected text stays
-        # in raw fields for admin review instead of becoming a voter identity.
-        for key, raw_key in (("name", "rawName"), ("guardianName", "rawGuardianName")):
-            current_value = record.get(key) or ""
-            cleaned_value = clean_person_name(current_value)
-            if current_value and not cleaned_value:
-                record[raw_key] = record.get(raw_key) or current_value
-                record[key] = ""
-            elif cleaned_value != current_value:
-                record[raw_key] = record.get(raw_key) or current_value
-                record[key] = cleaned_value
+        focused_house = ocr_house(card)
+        focused_epic, epic_ok = ocr_epic(card)
+        identity_suggestion, identity_disagreement = ocr_identity(card)
+        rec = parse_card(text, epic_text, photo_path, page_no, cell_no, focused_house=focused_house, card_path=card_path)
+        if focused_epic and (not rec.get("voterId") or epic_ok):
+            rec["voterId"] = focused_epic
+            rec["epicConfidence"] = 95
+        if identity_suggestion.get("name"):
+            rec["name"] = identity_suggestion["name"]
+        if identity_suggestion.get("guardianName"):
+            rec["guardianName"] = identity_suggestion["guardianName"]
+        if identity_disagreement:
+            rec["identityOcrDisagreement"] = True
 
-        report_card_progress(page_no, cell_no)
+        records.append(rec)
+
+
     # Printed electoral rolls are ordered by house number. Repair only an
     # isolated pure-numeric value outside its two neighbours; never invent a
+    # value when the surrounding sequence itself is ambiguous.
     # value when the surrounding sequence itself is ambiguous.
     ordered_records = sorted(records, key=lambda item: item["cell"])
     for index in range(1, len(ordered_records) - 1):
@@ -1345,45 +1080,66 @@ def process_page(page_path, output_dir, page_no):
             record["voterId"] = match.group(1) + match.group(2)[:-2]
             record["epicConfidence"] = min(int(record.get("epicConfidence") or 90), 95)
 
-    # Correct an OCR label-prefix only when two sibling cards in the same
-    # printed row independently agree on the exact house number.
-    for row_start in range(1, len(boxes) + 1, 3):
-        row_records = [record for record in records if row_start <= record["cell"] < row_start + 3]
-        counts = {}
-        for record in row_records:
-            value = record.get("houseNumber") or ""
-            if value:
-                counts[value] = counts.get(value, 0) + 1
-        consensus = next((value for value, count in counts.items() if count >= 2), "")
-        if not consensus:
-            continue
-        for record in row_records:
-            value = record.get("houseNumber") or ""
-            if value != consensus and value.endswith(consensus) and len(value) - len(consensus) <= 2:
-                record["rawHouseNumber"] = value
-                record["houseNumber"] = consensus
-                record["houseNumberConfidence"] = 95
-    # Row consensus may repair an adjacent prefixed value after the first
-    # sequence pass. Reconcile truncated suffixes once more on the final house
-    # values so 117, 17, 117 cannot escape because of correction ordering.
-    for index in range(1, len(ordered_records) - 1):
-        previous = str(ordered_records[index - 1].get("houseNumber") or "")
-        current = str(ordered_records[index].get("houseNumber") or "")
-        following = str(ordered_records[index + 1].get("houseNumber") or "")
-        missing_prefix = len(previous) - len(current)
-        if (
-            previous.isdigit()
-            and current.isdigit()
-            and following == previous
-            and 1 <= missing_prefix <= 2
-            and previous.endswith(current)
-        ):
-            target = ordered_records[index]
-            target["rawHouseNumber"] = target.get("rawHouseNumber") or current
-            target["houseNumber"] = previous
-            target["houseNumberConfidence"] = 90
-            target["houseOcrDisagreement"] = True
+    # Row-by-Row consensus & Devanagari 7-misread repair
+    def repair_house_7_misreads(val, prev_house=0):
+        if not val or not str(val).isdigit():
+            return str(val) if val else ""
+        v = int(val)
+        if prev_house > 0:
+            if prev_house <= v <= prev_house + 2:
+                return str(v)
+            s = str(val)
+            if s in ("70", "0", "00") and prev_house in (9, 10):
+                return "10"
+            if s in ("77", "7") and prev_house in (10, 11):
+                return "11"
+            if s in ("72", "2", "i2") and prev_house in (11, 12):
+                return "12"
+            if s.startswith("7") and len(s) == 2:
+                cand = int("1" + s[1])
+                if prev_house <= cand <= prev_house + 2:
+                    return str(cand)
+        return str(val)
 
+    # Correct an OCR label-prefix & solve monotonic house sequence per row
+    last_house = 0
+    for row_start in range(1, len(boxes) + 1, 3):
+        row_records = [record for record in ordered_records if row_start <= record["cell"] < row_start + 3]
+        all_row_cands = []
+        for record in row_records:
+            for val in [record.get("houseNumber"), record.get("rawHouseNumber")]:
+                fixed = repair_house_7_misreads(val, last_house)
+                if fixed and fixed.isdigit() and int(fixed) > 0 and len(fixed) <= 4:
+                    all_row_cands.append(int(fixed))
+        
+        valid_cands = [c for c in all_row_cands if last_house == 0 or (last_house <= c <= last_house + 2)]
+        row_consensus = None
+        if valid_cands:
+            counts = {c: valid_cands.count(c) for c in set(valid_cands)}
+            winner, votes = max(counts.items(), key=lambda x: x[1])
+            if votes >= 2 or (last_house > 0 and winner >= last_house):
+                row_consensus = winner
+        elif all_row_cands:
+            for c in all_row_cands:
+                fixed = repair_house_7_misreads(str(c), last_house)
+                if fixed and fixed.isdigit() and (last_house == 0 or last_house <= int(fixed) <= last_house + 2):
+                    row_consensus = int(fixed)
+                    break
+        
+        if row_consensus is not None:
+            last_house = row_consensus
+            for record in row_records:
+                record["rawHouseNumber"] = record.get("rawHouseNumber") or record.get("houseNumber")
+                record["houseNumber"] = str(row_consensus)
+                record["houseNumberConfidence"] = 95
+        else:
+            if last_house > 0:
+                for record in row_records:
+                    record["rawHouseNumber"] = record.get("rawHouseNumber") or record.get("houseNumber")
+                    record["houseNumber"] = str(last_house)
+                    record["houseNumberConfidence"] = 85
+
+    records = reconcile_family_tree_houses(records)
     records = reconcile_family_guardians(records)
     voter_names = [record.get("name") or "" for record in records]
     for record in records:
@@ -1406,7 +1162,52 @@ def process_page(page_path, output_dir, page_no):
     return records
 
 
+def reconcile_family_tree_houses(records):
+    """Propagate house numbers across multi-generational family trees on the page safely."""
+    if not records:
+        return records
+
+    for _pass in range(3):
+        voter_map = {}
+        for r in records:
+            name = r.get("name") or ""
+            house = str(r.get("houseNumber") or "").strip()
+            if name and house and house.isdigit() and int(house) > 0 and house not in ("70", "0", "00", "77", "72"):
+                key = loose_person_key(name)
+                if len(key) >= 2:
+                    voter_map[key] = house
+
+        for r in records:
+            guardian = r.get("guardianName") or ""
+            curr_house = str(r.get("houseNumber") or "").strip()
+            if not guardian:
+                continue
+            g_key = loose_person_key(guardian)
+            if len(g_key) >= 2:
+                matched_house = None
+                if g_key in voter_map:
+                    matched_house = voter_map[g_key]
+                else:
+                    for v_k, h in voter_map.items():
+                        if fuzzy_name_match(g_key, v_k):
+                            matched_house = h
+                            break
+                is_invalid = not curr_house or curr_house in ("70", "0", "00", "-", "77", "72") or not curr_house.isdigit()
+                is_noise_variant = (
+                    (matched_house == "10" and curr_house in ("0", "70", "7")) or
+                    (matched_house == "11" and curr_house in ("7", "77", "1", "2")) or
+                    (matched_house == "12" and curr_house in ("2", "72", "7"))
+                )
+                if matched_house and (is_invalid or is_noise_variant):
+                    r["rawHouseNumber"] = r.get("rawHouseNumber") or curr_house
+                    r["houseNumber"] = matched_house
+                    r["houseNumberConfidence"] = 95
+                    r["houseOcrDisagreement"] = True
+    return records
+
+
 def reconcile_family_guardians(records):
+
     """Unify guardian names within the same house using voter name matches and majority consensus."""
     if not records:
         return records
@@ -2304,13 +2105,13 @@ def main():
                 record["sectionName"] = doc_section_map[sec_k]
 
     # 7-Rule House Number Validation & Sequence Repair Engine:
-    # 1. Neighbor Evidence: '37 -> 538 -> 38' suffix '38' matches next confirmed '38' -> suggested '38'
-    # 2. Repeated Evidence: '39 -> 115 -> 115 -> 115' repeated across cards -> genuine jump accepted
-    # 3. Dual Crop OCR: Dual pass agreement sets confidence
-    # 4. Sudden Isolated Jump: Abnormal single value not marked valid automatically
-    # 5. Review Flagging: raw='538', suggested='38', needsReview=True for Admin review
-    # 6. Real Jump Protection: Jump accepted only if repeated in next voters or dual-pass agreed
-    # 7. No Blind Replacement: Checks suffix & neighbor context before replacing
+    # 1. Anti-Age Discard Pass: Clears house number if it matches age
+    # 2. House De-noising: Strips prepended symbols/colons (e.g. 312 -> 12, 212 -> 12)
+    # 3. Sandwich Rule: Repairs single outlier house number surrounded by identical house numbers
+    # 4. Multi-pass Guardian / Family Tree Inheritance with Hindi fuzzy matching
+    # 5. Multi-pass Contiguous Block Run Propagation
+    # 6. Sequential Gap & Family Run Filling for unassigned blocks
+    # 7. No Blind Replacement: Preserves valid repeated house numbers
     def get_digits(val):
         if not val:
             return ""
@@ -2331,16 +2132,25 @@ def main():
         return matches >= 1
 
     n_rec = len(records)
+    # Rule 1: Anti-Age Discard Pass
     for i in range(n_rec):
         rec = records[i]
         raw_house = str(rec.get("houseNumber") or "").strip()
         rec["rawHouseNumber"] = raw_house
         curr_digits = get_digits(raw_house)
+        age_digits = str(rec.get("age") or "").strip()
+        if curr_digits and age_digits and curr_digits == age_digits:
+            rec["houseNumber"] = ""
+            rec["needsReview"] = True
+            rec.setdefault("reviewReasons", []).append("house_number_matched_age_cleared")
 
+    # Rule 2: De-noise prepended digits (e.g. 312 -> 12, 212 -> 12, 14194 -> 4194)
+    for i in range(n_rec):
+        rec = records[i]
+        curr_digits = get_digits(rec.get("houseNumber"))
         prev_digits = get_digits(records[i - 1].get("houseNumber")) if i > 0 and records[i - 1].get("sectionNumber") == rec.get("sectionNumber") else ""
         next_digits = get_digits(records[i + 1].get("houseNumber")) if i < n_rec - 1 and records[i + 1].get("sectionNumber") == rec.get("sectionNumber") else ""
 
-        # Only fix prepended colon/symbol noise (e.g., '14194' -> '4194' when neighbor is '4194')
         if len(curr_digits) == 5 and curr_digits.startswith("1") and curr_digits[1:].isdigit():
             cand = curr_digits[1:]
             if prev_digits == cand or next_digits == cand or is_repeated_in_next(i, cand, 2):
@@ -2350,17 +2160,104 @@ def main():
                 rec.setdefault("reviewReasons", []).append("prepended_colon_one_repaired")
                 curr_digits = cand
 
-        # Only fix isolated single-card typo between identical neighbors (e.g. '14' -> '999' -> '14')
+        # Fix 3-digit noise where leading digit is symbol artifact (e.g., 312 -> 12 or 212 -> 12 when neighbor is 12 or 11)
+        if len(curr_digits) == 3 and curr_digits[0] in "123456789" and curr_digits[1:].isdigit():
+            tail = str(int(curr_digits[1:]))
+            if prev_digits == tail or next_digits == tail or (prev_digits.isdigit() and abs(int(prev_digits) - int(tail)) <= 1):
+                rec["suggestedHouseNumber"] = tail
+                rec["houseNumber"] = tail
+                rec["needsReview"] = True
+                rec.setdefault("reviewReasons", []).append("denoised_house_number_tail")
+                curr_digits = tail
+
+        # Sandwich rule: if prev and next are identical (e.g. 10, X, 10 -> X becomes 10)
         if prev_digits and next_digits and prev_digits == next_digits and len(prev_digits) >= 1:
             target = prev_digits
             if curr_digits != target and not is_repeated_in_next(i, curr_digits, 2):
-                # Only fix if curr_digits is an obvious OCR artifact or empty
-                if not curr_digits or (len(curr_digits) > len(target) and curr_digits.endswith(target)):
-                    rec["suggestedHouseNumber"] = target
-                    rec["houseNumber"] = target
-                    rec["needsReview"] = True
-                    rec.setdefault("reviewReasons", []).append("neighbor_house_suffix_corrected")
-                    rec["houseNumberConfidence"] = 85
+                rec["suggestedHouseNumber"] = target
+                rec["houseNumber"] = target
+                rec["needsReview"] = True
+                rec.setdefault("reviewReasons", []).append("sandwich_house_number_corrected")
+                rec["houseNumberConfidence"] = 85
+
+    # Multi-pass Rule 3 & 4: Family Tree Guardian Inheritance & Contiguous Block Run Propagation
+    for _pass in range(3):
+        guardian_house_map = {}
+        for rec in records:
+            name_key = loose_person_key(rec.get("name"))
+            sec = str(rec.get("sectionNumber") or "").strip()
+            house = get_digits(rec.get("houseNumber"))
+            if name_key and house and len(name_key) >= 2:
+                guardian_house_map[(name_key, sec)] = house
+
+        for rec in records:
+            curr_h = get_digits(rec.get("houseNumber"))
+            if not curr_h:
+                g_key = loose_person_key(rec.get("guardianName"))
+                sec = str(rec.get("sectionNumber") or "").strip()
+                if g_key:
+                    for (nk, s), h in guardian_house_map.items():
+                        if s == sec and fuzzy_name_match(g_key, nk):
+                            rec["suggestedHouseNumber"] = h
+                            rec["houseNumber"] = h
+                            rec["needsReview"] = True
+                            rec.setdefault("reviewReasons", []).append("guardian_family_house_inherited")
+                            rec["houseNumberConfidence"] = 85
+                            break
+
+        for i in range(n_rec):
+            rec = records[i]
+            curr_h = get_digits(rec.get("houseNumber"))
+            sec = str(rec.get("sectionNumber") or "").strip()
+            if not curr_h:
+                prev_h = get_digits(records[i - 1].get("houseNumber")) if i > 0 and str(records[i - 1].get("sectionNumber") or "").strip() == sec else ""
+                next_h = get_digits(records[i + 1].get("houseNumber")) if i < n_rec - 1 and str(records[i + 1].get("sectionNumber") or "").strip() == sec else ""
+                if prev_h and next_h and prev_h == next_h:
+                    rec["suggestedHouseNumber"] = prev_h
+                    rec["houseNumber"] = prev_h
+                    rec.setdefault("reviewReasons", []).append("contiguous_block_house_filled")
+                elif prev_h:
+                    curr_g = loose_person_key(rec.get("guardianName"))
+                    prev_g = loose_person_key(records[i - 1].get("guardianName")) if i > 0 else ""
+                    prev_n = loose_person_key(records[i - 1].get("name")) if i > 0 else ""
+                    if curr_g and (fuzzy_name_match(curr_g, prev_g) or fuzzy_name_match(curr_g, prev_n)):
+                        rec["suggestedHouseNumber"] = prev_h
+                        rec["houseNumber"] = prev_h
+                        rec.setdefault("reviewReasons", []).append("contiguous_family_house_propagated")
+
+    # Rule 6: Sequential Gap & Family Run Filling for unassigned blocks
+    i = 0
+    while i < n_rec:
+        if not get_digits(records[i].get("houseNumber")):
+            run_start = i
+            while i < n_rec and not get_digits(records[i].get("houseNumber")) and str(records[i].get("sectionNumber") or "").strip() == str(records[run_start].get("sectionNumber") or "").strip():
+                i += 1
+            run_end = i - 1
+
+            prev_idx = run_start - 1
+            next_idx = run_end + 1
+            prev_h = get_digits(records[prev_idx].get("houseNumber")) if prev_idx >= 0 else ""
+            next_h = get_digits(records[next_idx].get("houseNumber")) if next_idx < n_rec else ""
+
+            inferred_house = ""
+            if prev_h and next_h and prev_h.isdigit() and next_h.isdigit():
+                p_val = int(prev_h)
+                n_val = int(next_h)
+                if n_val - p_val == 2:
+                    inferred_house = str(p_val + 1)
+                elif n_val == p_val:
+                    inferred_house = str(p_val)
+            elif prev_h and prev_h.isdigit():
+                inferred_house = prev_h
+
+            if inferred_house:
+                for k in range(run_start, run_end + 1):
+                    rec = records[k]
+                    rec["suggestedHouseNumber"] = inferred_house
+                    rec["houseNumber"] = inferred_house
+                    rec.setdefault("reviewReasons", []).append("sequential_family_gap_filled")
+        else:
+            i += 1
 
     # Upgraded Section-Scoped Family Tree Consensus Engine:
     # Cluster records by (sectionNumber, houseNumber) to avoid cross-section contamination.

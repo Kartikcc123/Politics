@@ -1,17 +1,4 @@
 const mongoose = require('mongoose');
-const MediaAsset = require('../models/MediaAsset');
-const { getFromS3 } = require('../utils/s3');
-
-exports.getS3 = async (req, res, next) => {
-  try {
-    const key = String(req.params.key || '').trim();
-    if (!key || key.includes('/') || key.includes('\\')) return res.status(404).end();
-    const object = await getFromS3(key);
-    if (!object?.Body) return res.status(404).end();
-    res.set({
-      'Content-Type': object.ContentType || 'image/jpeg',
-      'Cache-Control': 'private, max-age=86400',
-      'X-Content-Type-Options': 'nosniff',
     });
     if (object.ContentLength !== undefined) {
       res.set('Content-Length', String(object.ContentLength));
