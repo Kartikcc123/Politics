@@ -45,6 +45,26 @@ def ratio(name, default):
     return float(os.getenv(name, default))
 
 
+def safe_image_to_string(image, lang="eng", config=""):
+    """
+    Safely execute pytesseract.image_to_string with image bounds checking
+    and exception handling to prevent Tesseract C++ std::bad_alloc / process crashes.
+    """
+    if image is None or getattr(image, "size", 0) == 0:
+        return ""
+    try:
+        height, width = image.shape[:2]
+        max_w, max_h = 1800, 1200
+        if width > max_w or height > max_h:
+            scale = min(max_w / float(width), max_h / float(height))
+            image = cv2.resize(image, None, fx=scale, fy=scale, interpolation=cv2.INTER_AREA)
+        return pytesseract.image_to_string(image, lang=lang, config=config)
+    except Exception as err:
+        sys.stderr.write(f"Warning: safe_image_to_string failed: {err}\n")
+        return ""
+
+
+
 def report_card_progress(page_no, cell_no):
     print(json.dumps({
         "type": "card_progress",
@@ -267,7 +287,7 @@ def ocr_house(card):
     if region.size == 0:
         return ""
     gray = cv2.cvtColor(region, cv2.COLOR_BGR2GRAY)
-    gray = cv2.resize(gray, None, fx=4, fy=4, interpolation=cv2.INTER_CUBIC)
+    gray = cv2.resize(gray, None, fx=1.5, fy=1.5, interpolation=cv2.INTER_CUBIC)
     variants = [
         cv2.createCLAHE(3.0, (8, 8)).apply(gray),
         cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)[1],
@@ -275,13 +295,13 @@ def ocr_house(card):
     values = []
     c1_values = []
     for variant in variants:
-        t_hin = pytesseract.image_to_string(variant, lang="hin+eng", config="--psm 6")
+        t_hin = safe_image_to_string(variant, lang="hin+eng", config="--psm 6")
         house_line = field(t_hin, r"(?:गृह|गह|गुह|ग्ह|गृ|गृ\.|मकान|House|H\.No|Te|\S*ह|\S*स)\s*(?:संख्या|सख्या|सं\.?|सं०|नं\.?|क्र\.?|Number|No\.?)?\s*[:：;\-।|]?\s*([^\n]+)")
         c1 = clean_house(house_line or t_hin)
         if c1:
             values.append(c1)
             c1_values.append(c1)
-        t_eng = pytesseract.image_to_string(
+        t_eng = safe_image_to_string(
             variant, lang="eng", config="--psm 6 -c tessedit_char_whitelist=0123456789/-",
         )
         c2 = clean_house(t_eng)
@@ -317,7 +337,7 @@ def _dual_fixed_choice(card, y1, y2, x1, x2, extractor, language="eng", whitelis
     if region.size == 0:
         return "", False
     gray = cv2.cvtColor(region, cv2.COLOR_BGR2GRAY)
-    gray = cv2.resize(gray, None, fx=6, fy=6, interpolation=cv2.INTER_CUBIC)
+    gray = cv2.resize(gray, None, fx=1.5, fy=1.5, interpolation=cv2.INTER_CUBIC)
     variants = [
         cv2.createCLAHE(3.0, (8, 8)).apply(gray),
         cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)[1],
@@ -325,9 +345,13 @@ def _dual_fixed_choice(card, y1, y2, x1, x2, extractor, language="eng", whitelis
     values = []
     config = "--psm 7" + (f" -c tessedit_char_whitelist={whitelist}" if whitelist else "")
     for variant in variants:
-        values.append(extractor(pytesseract.image_to_string(variant, lang=language, config=config)))
-    agreed = bool(values[0] and values[0] == values[1])
-    disagreement = bool(values[0] and values[1] and values[0] != values[1])
+        try:
+            txt = safe_image_to_string(variant, lang=language, config=config)
+            values.append(extractor(txt))
+        except Exception:
+            values.append("")
+    agreed = bool(len(values) >= 2 and values[0] and values[0] == values[1])
+    disagreement = bool(len(values) >= 2 and values[0] and values[1] and values[0] != values[1])
     return (values[0] if agreed else ""), disagreement
 
 
@@ -358,26 +382,32 @@ def ocr_age(card):
     if region.size == 0:
         return None
     gray = cv2.cvtColor(region, cv2.COLOR_BGR2GRAY)
-    gray = cv2.resize(gray, None, fx=12, fy=12, interpolation=cv2.INTER_CUBIC)
+    gray = cv2.resize(gray, None, fx=1.5, fy=1.5, interpolation=cv2.INTER_CUBIC)
     variants = [cv2.createCLAHE(3.0, (8, 8)).apply(gray), cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)[1]]
     candidates = []
     for variant in variants:
-        text = pytesseract.image_to_string(variant, lang="eng", config="--psm 7 -c tessedit_char_whitelist=0123456789")
-        candidates.extend(int(value) for value in re.findall(r"\d{2,3}", text) if 18 <= int(value) <= 120)
+        try:
+            text = safe_image_to_string(variant, lang="eng", config="--psm 7 -c tessedit_char_whitelist=0123456789")
+            candidates.extend(int(value) for value in re.findall(r"\d{2,3}", text) if 18 <= int(value) <= 120)
+        except Exception:
+            pass
     if not candidates:
         line = card[
             round(height * 0.54):round(height * 0.84),
             0:round(width * 0.48),
         ]
         line_gray = cv2.cvtColor(line, cv2.COLOR_BGR2GRAY)
-        line_gray = cv2.resize(line_gray, None, fx=6, fy=6, interpolation=cv2.INTER_CUBIC)
+        line_gray = cv2.resize(line_gray, None, fx=1.5, fy=1.5, interpolation=cv2.INTER_CUBIC)
         line_variants = [
             cv2.createCLAHE(3.0, (8, 8)).apply(line_gray),
             cv2.threshold(line_gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)[1],
         ]
         for variant in line_variants:
             for psm in (6, 11):
-                text = pytesseract.image_to_string(variant, lang="hin+eng", config=f"--psm {psm}")
+                try:
+                    text = safe_image_to_string(variant, lang="hin+eng", config=f"--psm {psm}")
+                except Exception:
+                    continue
                 match = re.search(r"(?:उम्र|उप्र|आयु)\s*[:：;\-]?\s*([0-9०-९OQILSZBG]{1,3})", text)
                 if not match:
                     continue
@@ -463,20 +493,21 @@ def ocr_epic(card, reference=""):
         if region.size == 0:
             continue
         gray = cv2.cvtColor(region, cv2.COLOR_BGR2GRAY)
-        gray = cv2.resize(gray, None, fx=5, fy=5, interpolation=cv2.INTER_CUBIC)
+        gray = cv2.resize(gray, None, fx=1.5, fy=1.5, interpolation=cv2.INTER_CUBIC)
         variants = [
             cv2.createCLAHE(3.0, (8, 8)).apply(gray),
-            cv2.createCLAHE(5.0, (8, 8)).apply(gray),
             cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)[1],
-            cv2.adaptiveThreshold(gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 11, 2),
         ]
         for variant in variants:
-            for psm in (7, 8, 11):
-                text = pytesseract.image_to_string(
-                    variant,
-                    lang="eng",
-                    config=f"--psm {psm} -c tessedit_char_whitelist=ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789/",
-                )
+            for psm in (7, 11):
+                try:
+                    text = safe_image_to_string(
+                        variant,
+                        lang="eng",
+                        config=f"--psm {psm} -c tessedit_char_whitelist=ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789/",
+                    )
+                except Exception:
+                    continue
                 value = epic_from(text)
                 if not value:
                     continue
@@ -500,7 +531,7 @@ def ocr_name_focused(card):
     if name_crop.size == 0:
         return ""
     gray = cv2.cvtColor(name_crop, cv2.COLOR_BGR2GRAY)
-    gray = cv2.resize(gray, None, fx=6, fy=6, interpolation=cv2.INTER_CUBIC)
+    gray = cv2.resize(gray, None, fx=1.5, fy=1.5, interpolation=cv2.INTER_CUBIC)
     variants = [
         cv2.createCLAHE(3.0, (8, 8)).apply(gray),
         cv2.createCLAHE(5.0, (8, 8)).apply(gray),
@@ -509,7 +540,7 @@ def ocr_name_focused(card):
     candidates = []
     for variant in variants:
         for psm in (6, 7, 11):
-            text = pytesseract.image_to_string(variant, lang="hin", config=f"--psm {psm}")
+            text = safe_image_to_string(variant, lang="hin", config=f"--psm {psm}")
             raw = field(text, r"(?:निर्वा\S*|मतदाता)?\s*(?:का)?\s*नाम\s*[:：;!\-]?\s*([^\n]+)") or text
             cleaned = clean_person_name(raw)
             if cleaned and len(re.findall(r"[\u0900-\u097F]", cleaned)) >= 2:
@@ -528,7 +559,7 @@ def ocr_identity(card):
     if region.size == 0:
         return {}, False
     gray = cv2.cvtColor(region, cv2.COLOR_BGR2GRAY)
-    gray = cv2.resize(gray, None, fx=5, fy=5, interpolation=cv2.INTER_CUBIC)
+    gray = cv2.resize(gray, None, fx=1.5, fy=1.5, interpolation=cv2.INTER_CUBIC)
     variants = [
         cv2.createCLAHE(3.0, (8, 8)).apply(gray),
         cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)[1],
@@ -536,7 +567,7 @@ def ocr_identity(card):
     results = []
     focused_name_cand = ocr_name_focused(card)
     for variant in variants:
-        text = pytesseract.image_to_string(variant, lang="hin", config="--psm 6")
+        text = safe_image_to_string(variant, lang="hin", config="--psm 6")
         name = clean_person_name(field(text, r"(?:निर्वा\S*|मतदाता)\s*(?:का)?\s*नाम\s*[:：;!\-]?\s*([^\n]+)")) or focused_name_cand
         guardian = clean_person_name(field(text, r"(?:पिता|पि\S*|पति|पत\S*|प्रति|माता)\s*(?:का)?\s*नाम\s*[:：;!\-]?\s*([^\n]+)"))
         results.append((name, guardian))
@@ -874,13 +905,13 @@ def process_page(page_path, output_dir, page_no):
         cv2.imwrite(card_path, card)
 
         gray = cv2.cvtColor(card, cv2.COLOR_BGR2GRAY)
-        gray_res = cv2.resize(gray, None, fx=2.0, fy=2.0, interpolation=cv2.INTER_CUBIC)
-        text = pytesseract.image_to_string(gray_res, lang=os.getenv("OCR_LANGUAGES", "hin+eng"), config="--psm 6")
+        gray_res = cv2.resize(gray, None, fx=1.5, fy=1.5, interpolation=cv2.INTER_CUBIC)
+        text = safe_image_to_string(gray_res, lang=os.getenv("OCR_LANGUAGES", "hin+eng"), config="--psm 6")
 
         epic_region = card[0:round(h * 0.25), 0:w]
         epic_gray = cv2.cvtColor(epic_region, cv2.COLOR_BGR2GRAY)
-        epic_gray_res = cv2.resize(epic_gray, None, fx=3.0, fy=3.0, interpolation=cv2.INTER_CUBIC)
-        epic_text = pytesseract.image_to_string(epic_gray_res, lang="eng", config="--psm 6")
+        epic_gray_res = cv2.resize(epic_gray, None, fx=1.5, fy=1.5, interpolation=cv2.INTER_CUBIC)
+        epic_text = safe_image_to_string(epic_gray_res, lang="eng", config="--psm 6")
 
         focused_house = ocr_house(card)
         focused_epic, epic_ok = ocr_epic(card)
@@ -1307,7 +1338,7 @@ def read_header(page_path, is_voter_page=True):
     crop_ratio = 0.12 if is_voter_page else 0.62
     header = image[0:round(height * crop_ratio), 0:width]
     gray = cv2.cvtColor(header, cv2.COLOR_BGR2GRAY)
-    gray = cv2.resize(gray, None, fx=2.2 if is_voter_page else 2.4, fy=2.2 if is_voter_page else 2.4, interpolation=cv2.INTER_CUBIC)
+    gray = cv2.resize(gray, None, fx=1.5 if is_voter_page else 2.0, fy=1.5 if is_voter_page else 2.0, interpolation=cv2.INTER_CUBIC)
     gray = cv2.createCLAHE(2.0, (8, 8)).apply(gray)
     variants = [gray]
     if not is_voter_page:
@@ -1318,9 +1349,9 @@ def read_header(page_path, is_voter_page=True):
     outputs = []
     for variant in variants:
         for psm in ((6, 11) if not is_voter_page else (6,)):
-            outputs.append(pytesseract.image_to_string(variant, lang=os.getenv("OCR_LANGUAGES", "hin+eng"), config=f"--psm {psm}"))
+            outputs.append(safe_image_to_string(variant, lang=os.getenv("OCR_LANGUAGES", "hin+eng"), config=f"--psm {psm}"))
             if not is_voter_page:
-                outputs.append(pytesseract.image_to_string(variant, lang="eng", config=f"--psm {psm}"))
+                outputs.append(safe_image_to_string(variant, lang="eng", config=f"--psm {psm}"))
     return "\n".join(outputs)
 
 
@@ -1334,15 +1365,15 @@ def ocr_fixed_region(image, bounds, lang="eng", psm=7, whitelist=""):
     if region.size == 0:
         return ""
     if whitelist:
-        target = cv2.resize(region, None, fx=6, fy=6, interpolation=cv2.INTER_CUBIC)
+        target = cv2.resize(region, None, fx=1.5, fy=1.5, interpolation=cv2.INTER_CUBIC)
     else:
         target = cv2.cvtColor(region, cv2.COLOR_BGR2GRAY)
-        target = cv2.resize(target, None, fx=4, fy=4, interpolation=cv2.INTER_CUBIC)
+        target = cv2.resize(target, None, fx=1.5, fy=1.5, interpolation=cv2.INTER_CUBIC)
         target = cv2.createCLAHE(2.5, (8, 8)).apply(target)
     config = f"--psm {psm}"
     if whitelist:
         config += f" -c tessedit_char_whitelist={whitelist}"
-    return clean(pytesseract.image_to_string(target, lang=lang, config=config))
+    return clean(safe_image_to_string(target, lang=lang, config=config))
 
 
 def fixed_header_number(text, max_digits, prefer_tail=False):
@@ -1382,7 +1413,7 @@ def fixed_region_variants(image, bounds, language, psms, whitelist=""):
     if region.size == 0:
         return []
     gray = cv2.cvtColor(region, cv2.COLOR_BGR2GRAY)
-    gray = cv2.resize(gray, None, fx=4, fy=4, interpolation=cv2.INTER_CUBIC)
+    gray = cv2.resize(gray, None, fx=1.5, fy=1.5, interpolation=cv2.INTER_CUBIC)
     variants = [
         gray,
         cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)[1],
@@ -1393,7 +1424,7 @@ def fixed_region_variants(image, bounds, language, psms, whitelist=""):
             config = f"--psm {psm}"
             if whitelist:
                 config += f" -c tessedit_char_whitelist={whitelist}"
-            readings.append(clean(pytesseract.image_to_string(
+            readings.append(clean(safe_image_to_string(
                 variant, lang=language, config=config,
             )))
     return readings
@@ -1426,7 +1457,7 @@ def fixed_master_section_map(image):
     if region.size == 0:
         return {}
     gray = cv2.cvtColor(region, cv2.COLOR_BGR2GRAY)
-    gray = cv2.resize(gray, None, fx=3, fy=3, interpolation=cv2.INTER_CUBIC)
+    gray = cv2.resize(gray, None, fx=1.5, fy=1.5, interpolation=cv2.INTER_CUBIC)
     variants = [
         cv2.createCLAHE(3.0, (8, 8)).apply(gray),
         cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)[1],
@@ -1435,7 +1466,7 @@ def fixed_master_section_map(image):
     candidate_votes = {}
     digit_translation = str.maketrans("\u0966\u0967\u0968\u0969\u096a\u096b\u096c\u096d\u096e\u096f", "0123456789")
     for variant in variants:
-        text = pytesseract.image_to_string(
+        text = safe_image_to_string(
             variant, lang=os.getenv("OCR_LANGUAGES", "hin+eng"), config="--psm 6"
         )
         rows = []
