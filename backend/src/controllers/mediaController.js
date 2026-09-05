@@ -20,3 +20,7 @@ exports.get = async (req, res, next) => {
     return next(error);
   }
 };
+
+exports.getS3 = async (req, res, next) => {
+  return res.status(404).end();
+};
