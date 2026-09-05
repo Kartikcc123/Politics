@@ -2170,7 +2170,7 @@ def main():
                     rec["suggestedHouseNumber"] = cand
                     rec["houseNumber"] = cand
                     curr_digits = cand
-                elif len(curr_digits) == 1 and ref_4digit.endswith(curr_digits):
+                elif len(curr_digits) <= 2 and ref_4digit.startswith("41"):
                     cand = ref_4digit
                     rec["suggestedHouseNumber"] = cand
                     rec["houseNumber"] = cand
