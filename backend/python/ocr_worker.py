@@ -223,6 +223,8 @@ def clean_house(value):
         val = val[1:]
     elif len(val) == 4 and val[0:2] in ("44", "47") and val[2:].isdigit() and int(val[2:]) >= 50:
         val = "41" + val[2:]
+    elif len(val) == 4 and val[0:2] in ("37", "36", "35") and val[2:].isdigit():
+        val = val[2:].lstrip("0") or val[2:]
     return val
 
 
