@@ -13,13 +13,12 @@ async function testPdf(pdfPath, name, firstPage, lastPage) {
   console.log('Serial'.padEnd(8) + 'Voter ID'.padEnd(18) + 'Name'.padEnd(20) + 'House'.padEnd(10) + 'Age'.padEnd(6));
   console.log('-'.repeat(62));
   for (const r of records) {
-    console.log(
-      String(r.voterSerial || '-').padEnd(8) +
-      String(r.voterId || 'N/A').padEnd(18) +
-      String(r.name || '').padEnd(20).slice(0, 19) +
-      String(r.houseNumber || '-').padEnd(10) +
-      String(r.age || '-').padEnd(6)
-    );
+    const serialStr = String(r.voterSerial || '-').padEnd(8);
+    const epicStr = String(r.voterId || 'N/A').padEnd(18);
+    const nameStr = String(r.name || '').slice(0, 15).padEnd(20);
+    const houseStr = String(r.houseNumber || '-').padEnd(10);
+    const ageStr = String(r.age || '-').padEnd(6);
+    console.log(serialStr + epicStr + nameStr + houseStr + ageStr);
   }
   return records;
 }
