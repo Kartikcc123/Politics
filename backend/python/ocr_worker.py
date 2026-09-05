@@ -221,10 +221,6 @@ def clean_house(value):
         val = val[1:]
     elif len(val) == 4 and val[0:2] in ("44", "47") and val[2:].isdigit() and int(val[2:]) >= 50:
         val = "41" + val[2:]
-    elif len(val) == 3 and val[0] in ("4", "7") and val[1:].isdigit() and int(val[1:]) >= 10:
-        val = "41" + val[1:]
-    elif len(val) == 3 and val in ("100", "120", "150"):
-        val = "0" if val in ("120", "100") else "00"
     return val
 
 
@@ -607,15 +603,17 @@ def parse_card(text, epic_text, photo_path, page_no, cell_no, focused_house="", 
         field(text, r"(?:गृह|गह|गुह|ग्ह|गृ|गृ\.|मकान|House|H\.No|Te|\S*ह|\S*स)\s*(?:संख्या|सख्या|सं\.?|सं०|नं\.?|क्र\.?|Number|No\.?)?\s*[:：;\-]?\s*([^\n]+)")
         or field(text, r"(?:संख्या|सख्या)\s*[:：;\-]\s*([^\n]+)")
     )
-    if raw_house and focused_house:
-        if len(raw_house) > len(focused_house) and raw_house.endswith(focused_house):
+    if raw_house != "":
+        if raw_house in ("0", "00", "000"):
             house = raw_house
-        elif len(raw_house) >= 2 and len(focused_house) == 1 and focused_house in ("1", "2", "7", "4"):
+        elif len(raw_house) >= len(focused_house):
+            house = raw_house
+        elif focused_house.endswith(raw_house):
+            house = focused_house
+        elif len(raw_house) >= 2:
             house = raw_house
         else:
-            house = focused_house
-    elif raw_house != "":
-        house = raw_house
+            house = focused_house or raw_house
     else:
         house = focused_house
     age_raw = field(
@@ -1117,19 +1115,17 @@ def process_page(page_path, output_dir, page_no):
                 record["houseNumber"] = str(num)
                 record["houseNumberConfidence"] = 95
             elif last_house > 0 and num < last_house:
-                if last_house >= 100 and num < 100:
-                    record["rawHouseNumber"] = record.get("rawHouseNumber") or record.get("houseNumber")
-                    record["houseNumber"] = str(last_house)
-                    record["houseNumberConfidence"] = 85
-                elif last_house >= 1000 and len(str(num)) == 3 and str(last_house)[:2] + str(num)[1:] >= str(last_house):
-                    cand_str = str(last_house)[:2] + str(num)[1:]
+                if last_house >= 1000 and len(str(num)) == 3 and str(last_house)[:2] == "41" and str(num)[1:] == str(last_house)[2:]:
+                    cand_str = "41" + str(num)[1:]
                     record["rawHouseNumber"] = record.get("rawHouseNumber") or record.get("houseNumber")
                     record["houseNumber"] = cand_str
                     last_house = int(cand_str)
                     record["houseNumberConfidence"] = 90
                 else:
+                    last_house = num
                     record["rawHouseNumber"] = record.get("rawHouseNumber") or record.get("houseNumber")
-                    record["houseOcrDisagreement"] = True
+                    record["houseNumber"] = str(num)
+                    record["houseNumberConfidence"] = 90
         elif last_house > 0 and (not val or not str(val).strip()):
             record["rawHouseNumber"] = record.get("rawHouseNumber") or record.get("houseNumber")
             record["houseNumber"] = str(last_house)
@@ -1168,37 +1164,39 @@ def reconcile_family_tree_houses(records):
         for r in records:
             name = r.get("name") or ""
             house = str(r.get("houseNumber") or "").strip()
-            if name and house and house.isdigit() and int(house) > 0 and house not in ("70", "0", "00", "77", "72"):
+            if name and house and house.isdigit() and int(house) > 0 and house not in ("70", "0", "00"):
                 key = loose_person_key(name)
                 if len(key) >= 2:
                     voter_map[key] = house
 
         for r in records:
             guardian = r.get("guardianName") or ""
+            name = r.get("name") or ""
             curr_house = str(r.get("houseNumber") or "").strip()
-            if not guardian:
-                continue
-            g_key = loose_person_key(guardian)
-            if len(g_key) >= 2:
-                matched_house = None
-                if g_key in voter_map:
-                    matched_house = voter_map[g_key]
-                else:
-                    for v_k, h in voter_map.items():
-                        if fuzzy_name_match(g_key, v_k):
-                            matched_house = h
-                            break
-                is_invalid = not curr_house or curr_house in ("70", "0", "00", "-", "77", "72") or not curr_house.isdigit()
-                is_noise_variant = (
-                    (matched_house == "10" and curr_house in ("0", "70", "7")) or
-                    (matched_house == "11" and curr_house in ("7", "77", "1", "2")) or
-                    (matched_house == "12" and curr_house in ("2", "72", "7"))
-                )
-                if matched_house and (is_invalid or is_noise_variant):
-                    r["rawHouseNumber"] = r.get("rawHouseNumber") or curr_house
-                    r["houseNumber"] = matched_house
-                    r["houseNumberConfidence"] = 95
-                    r["houseOcrDisagreement"] = True
+            g_key = loose_person_key(guardian) if guardian else ""
+            n_key = loose_person_key(name) if name else ""
+            
+            matched_house = None
+            if g_key and g_key in voter_map:
+                matched_house = voter_map[g_key]
+            elif n_key and n_key in voter_map:
+                matched_house = voter_map[n_key]
+            else:
+                for v_k, h in voter_map.items():
+                    if (g_key and fuzzy_name_match(g_key, v_k)) or (n_key and fuzzy_name_match(n_key, v_k)):
+                        matched_house = h
+                        break
+            
+            is_invalid = not curr_house or curr_house in ("70", "0", "00", "-") or not curr_house.isdigit()
+            is_suffix_noise = (
+                matched_house and len(matched_house) >= 3 and len(curr_house) <= 2
+                and matched_house.endswith(curr_house)
+            )
+            if matched_house and (is_invalid or is_suffix_noise):
+                r["rawHouseNumber"] = r.get("rawHouseNumber") or curr_house
+                r["houseNumber"] = matched_house
+                r["houseNumberConfidence"] = 95
+                r["houseOcrDisagreement"] = True
     return records
 
 
@@ -2163,23 +2161,17 @@ def main():
                 rec.setdefault("reviewReasons", []).append("prepended_colon_one_repaired")
                 curr_digits = cand
 
-        # Repair truncated 3-digit or single/double digit noise when flanked by 4-digit numbers starting with 41 (e.g. 497 -> 4197, 97 -> 4197, 6 -> 4196)
+        # Repair truncated 3-digit noise or single-digit suffix clip when flanked by 4-digit numbers starting with 41 (e.g. 497 -> 4197, 797 -> 4197, 6 -> 4196)
         if curr_digits and len(curr_digits) < 4:
             ref_4digit = prev_digits if (len(prev_digits) == 4 and prev_digits.startswith("41")) else (next_digits if (len(next_digits) == 4 and next_digits.startswith("41")) else "")
             if ref_4digit:
-                prefix = ref_4digit[:2]
-                if len(curr_digits) == 3 and curr_digits[0] in ("4", "7") and curr_digits[1:].isdigit():
-                    cand = prefix + curr_digits[1:]
+                if len(curr_digits) == 3 and curr_digits[0] in ("4", "7") and curr_digits[1:] == ref_4digit[2:]:
+                    cand = "41" + curr_digits[1:]
                     rec["suggestedHouseNumber"] = cand
                     rec["houseNumber"] = cand
                     curr_digits = cand
-                elif len(curr_digits) == 2 and curr_digits.isdigit():
-                    cand = prefix + curr_digits
-                    rec["suggestedHouseNumber"] = cand
-                    rec["houseNumber"] = cand
-                    curr_digits = cand
-                elif len(curr_digits) == 1 and prev_digits:
-                    cand = prev_digits
+                elif len(curr_digits) == 1 and ref_4digit.endswith(curr_digits):
+                    cand = ref_4digit
                     rec["suggestedHouseNumber"] = cand
                     rec["houseNumber"] = cand
                     curr_digits = cand
@@ -2201,17 +2193,20 @@ def main():
             name_key = loose_person_key(rec.get("name"))
             sec = str(rec.get("sectionNumber") or "").strip()
             house = get_digits(rec.get("houseNumber"))
-            if name_key and house and len(name_key) >= 2:
+            if house and name_key and len(name_key) >= 2:
                 guardian_house_map[(name_key, sec)] = house
 
         for rec in records:
             curr_h = get_digits(rec.get("houseNumber"))
-            if not curr_h:
-                g_key = loose_person_key(rec.get("guardianName"))
-                sec = str(rec.get("sectionNumber") or "").strip()
-                if g_key:
-                    for (nk, s), h in guardian_house_map.items():
-                        if s == sec and fuzzy_name_match(g_key, nk):
+            g_key = loose_person_key(rec.get("guardianName"))
+            n_key = loose_person_key(rec.get("name"))
+            sec = str(rec.get("sectionNumber") or "").strip()
+            if g_key or n_key:
+                for (nk, s), h in guardian_house_map.items():
+                    if s == sec and ((g_key and fuzzy_name_match(g_key, nk)) or (n_key and fuzzy_name_match(n_key, nk))):
+                        is_invalid = not curr_h or curr_h in ("0", "00", "70")
+                        is_suffix_noise = len(h) >= 3 and len(curr_h) <= 2 and h.endswith(curr_h)
+                        if is_invalid or is_suffix_noise:
                             rec["suggestedHouseNumber"] = h
                             rec["houseNumber"] = h
                             rec["needsReview"] = True
