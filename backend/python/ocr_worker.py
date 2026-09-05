@@ -36,9 +36,15 @@ if not current_tessdata or not (Path(current_tessdata) / "hin.traineddata").exis
 
 cv2.setNumThreads(1)
 
-sys.stdin.reconfigure(encoding="utf-8")
-sys.stdout.reconfigure(encoding="utf-8")
-sys.stderr.reconfigure(encoding="utf-8")
+try:
+    if sys.stdin and hasattr(sys.stdin, "reconfigure"):
+        sys.stdin.reconfigure(encoding="utf-8")
+    if sys.stdout and hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8")
+    if sys.stderr and hasattr(sys.stderr, "reconfigure"):
+        sys.stderr.reconfigure(encoding="utf-8")
+except Exception:
+    pass
 
 
 def ratio(name, default):
@@ -1037,6 +1043,9 @@ def process_page(page_path, output_dir, page_no):
         }
         validate_record(record)
     print(json.dumps({"type": "progress", "page": page_no}), file=sys.stderr, flush=True)
+    return records
+
+
 def smooth_house_numbers(records):
     """
     Smooth house numbers across voter records on a page.
