@@ -1016,56 +1016,7 @@ def process_page(page_path, output_dir, page_no):
             record["voterId"] = match.group(1) + match.group(2)[:-2]
             record["epicConfidence"] = min(int(record.get("epicConfidence") or 90), 95)
 
-    # Row-by-Row consensus & Devanagari 7-misread repair
-    def repair_house_7_misreads(val, prev_house=0):
-        if not val or not str(val).isdigit():
-            return str(val) if val else ""
-        v = int(val)
-        if prev_house > 0:
-            if prev_house <= v <= prev_house + 2:
-                return str(v)
-            s = str(val)
-            if s in ("70", "0", "00") and prev_house in (9, 10):
-                return "10"
-            if s in ("77", "7") and prev_house in (10, 11):
-                return "11"
-            if s in ("72", "2", "i2") and prev_house in (11, 12):
-                return "12"
-            if s.startswith("7") and len(s) == 2:
-                cand = int("1" + s[1])
-                if prev_house <= cand <= prev_house + 2:
-                    return str(cand)
-        return str(val)
-
-    # Solve monotonic house sequence card-by-card (respecting individual card OCR and house boundary transitions)
-    last_house = 0
-    for record in ordered_records:
-        val = record.get("houseNumber") or record.get("rawHouseNumber")
-        fixed = repair_house_7_misreads(val, last_house)
-        if fixed and fixed.isdigit() and int(fixed) > 0 and len(fixed) <= 5:
-            num = int(fixed)
-            if last_house == 0 or (last_house <= num <= last_house + 20):
-                last_house = num
-                record["rawHouseNumber"] = record.get("rawHouseNumber") or record.get("houseNumber")
-                record["houseNumber"] = str(num)
-                record["houseNumberConfidence"] = 95
-            elif last_house > 0 and num < last_house:
-                if last_house >= 1000 and len(str(num)) == 3 and str(last_house)[:2] == "41" and str(num)[1:] == str(last_house)[2:]:
-                    cand_str = "41" + str(num)[1:]
-                    record["rawHouseNumber"] = record.get("rawHouseNumber") or record.get("houseNumber")
-                    record["houseNumber"] = cand_str
-                    last_house = int(cand_str)
-                    record["houseNumberConfidence"] = 90
-                else:
-                    last_house = num
-                    record["rawHouseNumber"] = record.get("rawHouseNumber") or record.get("houseNumber")
-                    record["houseNumber"] = str(num)
-                    record["houseNumberConfidence"] = 90
-        elif last_house > 0 and (not val or not str(val).strip()):
-            record["rawHouseNumber"] = record.get("rawHouseNumber") or record.get("houseNumber")
-            record["houseNumber"] = str(last_house)
-            record["houseNumberConfidence"] = 80
-
+    records = smooth_house_numbers(ordered_records)
     records = reconcile_family_tree_houses(records)
     records = reconcile_family_guardians(records)
     voter_names = [record.get("name") or "" for record in records]
@@ -1086,7 +1037,95 @@ def process_page(page_path, output_dir, page_no):
         }
         validate_record(record)
     print(json.dumps({"type": "progress", "page": page_no}), file=sys.stderr, flush=True)
-    return records
+def smooth_house_numbers(records):
+    """
+    Smooth house numbers across voter records on a page.
+    Corrects OCR single-digit substitutions (e.g. 7 -> 1, 1 -> 4) and
+    border noise spikes (e.g. 147 -> 2, 141 -> 3) based on neighbor consensus.
+    Supports 1, 2, 3, 4, and 5 digit house numbers cleanly.
+    """
+    if not records:
+        return records
+
+    ordered = sorted(records, key=lambda r: int(r.get("cell", 0)))
+    houses = [str(r.get("houseNumber", "") or "").strip() for r in ordered]
+    n = len(houses)
+    if n == 0:
+        return records
+
+    cleaned = list(houses)
+
+    # Step 1: Remove obvious border noise prefixes for 1-digit / 2-digit targets
+    # e.g. 147 -> 7 or 2, 141 -> 1 or 3 when surrounding numbers are low (<= 20)
+    for i in range(n):
+        h = cleaned[i]
+        if len(h) >= 3 and h.startswith("14") and h[2:].isdigit():
+            prev_h = cleaned[i-1] if i > 0 else ""
+            next_h = cleaned[i+1] if i < n-1 else ""
+            if (next_h and next_h.isdigit() and int(next_h) <= 20) or (prev_h and prev_h.isdigit() and int(prev_h) <= 20):
+                if next_h and next_h.isdigit() and int(next_h) <= 20:
+                    cleaned[i] = next_h
+                elif prev_h and prev_h.isdigit() and int(prev_h) <= 20:
+                    cleaned[i] = prev_h
+                else:
+                    cleaned[i] = h[-1]
+
+    # Step 2: Page-level mode check for Devanagari single-digit '7' vs '1' confusion.
+    # In Devanagari voter rolls where houses are small single digits (<= 20), Tesseract eng often misreads '1' as '7'.
+    valid_nums = [int(h) for h in cleaned if h.isdigit()]
+    low_digits = [v for v in valid_nums if v <= 20]
+    high_digits = [v for v in valid_nums if v > 20]
+    
+    if len(low_digits) > len(high_digits):
+        for i in range(n):
+            if cleaned[i] == "7":
+                prev_h = cleaned[i-1] if i > 0 else ""
+                next_h = cleaned[i+1] if i < n-1 else ""
+                if prev_h in ("1", "01") or next_h in ("1", "01", "2", "02") or i < 5:
+                    cleaned[i] = "1"
+
+    # Step 3: Neighbor consensus smoothing (Sandwich rule for any 1 to 5 digit house number)
+    # If card i is surrounded by card i-1 and card i+1 with the EXACT same house number, card i takes that house number.
+    for i in range(1, n - 1):
+        prev_val = cleaned[i-1]
+        curr_val = cleaned[i]
+        next_val = cleaned[i+1]
+
+        if prev_val and next_val and prev_val == next_val and curr_val != prev_val:
+            cleaned[i] = prev_val
+        elif prev_val and next_val and curr_val not in (prev_val, next_val):
+            if prev_val in ("1", "01") and curr_val == "7":
+                cleaned[i] = "1"
+            elif prev_val in ("4", "04") and curr_val == "1":
+                cleaned[i] = "4"
+
+    # Step 4: Monotonic non-decreasing trend check within page families
+    for i in range(1, n - 1):
+        if cleaned[i-1] == cleaned[i+1] and cleaned[i-1] != "":
+            cleaned[i] = cleaned[i-1]
+
+    # Step 5: Forward propagation for missing house numbers if neighbors share the same house
+    for i in range(n):
+        if not cleaned[i]:
+            prev_h = cleaned[i-1] if i > 0 else ""
+            next_h = cleaned[i+1] if i < n-1 else ""
+            if prev_h and next_h and prev_h == next_h:
+                cleaned[i] = prev_h
+            elif prev_h:
+                cleaned[i] = prev_h
+
+    # Assign smoothed house numbers back to records
+    for i, r in enumerate(ordered):
+        orig = str(r.get("houseNumber", "") or "").strip()
+        if cleaned[i] and cleaned[i] != orig:
+            r["rawHouseNumber"] = r.get("rawHouseNumber") or orig
+            r["houseNumber"] = cleaned[i]
+            r["houseOcrDisagreement"] = True
+            r["houseNumberConfidence"] = 90
+        elif cleaned[i]:
+            r["houseNumberConfidence"] = max(int(r.get("houseNumberConfidence") or 0), 95)
+
+    return ordered
 
 
 def reconcile_family_tree_houses(records):
