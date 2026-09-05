@@ -1,17 +1,5 @@
 const mongoose = require('mongoose');
-    });
-    if (object.ContentLength !== undefined) {
-      res.set('Content-Length', String(object.ContentLength));
-    }
-    object.Body.on('error', next);
-    return object.Body.pipe(res);
-  } catch (error) {
-    if (error?.name === 'NoSuchKey' || error?.$metadata?.httpStatusCode === 404) {
-      return res.status(404).end();
-    }
-    return next(error);
-  }
-};
+const MediaAsset = require('../models/MediaAsset');
 
 exports.get = async (req, res, next) => {
   try {
