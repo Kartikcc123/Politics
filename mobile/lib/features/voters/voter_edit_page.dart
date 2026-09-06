@@ -520,9 +520,10 @@ class _VoterEditPageState extends State<VoterEditPage> {
 
   Widget _ocrCardReview() {
     final source = widget.voter['sourceDocument'];
-    final path = source is Map ? '${source['ocrCardImage'] ?? ''}'.trim() : '';
+    final rawPath = source is Map ? '${source['ocrCardImage'] ?? ''}'.trim() : '';
+    final path = rawPath.isNotEmpty ? rawPath : '${widget.voter['ocrCardImage'] ?? widget.voter['cardImage'] ?? ''}'.trim();
     if (path.isEmpty) return const SizedBox.shrink();
-    final url = path.startsWith('http') ? path : '${api.baseUrl}$path';
+    final url = voterPhotoUrl(path);
     final reasons = (widget.voter['ocrReviewReasons'] as List?)
             ?.map((value) => '$value')
             .where((value) => value.isNotEmpty)
@@ -557,7 +558,7 @@ class _VoterEditPageState extends State<VoterEditPage> {
               minScale: 1,
               maxScale: 5,
               child: Image.network(url,
-                  headers: api.headers,
+                  headers: voterPhotoHeaders(url),
                   fit: BoxFit.contain,
                   errorBuilder: (_, __, ___) => const Center(
                       child: Text('मूल कार्ड image उपलब्ध नहीं है'))),
