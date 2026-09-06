@@ -10,6 +10,7 @@ import '../../core/offline_voter_cache.dart';
 import '../../core/picked_file_source.dart';
 import '../../core/print_helper.dart';
 import '../../core/theme.dart';
+import '../../widgets/voter_phonebook.dart' show voterPhotoHeaders, voterPhotoUrl;
 
 class VoterEditPage extends StatefulWidget {
   const VoterEditPage({super.key, required this.voter, required this.onSaved});
