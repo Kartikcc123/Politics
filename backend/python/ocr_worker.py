@@ -9,7 +9,39 @@ from difflib import SequenceMatcher
 from pathlib import Path
 
 import cv2
+import numpy as np
 import pytesseract
+
+
+def auto_deskew(image):
+    """
+    Detect image skew angle via text contours / minAreaRect.
+    Only rotates if skew angle theta is bounded between 0.4 deg and 5.0 deg.
+    Returns original image if theta < 0.4 deg (straight page) or > 5.0 deg (unreliable).
+    """
+    if image is None or getattr(image, "size", 0) == 0:
+        return image
+    try:
+        gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+        thresh = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)[1]
+        coords = np.column_stack(np.where(thresh > 0))
+        if coords.shape[0] < 100:
+            return image
+        angle = cv2.minAreaRect(coords)[-1]
+        if angle < -45:
+            angle = -(90 + angle)
+        elif angle > 45:
+            angle = 90 - angle
+        abs_angle = abs(angle)
+        if 0.4 <= abs_angle <= 5.0:
+            h, w = image.shape[:2]
+            center = (w // 2, h // 2)
+            M = cv2.getRotationMatrix2D(center, angle, 1.0)
+            rotated = cv2.warpAffine(image, M, (w, h), flags=cv2.INTER_CUBIC, borderMode=cv2.BORDER_REPLICATE)
+            return rotated
+    except Exception as err:
+        sys.stderr.write(f"Warning: auto_deskew skipped due to error: {err}\n")
+    return image
 
 # Auto-configure tesseract binary path on Windows if not in PATH
 if sys.platform.startswith("win"):
@@ -229,8 +261,6 @@ def clean_house(value):
         val = val[1:]
     elif len(val) == 4 and val[0:2] in ("44", "47") and val[2:].isdigit() and int(val[2:]) >= 50:
         val = "41" + val[2:]
-    elif len(val) == 4 and val[0:2] in ("37", "36", "35") and val[2:].isdigit():
-        val = val[2:].lstrip("0") or val[2:]
     return val
 
 
@@ -301,10 +331,10 @@ def ocr_house(card, card_full_text=None):
         house_line_full = field(card_full_text, r"(?:गृह|गह|गुह|ग्ह|गृ|गृ\.|मकान|House|H\.No|Te|\S*ह|\S*स)\s*(?:संख्या|सख्या|सं\.?|सं०|नं\.?|क्र\.?|Number|No\.?)?\s*[:：;\-।|]?\s*([^\n]+)")
         c_full = clean_house(house_line_full or card_full_text)
 
-    # Crop house number ROI (y: 0.38 to 0.72, x: 0.08 to 0.78)
+    # Crop house number ROI expanded (y: 0.35 to 0.74, x: 0.03 to 0.85)
     region = card[
-        round(height * 0.38):round(height * 0.72),
-        round(width * 0.08):round(width * 0.78),
+        round(height * 0.35):round(height * 0.74),
+        round(width * 0.03):round(width * 0.85),
     ]
     if region.size == 0:
         return c_full
@@ -336,14 +366,25 @@ def ocr_house(card, card_full_text=None):
             c1_values.append(c1)
 
     winner = ""
-    # 1. Prefer English digit whitelist OCR if it extracts 3+ digit house numbers or 00/0
+    # 1. Prefer English digit whitelist OCR (supports 1, 2, 3, 4, 5 digit numbers)
     if c2_values:
         counts = {v: c2_values.count(v) for v in set(c2_values)}
         cand, _ = max(counts.items(), key=lambda x: (x[1], len(x[0])))
-        if len(cand) >= 3 or cand in ("00", "0"):
+        if cand:
             if cand == "267": cand = "261"
             if cand == "496": cand = "4196"
             winner = cand
+
+    if not winner and c1_values:
+        counts = {v: c1_values.count(v) for v in set(c1_values)}
+        winner, _ = max(counts.items(), key=lambda x: (x[1], len(x[0])))
+
+    if not winner and c2_values:
+        counts = {v: c2_values.count(v) for v in set(c2_values)}
+        winner, _ = max(counts.items(), key=lambda x: (x[1], len(x[0])))
+
+    if c_full and len(c_full) >= 3 and (not winner or len(winner) < len(c_full)):
+        return c_full
 
     if not winner and c1_values:
         counts = {v: c1_values.count(v) for v in set(c1_values)}
@@ -863,6 +904,35 @@ def detect_card_boxes(image):
     if len(unique) == 30:
         unique.sort(key=lambda b: (round(b[1] / (height * 0.08)), b[0]))
         return unique
+    if 24 <= len(unique) < 30:
+        try:
+            med_w = int(np.median([b[2] for b in unique]))
+            med_h = int(np.median([b[3] for b in unique]))
+            xs = sorted([b[0] for b in unique])
+            ys = sorted([b[1] for b in unique])
+            
+            col_x = [min(xs), round(width * 0.34), max(xs)]
+            cols_found = [[b[0] for b in unique if abs(b[0] - cx) < width * 0.10] for cx in col_x]
+            col_x = [int(np.median(cf)) if cf else col_x[i] for i, cf in enumerate(cols_found)]
+            
+            row_y = [int(min(ys) + i * (max(ys) - min(ys)) / 9.0) for i in range(10)]
+            rows_found = [[b[1] for b in unique if abs(b[1] - ry) < height * 0.035] for ry in row_y]
+            row_y = [int(np.median(rf)) if rf else row_y[i] for i, rf in enumerate(rows_found)]
+
+            interpolated = []
+            for r in range(10):
+                for c in range(3):
+                    expected_x = col_x[c]
+                    expected_y = row_y[r]
+                    match = next((b for b in unique if abs(b[0] - expected_x) < width * 0.10 and abs(b[1] - expected_y) < height * 0.035), None)
+                    if match:
+                        interpolated.append(match)
+                    else:
+                        interpolated.append((expected_x, expected_y, med_w, med_h))
+            if len(interpolated) == 30:
+                return interpolated
+        except Exception:
+            pass
     return []
 
 
@@ -909,6 +979,7 @@ def process_page(page_path, output_dir, page_no):
     image = cv2.imread(str(page_path))
     if image is None:
         return []
+    image = auto_deskew(image)
     boxes = detect_card_boxes(image)
     if not boxes:
         height, width = image.shape[:2]
@@ -1956,6 +2027,16 @@ def main():
             if k.isdigit() and int(k) > max_valid_seq + 1:
                 doc_section_map.pop(k, None)
 
+    # Auto-extract Village from section names if master village is missing/blank
+    if not master_context.get("village"):
+        for sv in doc_section_map.values():
+            if sv and "," in sv:
+                parts = sv.split(",")
+                extracted = clean(parts[-1]).strip(" -,:;|\u0964")
+                if len(re.findall(r"[\u0900-\u097F]", extracted)) >= 2:
+                    master_context["village"] = extracted
+                    break
+
     records = []
     summary_marker = "नामावली का प्रकार"
     last_known_section_num = ""
@@ -1965,11 +2046,20 @@ def main():
         if summary_marker in clean(headers[index]):
             continue
         raw_header = page_headers[index]
+
+        # Self-healing: if voter page header has a valid section number (1..30) & name missing from doc_section_map, heal it
+        raw_sec_num = str(raw_header.get("sectionNumber") or "").strip()
+        raw_sec_name = str(raw_header.get("sectionName") or "").strip()
+        if raw_sec_num and raw_sec_num.isdigit() and 1 <= int(raw_sec_num) <= 30 and raw_sec_name:
+            if raw_sec_num not in doc_section_map:
+                doc_section_map[raw_sec_num] = raw_sec_name
+
         page_sec_map = {**doc_section_map, **(raw_header.get("sectionMap") or {})}
 
         hdr_sec_num = str(raw_header.get("sectionNumber") or "").strip()
         hdr_sec_name = str(raw_header.get("sectionName") or "").strip()
 
+        # Reject noise section numbers not matching doc_section_map or > 50
         if not hdr_sec_num or (hdr_sec_num.isdigit() and int(hdr_sec_num) > 50) or (page_sec_map and hdr_sec_num not in page_sec_map):
             hdr_sec_num = ""
 

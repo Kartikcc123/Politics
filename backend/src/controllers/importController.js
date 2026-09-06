@@ -250,21 +250,11 @@ const sectionHeaderForRecord = (record = {}, header = {}, sectionMap = safeSecti
   const headerSecName = cleanSectionName(header.sectionName || '');
 
   let sectionNumber = recordSecNum || headerSecNum;
-  let mappedSectionName = sectionNumber ? cleanSectionName(sectionMap[sectionNumber]) : '';
-
-  if (mappedSectionName && recordSecName) {
-    const cleanRecordSec = cleanSectionName(recordSecName);
-    const conflictingSecEntry = Object.entries(sectionMap).find(([secNum, secName]) => {
-      if (secNum === sectionNumber) return false;
-      const cleanSec = cleanSectionName(secName);
-      return cleanSec && (cleanSec.includes(cleanRecordSec) || cleanRecordSec.includes(cleanSec));
-    });
-    if (conflictingSecEntry) {
-      sectionNumber = conflictingSecEntry[0];
-      mappedSectionName = conflictingSecEntry[1];
-    }
+  if (sectionNumber && Object.keys(sectionMap).length > 0 && !sectionMap[sectionNumber]) {
+    sectionNumber = headerSecNum && sectionMap[headerSecNum] ? headerSecNum : '';
   }
 
+  let mappedSectionName = sectionNumber ? cleanSectionName(sectionMap[sectionNumber]) : '';
   const sectionName = mappedSectionName || recordSecName || headerSecName;
   return {
     ...header,
@@ -298,6 +288,20 @@ const pdfVillageHintFromName = (fileName = '') => {
   }
   const hindi = cleaned.match(/[\u0900-\u097F][\u0900-\u097F\s]{1,40}/);
   if (hindi) return cleanValue(hindi[0]);
+  return '';
+};
+
+const pdfPartNumberHintFromName = (fileName = '') => {
+  const base = path.basename(String(fileName), path.extname(String(fileName)));
+  const match = base.match(/(?:part|booth|ward|ps|partno|_|-|\b)(\d{1,4})$/i)
+    || base.match(/(?:part|booth|ps|partno)\s*[:_#-]?\s*(\d{1,4})\b/i)
+    || base.match(/(?<!\d)(\d{1,4})$/);
+  if (match && match[1]) {
+    const num = parseInt(match[1], 10);
+    if (num >= 1 && num <= 9999) {
+      return String(num);
+    }
+  }
   return '';
 };
 
@@ -1767,6 +1771,11 @@ const runPdfImport = async ({ file, body, currentUser }, uploadId) => {
       ...(parsed.members[0] || {}),
     };
     applyPdfVillageHint(firstMemberWithHeader, pdfVillageHint);
+    const pdfPartHint = pdfPartNumberHintFromName(importFileName);
+    if (pdfPartHint && (!detectedHeader.partNumber || detectedHeader.partNumber === '')) {
+      detectedHeader.partNumber = pdfPartHint;
+      firstMemberWithHeader.partNumber = pdfPartHint;
+    }
     const { ward, booth } = await getOrCreateImportScope({
       user: currentUser,
       body,

@@ -38,6 +38,11 @@ class _UploadPageState extends State<UploadPage> {
   Map<String, dynamic>? lastResult;
   List<Map<String, dynamic>> failedRecords = const [];
   String pdfListType = 'assembly';
+  int batchTotalFiles = 0;
+  int batchCurrentIndex = 0;
+  int batchImportedVoters = 0;
+  int batchSkippedVoters = 0;
+  List<String> batchFailedFiles = [];
 
   double? get progressValue {
     if (!uploading) return null;
@@ -126,99 +131,133 @@ class _UploadPageState extends State<UploadPage> {
     final picked = await FilePicker.platform.pickFiles(
       type: FileType.custom,
       allowedExtensions: pdf ? ['pdf'] : ['xlsx', 'xls', 'csv'],
+      allowMultiple: true,
       withData: kIsWeb,
       withReadStream: !kIsWeb,
     );
-    if (picked == null) return;
-    final file = picked.files.single;
-    if (file.size <= 0) {
-      setState(() => status = 'चुनी गई फाइल खाली है या पढ़ी नहीं जा सकती।');
-      return;
-    }
-    const maxUploadBytes = 250 * 1024 * 1024;
-    if (file.size > maxUploadBytes) {
-      setState(() => status =
-          'फाइल बहुत बड़ी है। अधिकतम 250 MB की फाइल अपलोड की जा सकती है।');
-      return;
-    }
+    if (picked == null || picked.files.isEmpty) return;
+
+    final files = picked.files;
+    final totalBatchCount = files.length;
+
     setState(() {
       uploading = true;
-      currentFile = file.name;
-      currentBytes = file.size;
-      uploadedBytes = 0;
-      uploadTotalBytes = file.size;
-      serverProcessing = false;
-      processedRecords = 0;
-      totalRecords = 0;
-      importedRecords = 0;
-      skippedRecords = 0;
-      ocrPagesProcessed = 0;
-      ocrPagesTotal = 0;
-      ocrCardsProcessed = 0;
-      ocrCardsTotal = 0;
-      processingStage = '';
-      lastResult = null;
-      failedRecords = const [];
-      status = 'फाइल अपलोड हो रही है। बड़ी PDF में कुछ समय लग सकता है…';
+      batchTotalFiles = totalBatchCount;
+      batchCurrentIndex = 0;
+      batchImportedVoters = 0;
+      batchSkippedVoters = 0;
+      batchFailedFiles = [];
     });
-    final uploadId = 'upload-${DateTime.now().millisecondsSinceEpoch}';
+
     try {
-      void updateProgress(int sent, int total) {
-        if (!mounted) return;
+      for (int i = 0; i < files.length; i++) {
+        final file = files[i];
+        if (file.size <= 0) {
+          batchFailedFiles.add('${file.name}: फाइल खाली है');
+          continue;
+        }
+        const maxUploadBytes = 250 * 1024 * 1024;
+        if (file.size > maxUploadBytes) {
+          batchFailedFiles.add('${file.name}: फाइल 250MB से बड़ी है');
+          continue;
+        }
+        if (!mounted) break;
         setState(() {
-          uploadedBytes = sent;
-          uploadTotalBytes = total > 0 ? total : file.size;
-          if (sent >= uploadTotalBytes && uploadTotalBytes > 0) {
-            serverProcessing = true;
-            status = 'फाइल अपलोड हो गई। अब मतदाता रिकॉर्ड तैयार हो रहे हैं…';
-          }
+          batchCurrentIndex = i + 1;
+          currentFile = file.name;
+          currentBytes = file.size;
+          uploadedBytes = 0;
+          uploadTotalBytes = file.size;
+          serverProcessing = false;
+          processedRecords = 0;
+          totalRecords = 0;
+          importedRecords = 0;
+          skippedRecords = 0;
+          ocrPagesProcessed = 0;
+          ocrPagesTotal = 0;
+          ocrCardsProcessed = 0;
+          ocrCardsTotal = 0;
+          processingStage = '';
+          lastResult = null;
+          failedRecords = const [];
+          status = totalBatchCount > 1
+              ? '[फ़ाइल ${i + 1}/${totalBatchCount}] ${file.name} अपलोड हो रही है… (कुल जुड़े मतदाता: $batchImportedVoters)'
+              : 'फाइल अपलोड हो रही है। बड़ी PDF में कुछ समय लग सकता है…';
         });
+
+        final uploadId = 'upload-${DateTime.now().millisecondsSinceEpoch}-$i';
+        try {
+          void updateProgress(int sent, int total) {
+            if (!mounted) return;
+            setState(() {
+              uploadedBytes = sent;
+              uploadTotalBytes = total > 0 ? total : file.size;
+              if (sent >= uploadTotalBytes && uploadTotalBytes > 0) {
+                serverProcessing = true;
+                status = totalBatchCount > 1
+                    ? '[फ़ाइल ${i + 1}/${totalBatchCount}] ${file.name} अपलोड हो गई। रिकॉर्ड तैयार हो रहे हैं…'
+                    : 'फाइल अपलोड हो गई। अब मतदाता रिकॉर्ड तैयार हो रहे हैं…';
+              }
+            });
+          }
+
+          var res = pdf
+              ? await api.uploadPdfResumable(
+                  uploadId: uploadId,
+                  filename: file.name,
+                  fileLength: file.size,
+                  bytes: pickedFileBytes(file),
+                  fileStream: file.readStream,
+                  onProgress: updateProgress,
+                  listType: pdfListType,
+                )
+              : await api.uploadFile(
+                  '/api/import/members',
+                  filename: file.name,
+                  filePath: pickedFilePath(file),
+                  bytes: pickedFileBytes(file),
+                  fileStream: file.readStream,
+                  fileLength: file.size,
+                  fields: {'uploadId': uploadId},
+                  onProgress: updateProgress,
+                );
+          if (res['processing'] == true) {
+            if (!mounted) return;
+            setState(() {
+              serverProcessing = true;
+              status = totalBatchCount > 1
+                  ? '[फ़ाइल ${i + 1}/${totalBatchCount}] ${file.name} का OCR पढ़ा जा रहा है…'
+                  : 'फाइल अपलोड हो गई। PDF पढ़कर मतदाता रिकॉर्ड बनाए जा रहे हैं…';
+            });
+            res = await waitForImportCompletion(uploadId);
+          }
+          final addedCount = ((res['imported'] ?? 0) as num).toInt();
+          final skippedList = (res['skipped'] as List? ?? []);
+          batchImportedVoters += addedCount;
+          batchSkippedVoters += skippedList.length;
+
+          await OfflineVoterCache.clear();
+          api.notifyDataChanged();
+          if (!mounted) return;
+          setState(() {
+            lastResult = Map<String, dynamic>.from(res);
+            failedRecords = _extractFailedRecords(res);
+          });
+        } catch (e) {
+          batchFailedFiles.add('${file.name}: ${e.toString().replaceFirst('Exception: ', '')}');
+        }
       }
 
-      var res = pdf
-          ? await api.uploadPdfResumable(
-              uploadId: uploadId,
-              filename: file.name,
-              fileLength: file.size,
-              bytes: pickedFileBytes(file),
-              fileStream: file.readStream,
-              onProgress: updateProgress,
-              listType: pdfListType,
-            )
-          : await api.uploadFile(
-              '/api/import/members',
-              filename: file.name,
-              filePath: pickedFilePath(file),
-              bytes: pickedFileBytes(file),
-              fileStream: file.readStream,
-              fileLength: file.size,
-              fields: {'uploadId': uploadId},
-              onProgress: updateProgress,
-            );
-      if (res['processing'] == true) {
-        if (!mounted) return;
-        setState(() {
-          serverProcessing = true;
+      if (!mounted) return;
+      setState(() {
+        if (totalBatchCount > 1) {
+          final successCount = totalBatchCount - batchFailedFiles.length;
           status =
-              'फाइल अपलोड हो गई। PDF पढ़कर मतदाता रिकॉर्ड बनाए जा रहे हैं…';
-        });
-        res = await waitForImportCompletion(uploadId);
-      }
-      await OfflineVoterCache.clear();
-      api.notifyDataChanged();
-      if (!mounted) return;
-      setState(() {
-        lastResult = Map<String, dynamic>.from(res);
-        failedRecords = _extractFailedRecords(res);
-        status =
-            'आयात सफल रहा। ${res['imported'] ?? 0} मतदाता जोड़े गए और ${(res['skipped'] as List? ?? []).length} रिकॉर्ड समीक्षा के लिए छोड़े गए। मतदाता सूची अपने आप अपडेट हो गई है।';
-      });
-    } catch (e) {
-      if (!mounted) return;
-      setState(() {
-        lastResult = null;
-        failedRecords = const [];
-        status = e.toString().replaceFirst('Exception: ', '');
+              'बैच पूरा हुआ! $totalBatchCount में से $successCount फ़ाइलें सफल रहीं। कुल $batchImportedVoters मतदाता जोड़े गए।';
+        } else if (lastResult != null) {
+          status =
+              'आयात सफल रहा। ${lastResult!['imported'] ?? 0} मतदाता जोड़े गए और ${(lastResult!['skipped'] as List? ?? []).length} रिकॉर्ड समीक्षा के लिए छोड़े गए। मतदाता सूची अपने आप अपडेट हो गई है।';
+        }
       });
     } finally {
       if (mounted) setState(() => uploading = false);
