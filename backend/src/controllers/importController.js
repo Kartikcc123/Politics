@@ -252,18 +252,20 @@ const sectionHeaderForRecord = (record = {}, header = {}, sectionMap = safeSecti
   let sectionNumber = recordSecNum || headerSecNum;
   let mappedSectionName = sectionNumber ? cleanSectionName(sectionMap[sectionNumber]) : '';
 
-  if (mappedSectionName && (recordSecName || headerSecName)) {
-    const targetName = recordSecName || headerSecName;
-    const isMatching = mappedSectionName.includes(targetName) || targetName.includes(mappedSectionName);
-    if (!isMatching) {
-      mappedSectionName = '';
-      if (headerSecName) {
-        sectionNumber = headerSecNum;
-      }
+  if (mappedSectionName && recordSecName) {
+    const cleanRecordSec = cleanSectionName(recordSecName);
+    const conflictingSecEntry = Object.entries(sectionMap).find(([secNum, secName]) => {
+      if (secNum === sectionNumber) return false;
+      const cleanSec = cleanSectionName(secName);
+      return cleanSec && (cleanSec.includes(cleanRecordSec) || cleanRecordSec.includes(cleanSec));
+    });
+    if (conflictingSecEntry) {
+      sectionNumber = conflictingSecEntry[0];
+      mappedSectionName = conflictingSecEntry[1];
     }
   }
 
-  const sectionName = recordSecName || mappedSectionName || headerSecName;
+  const sectionName = mappedSectionName || recordSecName || headerSecName;
   return {
     ...header,
     assemblyNumber: header.assemblyNumber || record.assemblyNumber,
