@@ -244,15 +244,26 @@ const safeSectionMap = (sectionMap = {}) => Object.fromEntries(
     .filter(([number, name]) => number && name),
 );
 const sectionHeaderForRecord = (record = {}, header = {}, sectionMap = safeSectionMap(header.sectionMap)) => {
-  const sectionNumber = cleanValue(record.sectionNumber || (Object.keys(sectionMap).length <= 1 ? header.sectionNumber : ''));
-  const headerSectionNumber = cleanValue(header.sectionNumber || '');
-  const useHeaderSectionFallback = Object.keys(sectionMap).length <= 1;
-  const mappedSectionName = sectionNumber ? cleanSectionName(sectionMap[sectionNumber]) : '';
-  const recordSectionName = cleanSectionName(record.sectionName);
-  const headerSectionName = (useHeaderSectionFallback || !sectionNumber || sectionNumber === headerSectionNumber)
-    ? cleanSectionName(header.sectionName)
-    : '';
-  const sectionName = mappedSectionName || recordSectionName || headerSectionName;
+  const recordSecNum = cleanValue(record.sectionNumber || '');
+  const headerSecNum = cleanValue(header.sectionNumber || '');
+  const recordSecName = cleanSectionName(record.sectionName || '');
+  const headerSecName = cleanSectionName(header.sectionName || '');
+
+  let sectionNumber = recordSecNum || headerSecNum;
+  let mappedSectionName = sectionNumber ? cleanSectionName(sectionMap[sectionNumber]) : '';
+
+  if (mappedSectionName && (recordSecName || headerSecName)) {
+    const targetName = recordSecName || headerSecName;
+    const isMatching = mappedSectionName.includes(targetName) || targetName.includes(mappedSectionName);
+    if (!isMatching) {
+      mappedSectionName = '';
+      if (headerSecName) {
+        sectionNumber = headerSecNum;
+      }
+    }
+  }
+
+  const sectionName = recordSecName || mappedSectionName || headerSecName;
   return {
     ...header,
     assemblyNumber: header.assemblyNumber || record.assemblyNumber,

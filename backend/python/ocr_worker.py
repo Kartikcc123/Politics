@@ -1644,13 +1644,6 @@ def read_fixed_header(page_path, is_voter_page=True):
         sec_num_match = re.search(r"(?:अनुभाग|अिुभाग|अनुमाग|section|\bsec\b)[^\d\n]{0,40}[:：;\-]?\s*([0-9\u0966-\u096f]{1,2})", section_text, re.IGNORECASE)
         if sec_num_match:
             result["sectionNumber"] = clean(sec_num_match.group(1)).translate(str.maketrans("०१२३४५६७८९", "0123456789"))
-        else:
-            section_digits = ocr_fixed_region(
-                image, section_bounds, psm=7, whitelist="0123456789",
-            )
-            parsed_num = fixed_header_number(section_digits, 2)
-            if parsed_num and int(parsed_num) <= 50:
-                result["sectionNumber"] = parsed_num
         section_name = fixed_section_name(section_text)
         if section_name:
             result["sectionName"] = section_name
