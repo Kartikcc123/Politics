@@ -152,6 +152,7 @@ connectDB()
     const server = app.listen(PORT, () => console.log(`Political Booth Management CRM API running on ${PORT}`));
     server.requestTimeout = serverTimeoutMs;
     server.headersTimeout = serverTimeoutMs + 5000;
+    server.keepAliveTimeout = 65000;
     restoreWebSessions().catch((error) => console.error('WhatsApp restore:', error.message));
     startMessageWorker();
   })

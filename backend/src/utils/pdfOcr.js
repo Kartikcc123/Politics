@@ -436,6 +436,7 @@ const lowMemoryOcrPdf = async (pdfPath, importFileName, pageRange = {}) => {
       throw new Error(`OCR failed on PDF page ${pageNumber}: ${error.message}`);
     } finally {
       if (rendered) fs.rmSync(rendered, { force: true });
+      if (global.gc) global.gc();
     }
   }
 

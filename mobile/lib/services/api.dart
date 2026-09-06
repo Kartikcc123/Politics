@@ -99,7 +99,11 @@ class Api {
         message.contains('network is unreachable') ||
         message.contains('clientexception') ||
         message.contains('xmlhttprequest error') ||
-        message.contains('failed to fetch');
+        message.contains('failed to fetch') ||
+        message.contains('handshake') ||
+        message.contains('ssl') ||
+        message.contains('tls') ||
+        message.contains('httpexception');
   }
 
   bool _isTemporaryServerError(Object error) {
@@ -123,9 +127,10 @@ class Api {
       );
     }
     if (message.contains('connection reset by peer') ||
-        message.contains('connection closed')) {
+        message.contains('connection closed') ||
+        message.contains('handshake')) {
       return const NetworkRequestException(
-        'सर्वर से कनेक्शन बीच में बंद हो गया। नेटवर्क बदलकर फिर अपलोड करें।',
+        'सर्वर से कनेक्शन बीच में बंद हो गया। बैकएंड background में काम कर रहा है, थोड़ी देर बाद पुनः प्रयास करें।',
       );
     }
     return const NetworkRequestException(
