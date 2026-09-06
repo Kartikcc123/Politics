@@ -3198,7 +3198,7 @@ class _PhoneContactTile extends StatelessWidget {
                 visualDensity: VisualDensity.compact,
               ),
             ],
-            _VoterPhoto(photo: voter['photo'], radius: 25),
+            _VoterPhoto(photo: voter, radius: 25),
             const SizedBox(width: 12),
             Expanded(
               child: Column(
@@ -5380,7 +5380,7 @@ class VoterTable extends StatelessWidget {
                               '${m['_id']}', selected ?? false),
                           cells: [
                             DataCell(
-                              _VoterPhoto(photo: m['photo'], radius: 20),
+                              _VoterPhoto(photo: m, radius: 20),
                               onTap: () => openProfile(m),
                             ),
                             DataCell(Text(m['name'] ?? '-'),
@@ -5585,7 +5585,7 @@ class _VoterRow extends StatelessWidget {
                   onChanged: (value) => onSelected(value ?? false),
                   visualDensity: VisualDensity.compact,
                 ),
-                _VoterPhoto(photo: member['photo'], radius: 24),
+                _VoterPhoto(photo: member, radius: 24),
                 const SizedBox(width: 11),
                 Expanded(
                   child: Column(
@@ -5772,14 +5772,13 @@ class _InfoPill extends StatelessWidget {
 }
 
 class _VoterPhoto extends StatelessWidget {
-  const _VoterPhoto({required this.photo, required this.radius, this.cardImage});
+  const _VoterPhoto({required this.photo, required this.radius});
   final dynamic photo;
   final double radius;
-  final dynamic cardImage;
 
   @override
   Widget build(BuildContext context) {
-    final url = voterPhotoUrl(photo, cardImage);
+    final url = voterPhotoUrl(photo);
     return ClipRRect(
       borderRadius: BorderRadius.circular(8),
       child: Container(
@@ -5972,7 +5971,7 @@ class _VoterDetailPageState extends State<VoterDetailPage> {
         children: [
           Center(
             child: ClipOval(
-              child: _VoterPhoto(photo: voter['photo'], radius: 55),
+              child: _VoterPhoto(photo: voter, radius: 55),
             ),
           ),
           const SizedBox(height: 12),
@@ -6644,8 +6643,8 @@ class _VoterFormState extends State<VoterForm> {
               clipBehavior: Clip.antiAlias,
               child: bytes != null
                   ? Image.memory(bytes, fit: BoxFit.cover)
-                  : widget.voter?['photo'] != null
-                      ? _VoterPhoto(photo: widget.voter?['photo'], radius: 48)
+                  : widget.voter != null
+                      ? _VoterPhoto(photo: widget.voter, radius: 48)
                       : Icon(
                           isPersonal
                               ? Icons.person_pin_circle_outlined

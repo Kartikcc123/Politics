@@ -24,13 +24,6 @@ String voterPhotoUrl(dynamic value, [dynamic fallback]) {
   photo = photo.replaceAll('\\', '/');
   if (photo.isEmpty) return '';
   if (photo.startsWith('http://') || photo.startsWith('https://')) {
-    final uri = Uri.tryParse(photo);
-    if (uri != null &&
-        uri.host.endsWith('.amazonaws.com') &&
-        uri.pathSegments.isNotEmpty) {
-      final key = uri.pathSegments.last;
-      return '${api.baseUrl}/media/s3/${Uri.encodeComponent(key)}';
-    }
     return Uri.encodeFull(photo);
   }
   final path = photo.startsWith('/') ? photo : '/$photo';

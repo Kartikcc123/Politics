@@ -1621,6 +1621,8 @@ const runWardPdfImport = async ({ file, body, currentUser }, uploadId) => {
             file: `/uploads/${file.filename}`,
             ocrCardImage: item.cardImage,
           };
+          member.ocrCardImage = item.cardImage;
+          member.cardImage = item.cardImage;
         }
         member.updatedBy = currentUser._id;
         await member.save();
@@ -1637,6 +1639,8 @@ const runWardPdfImport = async ({ file, body, currentUser }, uploadId) => {
           verificationStatus: item.ocrNeedsReview || !hasValidEpic ? 'needs_review' : 'pending',
           ocrReviewReasons: item.ocrReviewReasons || [],
           createdBy: currentUser._id, updatedBy: currentUser._id,
+          ocrCardImage: item.cardImage || '',
+          cardImage: item.cardImage || '',
           sourceDocument: {
             type: 'pdf',
             file: `/uploads/${file.filename}`,

@@ -277,7 +277,7 @@ exports.list = async (req, res, next) => {
 
     const sortParam = String(req.query.sortBy || req.query.sort || '').toLowerCase();
     const hasLocationScope = Boolean(village || partNumber || booth || sectionName || gramPanchayat);
-    let sortObj = { voterSerial: 1, name: 1 };
+    let sortObj = { name: 1, surname: 1, voterSerial: 1 };
 
     if (sortParam === 'recent') {
       sortObj = { updatedAt: -1 };
