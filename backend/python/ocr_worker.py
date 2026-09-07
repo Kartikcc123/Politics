@@ -975,6 +975,49 @@ def is_repeated_in_records(records_list, idx, val, count=1):
     return matches >= 1
 
 
+def _process_single_card(args):
+    cell_no, (x, y, w, h), image, page_no, output_dir = args
+    card = image[y:y + h, x:x + w]
+    photo_rect = detect_photo_box(card)
+    px, py, pw, ph = photo_rect
+    photo_crop = card[py:py + ph, px:px + pw]
+    photo_filename = f"p{page_no}_c{cell_no}.jpg"
+    photo_path = str(output_dir / photo_filename)
+    cv2.imwrite(photo_path, photo_crop)
+
+    card_filename = f"card_p{page_no}_c{cell_no}.jpg"
+    card_path = str(output_dir / card_filename)
+    cv2.imwrite(card_path, card)
+
+    gray = cv2.cvtColor(card, cv2.COLOR_BGR2GRAY)
+    clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+    gray_clahe = clahe.apply(gray)
+    gray_res = cv2.resize(gray_clahe, None, fx=1.5, fy=1.5, interpolation=cv2.INTER_CUBIC)
+    text = safe_image_to_string(gray_res, lang=os.getenv("OCR_LANGUAGES", "hin+eng"), config="--psm 6")
+
+    epic_region = card[0:round(h * 0.25), 0:w]
+    epic_gray = cv2.cvtColor(epic_region, cv2.COLOR_BGR2GRAY)
+    epic_clahe = clahe.apply(epic_gray)
+    epic_gray_res = cv2.resize(epic_clahe, None, fx=1.5, fy=1.5, interpolation=cv2.INTER_CUBIC)
+    epic_text = safe_image_to_string(epic_gray_res, lang="eng", config="--psm 6")
+
+    focused_house = ocr_house(card, card_full_text=text)
+    focused_epic, epic_ok = ocr_epic(card)
+    identity_suggestion, identity_disagreement = ocr_identity(card)
+    rec = parse_card(text, epic_text, photo_path, page_no, cell_no, focused_house=focused_house, card_path=card_path)
+    if focused_epic and (not rec.get("voterId") or epic_ok):
+        rec["voterId"] = focused_epic
+        rec["epicConfidence"] = 95
+    if identity_suggestion.get("name"):
+        rec["name"] = identity_suggestion["name"]
+    if identity_suggestion.get("guardianName"):
+        rec["guardianName"] = identity_suggestion["guardianName"]
+    if identity_disagreement:
+        rec["identityOcrDisagreement"] = True
+
+    return rec
+
+
 def process_page(page_path, output_dir, page_no):
     image = cv2.imread(str(page_path))
     if image is None:
@@ -994,46 +1037,14 @@ def process_page(page_path, output_dir, page_no):
             for row in range(10)
             for col in range(3)
         ]
-    records = []
-    card_images = {}
-    for cell_no, (x, y, w, h) in enumerate(boxes, 1):
-        card = image[y:y + h, x:x + w]
-        card_images[cell_no] = card
-        photo_rect = detect_photo_box(card)
-        px, py, pw, ph = photo_rect
-        photo_crop = card[py:py + ph, px:px + pw]
-        photo_filename = f"p{page_no}_c{cell_no}.jpg"
-        photo_path = str(output_dir / photo_filename)
-        cv2.imwrite(photo_path, photo_crop)
 
-        card_filename = f"card_p{page_no}_c{cell_no}.jpg"
-        card_path = str(output_dir / card_filename)
-        cv2.imwrite(card_path, card)
-
-        gray = cv2.cvtColor(card, cv2.COLOR_BGR2GRAY)
-        gray_res = cv2.resize(gray, None, fx=1.5, fy=1.5, interpolation=cv2.INTER_CUBIC)
-        text = safe_image_to_string(gray_res, lang=os.getenv("OCR_LANGUAGES", "hin+eng"), config="--psm 6")
-
-        epic_region = card[0:round(h * 0.25), 0:w]
-        epic_gray = cv2.cvtColor(epic_region, cv2.COLOR_BGR2GRAY)
-        epic_gray_res = cv2.resize(epic_gray, None, fx=1.5, fy=1.5, interpolation=cv2.INTER_CUBIC)
-        epic_text = safe_image_to_string(epic_gray_res, lang="eng", config="--psm 6")
-
-        focused_house = ocr_house(card, card_full_text=text)
-        focused_epic, epic_ok = ocr_epic(card)
-        identity_suggestion, identity_disagreement = ocr_identity(card)
-        rec = parse_card(text, epic_text, photo_path, page_no, cell_no, focused_house=focused_house, card_path=card_path)
-        if focused_epic and (not rec.get("voterId") or epic_ok):
-            rec["voterId"] = focused_epic
-            rec["epicConfidence"] = 95
-        if identity_suggestion.get("name"):
-            rec["name"] = identity_suggestion["name"]
-        if identity_suggestion.get("guardianName"):
-            rec["guardianName"] = identity_suggestion["guardianName"]
-        if identity_disagreement:
-            rec["identityOcrDisagreement"] = True
-
-        records.append(rec)
+    task_args = [
+        (cell_no, box, image, page_no, output_dir)
+        for cell_no, box in enumerate(boxes, 1)
+    ]
+    max_workers = int(os.getenv("OCR_THREAD_WORKERS", "4"))
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        records = list(executor.map(_process_single_card, task_args))
 
 
     # Printed electoral rolls are ordered by house number.
