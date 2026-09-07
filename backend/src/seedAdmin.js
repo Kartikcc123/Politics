@@ -1,5 +1,11 @@
 require('dotenv').config();
-const bcrypt = require('bcrypt');
+let bcrypt;
+try {
+  bcrypt = require('bcrypt');
+  if (typeof bcrypt.hash !== 'function') throw new Error('Native bcrypt binding failed');
+} catch (_) {
+  bcrypt = require('bcryptjs');
+}
 const connectDB = require('./config/db');
 const User = require('./models/User');
 const { seedDefaultParties } = require('./utils/partySeed');

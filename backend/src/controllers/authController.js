@@ -1,5 +1,11 @@
 const { validationResult } = require('express-validator');
-const bcrypt = require('bcrypt');
+let bcrypt;
+try {
+  bcrypt = require('bcrypt');
+  if (typeof bcrypt.hash !== 'function') throw new Error('Native bcrypt binding failed');
+} catch (_) {
+  bcrypt = require('bcryptjs');
+}
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
 const Booth = require('../models/Booth');
