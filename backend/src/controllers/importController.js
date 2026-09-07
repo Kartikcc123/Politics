@@ -1781,7 +1781,9 @@ const runPdfImport = async ({ file, body, currentUser }, uploadId) => {
       ...(parsed.members[0] || {}),
     };
     applyPdfVillageHint(firstMemberWithHeader, pdfVillageHint);
-    const pdfPartHint = pdfPartNumberHintFromName(importFileName);
+    // runPdfImport receives the uploaded file rather than the parser's filename argument.
+    // The parser-only variable was undefined here and failed the import after OCR.
+    const pdfPartHint = pdfPartNumberHintFromName(file.originalname || file.filename);
     if (pdfPartHint && (!detectedHeader.partNumber || detectedHeader.partNumber === '')) {
       detectedHeader.partNumber = pdfPartHint;
       firstMemberWithHeader.partNumber = pdfPartHint;
