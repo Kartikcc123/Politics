@@ -66,4 +66,17 @@ const authoritativeSec2 = sectionHeaderForRecord(noisyRec2, header);
 assert.strictEqual(authoritativeSec2.sectionName, map['2']);
 console.log('✔ Test 4 Passed: Master section map overrides noisy voter-page header OCR');
 
+// Regression: a noisy locality name must never move any valid master section
+// number to another section. This protects every section, not just section 1.
+const authoritativeMap = safeSectionMap(header.sectionMap);
+for (const [sectionNumber, sectionName] of Object.entries(authoritativeMap)) {
+  const resolved = sectionHeaderForRecord({
+    sectionNumber,
+    sectionName: map['4'], // deliberately conflicting OCR/text-layer locality
+  }, header);
+  assert.strictEqual(resolved.sectionNumber, sectionNumber);
+  assert.strictEqual(resolved.sectionName, sectionName);
+}
+console.log('✔ Test 5 Passed: Every valid master section number overrides conflicting locality text');
+
 console.log('ALL SECTION MAPPING TESTS PASSED SUCCESSFULLY!');

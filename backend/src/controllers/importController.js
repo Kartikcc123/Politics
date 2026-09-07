@@ -1020,21 +1020,35 @@ const parsePdfMembers = async (filePath, importFileName, onOcrProgress) => {
   if (textLayer.members.length) {
     // Always run Python OCR pipeline to extract voter photos, card images, and 7-rule house numbers
     const ocr = await ocrPdf(filePath, importFileName, { onProgress: onOcrProgress });
-    const header = { ...(ocr.header || {}), ...textLayer.header };
+    // The first/master page OCR owns the section map. Text-layer extraction can
+    // pair a valid locality name with the wrong section number, so never let it
+    // replace the master map used to resolve voter-page records.
+    const header = {
+      ...(ocr.header || {}),
+      ...textLayer.header,
+      sectionMap: (ocr.header && typeof ocr.header.sectionMap === 'object')
+        ? ocr.header.sectionMap
+        : textLayer.header.sectionMap,
+    };
     const sectionNames = new Map();
     for (const member of textLayer.members) {
       if (member.sectionNumber && member.sectionName && !sectionNames.has(String(member.sectionNumber))) {
         sectionNames.set(String(member.sectionNumber), member.sectionName);
       }
     }
-    const headerSectionMap = header.sectionMap && typeof header.sectionMap === 'object' ? header.sectionMap : {};
+    const headerSectionMap = safeSectionMap(header.sectionMap);
     const useHeaderSectionFallback = Object.keys(headerSectionMap).length <= 1;
     const ocrMembers = (ocr.voterRecords || []).map((record) => {
       let recSecName = cleanSectionName(record.sectionName || '');
       let sectionNumber = record.sectionNumber;
       let sectionName = '';
 
-      if (recSecName && headerSectionMap && Object.keys(headerSectionMap).length > 0) {
+      // A valid numeric section read from the voter-page header is authoritative.
+      // Only infer a number from a locality name when that number is missing or
+      // absent from the master map; otherwise a bad text-layer pairing can turn
+      // section 1 (रेगर मोहल्ला) into section 4 (चमारों का मोहल्ला).
+      if ((!sectionNumber || !headerSectionMap[String(sectionNumber)])
+        && recSecName && Object.keys(headerSectionMap).length > 0) {
         const entry = Object.entries(headerSectionMap).find(([k, v]) => {
           const cv = cleanSectionName(v);
           return cv === recSecName || cv.includes(recSecName) || recSecName.includes(cv);
@@ -1045,6 +1059,10 @@ const parsePdfMembers = async (filePath, importFileName, onOcrProgress) => {
         } else {
           sectionName = recSecName;
         }
+      }
+
+      if (sectionNumber && headerSectionMap[String(sectionNumber)]) {
+        sectionName = headerSectionMap[String(sectionNumber)];
       }
 
       if (!sectionName) {
