@@ -88,6 +88,16 @@ exports.importStatus = async (req, res, next) => {
     res.json(current || { status: 'waiting', stage: 'Waiting for upload', imported: 0, skipped: 0, total: 0, processed: 0, uploadBytes: 0, uploadTotalBytes: 0, ocrPagesProcessed: 0, ocrPagesTotal: 0, ocrCardsProcessed: 0, ocrCardsTotal: 0 });
   } catch (error) { next(error); }
 };
+
+exports.getActiveImport = async (req, res, next) => {
+  try {
+    const job = await ImportJob.findOne({ owner: req.currentUser._id })
+      .sort({ updatedAt: -1 })
+      .lean();
+    if (!job) return res.json({ active: false });
+    return res.json({ active: true, job });
+  } catch (error) { next(error); }
+};
 exports.trackUploadProgress = (req, res, next) => {
   const id = progressId(req);
   if (!id) return next();

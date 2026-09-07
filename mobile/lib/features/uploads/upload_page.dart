@@ -44,6 +44,56 @@ class _UploadPageState extends State<UploadPage> {
   int batchSkippedVoters = 0;
   List<String> batchFailedFiles = [];
 
+  @override
+  void initState() {
+    super.initState();
+    _checkActiveImport();
+  }
+
+  Future<void> _checkActiveImport() async {
+    try {
+      final res = await api.get('/api/import/active');
+      if (res['active'] == true && res['job'] != null) {
+        final job = Map<String, dynamic>.from(res['job']);
+        final jobStatus = (job['status'] ?? '').toString();
+        final uploadId = (job['uploadId'] ?? job['id'] ?? '').toString();
+
+        if ((jobStatus == 'processing' || jobStatus == 'uploading') && uploadId.isNotEmpty) {
+          if (!mounted) return;
+          setState(() {
+            uploading = true;
+            serverProcessing = true;
+            currentFile = (job['filename'] ?? 'Voter List PDF').toString();
+            processingStage = (job['stage'] ?? '').toString();
+            ocrPagesProcessed = ((job['ocrPagesProcessed'] ?? 0) as num).toInt();
+            ocrPagesTotal = ((job['ocrPagesTotal'] ?? 0) as num).toInt();
+            ocrCardsProcessed = ((job['ocrCardsProcessed'] ?? 0) as num).toInt();
+            ocrCardsTotal = ((job['ocrCardsTotal'] ?? 0) as num).toInt();
+            processedRecords = ((job['processed'] ?? 0) as num).toInt();
+            totalRecords = ((job['total'] ?? 0) as num).toInt();
+            status = 'फाइल अपलोड हो गई। PDF पढ़कर मतदाता रिकॉर्ड बनाए जा रहे हैं…';
+          });
+          final result = await waitForImportCompletion(uploadId);
+          if (!mounted) return;
+          setState(() {
+            lastResult = Map<String, dynamic>.from(result);
+            failedRecords = _extractFailedRecords(result);
+            status = 'आयात सफल रहा। ${result['imported'] ?? 0} मतदाता जोड़े गए और ${(result['skipped'] as List? ?? []).length} रिकॉर्ड समीक्षा के लिए छोड़े गए। मतदाता सूची अपने आप अपडेट हो गई है।';
+            uploading = false;
+          });
+        } else if (jobStatus == 'completed' && job['result'] != null) {
+          final result = Map<String, dynamic>.from(job['result']);
+          if (!mounted) return;
+          setState(() {
+            lastResult = result;
+            failedRecords = _extractFailedRecords(result);
+            status = 'आयात सफल रहा। ${result['imported'] ?? 0} मतदाता जोड़े गए और ${(result['skipped'] as List? ?? []).length} रिकॉर्ड समीक्षा के लिए छोड़े गए। मतदाता सूची अपने आप अपडेट हो गई है।';
+          });
+        }
+      }
+    } catch (_) {}
+  }
+
   double? get progressValue {
     if (!uploading) return null;
     if (!serverProcessing && uploadTotalBytes > 0) {
@@ -257,6 +307,8 @@ class _UploadPageState extends State<UploadPage> {
         } else if (lastResult != null) {
           status =
               'आयात सफल रहा। ${lastResult!['imported'] ?? 0} मतदाता जोड़े गए और ${(lastResult!['skipped'] as List? ?? []).length} रिकॉर्ड समीक्षा के लिए छोड़े गए। मतदाता सूची अपने आप अपडेट हो गई है।';
+        } else if (batchFailedFiles.isNotEmpty) {
+          status = 'आयात विफल: ${batchFailedFiles.first}';
         }
       });
     } finally {
@@ -344,7 +396,7 @@ class _UploadPageState extends State<UploadPage> {
               MaterialPageRoute(builder: (_) => const SmartExcelImportPage()),
             ),
           ),
-          const _ServerMemoryWarning(),
+
           if (uploading) _PhoneImportProgress(state: this),
           if (!uploading && status.isNotEmpty)
             _PhoneImportResult(
@@ -438,7 +490,7 @@ class _UploadPageState extends State<UploadPage> {
           MaterialPageRoute(builder: (_) => const SmartExcelImportPage()),
         ),
       ),
-      const _ServerMemoryWarning(),
+
       if (uploading || status.isNotEmpty)
         SectionCard(
           title: uploading ? 'अपलोड और आयात जारी है' : 'अपलोड का परिणाम',
@@ -700,30 +752,7 @@ class _ReviewBeforeSaveCard extends StatelessWidget {
       );
 }
 
-class _ServerMemoryWarning extends StatelessWidget {
-  const _ServerMemoryWarning();
 
-  @override
-  Widget build(BuildContext context) => Container(
-        padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(
-          color: const Color(0xfffff7ed),
-          borderRadius: BorderRadius.circular(18),
-          border: Border.all(color: orange.withValues(alpha: .28)),
-        ),
-        child:
-            const Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Icon(Icons.memory_rounded, color: orange),
-          SizedBox(width: 10),
-          Expanded(
-            child: Text(
-              'Server memory warning: बड़ी/scanned PDF में OCR धीरे चलेगा। 1–2 page test करें, app खुला रखें, और request fail हो तो थोड़ी देर बाद retry करें।',
-              style: TextStyle(color: navy, fontWeight: FontWeight.w800),
-            ),
-          ),
-        ]),
-      );
-}
 
 class _ProgressMiniStat extends StatelessWidget {
   const _ProgressMiniStat({
@@ -1006,48 +1035,77 @@ class _PhoneImportResult extends StatelessWidget {
   final List<Map<String, dynamic>> failedRecords;
   final VoidCallback onReview;
 
+  bool get isInProgress =>
+      !success &&
+      (message.contains('बनाए जा रहे हैं') ||
+          message.contains('पढ़ा जा रहा है') ||
+          message.contains('चल रहा है') ||
+          message.contains('तैयार हो रहे हैं'));
+
   @override
-  Widget build(BuildContext context) => Container(
-        padding: const EdgeInsets.all(18),
-        decoration: BoxDecoration(
-          color: success ? softGreen : const Color(0xfffff1f4),
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(
-              color: (success ? green : rose).withValues(alpha: .25)),
+  Widget build(BuildContext context) {
+    final bgColor = success
+        ? softGreen
+        : isInProgress
+            ? const Color(0xffeff6ff)
+            : const Color(0xfffff1f4);
+    final borderColor = success
+        ? green
+        : isInProgress
+            ? blue
+            : rose;
+    final iconData = success
+        ? Icons.check_circle_rounded
+        : isInProgress
+            ? Icons.hourglass_top_rounded
+            : Icons.error_outline_rounded;
+    final iconColor = success
+        ? green
+        : isInProgress
+            ? blue
+            : rose;
+    final titleText = success
+        ? 'आयात सफल रहा'
+        : isInProgress
+            ? 'आयात प्रक्रिया जारी है…'
+            : 'आयात पूरा नहीं हुआ';
+
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: bgColor,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: borderColor.withValues(alpha: .25)),
+      ),
+      child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Icon(iconData, color: iconColor, size: 30),
+        const SizedBox(width: 12),
+        Expanded(
+          child:
+              Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text(titleText,
+                style: const TextStyle(
+                    color: navy, fontSize: 15, fontWeight: FontWeight.w900)),
+            if (filename != null) ...[
+              const SizedBox(height: 2),
+              Text(filename!,
+                  style: const TextStyle(color: muted, fontSize: 11)),
+            ],
+            const SizedBox(height: 7),
+            Text(message, style: const TextStyle(color: navy, fontSize: 12)),
+            if (result != null) ...[
+              const SizedBox(height: 12),
+              _ImportReviewSummary(
+                result: result!,
+                failedRecords: failedRecords,
+                onReview: onReview,
+              ),
+            ],
+          ]),
         ),
-        child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Icon(
-              success
-                  ? Icons.check_circle_rounded
-                  : Icons.error_outline_rounded,
-              color: success ? green : rose,
-              size: 30),
-          const SizedBox(width: 12),
-          Expanded(
-            child:
-                Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text(success ? 'आयात सफल रहा' : 'आयात पूरा नहीं हुआ',
-                  style: const TextStyle(
-                      color: navy, fontSize: 15, fontWeight: FontWeight.w900)),
-              if (filename != null) ...[
-                const SizedBox(height: 2),
-                Text(filename!,
-                    style: const TextStyle(color: muted, fontSize: 11)),
-              ],
-              const SizedBox(height: 7),
-              Text(message, style: const TextStyle(color: navy, fontSize: 12)),
-              if (result != null) ...[
-                const SizedBox(height: 12),
-                _ImportReviewSummary(
-                  result: result!,
-                  failedRecords: failedRecords,
-                  onReview: onReview,
-                ),
-              ],
-            ]),
-          ),
-        ]),
-      );
+      ]),
+    );
+  }
 }
 
 class _Tip extends StatelessWidget {

@@ -5,6 +5,7 @@ const express = require('express');
 const upload = require('../middleware/upload');
 const c = require('../controllers/importController');
 
+router.get('/active', auth, c.getActiveImport);
 router.get('/status/:uploadId', auth, c.importStatus);
 router.put('/members/pdf/chunks/:uploadId/:index', auth, permission('canImportData'),
   express.raw({ type: 'application/octet-stream', limit: '10mb' }), c.uploadPdfChunk);
