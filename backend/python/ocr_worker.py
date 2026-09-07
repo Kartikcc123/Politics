@@ -1435,8 +1435,8 @@ def fixed_master_section_map(image):
             name = re.sub(r"(?<=[\u0900-\u097F])(\u0935\u093f\u0926\u094d\u092f\u093e\u0932\u092f)\b", r" \1", name)
             if len(re.findall(r"[\u0900-\u097F]", name)) >= 3:
                 rows.append([number, name])
-        if len(rows) >= 3 and rows[1][0] == "2" and rows[2][0] == "3":
-            rows[0][0] = "1"
+        # Do not invent section "1" for an unnumbered OCR row. A missed number can occur
+        # on any row; assigning it to 1 could map every voter in section 1 to a later locality.
         for number, name in rows:
             if not number:
                 continue
@@ -1980,7 +1980,8 @@ def main():
             if raw_sec_num not in doc_section_map:
                 doc_section_map[raw_sec_num] = raw_sec_name
 
-        page_sec_map = {**doc_section_map, **(raw_header.get("sectionMap") or {})}
+        # The first/master page table is authoritative; voter-page OCR only fills absent keys.
+        page_sec_map = {**(raw_header.get("sectionMap") or {}), **doc_section_map}
 
         hdr_sec_num = str(raw_header.get("sectionNumber") or "").strip()
         hdr_sec_name = str(raw_header.get("sectionName") or "").strip()
