@@ -498,27 +498,17 @@ const locationFields = [
   'gramPanchayat',
   'village',
   'partNumber',
+  'partName',
   'tehsil',
   'municipality',
   'sectionNumber',
   'sectionName',
   'location',
+  'municipalWardNumbers',
 ];
 
 const cleanText = (value) => String(value ?? '').trim();
 const escapeRegExp = (value) => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-
-const locationFields = [
-  'assemblyNumber',
-  'assemblyName',
-  'gramPanchayat',
-  'village',
-  'partNumber',
-  'partName',
-  'sectionNumber',
-  'sectionName',
-  'municipalWardNumbers',
-];
 
 const exactLocationFilter = (source = {}) => {
   const filter = {};
