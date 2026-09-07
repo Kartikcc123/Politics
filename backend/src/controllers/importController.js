@@ -251,6 +251,25 @@ const cleanSectionName = (value = '') => {
   if (devanagariTextCount(text) < 2 || looksLikeBadLatinSection(text)) return '';
   return text;
 };
+// OCR headers sometimes contain a whole noisy page line. Never store that as
+// a location; an empty field is safer than a convincing but wrong address.
+const cleanOcrLocation = (value = '', { allowSection = false } = {}) => {
+  const text = cleanValue(value);
+  if (!text || text.length > 80 || devanagariTextCount(text) < 2) return '';
+  if (/[\[\]{}|\\~`$<>]/.test(text) || /(?:EPIC|RJ\/|SNE\d|google|polling|station|map|view)/i.test(text)) return '';
+  const locationLabel = /(?:वार्ड\s*(?:संख्या|नं)|अनुभाग|भाग\s*(?:संख्या|नं)|मतदाता|क्रम\s*संख्या|सूची\s*का\s*भाग|विधानसभा\s*(?:संख्या|निर्वाचन))/;
+  if (!allowSection && locationLabel.test(text)) return '';
+  if ((text.match(/[A-Za-z]/g) || []).length > 5) return '';
+  return text;
+};
+const cleanOcrVillage = (value = '') => cleanOcrLocation(value)
+  .replace(/^(?:ग्राम|गाँव)\s*(?:का\s*)?(?:नाम)?\s*[:：-]?\s*/u, '')
+  .trim();
+const buildSafeOcrAddress = (sectionName, houseNumber) => {
+  const section = cleanSectionName(sectionName);
+  const house = cleanValue(houseNumber).replace(/[^0-9०-९A-Za-z\/-]/g, '').slice(0, 20);
+  return [section, house].filter(Boolean).join(', ');
+};
 const safeSectionMap = (sectionMap = {}) => Object.fromEntries(
   Object.entries(sectionMap || {})
     .map(([number, name]) => [cleanValue(number), cleanSectionName(name)])
@@ -1862,6 +1881,12 @@ const runPdfImport = async ({ file, body, currentUser }, uploadId) => {
     const party = await findPartyFromText(parsed.text);
     for (const item of parsed.members) {
       item.voterId = normalizeEpic(item.voterId);
+      // Do this immediately before persistence, so every parser/OCR fallback is
+      // covered by the same strict safeguard.
+      item.village = cleanOcrVillage(item.village);
+      item.gramPanchayat = cleanOcrLocation(item.gramPanchayat);
+      item.location = cleanOcrLocation(item.location, { allowSection: true });
+      item.address = buildSafeOcrAddress(item.sectionName, item.houseNumber);
       if (!item.name) {
         const review = await ImportReview.create({
           sourceType: 'pdf',
@@ -1904,10 +1929,9 @@ const runPdfImport = async ({ file, body, currentUser }, uploadId) => {
       const itemSectionHeader = sectionHeaderForRecord(item, detectedHeader, docSectionMap);
       if (itemSectionHeader.sectionNumber) item.sectionNumber = itemSectionHeader.sectionNumber;
       if (itemSectionHeader.sectionName) item.sectionName = itemSectionHeader.sectionName;
-      if (item.sectionName) {
-        item.location = item.sectionName;
-        item.address = [item.sectionName, cleanValue(item.houseNumber)].filter(Boolean).join(', ');
-      }
+      item.sectionName = cleanSectionName(item.sectionName);
+      if (item.sectionName) item.location = item.sectionName;
+      item.address = buildSafeOcrAddress(item.sectionName, item.houseNumber);
 
       const itemArea = await enrichPdfAreaHierarchy(item, assemblyArea);
       const locationNeedsReview = item.locationResolution?.status !== 'verified';
@@ -2167,6 +2191,8 @@ exports.importPdfMembers = async (req, res, next) => {
   }
 };
 
+exports.cleanOcrLocation = cleanOcrLocation;
+exports.cleanOcrVillage = cleanOcrVillage;
 exports.cleanSectionName = cleanSectionName;
 exports.safeSectionMap = safeSectionMap;
 exports.sectionHeaderForRecord = sectionHeaderForRecord;
