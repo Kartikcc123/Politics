@@ -265,6 +265,13 @@ def clean_house(value):
 
 
 
+def get_digits(value):
+    """Return the ASCII digits in an OCR value, including Devanagari digits."""
+    normalized = str(value or "").translate(
+        str.maketrans("\u0966\u0967\u0968\u0969\u096a\u096b\u096c\u096d\u096e\u096f", "0123456789")
+    )
+    return "".join(re.findall(r"\d", normalized))
+
 def coordinate_serial(words, x, y, card_w, card_h):
     """Read the printed serial only from the fixed top-left serial box."""
     candidates = []
