@@ -508,11 +508,24 @@ const locationFields = [
 const cleanText = (value) => String(value ?? '').trim();
 const escapeRegExp = (value) => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
+const locationFields = [
+  'assemblyNumber',
+  'assemblyName',
+  'gramPanchayat',
+  'village',
+  'partNumber',
+  'partName',
+  'sectionNumber',
+  'sectionName',
+  'municipalWardNumbers',
+];
+
 const exactLocationFilter = (source = {}) => {
   const filter = {};
-  for (const field of ['assemblyNumber', 'assemblyName', 'gramPanchayat', 'village', 'partNumber', 'sectionNumber', 'sectionName']) {
-    if (Object.prototype.hasOwnProperty.call(source, field)) {
-      filter[field] = cleanText(source[field]);
+  for (const field of ['assemblyNumber', 'assemblyName', 'gramPanchayat', 'village', 'partNumber', 'partName', 'sectionNumber', 'sectionName', 'municipalWardNumbers']) {
+    if (Object.prototype.hasOwnProperty.call(source, field) && source[field] !== undefined && source[field] !== null) {
+      const val = cleanText(source[field]);
+      if (val) filter[field] = val;
     }
   }
   return filter;
@@ -521,8 +534,14 @@ const exactLocationFilter = (source = {}) => {
 const cleanLocationUpdates = (updates = {}) => {
   const cleaned = {};
   for (const field of locationFields) {
-    if (Object.prototype.hasOwnProperty.call(updates, field)) {
-      cleaned[field] = cleanText(updates[field]);
+    if (Object.prototype.hasOwnProperty.call(updates, field) && updates[field] !== undefined && updates[field] !== null) {
+      if (field === 'municipalWardNumbers') {
+        const val = cleanText(updates[field]);
+        if (val) cleaned.municipalWardNumbers = [val];
+      } else {
+        const val = cleanText(updates[field]);
+        if (val) cleaned[field] = val;
+      }
     }
   }
   return cleaned;
@@ -690,10 +709,17 @@ exports.bulkLocationCorrection = async (req, res, next) => {
       let changed = false;
       const oldSectionName = cleanText(member.sectionName);
       for (const [field, value] of Object.entries(updates)) {
-        if (cleanText(member[field]) === cleanText(value)) continue;
-        member[field] = value;
-        changed = true;
-        changedFields += 1;
+        if (field === 'municipalWardNumbers') {
+          const newWards = Array.isArray(value) ? value : [cleanText(value)];
+          member.municipalWardNumbers = newWards.filter(Boolean);
+          changed = true;
+          changedFields += 1;
+        } else {
+          if (cleanText(member[field]) === cleanText(value)) continue;
+          member[field] = value;
+          changed = true;
+          changedFields += 1;
+        }
       }
       if (!changed) continue;
       if (updates.sectionName && oldSectionName) {

@@ -14,6 +14,7 @@ import '../uploads/admin_review_hub_page.dart';
 import '../reports/reports_page.dart';
 import '../reports/political_dashboard_page.dart';
 import '../reports/configurable_print_page.dart';
+import '../members/bulk_location_edit_page.dart';
 import '../uploads/smart_excel_import_page.dart';
 import '../settings/settings_page.dart';
 import '../uploads/upload_page.dart';
@@ -40,8 +41,15 @@ class MorePage extends StatelessWidget {
             blue,
             const MasterDataImportPage()),
       if (role == 'admin')
-  _Option('PDF / Excel अपलोड', 'मतदाता सूची से एक साथ रिकॉर्ड जोड़ें',
-          Icons.cloud_upload_rounded, orange, const UploadPage()),
+        _Option(
+            'स्थान व अनुभाग बल्क सुधार',
+            'गाँव, अनुभाग, भाग संख्या या वार्ड नाम एक साथ सुधारें / Merge करें',
+            Icons.edit_location_alt_rounded,
+            const Color(0xff0f766e),
+            const BulkLocationEditPage()),
+      if (role == 'admin')
+        _Option('PDF / Excel अपलोड', 'मतदाता सूची से एक साथ रिकॉर्ड जोड़ें',
+            Icons.cloud_upload_rounded, orange, const UploadPage()),
       if (role == 'admin')
         _Option('Excel का विस्तृत आयात', 'कॉलम मिलाएं और रिकॉर्ड पहले जांचें',
             Icons.rule_folder_rounded, green, const SmartExcelImportPage()),
