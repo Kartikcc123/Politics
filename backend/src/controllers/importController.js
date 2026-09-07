@@ -22,6 +22,7 @@ const { isValidHindiText, isValidAssemblyHeader } = require('./areaController');
 const { uploadFilePath } = require('../utils/uploadPath');
 const { persistLocalImage } = require('../utils/persistentMedia');
 const { findBestLocationMatch } = require('../utils/locationMerge');
+const { enqueuePdfImport } = require('../services/pdfImportQueue');
 const {
   canonicalizeExcelRow,
   isKnownExcelHeader,
@@ -210,8 +211,10 @@ exports.completePdfChunks = (req, res, next) => {
     const file = { path: finalPath, filename: finalName, originalname: filename, size: assembledBytes };
     setProgress(id, { status: 'processing', stage: 'Upload received. PDF/OCR import running in background',
       uploadBytes: assembledBytes, uploadTotalBytes: assembledBytes }, req.currentUser._id);
-    setImmediate(() => runPdfImport({ file, body: { ...req.body, uploadId: id }, currentUser: req.currentUser }, id)
-      .catch((error) => console.error('Background chunked PDF import failed:', error)));
+    setProgress(id, { status: 'processing', stage: 'Queued for memory-safe OCR import' }, req.currentUser._id);
+    setImmediate(() => enqueuePdfImport(() => runPdfImport(
+      { file, body: { ...req.body, uploadId: id }, currentUser: req.currentUser }, id,
+    )).catch((error) => console.error('Background chunked PDF import failed:', error)));
     res.status(202).json({ processing: true, uploadId: id, message: 'PDF upload complete. OCR/import started.' });
   } catch (error) {
     finishProgressSoon(id, { status: 'failed', stage: error.message || 'PDF upload failed' }, req.currentUser?._id); next(error);
@@ -675,13 +678,16 @@ const enrichPdfAreaHierarchy = async (data, hierarchyStart) => {
   return village._id;
 };
 const assertReadablePdf = (filePath) => {
-  const buffer = fs.readFileSync(filePath);
-  if (buffer.length < 8 || buffer.slice(0, 5).toString('ascii') !== '%PDF-') {
+  const stat = fs.statSync(filePath);
+  const descriptor = fs.openSync(filePath, 'r');
+  const header = Buffer.alloc(8);
+  try { fs.readSync(descriptor, header, 0, header.length, 0); } finally { fs.closeSync(descriptor); }
+  if (stat.size < 8 || header.slice(0, 5).toString('ascii') !== '%PDF-') {
     const err = new Error('Uploaded file is not a valid PDF. Please upload the original voter-list PDF, not a renamed or incomplete file.');
     err.status = 400;
     throw err;
   }
-  return buffer;
+  return stat;
 };
 const isObjectId = (value) => /^[a-f\d]{24}$/i.test(String(value || ''));
 
@@ -867,8 +873,15 @@ const parseHindiVoterRoll = (text, headerOverride) => {
 };
 
 const extractTextWithFallback = async (filePath, importFileName, onOcrProgress) => {
-  const pdfBuffer = assertReadablePdf(filePath);
+  const pdfStat = assertReadablePdf(filePath);
   const extractionErrors = [];
+  const maxTextLayerBytes = Number(process.env.PDF_TEXT_LAYER_MAX_MB || 12) * 1024 * 1024;
+  // Never duplicate a large scanned PDF in Node just to discover it has no text.
+  if (pdfStat.size > maxTextLayerBytes) {
+    const ocr = await ocrPdf(filePath, importFileName, { onProgress: onOcrProgress });
+    return { text: ocr.text, ocr };
+  }
+  const pdfBuffer = fs.readFileSync(filePath);
   try {
     const pdfParse = require('pdf-parse');
     const parsed = await pdfParse(pdfBuffer);
@@ -921,6 +934,12 @@ const extractTextWithFallback = async (filePath, importFileName, onOcrProgress) 
 };
 
 const parsePdfTextLayerMembers = async (filePath) => {
+  // pdf.js needs the complete document in Node memory. Scanned rolls have no
+  // useful text layer, so hand large files directly to streaming OCR instead.
+  const maxTextLayerBytes = Number(process.env.PDF_TEXT_LAYER_MAX_MB || 12) * 1024 * 1024;
+  if (fs.statSync(filePath).size > maxTextLayerBytes) {
+    return { text: '', members: [], imageOnlyPages: [], header: {} };
+  }
   const pdfjs = require('pdf-parse/lib/pdf.js/v1.10.100/build/pdf.js');
   const document = await pdfjs.getDocument(new Uint8Array(fs.readFileSync(filePath)));
   const members = [];
@@ -2127,8 +2146,9 @@ exports.importPdfMembers = async (req, res, next) => {
       total: 0,
     });
 
+    setProgress(uploadId, { status: 'processing', stage: 'Queued for memory-safe OCR import' }, req.currentUser._id);
     setImmediate(() => {
-      runPdfImport(context, uploadId).catch((error) => {
+      enqueuePdfImport(() => runPdfImport(context, uploadId)).catch((error) => {
         console.error('Background PDF import failed:', error);
       });
     });

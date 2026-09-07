@@ -23,7 +23,7 @@ services:
       - key: OCR_LANGUAGES
         value: hin+eng
       - key: OCR_DPI
-        value: 180
+        value: 300
       - key: OCR_CELL_CONCURRENCY
         value: 1
       - key: OCR_PAGE_CONCURRENCY
@@ -38,6 +38,12 @@ services:
         value: 1
       - key: OMP_THREAD_LIMIT
         value: 1
+      - key: OCR_THREAD_WORKERS
+        value: 1
+      - key: OCR_NATIVE_THREADS
+        value: 1
+      - key: PDF_TEXT_LAYER_MAX_MB
+        value: 12
       - key: USE_PYTHON_OCR
         value: true
       - key: MONGO_URI

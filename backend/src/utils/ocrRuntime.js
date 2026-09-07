@@ -40,6 +40,11 @@ const commandFromEnv = (envName, fallback) => {
 const subprocessEnv = () => {
   configureTessdataPrefix();
   const env = { ...process.env };
+  // Keep each OCR subprocess within a predictable native-memory budget.
+  for (const name of ['OMP_NUM_THREADS', 'OPENBLAS_NUM_THREADS', 'MKL_NUM_THREADS', 'NUMEXPR_NUM_THREADS', 'VECLIB_MAXIMUM_THREADS']) {
+    env[name] = String(process.env.OCR_NATIVE_THREADS || 1);
+  }
+  env.OMP_THREAD_LIMIT = String(process.env.OCR_NATIVE_THREADS || 1);
   if (!isWindows && isWindowsExecutablePath(env.TESSDATA_PREFIX)) delete env.TESSDATA_PREFIX;
   return env;
 };

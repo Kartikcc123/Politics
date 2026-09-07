@@ -1049,7 +1049,9 @@ def process_page(page_path, output_dir, page_no):
         (cell_no, box, image, page_no, output_dir)
         for cell_no, box in enumerate(boxes, 1)
     ]
-    max_workers = int(os.getenv("OCR_THREAD_WORKERS", "4"))
+    # Parallel 300-DPI cards retain several large OpenCV buffers at once.
+    # One card at a time is the safe default for memory-constrained servers.
+    max_workers = max(1, int(os.getenv("OCR_THREAD_WORKERS", "1")))
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         records = list(executor.map(_process_single_card, task_args))
 
@@ -1899,7 +1901,9 @@ def main():
         header = read_header(page, is_voter_page=True)
         return header, process_page(page, output_dir, page_no), read_fixed_header(page, is_voter_page=True)
 
-    max_workers = min(4, os.cpu_count() or 4)
+    # Node invokes this worker with one rendered page, but keep this invariant
+    # so future callers cannot fan out 300-DPI pages in the same process.
+    max_workers = 1
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         page_bundles = list(executor.map(process_page_bundle, zip(page_numbers, pages)))
     gc.collect()
