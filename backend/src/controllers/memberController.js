@@ -658,9 +658,11 @@ exports.bulkLocationCorrection = async (req, res, next) => {
     const sourceKeyCount = Object.values(source).filter((value) => value !== '').length;
     const safeVillageSource = Boolean(source.village && sourceKeyCount >= 1);
     const safeSectionSource = Boolean((source.sectionName || source.sectionNumber) && sourceKeyCount >= 1);
-    if (!smartQuery && !safeVillageSource && !safeSectionSource && sourceKeyCount < 2) {
+    const safePartSource = Boolean((source.partNumber || source.partName) && sourceKeyCount >= 1);
+    const safeWardSource = Boolean(source.municipalWardNumbers && sourceKeyCount >= 1);
+    if (!smartQuery && !safeVillageSource && !safeSectionSource && !safePartSource && !safeWardSource && sourceKeyCount < 2) {
       return res.status(400).json({
-        message: 'Source में कम से कम एक गाँव, अनुभाग या फ़िल्टर वैल्यू ज़रूर दें।',
+        message: 'Source में कम से कम एक गाँव, अनुभाग, भाग या फ़िल्टर वैल्यू ज़रूर दें।',
       });
     }
     if (!dryRun && !Object.keys(updates).length) {
