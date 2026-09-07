@@ -1128,163 +1128,71 @@ def process_page(page_path, output_dir, page_no):
     return records
 
 
+def _same_section(left, right):
+    """Only compare voter cards when both belong to the same detected section."""
+    left_section = str(left.get("sectionNumber") or "").strip()
+    right_section = str(right.get("sectionNumber") or "").strip()
+    return bool(left_section and right_section and left_section == right_section)
+
+
+def _set_house_suggestion(record, house, reason, needs_review=True, confidence=85):
+    """Keep OCR provenance whenever a house number is inferred from another card."""
+    previous = str(record.get("houseNumber") or "").strip()
+    if previous == house:
+        return False
+    record["rawHouseNumber"] = record.get("rawHouseNumber") or previous
+    record["suggestedHouseNumber"] = house
+    record["houseNumber"] = house
+    record["houseNumberConfidence"] = confidence
+    record["houseOcrDisagreement"] = True
+    if needs_review:
+        record["needsReview"] = True
+        reasons = record.setdefault("reviewReasons", [])
+        if reason not in reasons:
+            reasons.append(reason)
+    return True
+
+
 def smooth_house_numbers(records):
-    """
-    Smooth house numbers across voter records on a page.
-    Corrects OCR single-digit substitutions (e.g. 7 -> 1, 1 -> 4) and
-    border noise spikes (e.g. 147 -> 2, 141 -> 3) based on neighbor consensus.
-    Supports 1, 2, 3, 4, and 5 digit house numbers cleanly.
-    """
-    if not records:
+    """Apply only same-section, two-sided house-number consensus corrections."""
+    if len(records) < 3:
         return records
 
-    ordered = sorted(records, key=lambda r: int(r.get("cell", 0)))
-    houses = [str(r.get("houseNumber", "") or "").strip() for r in ordered]
-    n = len(houses)
-    if n == 0:
-        return records
-
-    cleaned = list(houses)
-
-    # Step 1: Remove obvious border noise prefixes for 1-digit / 2-digit targets
-    # e.g. 147 -> 7 or 2, 141 -> 1 or 3 when surrounding numbers are low (<= 20)
-    for i in range(n):
-        h = cleaned[i]
-        if len(h) >= 3 and h.startswith("14") and h[2:].isdigit():
-            prev_h = cleaned[i-1] if i > 0 else ""
-            next_h = cleaned[i+1] if i < n-1 else ""
-            if (next_h and next_h.isdigit() and int(next_h) <= 20) or (prev_h and prev_h.isdigit() and int(prev_h) <= 20):
-                if next_h and next_h.isdigit() and int(next_h) <= 20:
-                    cleaned[i] = next_h
-                elif prev_h and prev_h.isdigit() and int(prev_h) <= 20:
-                    cleaned[i] = prev_h
-                else:
-                    cleaned[i] = h[-1]
-
-    # Step 2: Page-level mode check for Devanagari single-digit '7' vs '1' confusion.
-    # In Devanagari voter rolls where houses are small single digits (<= 20), Tesseract eng often misreads '1' as '7'.
-    valid_nums = [int(h) for h in cleaned if h.isdigit()]
-    low_digits = [v for v in valid_nums if v <= 20]
-    high_digits = [v for v in valid_nums if v > 20]
-    
-    if len(low_digits) > len(high_digits):
-        for i in range(n):
-            if cleaned[i] == "7":
-                prev_h = cleaned[i-1] if i > 0 else ""
-                next_h = cleaned[i+1] if i < n-1 else ""
-                if prev_h in ("1", "01") or next_h in ("1", "01", "2", "02") or i < 5:
-                    cleaned[i] = "1"
-
-    # Step 3: Neighbor consensus smoothing (Sandwich rule for any 1 to 5 digit house number)
-    # If card i is surrounded by card i-1 and card i+1 with the EXACT same house number, card i takes that house number.
-    for i in range(1, n - 1):
-        prev_val = cleaned[i-1]
-        curr_val = cleaned[i]
-        next_val = cleaned[i+1]
-
-        if prev_val and next_val and prev_val == next_val and curr_val != prev_val:
-            cleaned[i] = prev_val
-        elif prev_val and next_val and curr_val not in (prev_val, next_val):
-            if prev_val in ("1", "01") and curr_val == "7":
-                cleaned[i] = "1"
-            elif prev_val in ("4", "04") and curr_val == "1":
-                cleaned[i] = "4"
-
-    # Step 4: Monotonic non-decreasing trend check within page families
-    for i in range(1, n - 1):
-        if cleaned[i-1] == cleaned[i+1] and cleaned[i-1] != "":
-            cleaned[i] = cleaned[i-1]
-
-    # Step 5: Forward propagation for missing house numbers if neighbors share the same house
-    for i in range(n):
-        if not cleaned[i]:
-            prev_h = cleaned[i-1] if i > 0 else ""
-            next_h = cleaned[i+1] if i < n-1 else ""
-            if prev_h and next_h and prev_h == next_h:
-                cleaned[i] = prev_h
-            elif prev_h:
-                cleaned[i] = prev_h
-
-    # Assign smoothed house numbers back to records
-    for i, r in enumerate(ordered):
-        orig = str(r.get("houseNumber", "") or "").strip()
-        if cleaned[i] and cleaned[i] != orig:
-            r["rawHouseNumber"] = r.get("rawHouseNumber") or orig
-            r["houseNumber"] = cleaned[i]
-            r["houseOcrDisagreement"] = True
-            r["houseNumberConfidence"] = 90
-        elif cleaned[i]:
-            r["houseNumberConfidence"] = max(int(r.get("houseNumberConfidence") or 0), 95)
-
+    ordered = sorted(records, key=lambda record: int(record.get("cell", 0)))
+    for index in range(1, len(ordered) - 1):
+        previous, current, following = ordered[index - 1], ordered[index], ordered[index + 1]
+        if not (_same_section(previous, current) and _same_section(current, following)):
+            continue
+        previous_house = str(previous.get("houseNumber") or "").strip()
+        following_house = str(following.get("houseNumber") or "").strip()
+        if re.fullmatch(r"\d{1,5}(?:[/\-]\d{1,5})?", previous_house) and previous_house == following_house:
+            _set_house_suggestion(current, previous_house, "same_section_sandwich_house_corrected", needs_review=False, confidence=95)
     return ordered
 
 
 def reconcile_family_tree_houses(records):
-    """Propagate house numbers across multi-generational family trees on the page safely."""
+    """Suggest a house only for an unreadable voter card with a same-section guardian match."""
     if not records:
         return records
 
-    for _pass in range(3):
-        voter_map = {}
-        for r in records:
-            name = r.get("name") or ""
-            guardian = r.get("guardianName") or ""
-            house = str(r.get("houseNumber") or "").strip()
-            if house and house.isdigit() and int(house) > 0 and house not in ("70", "0", "00"):
-                if name:
-                    key = loose_person_key(name)
-                    if len(key) >= 2:
-                        voter_map[key] = house
-                if guardian:
-                    g_k = loose_person_key(guardian)
-                    if len(g_k) >= 2:
-                        voter_map[g_k] = house
+    household_heads = {}
+    for record in records:
+        section = str(record.get("sectionNumber") or "").strip()
+        name_key = loose_person_key(record.get("name") or "")
+        house = str(record.get("houseNumber") or "").strip()
+        if section and len(name_key) >= 2 and re.fullmatch(r"\d{1,5}(?:[/\-]\d{1,5})?", house):
+            household_heads.setdefault((section, name_key), set()).add(house)
 
-        for r in records:
-            guardian = r.get("guardianName") or ""
-            name = r.get("name") or ""
-            curr_house = str(r.get("houseNumber") or "").strip()
-            g_key = loose_person_key(guardian) if guardian else ""
-            n_key = loose_person_key(name) if name else ""
-            
-            matched_house = None
-            if g_key and g_key in voter_map:
-                matched_house = voter_map[g_key]
-            elif n_key and n_key in voter_map:
-                matched_house = voter_map[n_key]
-            else:
-                for v_k, h in voter_map.items():
-                    if (g_key and fuzzy_name_match(g_key, v_k)) or (n_key and fuzzy_name_match(n_key, v_k)):
-                        matched_house = h
-                        break
-            
-            is_invalid = not curr_house or curr_house in ("70", "4801", "-") or not curr_house.isdigit()
-            is_suffix_noise = (
-                matched_house and len(matched_house) >= 3 and len(curr_house) <= 2
-                and curr_house not in ("0", "00", "000")
-                and matched_house.endswith(curr_house)
-            )
-            bheeta_houses = {
-                "नेनूराम": "1", "बालाराम": "7", "ज़र्वाचक": "7", "प्रतापचन्द": "7", "प्रताप चन्द": "7", "हंन् ्जा": "7",
-                "डालचन्द": "4", "कमली": "1", "सावर मल": "1", "टीना देवी": "7", "सुवा लाल": "9", "बगतावरी": "9",
-                "भैरूलाल": "2", "भंवरी देवी": "2", "राजु": "2", "मुकेश कुमार": "2", "मीना देवी": "4",
-                "बाली देवी": "3", "मांगी": "3", "हीरालाल": "3", "नारायणी": "3", "बच्ना": "3", "कैलाश टेवी": "3", "गोविंद कुमार": "3",
-                "श्रवण लाल": "4", "भगवती देवी": "4", "सोवनी": "4", "लादूलाल": "5", "लादू लाल": "5", "भंवरी": "5", "गोपाल लाल": "5", "सुशीला देवी": "5"
-            }
-            clean_n = re.sub(r"\s+", " ", name).strip()
-            if clean_n in bheeta_houses:
-                r["houseNumber"] = bheeta_houses[clean_n]
-            elif curr_house in ("141", "41", "47") and name == "दीपक":
-                r["houseNumber"] = "417"
-            elif (curr_house == "4801" or not curr_house) and ("शांति" in name or "सांति" in name):
-                r["houseNumber"] = "112"
-            elif matched_house and (is_invalid or is_suffix_noise or (n_key and n_key in voter_map and curr_house == "4801")):
-                r["rawHouseNumber"] = r.get("rawHouseNumber") or curr_house
-                r["houseNumber"] = matched_house
-                r["houseNumberConfidence"] = 95
-                r["houseOcrDisagreement"] = True
+    for record in records:
+        section = str(record.get("sectionNumber") or "").strip()
+        guardian_key = loose_person_key(record.get("guardianName") or "")
+        current_house = str(record.get("houseNumber") or "").strip()
+        if not section or len(guardian_key) < 2 or re.fullmatch(r"\d{1,5}(?:[/\-]\d{1,5})?", current_house):
+            continue
+        matches = household_heads.get((section, guardian_key), set())
+        if len(matches) == 1:
+            _set_house_suggestion(record, next(iter(matches)), "guardian_same_section_house_suggested", needs_review=True, confidence=85)
     return records
-
 
 def reconcile_family_guardians(records):
 
@@ -2203,169 +2111,31 @@ def main():
             if sec_k and doc_section_map.get(sec_k):
                 record["sectionName"] = doc_section_map[sec_k]
 
-    # 7-Rule House Number Validation & Sequence Repair Engine:
-    # 1. Anti-Age Discard Pass: Clears house number if it matches age
-    # 2. House De-noising: Strips prepended symbols/colons (e.g. 312 -> 12, 212 -> 12)
-    # 3. Sandwich Rule: Repairs single outlier house number surrounded by identical house numbers
-    # 4. Multi-pass Guardian / Family Tree Inheritance with Hindi fuzzy matching
-    # 5. Multi-pass Contiguous Block Run Propagation
-    # 6. Sequential Gap & Family Run Filling for unassigned blocks
-    # 7. No Blind Replacement: Preserves valid repeated house numbers
-    def get_digits(val):
-        if not val:
-            return ""
-        norm = (str(val)).translate(
-            str.maketrans("०१२३४५६७८९OQILSZBG", "012345678900112586")
-        )
-        matches = re.findall(r"\d+", norm)
-        return matches[-1] if matches else ""
+    # Safe document-level house repair rules:
+    # - only same-section cards can contribute a neighbour house number;
+    # - a guardian match may fill an unreadable house number, but always needs review;
+    # - previous-card-only and sequential-gap propagation are deliberately disabled.
+    for record in records:
+        raw_house = str(record.get("houseNumber") or "").strip()
+        record["rawHouseNumber"] = record.get("rawHouseNumber") or raw_house
+        if raw_house and str(record.get("age") or "").strip() == get_digits(raw_house):
+            record["houseNumber"] = ""
+            record["needsReview"] = True
+            record.setdefault("reviewReasons", []).append("house_number_matched_age_cleared")
 
-    def is_repeated_in_next(idx, val, count=2):
-        if not val:
-            return False
-        matches = 0
-        for j in range(idx + 1, min(n_rec, idx + 1 + count)):
-            other = get_digits(records[j].get("houseNumber"))
-            if other == val or (len(other) > len(val) and other.endswith(val)):
-                matches += 1
-        return matches >= 1
+    for index in range(1, len(records) - 1):
+        previous, current, following = records[index - 1], records[index], records[index + 1]
+        if not (_same_section(previous, current) and _same_section(current, following)):
+            continue
+        previous_house = get_digits(previous.get("houseNumber"))
+        following_house = get_digits(following.get("houseNumber"))
+        if previous_house and previous_house == following_house:
+            _set_house_suggestion(current, previous_house, "same_section_sandwich_house_corrected", needs_review=False, confidence=95)
 
-    n_rec = len(records)
-    # Rule 1: Anti-Age Discard Pass
-    for i in range(n_rec):
-        rec = records[i]
-        raw_house = str(rec.get("houseNumber") or "").strip()
-        rec["rawHouseNumber"] = raw_house
-        curr_digits = get_digits(raw_house)
-        age_digits = str(rec.get("age") or "").strip()
-        if curr_digits and age_digits and curr_digits == age_digits:
-            rec["houseNumber"] = ""
-            rec["needsReview"] = True
-            rec.setdefault("reviewReasons", []).append("house_number_matched_age_cleared")
-
-    # Rule 2: De-noise prepended digits (e.g. 312 -> 12, 212 -> 12, 14194 -> 4194)
-    for i in range(n_rec):
-        rec = records[i]
-        curr_digits = get_digits(rec.get("houseNumber"))
-        prev_digits = get_digits(records[i - 1].get("houseNumber")) if i > 0 and records[i - 1].get("sectionNumber") == rec.get("sectionNumber") else ""
-        next_digits = get_digits(records[i + 1].get("houseNumber")) if i < n_rec - 1 and records[i + 1].get("sectionNumber") == rec.get("sectionNumber") else ""
-
-        if len(curr_digits) == 5 and curr_digits.startswith("1") and curr_digits[1:].isdigit():
-            cand = curr_digits[1:]
-            if prev_digits == cand or next_digits == cand or is_repeated_in_next(i, cand, 2):
-                rec["suggestedHouseNumber"] = cand
-                rec["houseNumber"] = cand
-                rec["needsReview"] = True
-                rec.setdefault("reviewReasons", []).append("prepended_colon_one_repaired")
-                curr_digits = cand
-
-        # Repair truncated 3-digit noise or single-digit suffix clip when flanked by 4-digit numbers starting with 41 (e.g. 497 -> 4197, 797 -> 4197, 6 -> 4196)
-        if curr_digits and len(curr_digits) < 4:
-            ref_4digit = prev_digits if (len(prev_digits) == 4 and prev_digits.startswith("41")) else (next_digits if (len(next_digits) == 4 and next_digits.startswith("41")) else "")
-            if ref_4digit:
-                if len(curr_digits) == 3 and curr_digits[0] in ("4", "7") and curr_digits[1:] == ref_4digit[2:]:
-                    cand = "41" + curr_digits[1:]
-                    rec["suggestedHouseNumber"] = cand
-                    rec["houseNumber"] = cand
-                    curr_digits = cand
-                elif len(curr_digits) <= 2 and ref_4digit.startswith("41"):
-                    cand = ref_4digit
-                    rec["suggestedHouseNumber"] = cand
-                    rec["houseNumber"] = cand
-                    curr_digits = cand
-
-        # Sandwich rule: if prev and next are identical (e.g. 10, X, 10 -> X becomes 10)
-        if prev_digits and next_digits and prev_digits == next_digits and len(prev_digits) >= 1:
-            target = prev_digits
-            if curr_digits != target and not is_repeated_in_next(i, curr_digits, 2):
-                rec["suggestedHouseNumber"] = target
-                rec["houseNumber"] = target
-                rec["needsReview"] = True
-                rec.setdefault("reviewReasons", []).append("sandwich_house_number_corrected")
-                rec["houseNumberConfidence"] = 85
-
-    # Multi-pass Rule 3 & 4: Family Tree Guardian Inheritance & Contiguous Block Run Propagation
-    for _pass in range(3):
-        guardian_house_map = {}
-        for rec in records:
-            name_key = loose_person_key(rec.get("name"))
-            sec = str(rec.get("sectionNumber") or "").strip()
-            house = get_digits(rec.get("houseNumber"))
-            if house and name_key and len(name_key) >= 2:
-                guardian_house_map[(name_key, sec)] = house
-
-        for rec in records:
-            curr_h = get_digits(rec.get("houseNumber"))
-            g_key = loose_person_key(rec.get("guardianName"))
-            n_key = loose_person_key(rec.get("name"))
-            sec = str(rec.get("sectionNumber") or "").strip()
-            if g_key or n_key:
-                for (nk, s), h in guardian_house_map.items():
-                    if s == sec and ((g_key and fuzzy_name_match(g_key, nk)) or (n_key and fuzzy_name_match(n_key, nk))):
-                        is_invalid = not curr_h or curr_h in ("0", "00", "70")
-                        is_suffix_noise = len(h) >= 3 and len(curr_h) <= 2 and h.endswith(curr_h)
-                        if is_invalid or is_suffix_noise:
-                            rec["suggestedHouseNumber"] = h
-                            rec["houseNumber"] = h
-                            rec["needsReview"] = True
-                            rec.setdefault("reviewReasons", []).append("guardian_family_house_inherited")
-                            rec["houseNumberConfidence"] = 85
-                            break
-
-        for i in range(n_rec):
-            rec = records[i]
-            curr_h = get_digits(rec.get("houseNumber"))
-            sec = str(rec.get("sectionNumber") or "").strip()
-            if not curr_h:
-                prev_h = get_digits(records[i - 1].get("houseNumber")) if i > 0 and str(records[i - 1].get("sectionNumber") or "").strip() == sec else ""
-                next_h = get_digits(records[i + 1].get("houseNumber")) if i < n_rec - 1 and str(records[i + 1].get("sectionNumber") or "").strip() == sec else ""
-                if prev_h and next_h and prev_h == next_h:
-                    rec["suggestedHouseNumber"] = prev_h
-                    rec["houseNumber"] = prev_h
-                    rec.setdefault("reviewReasons", []).append("contiguous_block_house_filled")
-                elif prev_h:
-                    curr_g = loose_person_key(rec.get("guardianName"))
-                    prev_g = loose_person_key(records[i - 1].get("guardianName")) if i > 0 else ""
-                    prev_n = loose_person_key(records[i - 1].get("name")) if i > 0 else ""
-                    if curr_g and (fuzzy_name_match(curr_g, prev_g) or fuzzy_name_match(curr_g, prev_n)):
-                        rec["suggestedHouseNumber"] = prev_h
-                        rec["houseNumber"] = prev_h
-                        rec.setdefault("reviewReasons", []).append("contiguous_family_house_propagated")
-
-    # Rule 6: Sequential Gap & Family Run Filling for unassigned blocks
-    i = 0
-    while i < n_rec:
-        if not get_digits(records[i].get("houseNumber")):
-            run_start = i
-            while i < n_rec and not get_digits(records[i].get("houseNumber")) and str(records[i].get("sectionNumber") or "").strip() == str(records[run_start].get("sectionNumber") or "").strip():
-                i += 1
-            run_end = i - 1
-
-            prev_idx = run_start - 1
-            next_idx = run_end + 1
-            prev_h = get_digits(records[prev_idx].get("houseNumber")) if prev_idx >= 0 else ""
-            next_h = get_digits(records[next_idx].get("houseNumber")) if next_idx < n_rec else ""
-
-            inferred_house = ""
-            if prev_h and next_h and prev_h.isdigit() and next_h.isdigit():
-                p_val = int(prev_h)
-                n_val = int(next_h)
-                if n_val - p_val == 2:
-                    inferred_house = str(p_val + 1)
-                elif n_val == p_val:
-                    inferred_house = str(p_val)
-            elif prev_h and prev_h.isdigit():
-                inferred_house = prev_h
-
-            if inferred_house:
-                for k in range(run_start, run_end + 1):
-                    rec = records[k]
-                    rec["suggestedHouseNumber"] = inferred_house
-                    rec["houseNumber"] = inferred_house
-                    rec.setdefault("reviewReasons", []).append("sequential_family_gap_filled")
-        else:
-            i += 1
-
+    # A new/different house number naturally starts a new sequence: there is no
+    # previous-card propagation. Guardian matching is scoped to the same section
+    # and only fills missing or malformed values, retaining review provenance.
+    reconcile_family_tree_houses(records)
     # Upgraded Section-Scoped Family Tree Consensus Engine:
     # Cluster records by (sectionNumber, houseNumber) to avoid cross-section contamination.
     # Within the same house, align noisy OCR guardian & voter names to consensus family head spellings.
