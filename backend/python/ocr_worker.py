@@ -2091,18 +2091,32 @@ def main():
         cell_num = record.get("cell")
 
         assigned_serial = None
+        expected_seq = (last_valid_serial + 1) if last_valid_serial > 0 else (
+            (consensus_start + idx) if consensus_start is not None else None
+        )
 
-        # Primary: Direct top-left card serial box OCR
+        # Primary: Direct top-left card serial box OCR with truncation auto-repair
         if raw_ocr.isdigit():
             val = int(raw_ocr)
-            if last_valid_serial == 0:
-                if consensus_start is not None and abs((val - idx) - consensus_start) <= 2:
+            if expected_seq is not None:
+                if val == expected_seq:
                     assigned_serial = val
-                elif consensus_start is not None:
-                    assigned_serial = consensus_start + idx
+                elif str(expected_seq).endswith(str(val)) or (expected_seq > val and (expected_seq - val) % 100 == 0):
+                    # Truncated OCR read (e.g. read 36 instead of 136, or 37 instead of 137)
+                    assigned_serial = expected_seq
+                elif abs(val - expected_seq) <= 2:
+                    assigned_serial = val
+                elif last_valid_serial > 0 and val < last_valid_serial:
+                    # Backward jump noise (e.g. 36 after 135) -> use expected sequence
+                    assigned_serial = expected_seq
+                elif last_valid_serial == 0 and consensus_start is not None:
+                    if abs((val - idx) - consensus_start) <= 2:
+                        assigned_serial = val
+                    else:
+                        assigned_serial = expected_seq
                 else:
                     assigned_serial = val
-            elif last_valid_serial < val <= last_valid_serial + 40:
+            else:
                 assigned_serial = val
 
         # Fallback 1: Sequential increment from last valid serial
