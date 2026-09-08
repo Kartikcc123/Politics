@@ -16,10 +16,14 @@ class _BulkAnubhagEditorPageState extends State<BulkAnubhagEditorPage> {
   Set<String> selectedIds = {};
   
   List<String> villages = [];
+  List<String> partNumbers = [];
+  String filterType = 'partNumber'; // 'partNumber' or 'village'
   String? selectedVillage;
+  String? selectedPartNumber;
   
   List<String> existingSections = [];
   
+  final villageNameController = TextEditingController();
   final sectionNameController = TextEditingController();
   final sectionNumberController = TextEditingController();
 
@@ -36,6 +40,7 @@ class _BulkAnubhagEditorPageState extends State<BulkAnubhagEditorPage> {
 
   @override
   void dispose() {
+    villageNameController.dispose();
     sectionNameController.dispose();
     sectionNumberController.dispose();
     fromSerialController.dispose();
@@ -49,17 +54,21 @@ class _BulkAnubhagEditorPageState extends State<BulkAnubhagEditorPage> {
       final res = await api.get('/api/members/filter-options');
       if (res is Map<String, dynamic>) {
         final rawVillages = (res['villages'] as List?)?.map((e) => '$e').where((e) => e.isNotEmpty).toList() ?? [];
+        final rawParts = (res['partNumbers'] as List?)?.map((e) => '$e').where((e) => e.isNotEmpty).toList() ?? [];
         final rawSections = (res['sectionNames'] as List?)?.map((e) => '$e').where((e) => e.isNotEmpty).toList() ?? [];
         setState(() {
           villages = rawVillages;
+          partNumbers = rawParts;
           existingSections = rawSections;
-          if (villages.isNotEmpty && selectedVillage == null) {
+          if (partNumbers.isNotEmpty) {
+            filterType = 'partNumber';
+            selectedPartNumber = partNumbers.first;
+          } else if (villages.isNotEmpty) {
+            filterType = 'village';
             selectedVillage = villages.first;
           }
         });
-        if (selectedVillage != null) {
-          await _fetchVoters();
-        }
+        await _fetchVoters();
       }
     } catch (e) {
       if (mounted) {
@@ -71,14 +80,19 @@ class _BulkAnubhagEditorPageState extends State<BulkAnubhagEditorPage> {
   }
 
   Future<void> _fetchVoters() async {
-    if (selectedVillage == null) return;
     setState(() => loading = true);
     try {
-      final res = await api.get('/api/members', query: {
-        'village': selectedVillage!,
+      final query = <String, String>{
         'limit': '1000',
         'sortBy': 'voterSerial',
-      });
+      };
+      if (filterType == 'partNumber' && selectedPartNumber != null) {
+        query['partNumber'] = selectedPartNumber!;
+      } else if (filterType == 'village' && selectedVillage != null) {
+        query['village'] = selectedVillage!;
+      }
+
+      final res = await api.get('/api/members', query: query);
       final items = (res is Map && res['items'] is List)
           ? List<Map<String, dynamic>>.from(res['items'])
           : [];
@@ -125,12 +139,13 @@ class _BulkAnubhagEditorPageState extends State<BulkAnubhagEditorPage> {
   }
 
   Future<void> _submitBulkUpdate() async {
+    final targetVillage = villageNameController.text.trim();
     final targetSection = sectionNameController.text.trim();
     final targetNumber = sectionNumberController.text.trim();
     
-    if (targetSection.isEmpty && targetNumber.isEmpty) {
+    if (targetVillage.isEmpty && targetSection.isEmpty && targetNumber.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('कृपया अनुभाग का नाम या नंबर दर्ज करें (जैसे: 1-3 या 1- भीटा माजरा)।')),
+        const SnackBar(content: Text('कृपया गाँव का नाम या अनुभाग का नाम/नंबर दर्ज करें।')),
       );
       return;
     }
@@ -147,16 +162,16 @@ class _BulkAnubhagEditorPageState extends State<BulkAnubhagEditorPage> {
         'memberIds': selectedIds.toList(),
         'dryRun': false,
         'updates': {
+          if (targetVillage.isNotEmpty) 'village': targetVillage,
           if (targetSection.isNotEmpty) 'sectionName': targetSection,
           if (targetNumber.isNotEmpty) 'sectionNumber': targetNumber,
-          if (selectedVillage != null) 'village': selectedVillage,
         },
       });
 
       final count = res['updated'] ?? selectedIds.length;
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('सफलतापूर्वक ${count} वोटरों का अनुभाग अपडेट हो गया! ✅')),
+          SnackBar(content: Text('सफलतापूर्वक ${count} वोटरों का डेटा अपडेट हो गया! ✅')),
         );
       }
       api.notifyDataChanged();
@@ -180,8 +195,8 @@ class _BulkAnubhagEditorPageState extends State<BulkAnubhagEditorPage> {
         title: const Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('बल्क अनुभाग एवं गाँव सुधार', style: TextStyle(color: navy, fontWeight: FontWeight.w900, fontSize: 16)),
-            Text('गाँव के सभी वोटरों का अनुभाग एक साथ सही करें', style: TextStyle(color: muted, fontSize: 11)),
+            Text('बल्क गाँव एवं अनुभाग सुधार', style: TextStyle(color: navy, fontWeight: FontWeight.w900, fontSize: 16)),
+            Text('भाग / बूथ या गाँव के वोटरों का गाँव और अनुभाग सही करें', style: TextStyle(color: muted, fontSize: 11)),
           ],
         ),
         backgroundColor: Colors.white,
@@ -238,19 +253,53 @@ class _BulkAnubhagEditorPageState extends State<BulkAnubhagEditorPage> {
           children: [
             Row(
               children: [
-                const Icon(Icons.location_city_rounded, color: primary, size: 20),
+                ChoiceChip(
+                  label: const Text('भाग / बूथ संख्या से'),
+                  selected: filterType == 'partNumber',
+                  onSelected: (val) {
+                    if (val) {
+                      setState(() => filterType = 'partNumber');
+                      _fetchVoters();
+                    }
+                  },
+                ),
                 const SizedBox(width: 8),
-                const Text('गाँव चुनें:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                ChoiceChip(
+                  label: const Text('गाँव के नाम से'),
+                  selected: filterType == 'village',
+                  onSelected: (val) {
+                    if (val) {
+                      setState(() => filterType = 'village');
+                      _fetchVoters();
+                    }
+                  },
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Icon(filterType == 'partNumber' ? Icons.how_to_vote_rounded : Icons.location_city_rounded, color: primary, size: 20),
+                const SizedBox(width: 8),
+                Text(filterType == 'partNumber' ? 'भाग संख्या चुनें:' : 'गाँव चुनें:', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
                 const SizedBox(width: 12),
                 Expanded(
                   child: DropdownButtonHideUnderline(
                     child: DropdownButton<String>(
                       isExpanded: true,
-                      value: selectedVillage,
-                      items: villages.map((v) => DropdownMenuItem(value: v, child: Text(v))).toList(),
+                      value: filterType == 'partNumber' ? selectedPartNumber : selectedVillage,
+                      items: (filterType == 'partNumber' ? partNumbers : villages)
+                          .map((v) => DropdownMenuItem(value: v, child: Text(filterType == 'partNumber' ? 'भाग $v' : v)))
+                          .toList(),
                       onChanged: (val) {
                         if (val != null) {
-                          setState(() => selectedVillage = val);
+                          setState(() {
+                            if (filterType == 'partNumber') {
+                              selectedPartNumber = val;
+                            } else {
+                              selectedVillage = val;
+                            }
+                          });
                           _fetchVoters();
                         }
                       },
@@ -298,7 +347,18 @@ class _BulkAnubhagEditorPageState extends State<BulkAnubhagEditorPage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('अनुभाग (Anubhag) नाम या नंबर सेट करें:', style: TextStyle(fontWeight: FontWeight.bold, color: navy)),
+            const Text('गाँव और अनुभाग (Anubhag) सेट करें:', style: TextStyle(fontWeight: FontWeight.bold, color: navy)),
+            const SizedBox(height: 8),
+            TextField(
+              controller: villageNameController,
+              decoration: InputDecoration(
+                hintText: 'गाँव का नाम (उदा: भीटा माजरा)',
+                filled: true,
+                fillColor: Colors.white,
+                contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+              ),
+            ),
             const SizedBox(height: 8),
             Row(
               children: [
@@ -307,7 +367,7 @@ class _BulkAnubhagEditorPageState extends State<BulkAnubhagEditorPage> {
                   child: TextField(
                     controller: sectionNameController,
                     decoration: InputDecoration(
-                      hintText: 'अनुभाग नाम (जैसे: 1- भीटा माजरा)',
+                      hintText: 'अनुभाग नाम (उदा: 1- भीटा माजरा)',
                       filled: true,
                       fillColor: Colors.white,
                       contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
@@ -321,7 +381,7 @@ class _BulkAnubhagEditorPageState extends State<BulkAnubhagEditorPage> {
                   child: TextField(
                     controller: sectionNumberController,
                     decoration: InputDecoration(
-                      hintText: 'नंबर (जैसे: 1)',
+                      hintText: 'नंबर (उदा: 1)',
                       filled: true,
                       fillColor: Colors.white,
                       contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
@@ -405,7 +465,7 @@ class _BulkAnubhagEditorPageState extends State<BulkAnubhagEditorPage> {
   Widget _buildSelectionBar() {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-      Row(
+      child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
           Text(
@@ -443,6 +503,7 @@ class _BulkAnubhagEditorPageState extends State<BulkAnubhagEditorPage> {
         final id = '${voter['_id']}';
         final isSelected = selectedIds.contains(id);
         final currentSec = voter['sectionName'] ?? 'अनुभाग उपलब्ध नहीं';
+        final currentVil = voter['village'] ?? 'गाँव उपलब्ध नहीं';
 
         return Card(
           margin: const EdgeInsets.only(bottom: 6),
@@ -478,8 +539,8 @@ class _BulkAnubhagEditorPageState extends State<BulkAnubhagEditorPage> {
               ],
             ),
             subtitle: Text(
-              'मकान: ${voter['houseNumber'] ?? '-'} | वर्तमान अनुभाग: $currentSec',
-              style: TextStyle(fontSize: 12, color: currentSec.contains('उपलब्ध नहीं') ? Colors.red : muted),
+              'भाग: ${voter['partNumber'] ?? '-'} | मकान: ${voter['houseNumber'] ?? '-'} | गाँव: $currentVil\nअनुभाग: $currentSec',
+              style: TextStyle(fontSize: 12, color: (currentSec.contains('उपलब्ध नहीं') || currentVil.contains('उपलब्ध नहीं')) ? Colors.red : muted),
             ),
           ),
         );
