@@ -2082,13 +2082,16 @@ def main():
         raw_val = str(r.get("voterSerial") or "").translate(str.maketrans("०१२३४५६७८९", "0123456789"))
         if raw_val.isdigit():
             val = int(raw_val)
+            # If val is small (e.g. < 50) but index is large or consensus would be small, don't let truncated numbers distort best_start
             expected_start = val - idx
             if expected_start >= 1:
                 start_offsets[expected_start] = start_offsets.get(expected_start, 0) + 1
 
     consensus_start = None
     if start_offsets:
-        best_start, count = max(start_offsets.items(), key=lambda item: item[1])
+        # Prefer higher start values if counts are tied or close to avoid truncated reads picking 1 over 101/201/301/1001
+        sorted_starts = sorted(start_offsets.items(), key=lambda item: (item[1], item[0]), reverse=True)
+        best_start, count = sorted_starts[0]
         if count >= 2 or len(records) < 4:
             consensus_start = best_start
     if consensus_start is None and isinstance(global_start_serial, int) and global_start_serial > 0:
@@ -2105,19 +2108,19 @@ def main():
             (consensus_start + idx) if consensus_start is not None else None
         )
 
-        # Primary: Direct top-left card serial box OCR with truncation auto-repair
+        # Primary: Direct top-left card serial box OCR with strict truncation auto-repair & jump rejection
         if raw_ocr.isdigit():
             val = int(raw_ocr)
             if expected_seq is not None:
                 if val == expected_seq:
                     assigned_serial = val
-                elif str(expected_seq).endswith(str(val)) or (expected_seq > val and (expected_seq - val) % 100 == 0):
-                    # Truncated OCR read (e.g. read 36 instead of 136, or 37 instead of 137)
+                elif str(expected_seq).endswith(str(val)) or (expected_seq > val and (expected_seq - val) % 100 == 0) or (expected_seq > val and (expected_seq - val) % 1000 == 0):
+                    # Truncated OCR read (e.g. read 21/25/36 instead of 121/1025/136)
                     assigned_serial = expected_seq
                 elif abs(val - expected_seq) <= 2:
                     assigned_serial = val
-                elif last_valid_serial > 0 and val < last_valid_serial:
-                    # Backward jump noise (e.g. 36 after 135) -> use expected sequence
+                elif expected_seq > val:
+                    # Any smaller OCR value than expected sequence when progressing (e.g. 21 or 25 after 120 or expected 1025) -> override with expected sequence
                     assigned_serial = expected_seq
                 elif last_valid_serial == 0 and consensus_start is not None:
                     if abs((val - idx) - consensus_start) <= 2:
@@ -2125,7 +2128,11 @@ def main():
                     else:
                         assigned_serial = expected_seq
                 else:
-                    assigned_serial = val
+                    # Forward jump > 2 -> cap or check if plausible, but maintain sequential sanity
+                    if val > expected_seq + 10:
+                        assigned_serial = expected_seq
+                    else:
+                        assigned_serial = val
             else:
                 assigned_serial = val
 
