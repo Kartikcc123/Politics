@@ -913,6 +913,9 @@ def detect_card_boxes(image):
                 return interpolated
         except Exception:
             pass
+    if len(unique) > 0:
+        unique.sort(key=lambda b: (round(b[1] / (height * 0.08)), b[0]))
+        return unique
     return []
 
 
@@ -1026,6 +1029,20 @@ def process_page(page_path, output_dir, page_no):
     max_workers = max(1, int(os.getenv("OCR_CELL_CONCURRENCY", os.getenv("OCR_THREAD_WORKERS", "4"))))
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         records = list(executor.map(_process_single_card, task_args))
+
+    # Filter out completely empty card slots (blank paper regions on partial pages)
+    records = [
+        r for r in records
+        if (
+            r.get("name")
+            or r.get("guardianName")
+            or r.get("voterId")
+            or r.get("houseNumber")
+            or r.get("age") is not None
+            or r.get("voterSerial")
+            or r.get("isDeleted")
+        )
+    ]
 
 
     # Printed electoral rolls are ordered by house number.
