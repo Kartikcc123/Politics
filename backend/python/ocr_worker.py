@@ -235,9 +235,8 @@ def clean_house(value):
     normalized = (value or "").translate(
         str.maketrans("\u0966\u0967\u0968\u0969\u096a\u096b\u096c\u096d\u096e\u096fOQILSZBGil|!][", "012345678900112586111111")
     )
-    # Remove leading non-digit symbols like ':', '|', '/', '-', '.' or hyphenated prefixes like '1-', '7-'
+    # Remove leading non-digit symbols like ':', '|', '/', '-', '.' or hyphenated label noise
     normalized = re.sub(r"^(?:[:\|/\-\.]+\s*)+", "", normalized.strip())
-    normalized = re.sub(r"^(?:[174][\-/|:]+\s*)+", "", normalized.strip())
     match = re.search(r"(?<!\d)(\d{1,5}(?:[/\-]\d{1,5})?)(?!\d)", normalized)
     if not match:
         return ""
@@ -248,21 +247,10 @@ def clean_house(value):
         if len(parts) == 2 and parts[0] == parts[1]:
             val = parts[0]
 
-    # Strip OCR colon/label/border noise prepended to 4-digit or 3-digit house numbers (e.g., 64194 -> 4194, 6112 -> 112, 14194 -> 4194)
-    if len(val) > 1 and val.startswith("0") and val not in ("00", "000"):
+    # Remove noise leading zero for house numbers like 01 -> 1, 05 -> 5 (preserve 0 / 00 / 000)
+    if len(val) > 1 and val.startswith("0") and not re.fullmatch(r"0+", val):
         val = val.lstrip("0")
-    if len(val) == 5 and val[1:].isdigit() and (val[1:3] in ("41", "42", "11", "26") or val[1:] in ("4194", "4195", "4196", "4197", "4215", "112", "261", "417")):
-        val = val[1:]
-    elif len(val) == 6 and val[0:2] in ("12", "14", "15", "17", "44", "47", "64") and val[2:].isdigit():
-        val = val[2:]
-    elif len(val) == 5 and val[0] in (":", "|", "l", "i") and val[1:].isdigit():
-        val = val[1:]
-    elif len(val) == 5 and val[0:2] in ("14", "17", "44", "74", "15") and val[1:].isdigit():
-        val = val[1:]
-    elif len(val) == 4 and val[0:2] in ("44", "47") and val[2:].isdigit() and int(val[2:]) >= 50:
-        val = "41" + val[2:]
     return val
-
 
 
 def get_digits(value):
@@ -336,12 +324,12 @@ def ocr_house(card, card_full_text=None):
     c_full = ""
     if card_full_text:
         house_line_full = field(card_full_text, r"(?:गृह|गह|गुह|ग्ह|गृ|गृ\.|मकान|House|H\.No|Te|\S*ह|\S*स)\s*(?:संख्या|सख्या|सं\.?|सं०|नं\.?|क्र\.?|Number|No\.?)?\s*[:：;\-।|]?\s*([^\n]+)")
-        c_full = clean_house(house_line_full or card_full_text)
+        c_full = clean_house(house_line_full)
 
-    # Crop house number ROI expanded (y: 0.35 to 0.74, x: 0.03 to 0.85)
+    # Crop house number ROI (y: 0.40 to 0.74, x: 0.03 to 0.78)
     region = card[
-        round(height * 0.35):round(height * 0.74),
-        round(width * 0.03):round(width * 0.85),
+        round(height * 0.40):round(height * 0.74),
+        round(width * 0.03):round(width * 0.78),
     ]
     if region.size == 0:
         return c_full
@@ -359,6 +347,12 @@ def ocr_house(card, card_full_text=None):
     c1_values = []
     c2_values = []
     for variant in variants:
+        t_hin = safe_image_to_string(variant, lang="hin+eng", config="--psm 6")
+        house_line = field(t_hin, r"(?:गृह|गह|गुह|ग्ह|गृ|गृ\.|मकान|House|H\.No|Te|\S*ह|\S*स)\s*(?:संख्या|सख्या|सं\.?|सं०|नं\.?|क्र\.?|Number|No\.?)?\s*[:：;\-।|]?\s*([^\n]+)")
+        c1 = clean_house(house_line)
+        if c1:
+            c1_values.append(c1)
+
         t_eng = safe_image_to_string(
             variant, lang="eng", config="--psm 6 -c tessedit_char_whitelist=0123456789/-",
         )
@@ -366,45 +360,24 @@ def ocr_house(card, card_full_text=None):
         if c2:
             c2_values.append(c2)
 
-        t_hin = safe_image_to_string(variant, lang="hin+eng", config="--psm 6")
-        house_line = field(t_hin, r"(?:गृह|गह|गुह|ग्ह|गृ|गृ\.|मकान|House|H\.No|Te|\S*ह|\S*स)\s*(?:संख्या|सख्या|सं\.?|सं०|नं\.?|क्र\.?|Number|No\.?)?\s*[:：;\-।|]?\s*([^\n]+)")
-        c1 = clean_house(house_line or t_hin)
-        if c1:
-            c1_values.append(c1)
+    # 1. Prioritize Devanagari house line regex extraction (c1_values or c_full)
+    if c1_values:
+        counts = {v: c1_values.count(v) for v in set(c1_values)}
+        winner, _ = max(counts.items(), key=lambda x: (x[1], len(x[0])))
+        if winner:
+            return winner
 
-    winner = ""
-    # 1. Prefer English digit whitelist OCR (supports 1, 2, 3, 4, 5 digit numbers)
+    if c_full:
+        return c_full
+
+    # 2. Fallback to English digit whitelist OCR if label regex yielded nothing
     if c2_values:
         counts = {v: c2_values.count(v) for v in set(c2_values)}
-        cand, _ = max(counts.items(), key=lambda x: (x[1], len(x[0])))
-        if cand:
-            if cand == "267": cand = "261"
-            if cand == "496": cand = "4196"
-            winner = cand
-
-    if not winner and c1_values:
-        counts = {v: c1_values.count(v) for v in set(c1_values)}
         winner, _ = max(counts.items(), key=lambda x: (x[1], len(x[0])))
+        if winner:
+            return winner
 
-    if not winner and c2_values:
-        counts = {v: c2_values.count(v) for v in set(c2_values)}
-        winner, _ = max(counts.items(), key=lambda x: (x[1], len(x[0])))
-
-    if c_full and len(c_full) >= 3 and (not winner or len(winner) < len(c_full)):
-        return c_full
-
-    if not winner and c1_values:
-        counts = {v: c1_values.count(v) for v in set(c1_values)}
-        winner, _ = max(counts.items(), key=lambda x: (x[1], len(x[0])))
-
-    if not winner and c2_values:
-        counts = {v: c2_values.count(v) for v in set(c2_values)}
-        winner, _ = max(counts.items(), key=lambda x: (x[1], len(x[0])))
-
-    if c_full and len(c_full) >= 3 and (not winner or len(winner) < len(c_full)):
-        return c_full
-
-    return winner or c_full
+    return c_full
 
 def _dual_fixed_choice(card, y1, y2, x1, x2, extractor, language="eng", whitelist=""):
     """Return a fixed-region value only when two preprocessing passes agree."""
