@@ -2117,22 +2117,19 @@ def main():
                 elif str(expected_seq).endswith(str(val)) or (expected_seq > val and (expected_seq - val) % 100 == 0) or (expected_seq > val and (expected_seq - val) % 1000 == 0):
                     # Truncated OCR read (e.g. read 21/25/36 instead of 121/1025/136)
                     assigned_serial = expected_seq
-                elif abs(val - expected_seq) <= 2:
+                elif abs(val - expected_seq) <= 1:
                     assigned_serial = val
                 elif expected_seq > val:
                     # Any smaller OCR value than expected sequence when progressing (e.g. 21 or 25 after 120 or expected 1025) -> override with expected sequence
                     assigned_serial = expected_seq
                 elif last_valid_serial == 0 and consensus_start is not None:
-                    if abs((val - idx) - consensus_start) <= 2:
+                    if abs((val - idx) - consensus_start) <= 1:
                         assigned_serial = val
                     else:
                         assigned_serial = expected_seq
                 else:
-                    # Forward jump > 2 -> cap or check if plausible, but maintain sequential sanity
-                    if val > expected_seq + 10:
-                        assigned_serial = expected_seq
-                    else:
-                        assigned_serial = val
+                    # Isolated noisy OCR jump (e.g. OCR read 98 instead of real sequential 96) -> override with expected sequence
+                    assigned_serial = expected_seq
             else:
                 assigned_serial = val
 
