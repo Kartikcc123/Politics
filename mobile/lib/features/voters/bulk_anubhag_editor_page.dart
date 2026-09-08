@@ -17,9 +17,10 @@ class _BulkAnubhagEditorPageState extends State<BulkAnubhagEditorPage> {
   
   List<String> villages = [];
   List<String> partNumbers = [];
-  String filterType = 'partNumber'; // 'partNumber' or 'village'
+  String filterType = 'partNumber'; // 'partNumber' or 'village' or 'all'
   String? selectedVillage;
   String? selectedPartNumber;
+  final customPartController = TextEditingController();
   
   List<String> existingSections = [];
   
@@ -35,11 +36,12 @@ class _BulkAnubhagEditorPageState extends State<BulkAnubhagEditorPage> {
   @override
   void initState() {
     super.initState();
-    _loadFilterOptions();
+    _loadInitialData();
   }
 
   @override
   void dispose() {
+    customPartController.dispose();
     villageNameController.dispose();
     sectionNameController.dispose();
     sectionNumberController.dispose();
@@ -48,35 +50,74 @@ class _BulkAnubhagEditorPageState extends State<BulkAnubhagEditorPage> {
     super.dispose();
   }
 
-  Future<void> _loadFilterOptions() async {
+  Future<void> _loadInitialData() async {
     setState(() => loading = true);
     try {
-      final res = await api.get('/api/members/filter-options');
-      if (res is Map<String, dynamic>) {
-        final rawVillages = (res['villages'] as List?)?.map((e) => '$e').where((e) => e.isNotEmpty).toList() ?? [];
-        final rawParts = (res['partNumbers'] as List?)?.map((e) => '$e').where((e) => e.isNotEmpty).toList() ?? [];
-        final rawSections = (res['sectionNames'] as List?)?.map((e) => '$e').where((e) => e.isNotEmpty).toList() ?? [];
-        setState(() {
-          villages = rawVillages;
-          partNumbers = rawParts;
-          existingSections = rawSections;
-          if (partNumbers.isNotEmpty) {
-            filterType = 'partNumber';
-            selectedPartNumber = partNumbers.first;
-          } else if (villages.isNotEmpty) {
-            filterType = 'village';
-            selectedVillage = villages.first;
-          }
-        });
-        await _fetchVoters();
-      }
+      await _loadFilterOptions();
+      await _fetchVoters();
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('फ़िल्टर लोड नहीं हो पाए: $e')));
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('डेटा लोड करने में त्रुटि: $e')));
       }
     } finally {
       if (mounted) setState(() => loading = false);
     }
+  }
+
+  Future<void> _loadFilterOptions() async {
+    try {
+      final res = await api.get('/api/members/filter-options');
+      List<String> rawVillages = [];
+      List<String> rawParts = [];
+      List<String> rawSections = [];
+
+      if (res is Map<String, dynamic>) {
+        final vList = res['village'] ?? res['villages'];
+        if (vList is List) {
+          for (final item in vList) {
+            if (item is Map) {
+              final val = '${item['value'] ?? item['label'] ?? ''}'.trim();
+              if (val.isNotEmpty) rawVillages.add(val);
+            } else if (item != null) {
+              final val = '$item'.trim();
+              if (val.isNotEmpty) rawVillages.add(val);
+            }
+          }
+        }
+
+        final pList = res['partNumber'] ?? res['partNumbers'] ?? res['booth'];
+        if (pList is List) {
+          for (final item in pList) {
+            if (item is Map) {
+              final val = '${item['value'] ?? item['label'] ?? ''}'.trim();
+              if (val.isNotEmpty) rawParts.add(val);
+            } else if (item != null) {
+              final val = '$item'.trim();
+              if (val.isNotEmpty) rawParts.add(val);
+            }
+          }
+        }
+
+        final sList = res['sectionName'] ?? res['sectionNames'];
+        if (sList is List) {
+          for (final item in sList) {
+            if (item is Map) {
+              final val = '${item['value'] ?? item['label'] ?? ''}'.trim();
+              if (val.isNotEmpty) rawSections.add(val);
+            } else if (item != null) {
+              final val = '$item'.trim();
+              if (val.isNotEmpty) rawSections.add(val);
+            }
+          }
+        }
+      }
+
+      setState(() {
+        villages = rawVillages.toSet().toList();
+        partNumbers = rawParts.toSet().toList();
+        existingSections = rawSections.toSet().toList();
+      });
+    } catch (_) {}
   }
 
   Future<void> _fetchVoters() async {
@@ -87,9 +128,11 @@ class _BulkAnubhagEditorPageState extends State<BulkAnubhagEditorPage> {
         'limit': '1000',
         'sortBy': 'voterSerial',
       };
-      if (filterType == 'partNumber' && selectedPartNumber != null) {
-        query['partNumber'] = selectedPartNumber!;
-      } else if (filterType == 'village' && selectedVillage != null) {
+      
+      final activePart = selectedPartNumber ?? customPartController.text.trim();
+      if (filterType == 'partNumber' && activePart.isNotEmpty) {
+        query['partNumber'] = activePart;
+      } else if (filterType == 'village' && selectedVillage != null && selectedVillage!.isNotEmpty) {
         query['village'] = selectedVillage!;
       }
 
@@ -97,6 +140,33 @@ class _BulkAnubhagEditorPageState extends State<BulkAnubhagEditorPage> {
       final List<Map<String, dynamic>> items = (res is Map && res['items'] is List)
           ? List<Map<String, dynamic>>.from(res['items'])
           : <Map<String, dynamic>>[];
+
+      // Extract part numbers dynamically if list was empty
+      if (partNumbers.isEmpty && items.isNotEmpty) {
+        final extractedParts = items
+            .map((v) => '${v['partNumber'] ?? ''}'.trim())
+            .where((p) => p.isNotEmpty)
+            .toSet()
+            .toList();
+        if (extractedParts.isNotEmpty) {
+          partNumbers = extractedParts;
+          if (selectedPartNumber == null) {
+            selectedPartNumber = extractedParts.first;
+          }
+        }
+      }
+
+      // Extract villages dynamically if empty
+      if (villages.isEmpty && items.isNotEmpty) {
+        final extractedVillages = items
+            .map((v) => '${v['village'] ?? ''}'.trim())
+            .where((v) => v.isNotEmpty)
+            .toSet()
+            .toList();
+        if (extractedVillages.isNotEmpty) {
+          villages = extractedVillages;
+        }
+      }
 
       setState(() {
         if (showMissingOnly) {
@@ -115,12 +185,18 @@ class _BulkAnubhagEditorPageState extends State<BulkAnubhagEditorPage> {
     }
   }
 
+  void _applyQuickRange(int from, int to) {
+    fromSerialController.text = '$from';
+    toSerialController.text = '$to';
+    _applySerialRangeSelection();
+  }
+
   void _applySerialRangeSelection() {
     final from = int.tryParse(fromSerialController.text.trim());
     final to = int.tryParse(toSerialController.text.trim());
     if (from == null || to == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('कृपया सही सीरियल नंबर (जैसे 1 से 60) दर्ज करें।')),
+        const SnackBar(content: Text('कृपया सही सीरियल नंबर (जैसे 1 से 30) दर्ज करें।')),
       );
       return;
     }
@@ -135,7 +211,7 @@ class _BulkAnubhagEditorPageState extends State<BulkAnubhagEditorPage> {
       selectedIds = rangeIds;
     });
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('सीरियल ${from} से ${to} तक के ${rangeIds.length} मतदाता चुने गए')),
+      SnackBar(content: Text('सीरियल $from से $to तक के ${rangeIds.length} मतदाता चुने गए')),
     );
   }
 
@@ -172,7 +248,7 @@ class _BulkAnubhagEditorPageState extends State<BulkAnubhagEditorPage> {
       final count = res['updated'] ?? selectedIds.length;
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('सफलतापूर्वक ${count} वोटरों का डेटा अपडेट हो गया! ✅')),
+          SnackBar(content: Text('सफलतापूर्वक $count वोटरों का डेटा अपडेट हो गया! ✅')),
         );
       }
       api.notifyDataChanged();
@@ -197,7 +273,7 @@ class _BulkAnubhagEditorPageState extends State<BulkAnubhagEditorPage> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text('बल्क गाँव एवं अनुभाग सुधार', style: TextStyle(color: navy, fontWeight: FontWeight.w900, fontSize: 16)),
-            Text('भाग / बूथ या गाँव के वोटरों का गाँव और अनुभाग सही करें', style: TextStyle(color: muted, fontSize: 11)),
+            Text('भाग / बूथ के वोटरों का गाँव और अनुभाग सही करें', style: TextStyle(color: muted, fontSize: 11)),
           ],
         ),
         backgroundColor: Colors.white,
@@ -208,6 +284,7 @@ class _BulkAnubhagEditorPageState extends State<BulkAnubhagEditorPage> {
           ? const Center(child: CircularProgressIndicator())
           : Column(
               children: [
+                _buildInstructionBanner(),
                 _buildTopFilterCard(),
                 _buildAnubhagEditorCard(),
                 _buildSelectionBar(),
@@ -218,7 +295,7 @@ class _BulkAnubhagEditorPageState extends State<BulkAnubhagEditorPage> {
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
           color: Colors.white,
-          boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10, offset: const Offset(0, -4))],
+          boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 10, offset: const Offset(0, -4))],
         ),
         child: SafeArea(
           child: ElevatedButton.icon(
@@ -242,9 +319,33 @@ class _BulkAnubhagEditorPageState extends State<BulkAnubhagEditorPage> {
     );
   }
 
+  Widget _buildInstructionBanner() {
+    return Container(
+      margin: const EdgeInsets.fromLTRB(12, 10, 12, 0),
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: const Color(0xfffff8e6),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: const Color(0xffffe0b2)),
+      ),
+      child: const Row(
+        children: [
+          Icon(Icons.lightbulb_outline_rounded, color: Colors.orange, size: 22),
+          SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              '1️⃣ भाग / गाँव चुनें ➔ 2️⃣ सही गाँव व अनुभाग भरें ➔ 3️⃣ सीरियल नंबर चुनें (उदा: 1 से 30) और नीचे बटन दबाएं।',
+              style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xff7a4f01)),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildTopFilterCard() {
     return Card(
-      margin: const EdgeInsets.all(12),
+      margin: const EdgeInsets.fromLTRB(12, 8, 12, 6),
       elevation: 0,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12), side: BorderSide(color: Colors.grey.shade200)),
       child: Padding(
@@ -252,6 +353,7 @@ class _BulkAnubhagEditorPageState extends State<BulkAnubhagEditorPage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            // Mode selector
             Row(
               children: [
                 ChoiceChip(
@@ -275,40 +377,106 @@ class _BulkAnubhagEditorPageState extends State<BulkAnubhagEditorPage> {
                     }
                   },
                 ),
+                const SizedBox(width: 8),
+                ChoiceChip(
+                  label: const Text('सभी वोटर'),
+                  selected: filterType == 'all',
+                  onSelected: (val) {
+                    if (val) {
+                      setState(() => filterType = 'all');
+                      _fetchVoters();
+                    }
+                  },
+                ),
               ],
             ),
-            const SizedBox(height: 8),
-            Row(
-              children: [
-                Icon(filterType == 'partNumber' ? Icons.how_to_vote_rounded : Icons.location_city_rounded, color: blue, size: 20),
-                const SizedBox(width: 8),
-                Text(filterType == 'partNumber' ? 'भाग संख्या चुनें:' : 'गाँव चुनें:', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: DropdownButtonHideUnderline(
-                    child: DropdownButton<String>(
+            const SizedBox(height: 10),
+
+            // Selection controls based on filterType
+            if (filterType == 'partNumber') ...[
+              Row(
+                children: [
+                  const Icon(Icons.how_to_vote_rounded, color: blue, size: 20),
+                  const SizedBox(width: 8),
+                  const Text('भाग संख्या:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: SizedBox(
+                      height: 38,
+                      child: TextField(
+                        controller: customPartController,
+                        keyboardType: TextInputType.number,
+                        decoration: InputDecoration(
+                          hintText: 'भाग संख्या (उदा: 177)',
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                          suffixIcon: IconButton(
+                            icon: const Icon(Icons.search, size: 18),
+                            onPressed: _fetchVoters,
+                          ),
+                        ),
+                        onSubmitted: (_) => _fetchVoters(),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              if (partNumbers.isNotEmpty) ...[
+                const SizedBox(height: 8),
+                SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: Row(
+                    children: partNumbers.map((p) {
+                      final isSel = selectedPartNumber == p;
+                      return Padding(
+                        padding: const EdgeInsets.only(right: 6),
+                        child: ChoiceChip(
+                          label: Text('भाग $p', style: const TextStyle(fontSize: 12)),
+                          selected: isSel,
+                          onSelected: (selected) {
+                            setState(() {
+                              selectedPartNumber = selected ? p : null;
+                              customPartController.text = selected ? p : '';
+                            });
+                            _fetchVoters();
+                          },
+                        ),
+                      );
+                    }).toList(),
+                  ),
+                ),
+              ],
+            ] else if (filterType == 'village') ...[
+              Row(
+                children: [
+                  const Icon(Icons.location_city_rounded, color: blue, size: 20),
+                  const SizedBox(width: 8),
+                  const Text('गाँव लें:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: DropdownButtonFormField<String>(
                       isExpanded: true,
-                      value: filterType == 'partNumber' ? selectedPartNumber : selectedVillage,
-                      items: (filterType == 'partNumber' ? partNumbers : villages)
-                          .map((v) => DropdownMenuItem(value: v, child: Text(filterType == 'partNumber' ? 'भाग $v' : v)))
+                      value: villages.contains(selectedVillage) ? selectedVillage : null,
+                      hint: const Text('गाँव चुनें...'),
+                      decoration: InputDecoration(
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                      ),
+                      items: villages
+                          .map((v) => DropdownMenuItem(value: v, child: Text(v)))
                           .toList(),
                       onChanged: (val) {
                         if (val != null) {
-                          setState(() {
-                            if (filterType == 'partNumber') {
-                              selectedPartNumber = val;
-                            } else {
-                              selectedVillage = val;
-                            }
-                          });
+                          setState(() => selectedVillage = val);
                           _fetchVoters();
                         }
                       },
                     ),
                   ),
-                ),
-              ],
-            ),
+                ],
+              ),
+            ],
+
             const Divider(height: 16),
             Row(
               children: [
@@ -322,7 +490,7 @@ class _BulkAnubhagEditorPageState extends State<BulkAnubhagEditorPage> {
                 ),
                 const SizedBox(width: 8),
                 FilterChip(
-                  label: const Text('सभी वोटर'),
+                  label: const Text('सभी वोटर (अनुभाग सहित)'),
                   selected: !showMissingOnly,
                   onSelected: (val) {
                     setState(() => showMissingOnly = !val);
@@ -341,14 +509,14 @@ class _BulkAnubhagEditorPageState extends State<BulkAnubhagEditorPage> {
     return Card(
       margin: const EdgeInsets.symmetric(horizontal: 12),
       elevation: 0,
-      color: Colors.blue.shade50.withOpacity(0.5),
+      color: Colors.blue.shade50.withValues(alpha: 0.5),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12), side: BorderSide(color: Colors.blue.shade200)),
       child: Padding(
         padding: const EdgeInsets.all(12),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('गाँव और अनुभाग (Anubhag) सेट करें:', style: TextStyle(fontWeight: FontWeight.bold, color: navy)),
+            const Text('सही गाँव और अनुभाग (Anubhag) टाइप करें:', style: TextStyle(fontWeight: FontWeight.bold, color: navy, fontSize: 13)),
             const SizedBox(height: 8),
             TextField(
               controller: villageNameController,
@@ -367,6 +535,12 @@ class _BulkAnubhagEditorPageState extends State<BulkAnubhagEditorPage> {
                   flex: 3,
                   child: TextField(
                     controller: sectionNameController,
+                    onChanged: (text) {
+                      final match = RegExp(r'^(\d+)').firstMatch(text.trim());
+                      if (match != null && sectionNumberController.text.isEmpty) {
+                        sectionNumberController.text = match.group(1)!;
+                      }
+                    },
                     decoration: InputDecoration(
                       hintText: 'अनुभाग नाम (उदा: 1- भीटा माजरा)',
                       filled: true,
@@ -381,6 +555,7 @@ class _BulkAnubhagEditorPageState extends State<BulkAnubhagEditorPage> {
                   flex: 2,
                   child: TextField(
                     controller: sectionNumberController,
+                    keyboardType: TextInputType.number,
                     decoration: InputDecoration(
                       hintText: 'नंबर (उदा: 1)',
                       filled: true,
@@ -406,6 +581,10 @@ class _BulkAnubhagEditorPageState extends State<BulkAnubhagEditorPage> {
                         onPressed: () {
                           setState(() {
                             sectionNameController.text = sec;
+                            final match = RegExp(r'^(\d+)').firstMatch(sec.trim());
+                            if (match != null) {
+                              sectionNumberController.text = match.group(1)!;
+                            }
                           });
                         },
                       ),
@@ -415,7 +594,25 @@ class _BulkAnubhagEditorPageState extends State<BulkAnubhagEditorPage> {
               ),
             ],
             const Divider(height: 16),
-            const Text('सीरियल नंबर रेंज से चुनें (Optional):', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 12)),
+            const Text('सीरियल नंबर रेंज से चुनें (1-Click Selection):', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 12)),
+            const SizedBox(height: 6),
+            // Quick range buttons
+            SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                children: [
+                  ActionChip(label: const Text('1 से 30'), onPressed: () => _applyQuickRange(1, 30)),
+                  const SizedBox(width: 6),
+                  ActionChip(label: const Text('31 से 60'), onPressed: () => _applyQuickRange(31, 60)),
+                  const SizedBox(width: 6),
+                  ActionChip(label: const Text('61 से 90'), onPressed: () => _applyQuickRange(61, 90)),
+                  const SizedBox(width: 6),
+                  ActionChip(label: const Text('91 से 120'), onPressed: () => _applyQuickRange(91, 120)),
+                  const SizedBox(width: 6),
+                  ActionChip(label: Text('सभी (${voters.length})'), onPressed: () => _applyQuickRange(1, 1000)),
+                ],
+              ),
+            ),
             const SizedBox(height: 6),
             Row(
               children: [
@@ -424,7 +621,7 @@ class _BulkAnubhagEditorPageState extends State<BulkAnubhagEditorPage> {
                     controller: fromSerialController,
                     keyboardType: TextInputType.number,
                     decoration: InputDecoration(
-                      hintText: 'From Serial (1)',
+                      hintText: 'From (1)',
                       filled: true,
                       fillColor: Colors.white,
                       contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
@@ -441,7 +638,7 @@ class _BulkAnubhagEditorPageState extends State<BulkAnubhagEditorPage> {
                     controller: toSerialController,
                     keyboardType: TextInputType.number,
                     decoration: InputDecoration(
-                      hintText: 'To Serial (60)',
+                      hintText: 'To (30)',
                       filled: true,
                       fillColor: Colors.white,
                       contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
