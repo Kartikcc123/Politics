@@ -153,6 +153,7 @@ connectDB()
     server.requestTimeout = serverTimeoutMs;
     server.headersTimeout = serverTimeoutMs + 5000;
     server.keepAliveTimeout = 65000;
+    ImportJob.updateMany({ status: 'processing' }, { status: 'failed', stage: 'Interrupted by server restart' }).catch((err) => console.error('Stale import job cleanup failed:', err.message));
     restoreWebSessions().catch((error) => console.error('WhatsApp restore:', error.message));
     startMessageWorker();
   })
