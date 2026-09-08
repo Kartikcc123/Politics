@@ -83,6 +83,7 @@ class _BulkAnubhagEditorPageState extends State<BulkAnubhagEditorPage> {
     setState(() => loading = true);
     try {
       final query = <String, String>{
+        'paged': 'true',
         'limit': '1000',
         'sortBy': 'voterSerial',
       };
@@ -92,10 +93,10 @@ class _BulkAnubhagEditorPageState extends State<BulkAnubhagEditorPage> {
         query['village'] = selectedVillage!;
       }
 
-      final res = await api.get('/api/members', query: query);
-      final items = (res is Map && res['items'] is List)
+      final res = await api.getQuery('/api/members', query);
+      final List<Map<String, dynamic>> items = (res is Map && res['items'] is List)
           ? List<Map<String, dynamic>>.from(res['items'])
-          : [];
+          : <Map<String, dynamic>>[];
 
       setState(() {
         if (showMissingOnly) {
@@ -222,7 +223,7 @@ class _BulkAnubhagEditorPageState extends State<BulkAnubhagEditorPage> {
         child: SafeArea(
           child: ElevatedButton.icon(
             style: ElevatedButton.styleFrom(
-              backgroundColor: primary,
+              backgroundColor: blue,
               foregroundColor: Colors.white,
               padding: const EdgeInsets.symmetric(vertical: 14),
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -279,7 +280,7 @@ class _BulkAnubhagEditorPageState extends State<BulkAnubhagEditorPage> {
             const SizedBox(height: 8),
             Row(
               children: [
-                Icon(filterType == 'partNumber' ? Icons.how_to_vote_rounded : Icons.location_city_rounded, color: primary, size: 20),
+                Icon(filterType == 'partNumber' ? Icons.how_to_vote_rounded : Icons.location_city_rounded, color: blue, size: 20),
                 const SizedBox(width: 8),
                 Text(filterType == 'partNumber' ? 'भाग संख्या चुनें:' : 'गाँव चुनें:', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
                 const SizedBox(width: 12),
@@ -511,7 +512,7 @@ class _BulkAnubhagEditorPageState extends State<BulkAnubhagEditorPage> {
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8), side: BorderSide(color: Colors.grey.shade200)),
           child: CheckboxListTile(
             value: isSelected,
-            activeColor: primary,
+            activeColor: blue,
             onChanged: (val) {
               setState(() {
                 if (val == true) {

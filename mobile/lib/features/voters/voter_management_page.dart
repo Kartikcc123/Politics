@@ -1310,7 +1310,10 @@ class _VoterManagementPageState extends State<VoterManagementPage> {
                       builder: (_) => const BulkAnubhagEditorPage(),
                     ),
                   ).then((_) => setState(refreshVoters)),
-                  icon: const Icon(Icons.edit_note_rounded, color: primary),
+                  icon: Icon(
+  Icons.edit_note_rounded,
+  color: Theme.of(context).colorScheme.primary,
+),
                 ),
               if (api.user?['role'] == 'admin')
                 IconButton(
