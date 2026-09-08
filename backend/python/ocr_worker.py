@@ -1022,9 +1022,8 @@ def process_page(page_path, output_dir, page_no):
         (cell_no, box, image, page_no, output_dir)
         for cell_no, box in enumerate(boxes, 1)
     ]
-    # Parallel 300-DPI cards retain several large OpenCV buffers at once.
-    # One card at a time is the safe default for memory-constrained servers.
-    max_workers = max(1, int(os.getenv("OCR_THREAD_WORKERS", "1")))
+    # Process card cells concurrently (default 4 threads per page worker)
+    max_workers = max(1, int(os.getenv("OCR_CELL_CONCURRENCY", os.getenv("OCR_THREAD_WORKERS", "4"))))
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         records = list(executor.map(_process_single_card, task_args))
 

@@ -17,7 +17,9 @@ services:
     environment:
       - NODE_ENV=production
       - IMAGE_CROP_CONCURRENCY=12
-      - OCR_CELL_CONCURRENCY=8
+      - OCR_CELL_CONCURRENCY=4
+      - OCR_THREAD_WORKERS=4
       - OCR_PAGE_CONCURRENCY=2
+      - OCR_DPI=250
       - PYTHONUNBUFFERED=1
       - OMP_THREAD_LIMIT=2

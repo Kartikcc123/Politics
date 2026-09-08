@@ -83,7 +83,7 @@ const pdfPageCount = async (pdfPath) => {
   return Number(match[1]);
 };
 
-const renderPage = async (pdfPath, outputDir, pageNumber, dpi = process.env.OCR_DPI || '350') => {
+const renderPage = async (pdfPath, outputDir, pageNumber, dpi = process.env.OCR_DPI || '250') => {
   const prefix = path.join(outputDir, `render-${pageNumber}`);
   await run(commandFromEnv('PDFTOPPM_PATH', 'pdftoppm'), [
     '-png', '-singlefile', '-r', String(dpi),
