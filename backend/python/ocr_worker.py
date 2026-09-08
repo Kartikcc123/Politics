@@ -1876,9 +1876,8 @@ def main():
         header = read_header(page, is_voter_page=True)
         return header, process_page(page, output_dir, page_no), read_fixed_header(page, is_voter_page=True)
 
-    # Node invokes this worker with one rendered page, but keep this invariant
-    # so future callers cannot fan out 300-DPI pages in the same process.
-    max_workers = 1
+    # Use OCR_PAGE_CONCURRENCY to process multiple pages in parallel
+    max_workers = max(1, int(os.getenv("OCR_PAGE_CONCURRENCY", os.getenv("MAX_WORKERS", "2"))))
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         page_bundles = list(executor.map(process_page_bundle, zip(page_numbers, pages)))
     gc.collect()
