@@ -649,6 +649,10 @@ exports.bulkLocationCorrection = async (req, res, next) => {
     const smartQuery = cleanText(rawSource.smartQuery || rawSource.q);
     const updates = cleanLocationUpdates(req.body?.updates || {});
     const dryRun = req.body?.dryRun !== false;
+    // The bulk anubhag editor deliberately works from an explicit, checked
+    // voter list. That is an equally narrow source as a location filter.
+    const hasExplicitMemberSelection = Array.isArray(req.body?.memberIds) &&
+      req.body.memberIds.some((id) => cleanText(id));
     if (req.body?.mergeMatchingOnly === true) {
       if (!source.sectionName || !updates.sectionName) {
         return res.status(400).json({ message: 'Merge के लिए source और target अनुभाग नाम जरूरी हैं।' });
@@ -662,7 +666,7 @@ exports.bulkLocationCorrection = async (req, res, next) => {
     const safeSectionSource = Boolean((source.sectionName || source.sectionNumber) && sourceKeyCount >= 1);
     const safePartSource = Boolean((source.partNumber || source.partName) && sourceKeyCount >= 1);
     const safeWardSource = Boolean(source.municipalWardNumbers && sourceKeyCount >= 1);
-    if (!smartQuery && !safeVillageSource && !safeSectionSource && !safePartSource && !safeWardSource && sourceKeyCount < 2) {
+    if (!hasExplicitMemberSelection && !smartQuery && !safeVillageSource && !safeSectionSource && !safePartSource && !safeWardSource && sourceKeyCount < 2) {
       return res.status(400).json({
         message: 'Source में कम से कम एक गाँव, अनुभाग, भाग या फ़िल्टर वैल्यू ज़रूर दें।',
       });
