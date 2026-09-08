@@ -42,6 +42,7 @@ class _UploadPageState extends State<UploadPage> {
   int batchCurrentIndex = 0;
   int batchImportedVoters = 0;
   int batchSkippedVoters = 0;
+  int batchQueuedFiles = 0;
   List<String> batchFailedFiles = [];
 
   @override
@@ -196,6 +197,7 @@ class _UploadPageState extends State<UploadPage> {
       batchCurrentIndex = 0;
       batchImportedVoters = 0;
       batchSkippedVoters = 0;
+      batchQueuedFiles = 0;
       batchFailedFiles = [];
     });
 
@@ -279,6 +281,13 @@ class _UploadPageState extends State<UploadPage> {
                   ? '[फ़ाइल ${i + 1}/${totalBatchCount}] ${file.name} का OCR पढ़ा जा रहा है…'
                   : 'फाइल अपलोड हो गई। PDF पढ़कर मतदाता रिकॉर्ड बनाए जा रहे हैं…';
             });
+            // For a multi-PDF batch, submit every file first. The server has
+            // its own serial OCR queue, so keeping the phone open only until
+            // all files say queued is enough; it must not wait hours per PDF.
+            if (totalBatchCount > 1) {
+              batchQueuedFiles += 1;
+              continue;
+            }
             res = await waitForImportCompletion(uploadId);
           }
           final addedCount = ((res['imported'] ?? 0) as num).toInt();
@@ -302,8 +311,9 @@ class _UploadPageState extends State<UploadPage> {
       setState(() {
         if (totalBatchCount > 1) {
           final successCount = totalBatchCount - batchFailedFiles.length;
-          status =
-              'बैच पूरा हुआ! $totalBatchCount में से $successCount फ़ाइलें सफल रहीं। कुल $batchImportedVoters मतदाता जोड़े गए।';
+          status = batchFailedFiles.isEmpty
+              ? '$batchQueuedFiles/$totalBatchCount PDF सर्वर OCR queue में जमा हो गई हैं। अब ऐप बंद कर सकते हैं; VPS इन्हें एक-एक करके पूरा करेगा।'
+              : '$batchQueuedFiles/$totalBatchCount PDF queue में जमा हुईं। $successCount सफल upload और ${batchFailedFiles.length} upload विफल रहे।';
         } else if (lastResult != null) {
           status =
               'आयात सफल रहा। ${lastResult!['imported'] ?? 0} मतदाता जोड़े गए और ${(lastResult!['skipped'] as List? ?? []).length} रिकॉर्ड समीक्षा के लिए छोड़े गए। मतदाता सूची अपने आप अपडेट हो गई है।';

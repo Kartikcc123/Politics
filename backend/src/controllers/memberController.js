@@ -401,18 +401,20 @@ const optionDefinitions = {
         { partNumber: { $nin: ['', null] } },
       ],
     },
-    option: (id, count) => ({
-      value: [id.village, id.partNumber].filter(Boolean).join('|'),
-      label: [
-        id.village || 'गाँव उपलब्ध नहीं',
-        id.partNumber ? `भाग ${id.partNumber}` : '',
-      ].filter(Boolean).join(' · '),
-      count,
-      filters: {
-        ...(id.village ? { village: id.village } : {}),
-        ...(id.partNumber ? { partNumber: id.partNumber } : {}),
-      },
-    }),
+    option: (id, count) => {
+      const vLabel = id.village && id.village !== 'गाँव उपलब्ध नहीं' ? id.village : '';
+      const pLabel = id.partNumber ? `भाग ${id.partNumber}` : '';
+      const labelText = [vLabel, pLabel].filter(Boolean).join(' · ') || vLabel || pLabel || 'भाग / गाँव';
+      return {
+        value: [id.village, id.partNumber].filter(Boolean).join('|'),
+        label: labelText,
+        count,
+        filters: {
+          ...(id.village ? { village: id.village } : {}),
+          ...(id.partNumber ? { partNumber: id.partNumber } : {}),
+        },
+      };
+    },
   },
   booth: {
     group: { number: '$partNumber', name: '$partName', village: '$village' },

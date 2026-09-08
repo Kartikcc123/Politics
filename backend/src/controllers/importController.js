@@ -247,7 +247,7 @@ const cleanSectionName = (value = '') => {
   if (!text) return '';
   text = text.replace(/\s*(?:we\s*,?\s*fer|wrefer|ore|hier|uzar|sifer|zadt|merit|oiler|freran|after|aftet)\b.*$/gi, '').trim();
   if (/EPIC|RJ\/|Google|Polling|Station|Map|View|[\[\]{}|\\&_~]/i.test(text)) return '';
-  if (text.length > 75) return '';
+  if (text.length > 150) return '';
   if (devanagariTextCount(text) < 2 || looksLikeBadLatinSection(text)) return '';
   return text;
 };
@@ -281,20 +281,47 @@ const sectionHeaderForRecord = (record = {}, header = {}, sectionMap = safeSecti
   const recordSecName = cleanSectionName(record.sectionName || '');
   const headerSecName = cleanSectionName(header.sectionName || '');
 
-  let sectionNumber = recordSecNum || headerSecNum;
-  if (sectionNumber && Object.keys(sectionMap).length > 0 && !sectionMap[sectionNumber]) {
-    sectionNumber = headerSecNum && sectionMap[headerSecNum] ? headerSecNum : '';
+  const normKey = (num) => {
+    const s = cleanValue(num);
+    if (!s) return '';
+    const parsed = parseInt(s, 10);
+    return !isNaN(parsed) ? String(parsed) : s;
+  };
+
+  let secKey = normKey(recordSecNum) || normKey(headerSecNum);
+  let mappedSectionName = '';
+
+  if (secKey && sectionMap) {
+    mappedSectionName = sectionMap[secKey] || sectionMap[recordSecNum] || sectionMap[headerSecNum] || '';
   }
 
-  let mappedSectionName = sectionNumber ? cleanSectionName(sectionMap[sectionNumber]) : '';
-  const sectionName = mappedSectionName || recordSecName || headerSecName;
+  if (!mappedSectionName && Object.keys(sectionMap).length > 0) {
+    if (recordSecName) {
+      const matchEntry = Object.entries(sectionMap).find(([k, v]) => {
+        const cv = cleanSectionName(v);
+        return cv && (cv === recordSecName || cv.includes(recordSecName) || recordSecName.includes(cv));
+      });
+      if (matchEntry) {
+        secKey = matchEntry[0];
+        mappedSectionName = matchEntry[1];
+      }
+    }
+    if (!mappedSectionName && Object.keys(sectionMap).length === 1) {
+      secKey = Object.keys(sectionMap)[0];
+      mappedSectionName = sectionMap[secKey];
+    }
+  }
+
+  const finalSecNum = secKey || recordSecNum || headerSecNum;
+  const finalSecName = mappedSectionName || recordSecName || headerSecName;
+
   return {
     ...header,
     assemblyNumber: header.assemblyNumber || record.assemblyNumber,
     assemblyName: header.assemblyName || record.assemblyName,
     partNumber: header.partNumber || record.partNumber,
-    sectionNumber,
-    sectionName,
+    sectionNumber: finalSecNum,
+    sectionName: finalSecName,
     sectionMap,
   };
 };
@@ -1213,17 +1240,21 @@ const parsePdfMembers = async (filePath, importFileName, onOcrProgress) => {
   };
   header.assemblyName = cleanHeaderName(header.assemblyName, /भाग\s*संख्या|अनुभाग/i);
   header.sectionName = cleanHeaderName(header.sectionName, /भाग\s*संख्या|विधान\s*सभा/i);
+  const docSectionMap = safeSectionMap(header.sectionMap || extracted.ocr?.header?.sectionMap);
   const voterRollMembers = extracted.ocr?.voterRecords?.length
-    ? extracted.ocr.voterRecords.flatMap((record) => (
-      record.name
+    ? extracted.ocr.voterRecords.flatMap((record) => {
+      const secInfo = sectionHeaderForRecord(record, header, docSectionMap);
+      const secNum = secInfo.sectionNumber || record.sectionNumber || header.sectionNumber || '';
+      const secName = secInfo.sectionName || cleanSectionName(record.sectionName) || header.sectionName || '';
+      return record.name
         ? [{
           ...header,
           name: record.name,
           assemblyNumber: record.assemblyNumber || header.assemblyNumber || '',
           assemblyName: record.assemblyName || header.assemblyName || '',
           partNumber: record.partNumber || header.partNumber || '',
-          sectionNumber: record.sectionNumber || '',
-          sectionName: record.sectionName || '',
+          sectionNumber: secNum,
+          sectionName: secName,
           guardianName: record.guardianName || '',
           relationType: record.relationType || '',
           houseNumber: cleanValue(record.houseNumber),
@@ -1233,29 +1264,29 @@ const parsePdfMembers = async (filePath, importFileName, onOcrProgress) => {
           voterSerial: record.voterSerial || undefined,
           voterId: record.voterId || undefined,
           mobile: '',
-          address: [header.sectionName || header.assemblyName, cleanValue(record.houseNumber)].filter(Boolean).join(', '),
-          location: header.sectionName || header.assemblyName || '',
+          address: [secName || header.assemblyName, cleanValue(record.houseNumber)].filter(Boolean).join(', '),
+          location: secName || header.assemblyName || '',
           photo: record.photo,
           cardImage: record.cardImage || '',
           rawText: record.rawText || record.text,
           ocrConfidence: record.confidence,
-        houseNumberConfidence: record.houseNumberConfidence,
-        locationMatchConfidence: record.locationMatchConfidence,
-        locationResolution: record.locationResolution,
-        ocrNeedsReview: Boolean(record.needsReview),
-        ocrReviewReasons: Array.isArray(record.reviewReasons) ? record.reviewReasons : [],
-        ocrValidationPassed: Boolean(record.validationPassed),
-        ocrFieldConfidence: record.fieldConfidence || {},
-        ocrValues: {
-          raw: record.rawFields || {},
-          suggested: record.suggestedFields || {},
-          verified: {},
-          status: 'suggested',
-        },
+          houseNumberConfidence: record.houseNumberConfidence,
+          locationMatchConfidence: record.locationMatchConfidence,
+          locationResolution: record.locationResolution,
+          ocrNeedsReview: Boolean(record.needsReview),
+          ocrReviewReasons: Array.isArray(record.reviewReasons) ? record.reviewReasons : [],
+          ocrValidationPassed: Boolean(record.validationPassed),
+          ocrFieldConfidence: record.fieldConfidence || {},
+          ocrValues: {
+            raw: record.rawFields || {},
+            suggested: record.suggestedFields || {},
+            verified: {},
+            status: 'suggested',
+          },
         }]
         : parseHindiVoterRoll(record.text || record.rawText || '', header)
-          .map((member) => ({ ...member, ...header, photo: record.photo }))
-    ))
+          .map((member) => ({ ...member, ...header, sectionNumber: secNum, sectionName: secName, photo: record.photo }));
+    })
     : parseHindiVoterRoll(text);
   if (voterRollMembers.length) return { text, members: voterRollMembers, ocr: extracted.ocr };
 
@@ -1837,13 +1868,30 @@ const runPdfImport = async ({ file, body, currentUser }, uploadId) => {
       ...(parsed.members[0] || {}),
     };
     applyPdfVillageHint(firstMemberWithHeader, pdfVillageHint);
-    // runPdfImport receives the uploaded file rather than the parser's filename argument.
-    // The parser-only variable was undefined here and failed the import after OCR.
+
     const pdfPartHint = pdfPartNumberHintFromName(file.originalname || file.filename);
-    if (pdfPartHint && (!detectedHeader.partNumber || detectedHeader.partNumber === '')) {
-      detectedHeader.partNumber = pdfPartHint;
-      firstMemberWithHeader.partNumber = pdfPartHint;
+    const docPartNumber = pdfPartHint || detectedHeader.partNumber || firstMemberWithHeader.partNumber || parsed.ocr?.header?.partNumber || '';
+    if (docPartNumber) {
+      detectedHeader.partNumber = docPartNumber;
+      firstMemberWithHeader.partNumber = docPartNumber;
+      for (const member of parsed.members) member.partNumber = docPartNumber;
     }
+    const docVillage = cleanOcrVillage(
+      pdfVillageHint
+      || detectedHeader.village
+      || firstMemberWithHeader.village
+      || parsed.ocr?.header?.village
+      || detectedHeader.policeStation
+      || detectedHeader.gramPanchayat
+      || cleanHeaderName(detectedHeader.partName)
+    );
+    if (docVillage) {
+      if (!firstMemberWithHeader.village) firstMemberWithHeader.village = docVillage;
+      for (const member of parsed.members) {
+        if (!cleanOcrVillage(member.village)) member.village = docVillage;
+      }
+    }
+
     const { ward, booth } = await getOrCreateImportScope({
       user: currentUser,
       body,
@@ -1881,9 +1929,8 @@ const runPdfImport = async ({ file, body, currentUser }, uploadId) => {
     const party = await findPartyFromText(parsed.text);
     for (const item of parsed.members) {
       item.voterId = normalizeEpic(item.voterId);
-      // Do this immediately before persistence, so every parser/OCR fallback is
-      // covered by the same strict safeguard.
-      item.village = cleanOcrVillage(item.village);
+      if (docPartNumber) item.partNumber = docPartNumber;
+      item.village = cleanOcrVillage(item.village) || docVillage;
       item.gramPanchayat = cleanOcrLocation(item.gramPanchayat);
       item.location = cleanOcrLocation(item.location, { allowSection: true });
       item.address = buildSafeOcrAddress(item.sectionName, item.houseNumber);

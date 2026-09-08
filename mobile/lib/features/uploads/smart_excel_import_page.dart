@@ -24,17 +24,13 @@ class _SmartExcelImportPageState extends State<SmartExcelImportPage> {
   String? ward;
   String? booth;
   bool busy = false;
+  final List<PlatformFile> _queuedFiles = [];
+  int _queueIndex = 0;
 
-  Future<void> pick() async {
-    final result = await FilePicker.platform.pickFiles(
-      type: FileType.custom,
-      allowedExtensions: const ['xlsx', 'xls', 'csv'],
-      withData: kIsWeb,
-      withReadStream: !kIsWeb,
-    );
-    if (result == null) return;
-    final file = result.files.single;
-    setState(() => busy = true);
+  int get _queueTotal => _queuedFiles.length;
+  bool get _hasNextQueuedFile => _queueIndex + 1 < _queueTotal;
+
+  Future<void> _loadPreview(PlatformFile file) async {
     final data = await api.uploadFile(
       '/api/import-previews',
       filename: file.name,
@@ -43,12 +39,46 @@ class _SmartExcelImportPageState extends State<SmartExcelImportPage> {
       fileStream: file.readStream,
       fileLength: file.size,
     );
+    if (!mounted) return;
     setState(() {
       preview = data;
       mapping = Map<String, String>.from(data['suggestedMapping'] ?? {});
       validation = Map<String, dynamic>.from(data['summary'] ?? {});
+      corrections.clear();
       busy = false;
     });
+  }
+
+  Future<void> pick() async {
+    final result = await FilePicker.platform.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: const ['xlsx', 'xls', 'csv'],
+      allowMultiple: true,
+      withData: kIsWeb,
+      withReadStream: !kIsWeb,
+    );
+    if (result == null || result.files.isEmpty) return;
+    setState(() {
+      _queuedFiles
+        ..clear()
+        ..addAll(result.files.where((file) => file.size > 0));
+      _queueIndex = 0;
+      preview = null;
+      mapping = {};
+      validation = null;
+      corrections.clear();
+      busy = _queuedFiles.isNotEmpty;
+    });
+    if (_queuedFiles.isEmpty) return;
+    try {
+      await _loadPreview(_queuedFiles.first);
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => busy = false);
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('Preview बनाने में समस्या: $error'),
+      ));
+    }
   }
 
   Future<void> validate() async {
@@ -77,18 +107,26 @@ class _SmartExcelImportPageState extends State<SmartExcelImportPage> {
       await OfflineVoterCache.clear();
       api.notifyDataChanged();
       if (!mounted) return;
+      final hasNextFile = _hasNextQueuedFile;
+      final nextFile = hasNextFile ? _queuedFiles[++_queueIndex] : null;
       setState(() {
         preview = null;
         validation = null;
         corrections.clear();
-        busy = false;
-        ward = null;
-        booth = null;
+        busy = hasNextFile;
+        if (!hasNextFile) {
+          ward = null;
+          booth = null;
+        }
       });
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text(
-            '${result['created']} नए मतदाता जोड़े गए, ${result['updated']} रिकॉर्ड अपडेट हुए और ${result['reviewRequired']} रिकॉर्ड समीक्षा के लिए रखे गए।'),
+        content: Text(hasNextFile
+            ? '${result['created']} मतदाता सहेजे गए। अगली फाइल: ${nextFile!.name}'
+            : '${result['created']} नए मतदाता जोड़े गए, ${result['updated']} रिकॉर्ड अपडेट हुए और ${result['reviewRequired']} रिकॉर्ड समीक्षा के लिए रखे गए।'),
       ));
+      if (nextFile != null) {
+        await _loadPreview(nextFile);
+      }
     } catch (error) {
       if (!mounted) return;
       setState(() => busy = false);
@@ -112,6 +150,14 @@ class _SmartExcelImportPageState extends State<SmartExcelImportPage> {
               icon: const Icon(Icons.upload_file),
               label: const Text('Excel चुनें')),
         ),
+        if (_queueTotal > 1)
+          Padding(
+            padding: const EdgeInsets.only(top: 12),
+            child: Text(
+              'फाइल ${_queueIndex + 1}/$_queueTotal: ${_queuedFiles[_queueIndex].name}',
+              style: const TextStyle(color: navy, fontWeight: FontWeight.w800),
+            ),
+          ),
         if (busy) const LinearProgressIndicator(),
         if (!busy && preview == null)
           PremiumEmptyState(

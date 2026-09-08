@@ -1393,7 +1393,7 @@ def fixed_location_name(text):
 def fixed_master_section_map(image):
     """Read the numbered section table without mixing in the location column."""
     height, width = image.shape[:2]
-    region = image[round(height * 0.26):round(height * 0.47), 0:round(width * 0.395)]
+    region = image[round(height * 0.26):round(height * 0.47), 0:round(width * 0.48)]
     if region.size == 0:
         return {}
     gray = cv2.cvtColor(region, cv2.COLOR_BGR2GRAY)
@@ -1764,7 +1764,9 @@ def parse_header_numbers(text):
         number = normalize_section_number(match.group(1))
         raw_name_val = match.group(2)
         # Skip matched substrings that occur inside a ward description (e.g. '19-20' inside 'वार्ड सं 19-20')
-        if re.search(r"^\s*\d{1,2}\s*गंगापुर", raw_name_val) or re.search(r"(?:वार्ड|Ward)\s*सं?\s*$", match.group(0)[:match.start(1)] if hasattr(match, 'start') else ""):
+        prefix_len = match.start(1) - match.start(0)
+        prefix_text = match.group(0)[:prefix_len]
+        if re.search(r"^\s*\d{1,2}\s*गंगापुर", raw_name_val) or re.search(r"(?:वार्ड|Ward)\s*(?:संख्या|सं|नं\.?)?\s*$", prefix_text, re.IGNORECASE):
             continue
         name = canonical_section_name(tidy_name(raw_name_val))
         if number and name and not re.search(r"(?:EPIC|RJ/|मतदाता|निर्वाचक)", name, re.IGNORECASE) and has_devanagari(name) >= 2:
@@ -1772,7 +1774,7 @@ def parse_header_numbers(text):
                 section_map[number] = name
 
     section_matches = list(re.finditer(
-        r"(?:अनुभाग|section|SUT|UM|UT|SU|अिुभाग|अनुमाग|(?:^|\n)\s*अनुभाग\s*की\s*संख्या\s*व\s*नाम)[^\n:：;\-0-9,]{0,60}[:：;\-]?\s*([0-9०-९OQILSZBG]{1,2})\s*[-–:]\s*([^\n]+)",
+        r"(?:अनुभाग|section|SUT|UM|UT|SU|अिुभाग|अनुमाग|(?:^|\n)\s*अनुभाग\s*की\s*संख्या\s*व\s*नाम)[^\n:：;\-0-9,]{0,60}[:：;\-]?\s*([0-9०-९OQILSZBG\-\|Il?]{1,3})\s*[-–:.)\s]\s*([^\n]+)",
         normalized,
         re.IGNORECASE,
     ))
@@ -1784,7 +1786,7 @@ def parse_header_numbers(text):
         ))
         section_matches = [
             m for m in raw_candidates
-            if not re.search(r"(?:विधान\s*सभा|assembly|constituency|AC|furs|Seat)", m.group(0), re.IGNORECASE)
+            if not re.search(r"(?:विधान\s*सभा|assembly|constituency|AC|furs|Seat|वार्ड|Ward)", m.group(0), re.IGNORECASE)
         ]
 
     # OCR commonly reads the first section marker (?/?) as a danda.
@@ -1957,15 +1959,26 @@ def main():
             if k.isdigit() and int(k) > max_valid_seq + 1:
                 doc_section_map.pop(k, None)
 
-    # Auto-extract Village from section names if master village is missing/blank
+    # Auto-extract Village from header fields or section names if master village is missing/blank
     if not master_context.get("village"):
-        for sv in doc_section_map.values():
-            if sv and "," in sv:
-                parts = sv.split(",")
-                extracted = clean(parts[-1]).strip(" -,:;|\u0964")
-                if len(re.findall(r"[\u0900-\u097F]", extracted)) >= 2:
-                    master_context["village"] = extracted
+        for key_cand in ("policeStation", "gramPanchayat", "partName", "tehsil"):
+            val = master_header.get(key_cand)
+            if val and len(re.findall(r"[\u0900-\u097F]", val)) >= 2:
+                clean_v = re.sub(r"^(?:[0-9\u0966-\u096f]+\s*[-–:]\s*|वार्ड\s*सं?\s*\d+\s*)", "", clean(val)).strip()
+                if clean_v and len(re.findall(r"[\u0900-\u097F]", clean_v)) >= 2 and not re.search(r"(?:वार्ड|संख्या)", clean_v):
+                    master_context["village"] = clean_v
                     break
+        if not master_context.get("village"):
+            for sv in doc_section_map.values():
+                if sv and "," in sv:
+                    parts = [p.strip() for p in sv.split(",") if p.strip()]
+                    for cand_part in reversed(parts):
+                        extracted = clean(cand_part).strip(" -,:;|\u0964")
+                        if len(re.findall(r"[\u0900-\u097F]", extracted)) >= 2 and not re.search(r"(?:वार्ड|ward|संख्या|सं\b)", extracted, re.IGNORECASE):
+                            master_context["village"] = extracted
+                            break
+                    if master_context.get("village"):
+                        break
 
     records = []
     summary_marker = "नामावली का प्रकार"
@@ -2034,6 +2047,13 @@ def main():
             **master_context,
             **{key: value for key, value in raw_header.items() if value and key != "sectionMap"},
         }
+        # Master context values must not be overwritten by noisy voter page header OCR
+        if master_context.get("partNumber"):
+            page_header["partNumber"] = master_context["partNumber"]
+        if master_context.get("assemblyNumber"):
+            page_header["assemblyNumber"] = master_context["assemblyNumber"]
+        if master_context.get("village"):
+            page_header["village"] = master_context["village"]
 
         for record in result:
             merged = {**page_header, **{key: value for key, value in record.items() if value not in (None, "")}}

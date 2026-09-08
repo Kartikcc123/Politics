@@ -456,6 +456,11 @@ const lowMemoryOcrPdf = async (pdfPath, importFileName, pageRange = {}) => {
         inherited[field] = header[field];
       }
     }
+    if (header.partNumber) inherited.partNumber = header.partNumber;
+    if (header.assemblyNumber) inherited.assemblyNumber = header.assemblyNumber;
+    if (header.village && (!inherited.village || String(inherited.village).trim() === '')) {
+      inherited.village = header.village;
+    }
     let secNum = String(inherited.sectionNumber || '').trim();
     if (!secNum || !docSectionMap[secNum]) {
       if (secNum && docSectionMap) {
