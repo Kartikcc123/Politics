@@ -351,7 +351,7 @@ def ocr_house(card, card_full_text=None):
         house_line = field(t_hin, r"(?:गृह|गह|गुह|ग्ह|गृ|गृ\.|मकान|House|H\.No|Te|\S*ह|\S*स)\s*(?:संख्या|सख्या|सं\.?|सं०|नं\.?|क्र\.?|Number|No\.?)?\s*[:：;\-।|]?\s*([^\n]+)")
         c1 = clean_house(house_line)
         if c1:
-            c1_values.append(c1)
+            return c1
 
         t_eng = safe_image_to_string(
             variant, lang="eng", config="--psm 6 -c tessedit_char_whitelist=0123456789/-",

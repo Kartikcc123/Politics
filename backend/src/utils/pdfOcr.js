@@ -232,6 +232,7 @@ exports.ocrPdf = async (pdfPath, importFileName, pageRange = {}) => {
           return;
         }
         pythonProcessedPages += 1;
+        console.log(`[OCR Progress] Parsed page ${pythonProcessedPages}/${pages.length} (${pythonProcessedCards}/${totalCards} cards)`);
         onProgress?.({
           phase: 'ocr',
           processedPages: pythonProcessedPages,
