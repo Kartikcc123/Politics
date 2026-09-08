@@ -169,7 +169,7 @@ exports.create = async (req, res, next) => {
 exports.list = async (req, res, next) => {
   try {
     const { q, qMode, party, supportLevel, gender, booth, ward, area, verificationStatus, location, village, gramPanchayat, tehsil, municipality, caste, organizationPost, occupation, contactType, sectionNumber, sectionName, sectionNames, assemblyNumber, assemblyName, partNumber, pinCode, voterSerial, profileCompletionStatus, partyPreference, favorite, letter, rollType, matchStatus, municipalWard } = req.query;
-    const limit = Math.min(Number(req.query.limit) || 100, 500);
+    const limit = Math.min(Number(req.query.limit) || 100, 3000);
     const page = Math.max(Number(req.query.page) || 1, 1);
     const paged = String(req.query.paged || '').toLowerCase() === 'true' || req.query.page !== undefined;
     const filter = applyMemberScope(req.currentUser, {});
