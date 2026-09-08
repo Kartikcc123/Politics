@@ -1303,6 +1303,17 @@ class _VoterManagementPageState extends State<VoterManagementPage> {
               ),
               if (api.user?['role'] == 'admin')
                 IconButton(
+                  tooltip: 'बल्क अनुभाग सुधार',
+                  onPressed: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => const BulkAnubhagEditorPage(),
+                    ),
+                  ).then((_) => setState(refreshVoters)),
+                  icon: const Icon(Icons.edit_note_rounded, color: primary),
+                ),
+              if (api.user?['role'] == 'admin')
+                IconButton(
                   tooltip: favoriteOnly ? 'सभी संपर्क' : 'Favorites',
                   onPressed: () => setState(() {
                     favoriteOnly = !favoriteOnly;
@@ -5742,9 +5753,7 @@ class _VoterRow extends StatelessWidget {
                     MaterialPageRoute(
                       builder: (_) => VoterEditPage(
                         voter: member,
-                        voterList: members,
-                        currentIndex: i,
-                        onSaved: () => setState(refreshVoters),
+                        onSaved: refresh,
                       ),
                     ),
                   ),
