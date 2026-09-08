@@ -20,6 +20,7 @@ import '../families/family_members.dart';
 import '../reports/configurable_print_page.dart';
 import 'voter_contact_actions.dart';
 import 'voter_edit_page.dart';
+import 'bulk_anubhag_editor_page.dart';
 
 class VoterManagementPage extends StatefulWidget {
   const VoterManagementPage({
@@ -1468,6 +1469,17 @@ class _VoterManagementPageState extends State<VoterManagementPage> {
                 onPressed: openLocationCorrection,
                 icon: const Icon(Icons.edit_location_alt_rounded),
                 label: Text(compact ? 'Location Fix' : 'Location Bulk Fix'),
+              ),
+            if (api.user?['role'] == 'admin')
+              OutlinedButton.icon(
+                onPressed: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => const BulkAnubhagEditorPage(),
+                  ),
+                ).then((_) => setState(refreshVoters)),
+                icon: const Icon(Icons.edit_note_rounded),
+                label: Text(compact ? 'अनुभाग सुधार' : 'बल्क अनुभाग सुधार'),
               ),
             if (api.user?['role'] != 'booth')
               FilledButton.icon(
@@ -5728,8 +5740,12 @@ class _VoterRow extends StatelessWidget {
                   onPressed: () => Navigator.push(
                     context,
                     MaterialPageRoute(
-                      builder: (_) =>
-                          VoterEditPage(voter: member, onSaved: refresh),
+                      builder: (_) => VoterEditPage(
+                        voter: member,
+                        voterList: members,
+                        currentIndex: i,
+                        onSaved: () => setState(refreshVoters),
+                      ),
                     ),
                   ),
                   icon: const Icon(Icons.edit_rounded, color: blue, size: 19),

@@ -13,9 +13,19 @@ import '../../core/theme.dart';
 import '../../widgets/voter_phonebook.dart' show voterPhotoHeaders, voterPhotoUrl;
 
 class VoterEditPage extends StatefulWidget {
-  const VoterEditPage({super.key, required this.voter, required this.onSaved});
+  const VoterEditPage({
+    super.key,
+    required this.voter,
+    required this.onSaved,
+    this.voterList,
+    this.currentIndex,
+    this.onVoterChanged,
+  });
   final Map<String, dynamic> voter;
   final VoidCallback onSaved;
+  final List<Map<String, dynamic>>? voterList;
+  final int? currentIndex;
+  final ValueChanged<int>? onVoterChanged;
 
   @override
   State<VoterEditPage> createState() => _VoterEditPageState();
@@ -33,9 +43,11 @@ class _VoterEditPageState extends State<VoterEditPage> {
   String partyPreference = 'undecided';
   String verificationStatus = 'pending';
   String profileCompletionStatus = 'pending';
+  late Map<String, dynamic> currentVoter;
+  late int currentIndex;
 
   bool get _isBoothVoter =>
-      api.user?['role'] == 'booth' && widget.voter['contactType'] != 'personal';
+      api.user?['role'] == 'booth' && currentVoter['contactType'] != 'personal';
 
   static const _sourceLockedFields = {
     'name',
@@ -106,15 +118,35 @@ class _VoterEditPageState extends State<VoterEditPage> {
   @override
   void initState() {
     super.initState();
+    currentVoter = widget.voter;
+    currentIndex = widget.currentIndex ?? 0;
+    _loadVoterData(currentVoter);
+  }
+
+  void _loadVoterData(Map<String, dynamic> voterData) {
     for (final key in fieldKeys) {
-      fields[key] = TextEditingController(text: _value(widget.voter[key], key));
+      if (!fields.containsKey(key)) {
+        fields[key] = TextEditingController();
+      }
+      fields[key]!.text = _value(voterData[key], key);
     }
-    gender = '${widget.voter['gender'] ?? ''}';
-    relationType = '${widget.voter['relationType'] ?? ''}';
-    partyPreference = '${widget.voter['partyPreference'] ?? 'undecided'}';
-    verificationStatus = '${widget.voter['verificationStatus'] ?? 'pending'}';
+    gender = '${voterData['gender'] ?? ''}';
+    relationType = '${voterData['relationType'] ?? ''}';
+    partyPreference = '${voterData['partyPreference'] ?? 'undecided'}';
+    verificationStatus = '${voterData['verificationStatus'] ?? 'pending'}';
     profileCompletionStatus =
-        '${widget.voter['profileCompletionStatus'] ?? 'pending'}';
+        '${voterData['profileCompletionStatus'] ?? 'pending'}';
+    selectedPhoto = null;
+  }
+
+  void _switchVoter(int newIndex) {
+    if (widget.voterList == null || newIndex < 0 || newIndex >= widget.voterList!.length) return;
+    setState(() {
+      currentIndex = newIndex;
+      currentVoter = widget.voterList![newIndex];
+      _loadVoterData(currentVoter);
+    });
+    widget.onVoterChanged?.call(newIndex);
   }
 
   String _value(dynamic value, [String key = '']) {
@@ -238,7 +270,7 @@ class _VoterEditPageState extends State<VoterEditPage> {
       late final dynamic updated;
       if (selectedPhoto != null) {
         updated = await api.uploadFile(
-          '/api/members/${widget.voter['_id']}',
+          '/api/members/${currentVoter['_id']}',
           method: 'PUT',
           filename: selectedPhoto!.name,
           fileField: 'photo',
@@ -248,9 +280,10 @@ class _VoterEditPageState extends State<VoterEditPage> {
               (key, value) => MapEntry(key, value == null ? '' : '$value')),
         );
       } else {
-        updated = await api.put('/api/members/${widget.voter['_id']}', body);
+        updated = await api.put('/api/members/${currentVoter['_id']}', body);
       }
       if (updated is Map<String, dynamic>) {
+        currentVoter = updated;
         await OfflineVoterCache.merge([updated]);
       }
       api.notifyDataChanged();
@@ -310,11 +343,37 @@ class _VoterEditPageState extends State<VoterEditPage> {
                     style: TextStyle(color: muted, fontSize: 11)),
               ]),
           actions: [
+            if (widget.voterList != null && widget.voterList!.isNotEmpty) ...[
+              IconButton(
+                icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 18),
+                tooltip: 'पिछला मतदाता',
+                onPressed: currentIndex > 0 ? () => _switchVoter(currentIndex - 1) : null,
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  color: blue.withOpacity(0.12),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Text(
+                  '${currentIndex + 1}/${widget.voterList!.length}',
+                  style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 12, color: blue),
+                ),
+              ),
+              IconButton(
+                icon: const Icon(Icons.arrow_forward_ios_rounded, size: 18),
+                tooltip: 'अगला मतदाता',
+                onPressed: currentIndex < widget.voterList!.length - 1
+                    ? () => _switchVoter(currentIndex + 1)
+                    : null,
+              ),
+              const SizedBox(width: 4),
+            ],
             if (api.user?['role'] != 'booth')
               IconButton.filledTonal(
                 tooltip: 'प्रोफाइल प्रिंट करें',
                 onPressed: () => printApiPdf(context,
-                    path: '/api/export/members/${widget.voter['_id']}.pdf',
+                    path: '/api/export/members/${currentVoter['_id']}.pdf',
                     jobName: 'मतदाता प्रोफाइल'),
                 icon: const Icon(Icons.print_rounded, color: blue),
               ),

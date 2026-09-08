@@ -675,6 +675,9 @@ exports.bulkLocationCorrection = async (req, res, next) => {
       ? Object.fromEntries(Object.entries(source).filter(([key]) => key !== 'village'))
       : source;
     const filter = applyMemberScope(req.currentUser, baseSource);
+    if (Array.isArray(req.body?.memberIds) && req.body.memberIds.length) {
+      filter._id = { $in: req.body.memberIds };
+    }
     addSmartLocationSearch(filter, smartQuery);
     if (looksLikeOcrGarbage) {
       const regexes = regexesForLocationValue(source.village);
