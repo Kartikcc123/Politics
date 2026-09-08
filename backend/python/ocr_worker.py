@@ -1837,6 +1837,13 @@ def parse_header_numbers(text):
     # structurally valid, so the verified PIN is supplied by the location master.
     pin_code = ""
 
+    ward_match = re.search(
+        r"(?:वार्ड\s*(?:संख्या|नं\.?|number|no\.?|सं\.?)?|ward)\s*[:：\-]*\s*(?:वार्ड\s*संख्या\s*)?([0-9O\u0966-\u096f]{1,4})",
+        normalized,
+        re.IGNORECASE,
+    )
+    ward_number = normalize_digits(ward_match.group(1)) if ward_match else ""
+
     raw_assembly_name = tidy_name(assembly.group(2)) if assembly else ""
     if raw_assembly_name:
         devanagari_count = len(re.findall(r"[\u0900-\u097F]", raw_assembly_name))
@@ -1849,6 +1856,7 @@ def parse_header_numbers(text):
         "assemblyName": raw_assembly_name,
         "partNumber": normalize_digits(part.group(1)) if part else "",
         "partName": labeled_value([r"\u092d\u093e\u0917\s*(?:\u0915\u093e\s*)?(?:\u0928\u093e\u092e|\u0935\u093f\u0935\u0930\u0923)", r"part\s*(?:name|description)"]),
+        "wardNumber": ward_number,
         "sectionNumber": section_number,
         "sectionName": section_name,
         "sectionMap": section_map,
@@ -2040,6 +2048,8 @@ def main():
             page_header["partNumber"] = master_context["partNumber"]
         if master_context.get("assemblyNumber"):
             page_header["assemblyNumber"] = master_context["assemblyNumber"]
+        if master_context.get("wardNumber"):
+            page_header["wardNumber"] = master_context["wardNumber"]
         if master_context.get("village"):
             page_header["village"] = master_context["village"]
 
