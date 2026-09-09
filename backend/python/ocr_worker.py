@@ -2180,9 +2180,11 @@ def main():
         previous, current, following = records[index - 1], records[index], records[index + 1]
         if not (_same_section(previous, current) and _same_section(current, following)):
             continue
-        previous_house = get_digits(previous.get("houseNumber"))
-        following_house = get_digits(following.get("houseNumber"))
-        if previous_house and previous_house == following_house:
+        previous_house = str(previous.get("houseNumber") or "").strip()
+        following_house = str(following.get("houseNumber") or "").strip()
+        current_house = str(current.get("houseNumber") or "").strip()
+        # Only smooth if current card house is missing/unreadable, NEVER overwrite a clear 4-digit valid house number (like 1477)
+        if previous_house and previous_house == following_house and (not current_house or current_house in ("0", "")):
             _set_house_suggestion(current, previous_house, "same_section_sandwich_house_corrected", needs_review=False, confidence=95)
 
     # A new/different house number naturally starts a new sequence: there is no
