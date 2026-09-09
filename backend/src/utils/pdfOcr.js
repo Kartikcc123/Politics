@@ -481,6 +481,11 @@ const lowMemoryOcrPdf = async (pdfPath, importFileName, pageRange = {}) => {
       inherited.sectionName = docSectionMap[secNum];
       lastKnownSecNum = secNum;
     }
+    if (!inherited.voterSerial || String(inherited.voterSerial).trim() === '') {
+      const pageIndex = Number(inherited.page) || 1;
+      const cellIndex = Number(inherited.cell) || 1;
+      inherited.voterSerial = String(pageIndex >= 3 ? (pageIndex - 3) * 30 + cellIndex : cellIndex);
+    }
     return inherited;
   });
 

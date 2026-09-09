@@ -98,13 +98,26 @@ const canCorrectOcrField = (existing, field, threshold) => {
     && (!Number.isFinite(confidence) || confidence < threshold);
 };
 
-const buildSafeExcelMerge = (existing, incoming, { confidenceThreshold = 75 } = {}) => {
+const buildSafeExcelMerge = (existing, incoming, { confidenceThreshold = 75, casteOnlyMode = false } = {}) => {
   const updates = {};
   const filled = [];
   const corrected = [];
   const conflicts = [];
+  const isCastePresent = !isBlank(incoming?.caste);
+
   for (const [field, incomingValue] of Object.entries(incoming || {})) {
     if (ignoredMergeFields.has(field) || isBlank(incomingValue)) continue;
+    
+    // If incoming has caste, prioritize updating caste safely while preserving other existing core fields
+    if (isCastePresent && field !== 'caste' && field !== 'subCaste') {
+      const currentValue = existing?.[field];
+      if (isBlank(currentValue)) {
+        updates[field] = incomingValue;
+        filled.push(field);
+      }
+      continue;
+    }
+
     const currentValue = existing?.[field];
     if (isBlank(currentValue)) {
       updates[field] = incomingValue;
@@ -112,6 +125,11 @@ const buildSafeExcelMerge = (existing, incoming, { confidenceThreshold = 75 } = 
       continue;
     }
     if (valuesEqual(currentValue, incomingValue)) continue;
+    if (field === 'caste' || field === 'subCaste') {
+      updates[field] = incomingValue;
+      filled.push(field);
+      continue;
+    }
     if (ocrFields.has(field) && canCorrectOcrField(existing, field, confidenceThreshold)) {
       updates[field] = incomingValue;
       corrected.push(field);

@@ -235,15 +235,22 @@ def clean_house(value):
     # Map Devanagari digits ०-९ and common OCR optical confusion characters to ASCII digits.
     # Note: Devanagari letters like 'क', 'ख' are suffix qualifiers (e.g. '2145 क') and MUST NOT be translated to numbers like '7'.
     normalized = (value or "").translate(
-        str.maketrans("\u0966\u0967\u0968\u0969\u096a\u096b\u096c\u096d\u096e\u096fOQILSZBG|!][", "0123456789001125861111")
+        str.maketrans("\u0966\u0967\u0968\u0969\u096a\u096b\u096c\u096d\u096e\u096fOQILSZBG", "012345678900112586")
     )
     # Extract numeric house number part + optional Devanagari/Hindi letter suffix (e.g. "2145 क" or "2145-A" or "4201")
-    raw_str = re.sub(r"^(?:[:\|/\-\.]+\s*)+", "", normalized.strip())
+    raw_str = re.sub(r"^(?:[:\|/\\!\-\.\[\]]+\s*)+", "", normalized.strip())
     match = re.search(r"(?<!\d)(\d{1,5}(?:[/\-]\d{1,5})?)(?:\s*([A-Za-z\u0900-\u097F]))?(?!\d)", raw_str)
     if not match:
         return ""
     val = match.group(1)
     suffix = match.group(2) if match.group(2) else ""
+
+    # Fix vertical border line artifact ONLY when an actual pipe symbol '|' preceded the number in raw OCR (e.g. '| 60' -> '760')
+    has_leading_pipe = "|" in str(value or "") or "!" in str(value or "") or "[" in str(value or "") or "]" in str(value or "")
+    if has_leading_pipe and len(val) == 3 and val[0] in ("7", "1") and not "-" in val and not "/" in val:
+        trimmed = val[1:]
+        if 1 <= int(trimmed) <= 99:
+            val = trimmed
     
     # If hyphenated with identical numbers (e.g., 3-3 -> 3, 56-56 -> 56)
     if "-" in val or "/" in val:
@@ -251,10 +258,6 @@ def clean_house(value):
         if len(parts) == 2 and parts[0] == parts[1]:
             val = parts[0]
 
-    # Remove noise leading zero for house numbers like 01 -> 1, 05 -> 5 (preserve 0 / 00 / 000)
-    if len(val) > 1 and val.startswith("0") and not re.fullmatch(r"0+", val):
-        val = val.lstrip("0")
-    
     return f"{val} {suffix}".strip() if suffix else val
 
 
@@ -659,17 +662,13 @@ def parse_card(text, epic_text, photo_path, page_no, cell_no, focused_house="", 
     husband = clean_person_name(raw_husband)
     mother = clean_person_name(raw_mother)
     raw_house = clean_house(
-        field(text, r"(?:गृह|गह|गुह|ग्ह|गृ|गृ\.|मकान|House|H\.No|Te|\S*ह|\S*स)\s*(?:संख्या|सख्या|सं\.?|सं०|नं\.?|क्र\.?|Number|No\.?)?\s*[:：;\-]?\s*([^\n]+)")
-        or field(text, r"(?:संख्या|सख्या)\s*[:：;\-]\s*([^\n]+)")
+        field(text, r"(?:^|\n)\s*(?:गृह|गह|गुह|ग्ह|गृ|गृ\.|मकान|House|H\.No)\s*(?:संख्या|सख्या|सं\.?|सं०|नं\.?|क्र\.?|Number|No\.?)?\s*[:：;\-]?\s*([^\n]+)")
+        or field(text, r"(?:^|\n)\s*(?:संख्या|सख्या)\s*[:：;\-]\s*([^\n]+)")
     )
-    if raw_house in ("0", "00", "000"):
-        house = raw_house
-    elif raw_house != "" and len(raw_house) > len(focused_house):
+    if raw_house != "":
         house = raw_house
     elif focused_house != "":
         house = focused_house
-    elif raw_house != "":
-        house = raw_house
     else:
         house = ""
     age_raw = field(
@@ -697,8 +696,16 @@ def parse_card(text, epic_text, photo_path, page_no, cell_no, focused_house="", 
     confidence += 10 if age else 0
     confidence += 10 if gender else 0
     voter_id = epic_from(epic_text + "\n" + text)
-    serial_match = re.search(r"(?:^|\n)\s*[\[\(\|]?\s*(\d{1,5})\s*[\]\)\|]?", text or "")
+    serial_match = re.search(
+        r"(?:^|\n)\s*(?:\[\s*\|*|\||al|en|\d+\|)*\s*(\d{1,5})\s*(?:\||\s+[A-Z0-9]{7,15})",
+        text or ""
+    )
     voter_serial = serial_match.group(1) if serial_match else ""
+    if not voter_serial:
+        serial_match_fallback = re.search(r"(?:^|\n)\s*[\[\(\|]?\s*(\d{1,5})\s*[\]\)\|]?", text or "")
+        voter_serial = serial_match_fallback.group(1) if serial_match_fallback else ""
+    if not voter_serial and cell_no:
+        voter_serial = str(cell_no)
 
     # Check for DELETED / निरस्त / विलोपित watermark
     is_deleted = bool(re.search(
@@ -853,6 +860,38 @@ def validate_record(record):
     return record
 
 
+def preserve_card_serials(records, global_start_serial):
+    """Keep card serials authoritative; flag sequence disagreements for review."""
+    previous_serial = None
+    digit_translation = str.maketrans("०१२३४५६७८९", "0123456789")
+
+    for index, record in enumerate(records):
+        raw_serial = str(record.get("voterSerial") or "").translate(digit_translation).strip()
+        expected_serial = (
+            previous_serial + 1
+            if previous_serial is not None
+            else (global_start_serial + index if isinstance(global_start_serial, int) and global_start_serial > 0 else None)
+        )
+
+        if raw_serial.isdigit():
+            actual_serial = int(raw_serial)
+            record["voterSerial"] = raw_serial
+            record["voterSerialConfidence"] = min(int(record.get("voterSerialConfidence") or 80), 80)
+            if expected_serial is not None and actual_serial != expected_serial:
+                record["rawVoterSerial"] = raw_serial
+                record["serialSequenceExpected"] = str(expected_serial)
+                record["serialOcrDisagreement"] = True
+            previous_serial = actual_serial
+            continue
+
+        # Do not invent a serial from card position. It must be reviewed.
+        record["voterSerial"] = ""
+        record["voterSerialConfidence"] = 0
+        record["serialOcrDisagreement"] = True
+        if expected_serial is not None:
+            record["serialSequenceExpected"] = str(expected_serial)
+
+
 def detect_card_boxes(image):
     height, width = image.shape[:2]
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
@@ -989,9 +1028,16 @@ def _process_single_card(args):
     epic_text = safe_image_to_string(epic_gray_res, lang="eng", config="--psm 6")
 
     focused_house = ocr_house(card, card_full_text=text)
+    # Read serial only from its dedicated top-left box. Full-card OCR can
+    # confuse EPIC fragments, age or house number with the printed serial.
+    focused_serial, serial_disagreement = ocr_serial(card)
     focused_epic, epic_ok = ocr_epic(card)
     identity_suggestion, identity_disagreement = ocr_identity(card)
     rec = parse_card(text, epic_text, photo_path, page_no, cell_no, focused_house=focused_house, card_path=card_path)
+    rec["voterSerial"] = focused_serial
+    rec["voterSerialConfidence"] = 95 if focused_serial else 0
+    if serial_disagreement or not focused_serial:
+        rec["serialOcrDisagreement"] = True
     if focused_epic and (not rec.get("voterId") or epic_ok):
         rec["voterId"] = focused_epic
         rec["epicConfidence"] = 95
@@ -1049,51 +1095,15 @@ def process_page(page_path, output_dir, page_no):
     ]
 
 
-    # Printed electoral rolls are ordered by house number.
-    # Master Monotonic Sequence Smoothing Engine for House Numbers
-    # -------------------------------------------------------------
+    # OCR can misread a house number, but a different non-empty number is not
+    # evidence of an error.  Any family/neighbor recovery is applied later,
+    # after section metadata is known, and only fills a blank/invalid field.
     ordered_records = sorted(records, key=lambda item: item["cell"])
-
-    # Step 1: Safe Sandwich Rule (Only when prev and next are identical 3+ digit numbers, e.g. 4194, 1, 4194 -> 4194)
-    for index in range(1, len(ordered_records) - 1):
-        prev_val = str(ordered_records[index - 1].get("houseNumber") or "").strip()
-        curr_val = str(ordered_records[index].get("houseNumber") or "").strip()
-        next_val = str(ordered_records[index + 1].get("houseNumber") or "").strip()
-        if prev_val.isdigit() and len(prev_val) >= 3 and prev_val == next_val and curr_val != prev_val:
-            # Do not overwrite if curr_val is a valid non-empty house number repeated in subsequent cards
-            if not curr_val or not is_repeated_in_records(ordered_records, index, curr_val, 2):
-                target = ordered_records[index]
-                target["rawHouseNumber"] = target.get("rawHouseNumber") or curr_val
-                target["houseNumber"] = prev_val
-                target["houseNumberConfidence"] = 90
-                target["houseOcrDisagreement"] = True
-            # Last card of page recovery
-            p_num = int(prev_val)
-            c_num = int(curr_val) if curr_val.isdigit() else -1
-            if c_num < p_num or c_num > p_num + 10:
-                ordered_records[index]["rawHouseNumber"] = ordered_records[index].get("rawHouseNumber") or curr_val
-                ordered_records[index]["houseNumber"] = prev_val
-                ordered_records[index]["houseNumberConfidence"] = 90
-
-    # Recover printed serials from the dominant serial-minus-cell offset. A
-    # minimum of four independent cards prevents one bad OCR token from
-    # manufacturing a page sequence.
-    serial_offsets = {}
-    for record in records:
-        raw_serial = str(record.get("voterSerial") or "").translate(
-            str.maketrans("०१२३४५६७८९", "0123456789")
-        )
-        if raw_serial.isdigit():
-            serial = int(raw_serial)
-            offset = serial - int(record["cell"])
-            if 0 <= offset <= 100000:
-                serial_offsets[offset] = serial_offsets.get(offset, 0) + 1
-    if serial_offsets:
-        serial_offset, support = max(serial_offsets.items(), key=lambda item: item[1])
-        if support >= 4:
-            for record in records:
-                record["voterSerial"] = str(serial_offset + int(record["cell"]))
-                record["voterSerialConfidence"] = 95
+    # Never replace a printed/OCR serial with a value derived from its grid
+    # cell. A roll can contain deleted entries, non-contiguous serials, or a
+    # partial page; an offset calculation can silently change 159 or 99 to 59.
+    # The card serial remains the source of truth. Sequence checks below only
+    # flag records for review; they never rewrite a serial.
     # Legacy EPIC and the printed voter serial share the card header. OCR may
     # concatenate them (for example .../000701 + serial 87). Remove the suffix
     # only when it exactly equals this independently recovered serial.
@@ -2073,90 +2083,12 @@ def main():
                     merged["sectionName"] = last_known_section_name
             records.append(merged)
 
-    # Dynamic Serial Assignment Engine:
-    # 1. Consensus Start Finding: Pre-scan records to calculate candidate global starting offsets (S - index).
-    #    This supports partial PDFs starting at ANY voter serial (e.g. 301, 421, 1201) while rejecting isolated OCR noise on Card 1.
-    # 2. Primary: Direct OCR serial read from top-left box of the card (if aligned with consensus or valid progression).
-    # 3. Sequential fallback: If top-left OCR is noisy/missing, infer from last_valid_serial + 1.
-    # 4. Grid fallback: For standard pages, grid formula (page - min_voter_page)*30 + cell or globalStartSerial.
-    global_start_serial = payload.get("globalStartSerial")
-    voter_page_numbers = [r.get("page") for r in records if isinstance(r.get("page"), int)]
-    min_voter_page = min(voter_page_numbers) if voter_page_numbers else 3
-
-    start_offsets = {}
-    for idx, r in enumerate(records):
-        raw_val = str(r.get("voterSerial") or "").translate(str.maketrans("०१२३४५६७८९", "0123456789"))
-        if raw_val.isdigit():
-            val = int(raw_val)
-            # If val is small (e.g. < 50) but index is large or consensus would be small, don't let truncated numbers distort best_start
-            expected_start = val - idx
-            if expected_start >= 1:
-                start_offsets[expected_start] = start_offsets.get(expected_start, 0) + 1
-
-    consensus_start = None
-    if start_offsets:
-        # Prefer higher start values if counts are tied or close to avoid truncated reads picking 1 over 101/201/301/1001
-        sorted_starts = sorted(start_offsets.items(), key=lambda item: (item[1], item[0]), reverse=True)
-        best_start, count = sorted_starts[0]
-        if count >= 2 or len(records) < 4:
-            consensus_start = best_start
-    if consensus_start is None and isinstance(global_start_serial, int) and global_start_serial > 0:
-        consensus_start = global_start_serial
-
-    last_valid_serial = 0
-    for idx, record in enumerate(records):
-        raw_ocr = str(record.get("voterSerial") or "").translate(str.maketrans("०१२३४५६७८९", "0123456789"))
-        page_num = record.get("page")
-        cell_num = record.get("cell")
-
-        assigned_serial = None
-        expected_seq = (last_valid_serial + 1) if last_valid_serial > 0 else (
-            (consensus_start + idx) if consensus_start is not None else None
-        )
-
-        # Primary: Direct top-left card serial box OCR with strict truncation auto-repair & jump rejection
-        if raw_ocr.isdigit():
-            val = int(raw_ocr)
-            if expected_seq is not None:
-                if val == expected_seq:
-                    assigned_serial = val
-                elif str(expected_seq).endswith(str(val)) or (expected_seq > val and (expected_seq - val) % 100 == 0) or (expected_seq > val and (expected_seq - val) % 1000 == 0):
-                    # Truncated OCR read (e.g. read 21/25/36 instead of 121/1025/136)
-                    assigned_serial = expected_seq
-                elif abs(val - expected_seq) <= 1:
-                    assigned_serial = val
-                elif expected_seq > val:
-                    # Any smaller OCR value than expected sequence when progressing (e.g. 21 or 25 after 120 or expected 1025) -> override with expected sequence
-                    assigned_serial = expected_seq
-                elif last_valid_serial == 0 and consensus_start is not None:
-                    if abs((val - idx) - consensus_start) <= 1:
-                        assigned_serial = val
-                    else:
-                        assigned_serial = expected_seq
-                else:
-                    # Isolated noisy OCR jump (e.g. OCR read 98 instead of real sequential 96) -> override with expected sequence
-                    assigned_serial = expected_seq
-            else:
-                assigned_serial = val
-
-        # Fallback 1: Sequential increment from last valid serial
-        if assigned_serial is None and last_valid_serial > 0:
-            assigned_serial = last_valid_serial + 1
-        # Fallback 2: Consensus / Page grid estimation
-        elif assigned_serial is None:
-            if consensus_start is not None:
-                assigned_serial = consensus_start + idx
-            elif isinstance(global_start_serial, int) and global_start_serial > 0 and isinstance(cell_num, int):
-                assigned_serial = global_start_serial + (cell_num - 1)
-            elif isinstance(page_num, int) and isinstance(cell_num, int) and page_num >= 3:
-                assigned_serial = (page_num - min_voter_page) * 30 + cell_num
-
-        if assigned_serial is not None:
-            if raw_ocr and raw_ocr != str(assigned_serial):
-                record["rawVoterSerial"] = raw_ocr
-            last_valid_serial = assigned_serial
-            record["voterSerial"] = str(assigned_serial)
-            record["voterSerialConfidence"] = 95
+    # Preserve printed card serials. Sequence information is validation-only.
+    preserve_card_serials(records, payload.get("globalStartSerial"))
+    # Re-run validation after serial integrity checks so a sequence mismatch is
+    # persisted as needs_review instead of being silently accepted.
+    for record in records:
+        validate_record(record)
 
     # Section Name Auto-Repair: Sync sectionName from doc_section_map
     if doc_section_map:

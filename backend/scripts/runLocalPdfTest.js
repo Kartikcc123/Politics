@@ -85,25 +85,41 @@ async function main() {
   }
 
   // Save JSON report
-  const reportPath = path.join(path.dirname(pdfPath), `${path.basename(pdfPath, path.extname(pdfPath))}_ocr_test_report.json`);
+  const baseName = path.basename(pdfPath, path.extname(pdfPath));
+  const reportPath = path.join(path.dirname(pdfPath), `${baseName}_ocr_test_report.json`);
+  const excelPath = path.join(path.dirname(pdfPath), `${baseName}_ocr_result.xlsx`);
+
+  const voterData = records.map(m => ({
+    'Serial': m.voterSerial || '',
+    'EPIC No': m.voterId || '',
+    'Name': m.name || '',
+    'Guardian Name': m.guardianName || '',
+    'House No': m.houseNumber || '',
+    'Age': m.age || '',
+    'Gender': m.gender || '',
+    'Section No': m.sectionNumber || '',
+    'Section Name': m.sectionName || '',
+  }));
+
   fs.writeFileSync(reportPath, JSON.stringify({
     header: result.header,
     totalVoters: records.length,
     sectionBreakdown: sectionCounts,
-    members: records.map(m => ({
-      serial: m.voterSerial,
-      voterId: m.voterId,
-      name: m.name,
-      guardianName: m.guardianName,
-      houseNumber: m.houseNumber,
-      age: m.age,
-      gender: m.gender,
-      sectionNumber: m.sectionNumber,
-      sectionName: m.sectionName,
-    }))
+    members: voterData,
   }, null, 2));
 
-  console.log(`\nFull OCR Test JSON report saved to: ${reportPath}`);
+  try {
+    const XLSX = require('xlsx');
+    const ws = XLSX.utils.json_to_sheet(voterData);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Voters');
+    XLSX.writeFile(wb, excelPath);
+    console.log(`\nExcel file (.xlsx) saved to: ${excelPath}`);
+  } catch (err) {
+    console.log(`(Excel creation skipped: ${err.message})`);
+  }
+
+  console.log(`Full OCR Test JSON report saved to: ${reportPath}`);
 }
 
 main().catch(err => {

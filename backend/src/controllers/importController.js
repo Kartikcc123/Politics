@@ -774,7 +774,10 @@ const getOrCreateImportScope = async ({ user, body, firstMember }) => {
   }
 
   let ward = await resolveWard(body.ward);
-  const targetWardNumber = firstMember?.wardNumber || firstMember?.assemblyNumber;
+  let targetWardNumber = firstMember?.wardNumber || firstMember?.assemblyNumber;
+  if (!ward && !targetWardNumber && firstMember?.partNumber) {
+    targetWardNumber = `PartScope_${firstMember.partNumber}`;
+  }
   if (!ward && targetWardNumber) {
     const wardSet = { active: true };
     const wardInsert = {
@@ -787,7 +790,7 @@ const getOrCreateImportScope = async ({ user, body, firstMember }) => {
       wardSet.name = firstMember.assemblyName;
       wardSet.area = firstMember.assemblyName;
     } else {
-      wardInsert.name = `Assembly ${firstMember.assemblyNumber}`;
+      wardInsert.name = `Part Scope ${firstMember.partNumber || targetWardNumber}`;
     }
     const createdWard = await Ward.findOneAndUpdate(
       { number: String(targetWardNumber) },
@@ -1026,7 +1029,7 @@ const parsePdfTextLayerMembers = async (filePath) => {
       if (row >= 0 && row < 10) cards[row * 3 + column].push(item);
     }
 
-    for (const cardItems of cards) {
+    for (const [cardIndex, cardItems] of cards.entries()) {
       if (!cardItems.length) continue;
       const lines = [];
       for (const item of cardItems.sort((a, b) => Math.abs(b.y - a.y) > 1 ? b.y - a.y : a.x - b.x)) {
@@ -1069,6 +1072,8 @@ const parsePdfTextLayerMembers = async (filePath) => {
         address: [header.sectionName || header.assemblyName, houseNumber].filter(Boolean).join(', '),
         location: header.sectionName || header.assemblyName || '',
         rawText: cardText,
+        pageNumber,
+        cardIndex: cardIndex + 1,
       });
     }
   }
@@ -1160,6 +1165,8 @@ const parsePdfMembers = async (filePath, importFileName, onOcrProgress) => {
         photo: record.photo,
         cardImage: record.cardImage || '',
         rawText: record.rawText || record.text,
+        pageNumber: record.page || record.pageNumber,
+        cardIndex: record.cell || record.cardIndex,
         ocrConfidence: record.confidence,
         houseNumberConfidence: record.houseNumberConfidence,
         locationMatchConfidence: record.locationMatchConfidence,
@@ -1177,25 +1184,25 @@ const parsePdfMembers = async (filePath, importFileName, onOcrProgress) => {
       };
     });
     const mergedMap = new Map();
-    const serialMap = new Map();
+    const positionMap = new Map();
 
     for (const member of textLayer.members) {
       const epic = normalizeEpic(member.voterId);
-      const key = epic || `text-${member.voterSerial || Math.random()}`;
+      const key = epic || `text-${member.pageNumber || ''}-${member.cardIndex || Math.random()}`;
       mergedMap.set(key, { ...member, voterId: epic || member.voterId });
-      const serial = Number(member.voterSerial);
-      if (!isNaN(serial) && serial > 0) {
-        serialMap.set(serial, key);
+      if (member.pageNumber && member.cardIndex) {
+        positionMap.set(`${member.pageNumber}:${member.cardIndex}`, key);
       }
     }
 
     for (const ocrMem of ocrMembers) {
       const ocrEpic = normalizeEpic(ocrMem.voterId);
-      const serial = Number(ocrMem.voterSerial);
-
+      const positionKey = `${ocrMem.page || ocrMem.pageNumber || ''}:${ocrMem.cell || ocrMem.cardIndex || ''}`;
+      // Serial OCR is never an identity key: a lost/added leading digit can
+      // silently join 44 with 144. Prefer EPIC, then the same rendered card.
       let targetKey = ocrEpic && mergedMap.has(ocrEpic) ? ocrEpic : null;
-      if (!targetKey && !isNaN(serial) && serial > 0 && serialMap.has(serial)) {
-        targetKey = serialMap.get(serial);
+      if (!targetKey && positionMap.has(positionKey)) {
+        targetKey = positionMap.get(positionKey);
       }
 
       if (targetKey && mergedMap.has(targetKey)) {
@@ -1205,9 +1212,11 @@ const parsePdfMembers = async (filePath, importFileName, onOcrProgress) => {
         const ocrHouse = cleanValue(ocrMem.houseNumber);
         const ageStr = String(prev.age || ocrMem.age || '');
 
+        // Embedded PDF text is authoritative for serial and house number.
+        // OCR is only a fallback when the text field is absent or invalid.
         const validTextHouse = (textHouse && textHouse !== ageStr) ? textHouse : '';
         const validOcrHouse = (ocrHouse && ocrHouse !== ageStr) ? ocrHouse : '';
-        let preferredHouse = validOcrHouse || validTextHouse || '';
+        const preferredHouse = validTextHouse || validOcrHouse || '';
 
         mergedMap.set(targetKey, {
           ...prev,
@@ -1474,8 +1483,8 @@ exports.importMembers = async (req, res, next) => {
           m: 'mother', mother: 'mother',
         })[relation] || 'other';
       }
-      if (!data.name) {
-        skipped.push({ row, reason: 'Name missing' });
+      if (!data.name && !data.caste) {
+        skipped.push({ row, reason: 'Name or Caste required' });
         processed += 1;
         setProgress(uploadId, { processed, imported: affected.length, skipped: skipped.length });
         continue;
@@ -1486,8 +1495,12 @@ exports.importMembers = async (req, res, next) => {
         setProgress(uploadId, { processed, imported: affected.length, skipped: skipped.length });
         continue;
       }
-      data.area = await ensureAreaHierarchy(data, req.currentUser._id);
-      const existing = await Member.findOne({ voterId: data.voterId });
+      let existing = await Member.findOne({ voterId: data.voterId });
+      if (!existing && data.name) {
+        // Fallback match by Part & Serial or Name if EPIC didn't match immediately
+        const nameRegex = new RegExp(`^${data.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i');
+        existing = await Member.findOne({ name: nameRegex, booth });
+      }
       if (existing) {
         matchedCount += 1;
         const current = existing.toObject();
