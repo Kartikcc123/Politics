@@ -1870,7 +1870,7 @@ const runPdfImport = async ({ file, body, currentUser }, uploadId) => {
     applyPdfVillageHint(firstMemberWithHeader, pdfVillageHint);
 
     const pdfPartHint = pdfPartNumberHintFromName(file.originalname || file.filename);
-    const docPartNumber = pdfPartHint || detectedHeader.partNumber || firstMemberWithHeader.partNumber || parsed.ocr?.header?.partNumber || '';
+    const docPartNumber = detectedHeader.partNumber || parsed.ocr?.header?.partNumber || firstMemberWithHeader.partNumber || pdfPartHint || '';
     if (docPartNumber) {
       detectedHeader.partNumber = docPartNumber;
       firstMemberWithHeader.partNumber = docPartNumber;
