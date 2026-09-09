@@ -1156,7 +1156,7 @@ def _set_house_suggestion(record, house, reason, needs_review=True, confidence=8
 
 
 def smooth_house_numbers(records):
-    """Apply only same-section, two-sided house-number consensus corrections."""
+    """Apply only same-section, two-sided house-number consensus corrections to empty/missing house fields."""
     if len(records) < 3:
         return records
 
@@ -1167,7 +1167,9 @@ def smooth_house_numbers(records):
             continue
         previous_house = str(previous.get("houseNumber") or "").strip()
         following_house = str(following.get("houseNumber") or "").strip()
-        if re.fullmatch(r"\d{1,5}(?:[/\-]\d{1,5})?", previous_house) and previous_house == following_house:
+        current_house = str(current.get("houseNumber") or "").strip()
+        # Only fill if current card house is empty/unreadable, NEVER overwrite a valid house number (like 4241)
+        if previous_house and previous_house == following_house and (not current_house or current_house in ("0", "")):
             _set_house_suggestion(current, previous_house, "same_section_sandwich_house_corrected", needs_review=False, confidence=95)
     return ordered
 
