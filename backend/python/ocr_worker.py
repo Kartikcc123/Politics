@@ -232,15 +232,19 @@ def correct_name_with_dictionary(name_text):
 def clean_house(value):
     if not value:
         return ""
+    # Map Devanagari digits ०-९ and common OCR optical confusion characters to ASCII digits.
+    # Note: Devanagari letters like 'क', 'ख' are suffix qualifiers (e.g. '2145 क') and MUST NOT be translated to numbers like '7'.
     normalized = (value or "").translate(
-        str.maketrans("\u0966\u0967\u0968\u0969\u096a\u096b\u096c\u096d\u096e\u096fOQILSZBGil|!][", "012345678900112586111111")
+        str.maketrans("\u0966\u0967\u0968\u0969\u096a\u096b\u096c\u096d\u096e\u096fOQILSZBG|!][", "0123456789001125861111")
     )
-    # Remove leading non-digit symbols like ':', '|', '/', '-', '.' or hyphenated label noise
-    normalized = re.sub(r"^(?:[:\|/\-\.]+\s*)+", "", normalized.strip())
-    match = re.search(r"(?<!\d)(\d{1,5}(?:[/\-]\d{1,5})?)(?!\d)", normalized)
+    # Extract numeric house number part + optional Devanagari/Hindi letter suffix (e.g. "2145 क" or "2145-A" or "4201")
+    raw_str = re.sub(r"^(?:[:\|/\-\.]+\s*)+", "", normalized.strip())
+    match = re.search(r"(?<!\d)(\d{1,5}(?:[/\-]\d{1,5})?)(?:\s*([A-Za-z\u0900-\u097F]))?(?!\d)", raw_str)
     if not match:
         return ""
     val = match.group(1)
+    suffix = match.group(2) if match.group(2) else ""
+    
     # If hyphenated with identical numbers (e.g., 3-3 -> 3, 56-56 -> 56)
     if "-" in val or "/" in val:
         parts = re.split(r"[/\-]", val)
@@ -250,7 +254,8 @@ def clean_house(value):
     # Remove noise leading zero for house numbers like 01 -> 1, 05 -> 5 (preserve 0 / 00 / 000)
     if len(val) > 1 and val.startswith("0") and not re.fullmatch(r"0+", val):
         val = val.lstrip("0")
-    return val
+    
+    return f"{val} {suffix}".strip() if suffix else val
 
 
 def get_digits(value):
