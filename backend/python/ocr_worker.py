@@ -331,10 +331,10 @@ def ocr_house(card, card_full_text=None):
         house_line_full = field(card_full_text, r"(?:गृह|गह|गुह|ग्ह|गृ|गृ\.|मकान|House|H\.No|Te|\S*ह|\S*स)\s*(?:संख्या|सख्या|सं\.?|सं०|नं\.?|क्र\.?|Number|No\.?)?\s*[:：;\-।|]?\s*([^\n]+)")
         c_full = clean_house(house_line_full)
 
-    # Crop house number ROI (y: 0.40 to 0.74, x: 0.03 to 0.78)
+    # Crop house number ROI (y: 0.45 to 0.80, x: 0.02 to 0.70)
     region = card[
-        round(height * 0.40):round(height * 0.74),
-        round(width * 0.03):round(width * 0.78),
+        round(height * 0.45):round(height * 0.80),
+        round(width * 0.02):round(width * 0.70),
     ]
     if region.size == 0:
         return c_full
@@ -356,7 +356,7 @@ def ocr_house(card, card_full_text=None):
         house_line = field(t_hin, r"(?:गृह|गह|गुह|ग्ह|गृ|गृ\.|मकान|House|H\.No|Te|\S*ह|\S*स)\s*(?:संख्या|सख्या|सं\.?|सं०|नं\.?|क्र\.?|Number|No\.?)?\s*[:：;\-।|]?\s*([^\n]+)")
         c1 = clean_house(house_line)
         if c1:
-            return c1
+            c1_values.append(c1)
 
         t_eng = safe_image_to_string(
             variant, lang="eng", config="--psm 6 -c tessedit_char_whitelist=0123456789/-",
@@ -370,6 +370,8 @@ def ocr_house(card, card_full_text=None):
         counts = {v: c1_values.count(v) for v in set(c1_values)}
         winner, _ = max(counts.items(), key=lambda x: (x[1], len(x[0])))
         if winner:
+            if c_full and len(c_full) > len(winner):
+                return c_full
             return winner
 
     if c_full:
@@ -662,13 +664,10 @@ def parse_card(text, epic_text, photo_path, page_no, cell_no, focused_house="", 
     )
     if raw_house in ("0", "00", "000"):
         house = raw_house
+    elif raw_house != "" and len(raw_house) > len(focused_house):
+        house = raw_house
     elif focused_house != "":
-        if len(focused_house) >= len(raw_house) or len(focused_house) >= 3:
-            house = focused_house
-        elif len(raw_house) > len(focused_house):
-            house = raw_house
-        else:
-            house = focused_house
+        house = focused_house
     elif raw_house != "":
         house = raw_house
     else:
