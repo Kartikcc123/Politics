@@ -2170,10 +2170,6 @@ def main():
     for record in records:
         raw_house = str(record.get("houseNumber") or "").strip()
         record["rawHouseNumber"] = record.get("rawHouseNumber") or raw_house
-        if raw_house and str(record.get("age") or "").strip() == get_digits(raw_house):
-            record["houseNumber"] = ""
-            record["needsReview"] = True
-            record.setdefault("reviewReasons", []).append("house_number_matched_age_cleared")
 
     for index in range(1, len(records) - 1):
         previous, current, following = records[index - 1], records[index], records[index + 1]
