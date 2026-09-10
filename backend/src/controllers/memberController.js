@@ -9,6 +9,7 @@ const { writeActivity } = require('../middleware/activityLogger');
 const { requireValidEpic } = require('../utils/epic');
 const { syncMemberFamily, removeMemberFromFamilies } = require('../utils/familySync');
 const { persistLocalImage } = require('../utils/persistentMedia');
+const { recheckCardOcr } = require('../utils/cardOcr');
 const { matchingLocationNames } = require('../utils/locationMerge');
 const { invalidateMemberData } = require('../utils/dataCache');
 const {
@@ -1231,4 +1232,64 @@ exports.suggestions = async (req, res, next) => {
   } catch (error) {
     next(error);
   }
+};
+
+const validRecheckEpic = (value) => /^[A-Z]{3}\d{7}$|^RJ\/\d{1,3}\/\d{1,3}\/\d{6}$/.test(String(value || '').toUpperCase());
+const recheckFields = ['voterSerial', 'name', 'guardianName', 'houseNumber', 'age', 'gender'];
+
+const applyRecheckOcr = async (member, user, req) => {
+  const before = member.toObject();
+  const image = member.ocrCardImage || member.cardImage || member.sourceDocument?.ocrCardImage;
+  if (!image) throw new Error('No saved voter card image is available.');
+  const result = await recheckCardOcr(image);
+  for (const field of recheckFields) {
+    const value = result[field];
+    if (value !== undefined && value !== null && String(value).trim() !== '') member[field] = value;
+  }
+  const currentValues = member.ocrValues?.toObject?.() || member.ocrValues || {};
+  member.ocrValues = { raw: result.rawText ? { ...(currentValues.raw || {}), recheckRawText: result.rawText } : (currentValues.raw || {}), suggested: { ...(currentValues.suggested || {}), ...Object.fromEntries([...recheckFields, 'voterId'].filter((key) => result[key] !== undefined && result[key] !== null && String(result[key]).trim() !== '').map((key) => [key, result[key]])) }, verified: currentValues.verified || {}, status: result.validationPassed ? 'suggested' : (currentValues.status || 'raw'), verifiedBy: currentValues.verifiedBy, verifiedAt: currentValues.verifiedAt };
+  member.ocrConfidence = result.confidence || 0;
+  member.houseNumberConfidence = result.houseNumberConfidence || 0;
+  member.ocrFieldConfidence = result.fieldConfidence || {};
+  const retained = (member.ocrReviewReasons || []).filter((reason) => !/(?:_ocr_disagreement$|^(?:serial|name|guardian_name|house_number|age|gender|voter_id)_(?:missing|ocr))/i.test(reason));
+  member.ocrReviewReasons = [...new Set([...retained, ...(result.reviewReasons || [])])];
+  const recheckedEpic = String(result.voterId || '').toUpperCase();
+  const effectiveEpic = validRecheckEpic(recheckedEpic) ? recheckedEpic : member.voterId;
+  const complete = Boolean(member.voterSerial && member.name && member.guardianName && member.houseNumber && effectiveEpic && member.age && member.gender);
+  member.profileCompletionStatus = complete ? 'complete' : 'pending';
+  if (complete) { member.profileCompletedBy = user._id; member.profileCompletedAt = new Date(); } else { member.profileCompletedBy = undefined; member.profileCompletedAt = undefined; }
+  if (!member.ocrReviewReasons.length && member.verificationStatus === 'needs_review') member.verificationStatus = 'pending';
+  member.updatedBy = user._id;
+  await member.save();
+  const epic = recheckedEpic;
+  if (validRecheckEpic(epic) && epic !== member.voterId) {
+    const duplicate = await Member.exists({ voterId: epic, _id: { $ne: member._id } });
+    if (!duplicate) await Member.collection.updateOne({ _id: member._id }, { $set: { voterId: epic } });
+  }
+  const updated = await Member.findById(member._id).populate(populate);
+  await writeActivity({ req, action: 'member.ocr_rechecked', module: 'members', entityId: member._id, before, after: updated });
+  return { member: updated, result };
+};
+
+exports.recheckOcr = async (req, res, next) => {
+  try {
+    const ids = req.params.id ? [req.params.id] : (Array.isArray(req.body.memberIds) ? req.body.memberIds : (Array.isArray(req.body.ids) ? req.body.ids : []));
+    const filter = applyMemberScope(req.currentUser, {});
+    if (ids.length) filter._id = { $in: ids.filter((id) => mongoose.isValidObjectId(id)) };
+    else {
+      const scopeFields = ['booth', 'ward', 'sectionNumber', 'sectionName', 'partNumber', 'assemblyNumber'];
+      const selected = scopeFields.filter((field) => String(req.body[field] || '').trim());
+      if (!selected.length) return res.status(400).json({ message: 'Select voters or provide booth, ward, section, part, or assembly scope.' });
+      for (const field of selected) filter[field] = String(req.body[field]).trim();
+    }
+    const limit = Math.min(Math.max(Number(req.body.limit) || 500, 1), 500);
+    const members = await Member.find(filter).limit(limit);
+    const processed = []; const failed = [];
+    for (const member of members) {
+      try { const outcome = await applyRecheckOcr(member, req.currentUser, req); processed.push({ id: member._id, member: outcome.member, reviewReasons: outcome.result.reviewReasons || [] }); }
+      catch (error) { failed.push({ id: member._id, message: error.message }); }
+    }
+    invalidateMemberData();
+    res.json({ requested: members.length, processed: processed.length, failed, members: processed });
+  } catch (error) { next(error); }
 };

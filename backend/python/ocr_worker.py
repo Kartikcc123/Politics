@@ -1051,6 +1051,40 @@ def _process_single_card(args):
     return rec
 
 
+def process_card_image(card_path):
+    """OCR one already-cropped voter card without page-level smoothing."""
+    card = cv2.imread(str(card_path))
+    if card is None or card.size == 0:
+        raise ValueError("Could not read voter card image")
+    card = auto_deskew(card)
+    height, width = card.shape[:2]
+    gray = cv2.cvtColor(card, cv2.COLOR_BGR2GRAY)
+    clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+    text = safe_image_to_string(cv2.resize(clahe.apply(gray), None, fx=1.5, fy=1.5, interpolation=cv2.INTER_CUBIC), lang=os.getenv("OCR_LANGUAGES", "hin+eng"), config="--psm 6")
+    epic_region = card[0:round(height * 0.25), 0:width]
+    epic_text = safe_image_to_string(cv2.resize(clahe.apply(cv2.cvtColor(epic_region, cv2.COLOR_BGR2GRAY)), None, fx=1.5, fy=1.5, interpolation=cv2.INTER_CUBIC), lang="eng", config="--psm 6")
+    focused_house = ocr_house(card, card_full_text=text)
+    focused_serial, serial_disagreement = ocr_serial(card)
+    focused_epic, epic_ok = ocr_epic(card)
+    identity_suggestion, identity_disagreement = ocr_identity(card)
+    record = parse_card(text, epic_text, "", 1, 0, focused_house=focused_house, card_path=str(card_path))
+    record["voterSerial"] = focused_serial
+    record["voterSerialConfidence"] = 95 if focused_serial else 0
+    if serial_disagreement or not focused_serial:
+        record["serialOcrDisagreement"] = True
+    if focused_epic and (not record.get("voterId") or epic_ok):
+        record["voterId"] = focused_epic
+        record["epicConfidence"] = 95
+    if identity_suggestion.get("name"):
+        record["name"] = identity_suggestion["name"]
+    if identity_suggestion.get("guardianName"):
+        record["guardianName"] = identity_suggestion["guardianName"]
+    if identity_disagreement:
+        record["identityOcrDisagreement"] = True
+    validate_record(record)
+    return record
+
+
 def process_page(page_path, output_dir, page_no):
     image = cv2.imread(str(page_path))
     if image is None:
@@ -1889,6 +1923,11 @@ def parse_header_numbers(text):
 
 def main():
     payload = json.loads(sys.stdin.read())
+    if payload.get("mode") == "single_card":
+        if os.getenv("TESSERACT_PATH"):
+            pytesseract.pytesseract.tesseract_cmd = os.getenv("TESSERACT_PATH")
+        print(json.dumps(process_card_image(payload["cardPath"]), ensure_ascii=False))
+        return
     pages = [Path(item) for item in payload["pages"]]
     page_numbers = payload.get("pageNumbers") or list(range(1, len(pages) + 1))
     if len(page_numbers) != len(pages):
