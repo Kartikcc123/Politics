@@ -520,7 +520,7 @@ class Api {
   }
 
   Future<List<dynamic>> getLabels() async {
-    return List<dynamic>.from(await get('/api/members/labels'));
+    return await list('/api/members/labels');
   }
 
   Future<Map<String, dynamic>> bulkApplyLabel(List<String> memberIds, String label, {String action = 'add'}) async {
