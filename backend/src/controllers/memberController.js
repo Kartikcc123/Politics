@@ -1394,19 +1394,47 @@ const applyRecheckOcr = async (member, user, req) => {
         const currentHouse = String(member.houseNumber || '').trim();
         let newHouse = String(value).trim();
         
-        // Auto-fix 7->1 or 4->1 serif OCR confusion on 3 or 4-digit numbers (e.g. 7675 -> 1675, 4675 -> 1675, 749 -> 149)
+        // Auto-fix 7->1 or 4->1 serif OCR confusion on 3 or 4-digit numbers (e.g. 7675 -> 1675, 4675 -> 1675, 749 -> 149, 449 -> 149)
         if (/^[74]\d{2,3}$/.test(newHouse)) {
           newHouse = '1' + newHouse.slice(1);
           value = newHouse;
           result.houseNumber = newHouse;
         }
 
-        // If member already has an established valid house number:
+        // Automatic Hybrid Cross-Check:
+        // If extracted house is short/truncated (e.g. 162 or 62) or missing,
+        // cross-check with guardian in the same booth/section automatically!
+        const guardianName = String(result.guardianName || member.guardianName || '').trim();
+        const sectionNum = String(member.sectionNumber || '').trim();
+        const boothNum = String(member.booth || '').trim();
+        if (guardianName && guardianName.length >= 3) {
+          const guardianQuery = {
+            _id: { $ne: member._id },
+            name: { $regex: new RegExp(`^${guardianName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') },
+          };
+          if (sectionNum) guardianQuery.sectionNumber = sectionNum;
+          if (boothNum) guardianQuery.booth = boothNum;
+          const head = await Member.findOne(guardianQuery).select('houseNumber').lean();
+          if (head && head.houseNumber && head.houseNumber !== '0') {
+            const headHouse = String(head.houseNumber).trim();
+            // If newHouse is a truncated suffix of headHouse (e.g. head has 1162, OCR got 162 or 62)
+            if (headHouse.length > newHouse.length && headHouse.endsWith(newHouse)) {
+              newHouse = headHouse;
+              value = headHouse;
+              result.houseNumber = headHouse;
+            } else if (!newHouse || newHouse === '0') {
+              newHouse = headHouse;
+              value = headHouse;
+              result.houseNumber = headHouse;
+            }
+          }
+        }
+
+        // If member already had an established complete house number, protect against truncation
         if (currentHouse && currentHouse !== '0') {
           if (newHouse === '0' || newHouse === '') {
             continue; // Retain existing valid house number
           }
-          // If OCR missed leading digit(s) (e.g. existing 1162 vs OCR 62 or 162)
           if (currentHouse.length > newHouse.length && currentHouse.endsWith(newHouse)) {
             continue; // Retain complete existing house number
           }
