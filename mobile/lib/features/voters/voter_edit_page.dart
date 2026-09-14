@@ -10,7 +10,8 @@ import '../../core/offline_voter_cache.dart';
 import '../../core/picked_file_source.dart';
 import '../../core/print_helper.dart';
 import '../../core/theme.dart';
-import '../../widgets/voter_phonebook.dart' show voterPhotoHeaders, voterPhotoUrl;
+import '../../widgets/voter_phonebook.dart'
+    show voterPhotoHeaders, voterPhotoUrl;
 
 class VoterEditPage extends StatefulWidget {
   const VoterEditPage({
@@ -35,6 +36,7 @@ class _VoterEditPageState extends State<VoterEditPage> {
   final formKey = GlobalKey<FormState>();
   final fields = <String, TextEditingController>{};
   bool saving = false;
+  bool recheckingOcr = false;
   final editPageController = PageController();
   int editStep = 0;
   PlatformFile? selectedPhoto;
@@ -80,6 +82,8 @@ class _VoterEditPageState extends State<VoterEditPage> {
     'houseNumber',
     'address',
     'location',
+    'googleMapUrl',
+    'partyAffiliation',
     'assemblyNumber',
     'assemblyName',
     'partNumber',
@@ -140,7 +144,9 @@ class _VoterEditPageState extends State<VoterEditPage> {
   }
 
   void _switchVoter(int newIndex) {
-    if (widget.voterList == null || newIndex < 0 || newIndex >= widget.voterList!.length) return;
+    if (widget.voterList == null ||
+        newIndex < 0 ||
+        newIndex >= widget.voterList!.length) return;
     setState(() {
       currentIndex = newIndex;
       currentVoter = widget.voterList![newIndex];
@@ -283,17 +289,27 @@ class _VoterEditPageState extends State<VoterEditPage> {
         updated = await api.put('/api/members/${currentVoter['_id']}', body);
       }
       if (updated is Map<String, dynamic>) {
-        currentVoter = updated;
-        await OfflineVoterCache.merge([updated]);
+        final savedVoter = Map<String, dynamic>.from(updated);
+        currentVoter = savedVoter;
+        final list = widget.voterList;
+        if (list != null && currentIndex >= 0 && currentIndex < list.length) {
+          list[currentIndex] = savedVoter;
+        }
+        await OfflineVoterCache.merge([savedVoter]);
       }
       api.notifyDataChanged();
       widget.onSaved();
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('मतदाता जानकारी सहेज दी गई')));
-      if (addAnother) {
-        Navigator.pop(context);
+      final hasNextVoter = widget.voterList != null &&
+          currentIndex < widget.voterList!.length - 1;
+      if (hasNextVoter) {
+        _switchVoter(currentIndex + 1);
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('जानकारी सहेज दी गई। अगला मतदाता खुल गया।'),
+        ));
       } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('मतदाता जानकारी सहेज दी गई')));
         Navigator.pop(context);
       }
     } finally {
@@ -301,6 +317,29 @@ class _VoterEditPageState extends State<VoterEditPage> {
     }
   }
 
+  Future<void> recheckOcr() async {
+    if (api.user?['role'] != 'admin' || recheckingOcr) return;
+    final yes = await showDialog<bool>(context: context, builder: (context) => AlertDialog(
+      title: const Text('2nd Pass OCR Re-check?'),
+      content: const Text('Saved voter card dobara scan hoga. Valid OCR fields automatically update honge.'),
+      actions: [TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')), FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Re-check'))],
+    ));
+    if (yes != true) return;
+    setState(() => recheckingOcr = true);
+    try {
+      final updated = await api.post('/api/members/${currentVoter['_id']}/recheck-ocr', {});
+      final members = updated['members'] as List?;
+      final item = members != null && members.isNotEmpty ? members.first['member'] : null;
+      if (item is Map) {
+        currentVoter = Map<String, dynamic>.from(item);
+        _loadVoterData(currentVoter);
+        await OfflineVoterCache.merge([currentVoter]);
+      }
+      api.notifyDataChanged(); widget.onSaved();
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('OCR re-check complete.')));
+    } catch (error) { if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('OCR re-check failed: $error'), backgroundColor: Colors.red)); }
+    finally { if (mounted) setState(() => recheckingOcr = false); }
+  }
   Future<void> remove() async {
     final yes = await showDialog<bool>(
       context: context,
@@ -347,17 +386,21 @@ class _VoterEditPageState extends State<VoterEditPage> {
               IconButton(
                 icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 18),
                 tooltip: 'पिछला मतदाता',
-                onPressed: currentIndex > 0 ? () => _switchVoter(currentIndex - 1) : null,
+                onPressed: currentIndex > 0
+                    ? () => _switchVoter(currentIndex - 1)
+                    : null,
               ),
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                 decoration: BoxDecoration(
                   color: blue.withOpacity(0.12),
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: Text(
                   '${currentIndex + 1}/${widget.voterList!.length}',
-                  style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 12, color: blue),
+                  style: const TextStyle(
+                      fontWeight: FontWeight.w800, fontSize: 12, color: blue),
                 ),
               ),
               IconButton(
@@ -510,6 +553,19 @@ class _VoterEditPageState extends State<VoterEditPage> {
             _field('gramPanchayat', 'ग्राम पंचायत'),
             _field('village', 'गाँव'),
             _field('municipality', 'नगर पालिका / वार्ड'),
+            _field('googleMapUrl', 'Google Map Location Link'),
+            if ((fields['googleMapUrl']?.text ?? '').isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(top: 6),
+                child: ElevatedButton.icon(
+                  onPressed: () async {
+                    final url = Uri.parse(fields['googleMapUrl']!.text.trim());
+                    if (await canLaunchUrl(url)) await launchUrl(url, mode: LaunchMode.externalApplication);
+                  },
+                  icon: const Icon(Icons.map_outlined, color: Colors.blue),
+                  label: const Text('Google Maps पर खोलें'),
+                ),
+              ),
           ]),
         ]),
         _stepPage([
@@ -580,8 +636,12 @@ class _VoterEditPageState extends State<VoterEditPage> {
 
   Widget _ocrCardReview() {
     final source = widget.voter['sourceDocument'];
-    final rawPath = source is Map ? '${source['ocrCardImage'] ?? ''}'.trim() : '';
-    final path = rawPath.isNotEmpty ? rawPath : '${widget.voter['ocrCardImage'] ?? widget.voter['cardImage'] ?? ''}'.trim();
+    final rawPath =
+        source is Map ? '${source['ocrCardImage'] ?? ''}'.trim() : '';
+    final path = rawPath.isNotEmpty
+        ? rawPath
+        : '${widget.voter['ocrCardImage'] ?? widget.voter['cardImage'] ?? ''}'
+            .trim();
     if (path.isEmpty) return const SizedBox.shrink();
     final url = voterPhotoUrl(path);
     final reasons = (widget.voter['ocrReviewReasons'] as List?)

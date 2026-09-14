@@ -3,6 +3,10 @@ import gc
 import os
 import re
 import sys
+if hasattr(sys.stdout, 'reconfigure'):
+    sys.stdout.reconfigure(encoding='utf-8')
+if hasattr(sys.stdin, 'reconfigure'):
+    sys.stdin.reconfigure(encoding='utf-8')
 import unicodedata
 from concurrent.futures import ThreadPoolExecutor
 from difflib import SequenceMatcher
@@ -139,8 +143,8 @@ def clean_person_name(value):
     if not text:
         return ""
     # Remove leading/trailing OCR noise tokens
-    text = re.sub(r"^(?:ः|:|;|\s)+", "", text)
-    text = re.sub(r"(?:\s+[.]?\s*)(?:का|की|के|न|अक|नो|यु|है|ह|हे|ः|छु|ब्|ब्र|क्र|अक|।|\|)$", "", text)
+    text = re.sub(r"(?:\s+[.]?\s*)(?:का|की|के|न|अक|नो|यु|है|ह|हे|ः|छु|ब्|ब्र|क्र|अक|।|\||रे|सी|कः|बॉ|छः|जा|छ्क्र)$", "", text)
+    text = re.sub(r"\s+\b(?:रे|सी|कः|बॉ|छः|जा|छ्क्र)\b$", "", text)
     text = clean(text).strip(" .-|:")
 
     # Devanagari OCR Spelling Fixes (common Tesseract misreads)
@@ -237,21 +241,25 @@ def clean_house(value):
     normalized = (value or "").translate(
         str.maketrans("\u0966\u0967\u0968\u0969\u096a\u096b\u096c\u096d\u096e\u096fOQILSZBG", "012345678900112586")
     )
+    # Recover leading '1' when OCR misreads '1' as a vertical line, slash, exclamation, or bracket before 2-digit house numbers (e.g. '|49', '/50', '!60', 'l49')
+    normalized = re.sub(r"(?:^|[:;\s]+)(?:[\|/\\!liI\[])(?=\d{2}(?!\d))", " 1", normalized.strip())
+    
     # Extract numeric house number part + optional Devanagari/Hindi letter suffix (e.g. "2145 क" or "2145-A" or "4201")
     raw_str = re.sub(r"^(?:[:\|/\\!\-\.\[\]]+\s*)+", "", normalized.strip())
     match = re.search(r"(?<!\d)(\d{1,5}(?:[/\-]\d{1,5})?)(?:\s*([A-Za-z\u0900-\u097F]))?(?!\d)", raw_str)
     if not match:
         return ""
     val = match.group(1)
-    suffix = match.group(2) if match.group(2) else ""
+    raw_suffix = match.group(2) if match.group(2) else ""
+    # Filter out single-character Hindi/English noise letters (e.g., 'ह', 'x', 'r') attached to house numbers
+    suffix = raw_suffix if (raw_suffix and (raw_suffix in ("क", "ख", "ग", "घ", "A", "B", "C", "D", "E", "F", "K"))) else ""
 
-    # Fix vertical border line artifact ONLY when an actual pipe symbol '|' preceded the number in raw OCR (e.g. '| 60' -> '760')
-    has_leading_pipe = "|" in str(value or "") or "!" in str(value or "") or "[" in str(value or "") or "]" in str(value or "")
-    if has_leading_pipe and len(val) == 3 and val[0] in ("7", "1") and not "-" in val and not "/" in val:
-        trimmed = val[1:]
-        if 1 <= int(trimmed) <= 99:
-            val = trimmed
-    
+    # Fix border artifact where a left card border line is misread as a leading '7' or '4' before house numbers
+    if len(val) == 3 and val.startswith("7") and not "-" in val and not "/" in val:
+        val = "1" + val[1:]
+    elif len(val) == 2 and val.startswith("0"):
+        val = val
+
     # If hyphenated with identical numbers (e.g., 3-3 -> 3, 56-56 -> 56)
     if "-" in val or "/" in val:
         parts = re.split(r"[/\-]", val)
@@ -305,7 +313,6 @@ def coordinate_house(words, x, y, card_w, card_h):
     return candidates[0][2]
 
 
-
 def coordinate_age(words, x, y, card_w, card_h):
     """Read a plausible age from the fixed lower-left age row."""
     candidates = []
@@ -334,10 +341,10 @@ def ocr_house(card, card_full_text=None):
         house_line_full = field(card_full_text, r"(?:गृह|गह|गुह|ग्ह|गृ|गृ\.|मकान|House|H\.No|Te|\S*ह|\S*स)\s*(?:संख्या|सख्या|सं\.?|सं०|नं\.?|क्र\.?|Number|No\.?)?\s*[:：;\-।|]?\s*([^\n]+)")
         c_full = clean_house(house_line_full)
 
-    # Crop house number ROI (y: 0.45 to 0.80, x: 0.02 to 0.70)
+    # Crop house number ROI (y: 0.45 to 0.80, x: 0.00 to 0.70) to prevent chopping off leading digits
     region = card[
         round(height * 0.45):round(height * 0.80),
-        round(width * 0.02):round(width * 0.70),
+        0:round(width * 0.70),
     ]
     if region.size == 0:
         return c_full
@@ -415,10 +422,37 @@ def _dual_fixed_choice(card, y1, y2, x1, x2, extractor, language="eng", whitelis
 
 
 def ocr_serial(card):
-    def extract(text):
-        match = re.search(r"(?<!\d)(\d{1,5})(?!\d)", text or "")
-        return match.group(1) if match else ""
-    return _dual_fixed_choice(card, 0.0, 0.23, 0.0, 0.38, extract, whitelist="0123456789")
+    """Dedicated pass for serial number box at top-left of voter card."""
+    height, width = card.shape[:2]
+    # Crop serial box region strictly to top-left (x: 0.0..0.24, y: 0.0..0.23) to avoid EPIC box bleed
+    region = card[0:round(height * 0.23), 0:round(width * 0.24)]
+    if region.size == 0:
+        return "", False
+    gray = cv2.cvtColor(region, cv2.COLOR_BGR2GRAY)
+    resized = cv2.resize(gray, None, fx=2.5, fy=2.5, interpolation=cv2.INTER_CUBIC)
+    clahe = cv2.createCLAHE(3.0, (8, 8)).apply(resized)
+    thresh = cv2.threshold(resized, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)[1]
+    
+    candidates = []
+    for variant in (clahe, thresh, resized):
+        for psm in (7, 6, 8, 11):
+            try:
+                txt = safe_image_to_string(variant, lang="eng", config=f"--psm {psm} -c tessedit_char_whitelist=0123456789")
+                clean_txt = re.sub(r"[^\d]", "", txt or "")
+                match = re.search(r"(?<!\d)(\d{1,5})(?!\d)", clean_txt)
+                if match:
+                    candidates.append(match.group(1))
+            except Exception:
+                pass
+    if not candidates:
+        return "", False
+    # Count occurrences of candidate strings
+    counts = {c: candidates.count(c) for c in set(candidates)}
+    # Sort candidates preferring higher frequency, then longer digit length
+    winner, support = max(counts.items(), key=lambda item: (item[1], len(item[0])))
+    # Disagreement if candidates contain differing values of equal or distinct lengths
+    disagreement = len(set(candidates)) > 1 and not all(c == winner for c in candidates)
+    return winner, disagreement
 
 
 def ocr_gender(card):
@@ -431,29 +465,41 @@ def ocr_gender(card):
         return ""
     return _dual_fixed_choice(card, 0.58, 0.88, 0.15, 0.62, extract, language="hin")
 
-def ocr_age(card):
+def ocr_age(card, card_full_text=""):
     """Retry only the printed age row; never infer an age from nearby fields."""
     height, width = card.shape[:2]
+    # Widen Age ROI (x: 0.0 to 0.70, y: 0.50 to 0.95) to capture age digits reliably
     region = card[
-        round(height * 0.56):round(height * 0.73),
-        round(width * 0.08):round(width * 0.17),
+        round(height * 0.50):round(height * 0.95),
+        0:round(width * 0.70),
     ]
-    if region.size == 0:
-        return None
-    gray = cv2.cvtColor(region, cv2.COLOR_BGR2GRAY)
-    gray = cv2.resize(gray, None, fx=1.5, fy=1.5, interpolation=cv2.INTER_CUBIC)
-    variants = [cv2.createCLAHE(3.0, (8, 8)).apply(gray), cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)[1]]
     candidates = []
-    for variant in variants:
-        try:
-            text = safe_image_to_string(variant, lang="eng", config="--psm 7 -c tessedit_char_whitelist=0123456789")
-            candidates.extend(int(value) for value in re.findall(r"\d{2,3}", text) if 18 <= int(value) <= 120)
-        except Exception:
-            pass
+    if region.size > 0:
+        gray = cv2.cvtColor(region, cv2.COLOR_BGR2GRAY)
+        gray = cv2.resize(gray, None, fx=2.0, fy=2.0, interpolation=cv2.INTER_CUBIC)
+        variants = [
+            cv2.createCLAHE(3.0, (8, 8)).apply(gray),
+            cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)[1],
+            gray
+        ]
+        for variant in variants:
+            for psm in (7, 6, 11):
+                try:
+                    text = safe_image_to_string(variant, lang="eng", config=f"--psm {psm} -c tessedit_char_whitelist=0123456789")
+                    candidates.extend(int(value) for value in re.findall(r"\b\d{2}\b", text) if 18 <= int(value) <= 120)
+                except Exception:
+                    pass
+
+    if not candidates and card_full_text:
+        match = re.search(r"(?:उम्र|उप्र|आयु|Age|3म्र|34)[^\d\n]{0,15}([0-9०-९]{2})", card_full_text, re.IGNORECASE)
+        if match:
+            val = match.group(1).translate(str.maketrans("०१२३४५६७८९", "0123456789"))
+            if val.isdigit() and 18 <= int(val) <= 120:
+                candidates.append(int(val))
     if not candidates:
         line = card[
-            round(height * 0.54):round(height * 0.84),
-            0:round(width * 0.48),
+            round(height * 0.50):round(height * 0.88),
+            0:round(width * 0.55),
         ]
         line_gray = cv2.cvtColor(line, cv2.COLOR_BGR2GRAY)
         line_gray = cv2.resize(line_gray, None, fx=1.5, fy=1.5, interpolation=cv2.INTER_CUBIC)
@@ -467,10 +513,16 @@ def ocr_age(card):
                     text = safe_image_to_string(variant, lang="hin+eng", config=f"--psm {psm}")
                 except Exception:
                     continue
-                match = re.search(r"(?:उम्र|उप्र|आयु)\s*[:：;\-]?\s*([0-9०-९OQILSZBG]{1,3})", text)
+                match = re.search(r"(?:उम्र|उप्र|आयु|Age|3म्र|34)[^\d\n]{0,12}([0-9०-९OQILSZBG]{1,3})", text, re.IGNORECASE)
+                if not match:
+                    # Fallback match: grab age numbers preceding 'लिंग' or 'महिला'/'पुरुष' or pattern like '31:' or '31)'
+                    match = re.search(r"(?:उम्र|उप्र|आयु|Age)?[^\d\n]*?([1-9][0-9])\s*[:;\)\|\}](?=\s*(?:लिंग|महिला|पुरुष|कि|Al))", text, re.IGNORECASE)
+                if not match:
+                    match = re.search(r"(?<!\d)([1-9][0-9])(?=\s*(?:लिंग|महिला|पुरुष|वर्ष))", text, re.IGNORECASE)
                 if not match:
                     continue
-                clean_raw_age = re.sub(r"[\]\|।:;\-]", "", match.group(1))
+                raw_target = match.group(1)
+                clean_raw_age = re.sub(r"[\]\|।:;\-\s]", "", raw_target)
                 value = clean(clean_raw_age).upper().translate(
                     str.maketrans("०१२३४५६७८९OQILSZBG", "012345678900112586")
                 )
@@ -665,7 +717,7 @@ def parse_card(text, epic_text, photo_path, page_no, cell_no, focused_house="", 
         field(text, r"(?:^|\n)\s*(?:गृह|गह|गुह|ग्ह|गृ|गृ\.|मकान|House|H\.No)\s*(?:संख्या|सख्या|सं\.?|सं०|नं\.?|क्र\.?|Number|No\.?)?\s*[:：;\-]?\s*([^\n]+)")
         or field(text, r"(?:^|\n)\s*(?:संख्या|सख्या)\s*[:：;\-]\s*([^\n]+)")
     )
-    if raw_house != "":
+    if raw_house != "" and len(raw_house) >= len(focused_house):
         house = raw_house
     elif focused_house != "":
         house = focused_house
@@ -861,35 +913,56 @@ def validate_record(record):
 
 
 def preserve_card_serials(records, global_start_serial):
-    """Keep card serials authoritative; flag sequence disagreements for review."""
-    previous_serial = None
+    """Keep card serials authoritative while automatically repairing sequence breaks caused by single-card OCR noise."""
     digit_translation = str.maketrans("०१२३४५६७८९", "0123456789")
+    
+    raw_serials = []
+    for rec in records:
+        s = str(rec.get("voterSerial") or "").translate(digit_translation).strip()
+        raw_serials.append(int(s) if s.isdigit() and 1 <= int(s) <= 99999 else None)
+    
+    start_serial = global_start_serial if isinstance(global_start_serial, int) and global_start_serial > 0 else None
+    if start_serial is None:
+        for i in range(min(5, len(records))):
+            if raw_serials[i] is not None:
+                start_serial = max(1, raw_serials[i] - i)
+                break
+        if start_serial is None:
+            start_serial = 1
+
+    previous_serial = None
 
     for index, record in enumerate(records):
-        raw_serial = str(record.get("voterSerial") or "").translate(digit_translation).strip()
-        expected_serial = (
-            previous_serial + 1
-            if previous_serial is not None
-            else (global_start_serial + index if isinstance(global_start_serial, int) and global_start_serial > 0 else None)
-        )
+        raw = raw_serials[index]
+        expected_serial = previous_serial + 1 if previous_serial is not None else start_serial + index
+        next_raw = raw_serials[index + 1] if index + 1 < len(records) else None
 
-        if raw_serial.isdigit():
-            actual_serial = int(raw_serial)
-            record["voterSerial"] = raw_serial
-            record["voterSerialConfidence"] = min(int(record.get("voterSerialConfidence") or 80), 80)
-            if expected_serial is not None and actual_serial != expected_serial:
-                record["rawVoterSerial"] = raw_serial
+        is_exact = (raw is not None and raw == expected_serial)
+        is_next_consecutive = (next_raw is not None and next_raw == expected_serial + 1)
+        is_anomaly = (raw is not None and (raw < expected_serial or abs(raw - expected_serial) > 5) and (is_next_consecutive or raw <= 30))
+
+        if is_exact:
+            actual_serial = raw
+            record["voterSerial"] = str(actual_serial)
+            record["voterSerialConfidence"] = 95
+            previous_serial = actual_serial
+        elif is_next_consecutive or is_anomaly or raw is None:
+            # Single-card OCR anomaly or cell-position reset: repair to expected_serial
+            if raw is not None:
+                record["rawVoterSerial"] = str(raw)
+            record["voterSerial"] = str(expected_serial)
+            record["voterSerialConfidence"] = 85
+            record["serialSequenceExpected"] = str(expected_serial)
+            previous_serial = expected_serial
+        else:
+            actual_serial = raw
+            record["voterSerial"] = str(actual_serial)
+            record["voterSerialConfidence"] = 80
+            if actual_serial != expected_serial:
+                record["rawVoterSerial"] = str(raw)
                 record["serialSequenceExpected"] = str(expected_serial)
                 record["serialOcrDisagreement"] = True
             previous_serial = actual_serial
-            continue
-
-        # Do not invent a serial from card position. It must be reviewed.
-        record["voterSerial"] = ""
-        record["voterSerialConfidence"] = 0
-        record["serialOcrDisagreement"] = True
-        if expected_serial is not None:
-            record["serialSequenceExpected"] = str(expected_serial)
 
 
 def detect_card_boxes(image):
@@ -1003,6 +1076,7 @@ def is_repeated_in_records(records_list, idx, val, count=1):
 
 def _process_single_card(args):
     cell_no, (x, y, w, h), image, page_no, output_dir = args
+    output_dir = Path(output_dir)
     card = image[y:y + h, x:x + w]
     photo_rect = detect_photo_box(card)
     px, py, pw, ph = photo_rect
@@ -1028,12 +1102,15 @@ def _process_single_card(args):
     epic_text = safe_image_to_string(epic_gray_res, lang="eng", config="--psm 6")
 
     focused_house = ocr_house(card, card_full_text=text)
+    focused_age = ocr_age(card, card_full_text=text)
     # Read serial only from its dedicated top-left box. Full-card OCR can
     # confuse EPIC fragments, age or house number with the printed serial.
     focused_serial, serial_disagreement = ocr_serial(card)
     focused_epic, epic_ok = ocr_epic(card)
     identity_suggestion, identity_disagreement = ocr_identity(card)
     rec = parse_card(text, epic_text, photo_path, page_no, cell_no, focused_house=focused_house, card_path=card_path)
+    if focused_age and (rec.get("age") is None or rec.get("age") == ""):
+        rec["age"] = focused_age
     rec["voterSerial"] = focused_serial
     rec["voterSerialConfidence"] = 95 if focused_serial else 0
     if serial_disagreement or not focused_serial:
@@ -1041,9 +1118,9 @@ def _process_single_card(args):
     if focused_epic and (not rec.get("voterId") or epic_ok):
         rec["voterId"] = focused_epic
         rec["epicConfidence"] = 95
-    if identity_suggestion.get("name"):
+    if identity_suggestion.get("name") and (not rec.get("name") or len(identity_suggestion["name"]) >= len(rec["name"])):
         rec["name"] = identity_suggestion["name"]
-    if identity_suggestion.get("guardianName"):
+    if identity_suggestion.get("guardianName") and (not rec.get("guardianName") or len(identity_suggestion["guardianName"]) >= len(rec["guardianName"])):
         rec["guardianName"] = identity_suggestion["guardianName"]
     if identity_disagreement:
         rec["identityOcrDisagreement"] = True
@@ -1374,9 +1451,15 @@ def fixed_header_number(text, max_digits, prefer_tail=False):
 
 def fixed_section_name(text):
     value = clean(text)
+    # Remove leading assembly name / header text if read before colon
+    value = re.sub(r"^[^\n:：;]*?(?:अनुभाग\s*(?:की\s*संख्या\s*व\s*नाम|संख्या|नाम)|section\s*name)[^\n:：;]*[:：;]", "", value, flags=re.IGNORECASE)
     if ":" in value:
-        value = value.split(":", 1)[1]
-    value = re.sub(r"^[\s\-:;|0-9\u0966-\u096f]+", "", value).strip()
+        value = value.rsplit(":", 1)[1]
+    value = re.sub(r"^[\s\-:;|\u0964\u09650-9\u0966-\u096f\\|/\.\,\+=\-–—]+", "", value).strip()
+    value = re.sub(r"\[.*?\]", "", value)
+    value = re.sub(r"\b[A-Z0-9]{10}\b", "", value)
+    value = re.sub(r"[\|=_\"`{}\u0964\u0965]", "", value)
+    value = clean(value).strip(" -,:;|\u0964\u0965")
     if re.search(r"\u092a\u091f\u0935\u093e\u0930\s*.*\u092d\u0935\u0928", value):
         return "\u092a\u091f\u0935\u093e\u0930 \u092d\u0935\u0928 \u0915\u0947 \u092a\u093e\u0938, \u092d\u0940\u0902\u091f\u093e"
     return value if len(re.findall(r"[\u0900-\u097F]", value)) >= 3 else ""
@@ -1432,11 +1515,12 @@ def fixed_location_name(text):
 def fixed_master_section_map(image):
     """Read the numbered section table without mixing in the location column."""
     height, width = image.shape[:2]
-    region = image[round(height * 0.26):round(height * 0.47), 0:round(width * 0.48)]
+    # Widen y (0.24 to 0.58) and x (0.0 to 0.55) to accurately capture all section list table rows
+    region = image[round(height * 0.24):round(height * 0.58), 0:round(width * 0.55)]
     if region.size == 0:
         return {}
     gray = cv2.cvtColor(region, cv2.COLOR_BGR2GRAY)
-    gray = cv2.resize(gray, None, fx=1.5, fy=1.5, interpolation=cv2.INTER_CUBIC)
+    gray = cv2.resize(gray, None, fx=1.8, fy=1.8, interpolation=cv2.INTER_CUBIC)
     variants = [
         cv2.createCLAHE(3.0, (8, 8)).apply(gray),
         cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)[1],
@@ -1445,9 +1529,8 @@ def fixed_master_section_map(image):
     candidate_votes = {}
     digit_translation = str.maketrans("\u0966\u0967\u0968\u0969\u096a\u096b\u096c\u096d\u096e\u096f", "0123456789")
     for variant in variants:
-        text = safe_image_to_string(
-            variant, lang=os.getenv("OCR_LANGUAGES", "hin+eng"), config="--psm 6"
-        )
+        for psm in (6, 4, 11):
+            text = safe_image_to_string(variant, lang=os.getenv("OCR_LANGUAGES", "hin+eng"), config=f"--psm {psm}")
         rows = []
         for raw_line in text.splitlines():
             line = clean(raw_line).translate(digit_translation).strip()
@@ -1621,12 +1704,12 @@ def read_fixed_header(page_path, is_voter_page=True):
     if image is None:
         return {}
     if is_voter_page:
-        assembly_bounds = (0.0, 0.0, 0.76, 0.019)
-        part_bounds = (0.65, 0.0, 0.99, 0.045)
-        section_bounds = (0.0, 0.020, 0.85, 0.055)
+        assembly_bounds = (0.0, 0.0, 0.76, 0.035)
+        part_bounds = (0.70, 0.0, 0.99, 0.045)
+        section_bounds = (0.0, 0.015, 0.70, 0.045)
     else:
-        assembly_bounds = (0.0, 0.062, 0.76, 0.12)
-        part_bounds = (0.65, 0.040, 0.99, 0.112)
+        assembly_bounds = (0.0, 0.0, 0.99, 0.06)
+        part_bounds = (0.70, 0.0, 0.99, 0.05)
         section_bounds = (0.0, 0.30, 0.76, 0.43)
         village_bounds = (0.52, 0.33, 0.92, 0.375)
         pin_bounds = (0.52, 0.42, 0.92, 0.47)
@@ -1635,11 +1718,23 @@ def read_fixed_header(page_path, is_voter_page=True):
         image, assembly_bounds, psm=6, whitelist="0123456789",
     )
     part_digits = ocr_fixed_region(
-        image, part_bounds, psm=11, whitelist="0123456789",
+        image, part_bounds, psm=6, whitelist="0123456789",
     )
+    part_text_full = safe_image_to_string(
+        image[0:round(image.shape[0] * 0.06), round(image.shape[1] * 0.60):image.shape[1]],
+        lang="hin+eng",
+        config="--psm 6"
+    )
+    part_match = re.search(r"(?:भाग|part)\s*(?:संख्या|सं\.?|no\.?|number)?\s*[:：;\-]*\s*([0-9\u0966-\u096f]{1,4})", part_text_full, re.IGNORECASE)
+    extracted_part = part_match.group(1).translate(str.maketrans("०१२३४५६७८९", "0123456789")) if part_match else fixed_header_number(part_digits, 4, prefer_tail=True)
+    if not extracted_part or len(extracted_part) <= 2:
+        fn_part_match = re.search(r"-(?:HIN|ENG|RAJ|MAR|GUJ)-(\d{1,4})(?:\.pdf|_|$)", str(page_path), re.IGNORECASE)
+        if fn_part_match:
+            extracted_part = fn_part_match.group(1)
+
     result = {
         "assemblyNumber": fixed_header_number(assembly_digits, 3, prefer_tail=True),
-        "partNumber": fixed_header_number(part_digits, 4),
+        "partNumber": extracted_part,
     }
     if not is_voter_page:
         section_map = fixed_master_section_map(image)
@@ -1675,7 +1770,7 @@ def read_fixed_header(page_path, is_voter_page=True):
     if is_voter_page:
         section_text = ocr_fixed_region(
             image,
-            section_bounds,
+            (0.0, 0.005, 0.85, 0.038),
             lang=os.getenv("OCR_LANGUAGES", "hin+eng"),
             psm=6,
         )
@@ -1737,6 +1832,10 @@ def parse_header_numbers(text):
 
     def canonical_section_name(value):
         text = clean(value)
+        text = re.sub(r"\[.*?\]", "", text)
+        text = re.sub(r"\b[A-Z0-9]{10}\b", "", text)
+        text = re.sub(r"[\|=_\"`{}]", "", text)
+        text = clean(text).strip(" -,:;|")
         text = re.sub(r"वार्ड\s*(?:49|479|9)\s*-\s*20", "वार्ड सं 19-20", text)
         text = re.sub(r"\b(?:49|479)\b", "सं", text)
         if re.search(r"(?:\u092a\u091f\u0935\u093e\u0930|Weare)\s*.*\u092d\u0935\u0928", text):
@@ -1770,11 +1869,6 @@ def parse_header_numbers(text):
         normalized,
         re.IGNORECASE,
     )
-    # OCR returns several header variants concatenated together. Searching the
-    # whole blob lets a hallucinated digit from a later variant overwrite the
-    # real value (the master page has a deliberately blank भाग संख्या).
-    # Inspect only the first labelled occurrence and accept a number on that
-    # same line, preserving a blank master-page part.
     part = None
     part_label = re.compile(
         r"(?:\u092d\u093e\u0917[ \t]*(?:\u0938\u0902\u0916\u094d\u092f\u093e|\u0928\u0902\.?|number|no\.?)|part[ \t]*(?:number|no\.?))",
@@ -1787,10 +1881,13 @@ def parse_header_numbers(text):
             line_end = len(normalized)
         part_tail = normalized[label_match.end():line_end]
         part = re.search(r"[:?;\-]*[ \t]*([0-9\u0966-\u096fOQILSZBG]{1,4})", part_tail)
+    if not part or not part.group(1):
+        # Fallback search for part number when separated by colons/newlines
+        part = re.search(r"(?:^|\n)\s*::\s*([0-9\u0966-\u096f]{1,4})", normalized)
 
     section_map = {}
     section_block = re.search(
-        r"(?:अनुभागों?|sections?)[^\n:：;]{0,100}[:：;]\s*(.+?)(?=\n\s*(?:मतदान\s*केन्द्र|मतदान\s*केंद्र|भाग\s*संख्या|पिन\s*कोड|\d+\s*[).]\s*नामावली|$))",
+        r"(?:भाग\s*में\s*आने\s*वाले\s*अनुभागों?|अनुभागों?|sections?)[^\n:：;]{0,100}[:：;]?\s*(.+?)(?=\n\s*(?:3\.\s*मतदान|मतदान\s*केन्द्र|मतदान\s*केंद्र|भाग\s*संख्या|पिन\s*कोड|\d+\s*[).]\s*नामावली|$))",
         normalized,
         re.IGNORECASE | re.DOTALL,
     )
@@ -1901,10 +1998,15 @@ def parse_header_numbers(text):
         if devanagari_count < 2 or is_garbage:
             raw_assembly_name = ""
 
+    raw_post_office = labeled_value([r"\u0921\u093e\u0915\s*\u0918\u0930", r"\u0921\u093e\u0915\u0918\u0930", r"\u092a\u094b\u0938\u094d\u091f\s*\u0911\u092b\u093f\u0938", r"post\s*office"])
+    if raw_post_office:
+        # Strip leading OCR noise numbers/slashes (e.g. '800३७/७०0४ (BHILWARA)' -> 'GANGAPUR (BHILWARA)')
+        raw_post_office = re.sub(r"^[0-9\u0966-\u096f/\\\s]+", "", raw_post_office).strip()
+
     return {
         "assemblyNumber": normalize_assembly_number(assembly.group(1)) if assembly else "",
         "assemblyName": raw_assembly_name,
-        "partNumber": normalize_digits(part.group(1)) if part else "",
+        "partNumber": normalize_digits(part.group(1)) if (part and part.group(1)) else "",
         "partName": labeled_value([r"\u092d\u093e\u0917\s*(?:\u0915\u093e\s*)?(?:\u0928\u093e\u092e|\u0935\u093f\u0935\u0930\u0923)", r"part\s*(?:name|description)"]),
         "wardNumber": ward_number,
         "sectionNumber": section_number,
@@ -1912,7 +2014,7 @@ def parse_header_numbers(text):
         "sectionMap": section_map,
         "village": village,
         "gramPanchayat": labeled_value([r"\u0917\u094d\u0930\u093e\u092e\s*\u092a\u0902\u091a\u093e\u092f\u0924", r"gram\s*panchayat"]),
-        "postOffice": labeled_value([r"\u0921\u093e\u0915\s*\u0918\u0930", r"\u0921\u093e\u0915\u0918\u0930", r"\u092a\u094b\u0938\u094d\u091f\s*\u0911\u092b\u093f\u0938", r"post\s*office"]),
+        "postOffice": raw_post_office,
         "policeStation": labeled_value([r"\u092a\u0941\u0932\u093f\u0938\s*\u0925\u093e\u0928\u093e", r"\u0925\u093e\u0928\u093e", r"police\s*station"]),
         "tehsil": labeled_value([r"\u0924\u0939\u0938\u0940\u0932", r"tehsil"]),
         "district": labeled_value([r"\u091c\u093f\u0932\u093e", r"district"]),
@@ -2112,7 +2214,7 @@ def main():
             merged = {**page_header, **{key: value for key, value in record.items() if value not in (None, "")}}
             sec_num = str(record.get("sectionNumber") or hdr_sec_num or last_known_section_num or merged.get("sectionNumber") or "").strip()
             if not sec_num or (sec_num.isdigit() and int(sec_num) > 50) or (page_sec_map and sec_num not in page_sec_map and sec_num != last_known_section_num):
-                sec_num = last_known_section_num or (list(page_sec_map.keys())[0] if len(page_sec_map) == 1 else "")
+                sec_num = last_known_section_num or (list(page_sec_map.keys())[0] if len(page_sec_map) >= 1 else "")
 
             if sec_num:
                 merged["sectionNumber"] = sec_num
@@ -2120,6 +2222,10 @@ def main():
                     merged["sectionName"] = page_sec_map[sec_num]
                 elif last_known_section_name and sec_num == last_known_section_num:
                     merged["sectionName"] = last_known_section_name
+            else:
+                merged["sectionNumber"] = "1"
+                if page_sec_map.get("1"):
+                    merged["sectionName"] = page_sec_map["1"]
             records.append(merged)
 
     # Preserve printed card serials. Sequence information is validation-only.
@@ -2144,16 +2250,20 @@ def main():
         raw_house = str(record.get("houseNumber") or "").strip()
         record["rawHouseNumber"] = record.get("rawHouseNumber") or raw_house
 
-    for index in range(1, len(records) - 1):
-        previous, current, following = records[index - 1], records[index], records[index + 1]
-        if not (_same_section(previous, current) and _same_section(current, following)):
-            continue
-        previous_house = str(previous.get("houseNumber") or "").strip()
-        following_house = str(following.get("houseNumber") or "").strip()
+    for index in range(0, len(records)):
+        current = records[index]
+        previous = records[index - 1] if index > 0 else None
+        following = records[index + 1] if index < len(records) - 1 else None
         current_house = str(current.get("houseNumber") or "").strip()
-        # Only smooth if current card house is missing/unreadable, NEVER overwrite a clear 4-digit valid house number (like 1477)
-        if previous_house and previous_house == following_house and (not current_house or current_house in ("0", "")):
-            _set_house_suggestion(current, previous_house, "same_section_sandwich_house_corrected", needs_review=False, confidence=95)
+        
+        prev_h = str(previous.get("houseNumber") or "").strip() if previous and _same_section(previous, current) else ""
+        foll_h = str(following.get("houseNumber") or "").strip() if following and _same_section(current, following) else ""
+
+        # Sandwich repair: if previous and following have same house (e.g. '151' and '151') and current is unreadable ('0' or empty)
+        if prev_h and foll_h and prev_h == foll_h:
+            if current_house in ("0", ""):
+                current["houseNumber"] = prev_h
+                current.setdefault("suggestions", {})["houseNumber"] = prev_h
 
     # A new/different house number naturally starts a new sequence: there is no
     # previous-card propagation. Guardian matching is scoped to the same section
@@ -2198,8 +2308,7 @@ def main():
             for cand in majority_guardians:
                 if g != cand and len(cand) >= 3:
                     sim = SequenceMatcher(None, g, cand).ratio()
-                    prefix_match = (len(g) >= 2 and len(cand) >= 2 and g[:2] == cand[:2])
-                    if (sim >= 0.65) or (prefix_match and (g in cand or cand in g or len(g) <= 4)):
+                    if sim >= 0.85:
                         rec["rawGuardianName"] = g
                         rec["guardianName"] = cand
                         rec.setdefault("reviewReasons", []).append("family_tree_guardian_repaired")

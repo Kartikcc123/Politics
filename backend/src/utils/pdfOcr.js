@@ -132,9 +132,18 @@ const runPythonWorker = (pages, outputDir, arg3, arg4, options = {}) => new Prom
     if (stderrPending) stderr += stderrPending;
     if (code !== 0) return reject(new Error(stderr || `Python OCR exited with code ${code}`));
     try {
+      const lines = stdout.split(/\r?\n/).filter((l) => l.trim().startsWith('{'));
+      for (const line of lines.reverse()) {
+        try {
+          const parsed = JSON.parse(line);
+          if (parsed.header && (parsed.records || parsed.members)) {
+            return resolve(parsed);
+          }
+        } catch (_) {}
+      }
       return resolve(JSON.parse(stdout));
-    } catch (error) {
-      return reject(new Error(`Python OCR returned invalid JSON: ${error.message}`));
+    } catch (e) {
+      return reject(new Error(`Failed to parse OCR stdout: ${e.message}`));
     }
   });
   child.stdin.end(JSON.stringify({ pages, pageNumbers, outputDir, globalStartSerial }));
@@ -457,7 +466,12 @@ const lowMemoryOcrPdf = async (pdfPath, importFileName, pageRange = {}) => {
         inherited[field] = header[field];
       }
     }
-    if (header.partNumber) inherited.partNumber = header.partNumber;
+    const pdfPartMatch = importFileName.match(/-(?:HIN|ENG|RAJ|MAR|GUJ)-(\d{1,4})(?:\.pdf|_|$)/i);
+    const resolvedPartNumber = (pdfPartMatch ? pdfPartMatch[1] : null) || header.partNumber;
+    if (resolvedPartNumber) {
+      header.partNumber = resolvedPartNumber;
+      inherited.partNumber = resolvedPartNumber;
+    }
     if (header.assemblyNumber) inherited.assemblyNumber = header.assemblyNumber;
     if (header.village && (!inherited.village || String(inherited.village).trim() === '')) {
       inherited.village = header.village;
@@ -479,6 +493,10 @@ const lowMemoryOcrPdf = async (pdfPath, importFileName, pageRange = {}) => {
     if (secNum && docSectionMap[secNum]) {
       inherited.sectionNumber = secNum;
       inherited.sectionName = docSectionMap[secNum];
+      if ((!inherited.village || String(inherited.village).trim() === '' || !/[\u0900-\u097F]/.test(inherited.village))) {
+        const cleanSecName = String(docSectionMap[secNum]).replace(/^\d+[\s\-\:\.\,]+/, '').trim();
+        if (cleanSecName) inherited.village = cleanSecName;
+      }
       lastKnownSecNum = secNum;
     }
     if (!inherited.voterSerial || String(inherited.voterSerial).trim() === '') {

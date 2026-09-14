@@ -690,6 +690,37 @@ class _VoterManagementPageState extends State<VoterManagementPage> {
     return error.toString().toLowerCase().contains('member not found');
   }
 
+  Future<void> recheckOcr() async {
+    if (api.user?['role'] != 'admin') return;
+    final selected = selectedIds.toList();
+    final scope = <String, dynamic>{
+      for (final key in ['sectionNumber', 'sectionName', 'partNumber', 'assemblyNumber'])
+        if ((filterQuery[key] ?? '').trim().isNotEmpty) key: filterQuery[key],
+    };
+    if (selected.isEmpty && scope.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Pehle voters select karein ya section/part/assembly filter lagayein.')));
+      return;
+    }
+    final countLabel = selected.isNotEmpty ? '${selected.length} selected voters' : 'filtered voters (maximum 500)';
+    final confirmed = await showDialog<bool>(context: context, builder: (context) => AlertDialog(
+      icon: const Icon(Icons.document_scanner_outlined, color: blue, size: 38),
+      title: const Text('2nd Pass OCR Re-check?'),
+      content: Text('$countLabel ke saved voter-card images dobara scan honge aur valid OCR fields auto-update honge.'),
+      actions: [TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')), FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Start re-check'))],
+    ));
+    if (confirmed != true) return;
+    try {
+      final response = await api.post('/api/members/recheck-ocr', selected.isNotEmpty ? {'memberIds': selected} : scope);
+      final done = (response['processed'] as num?)?.toInt() ?? 0;
+      final failed = (response['failed'] as List?)?.length ?? 0;
+      api.notifyDataChanged();
+      if (!mounted) return;
+      setState(() { selectedIds.clear(); refreshVoters(); });
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('OCR re-check complete: $done updated${failed > 0 ? ', $failed failed' : ''}.')));
+    } catch (error) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('OCR re-check failed: $error'), backgroundColor: Colors.red));
+    }
+  }
   Future<void> deleteSelectedContacts() async {
     if (selectedIds.isEmpty) return;
     final ids = selectedIds.toList();
@@ -1311,9 +1342,15 @@ class _VoterManagementPageState extends State<VoterManagementPage> {
                     ),
                   ).then((_) => setState(refreshVoters)),
                   icon: Icon(
-  Icons.edit_note_rounded,
-  color: Theme.of(context).colorScheme.primary,
-),
+                    Icons.edit_note_rounded,
+                    color: Theme.of(context).colorScheme.primary,
+                  ),
+                ),
+              if (api.user?['role'] == 'admin')
+                IconButton(
+                  tooltip: '2nd Pass OCR Re-check',
+                  onPressed: recheckOcr,
+                  icon: Icon(Icons.document_scanner_outlined, color: Theme.of(context).colorScheme.primary),
                 ),
               if (api.user?['role'] == 'admin')
                 IconButton(
@@ -3135,6 +3172,8 @@ class _PhoneContactList extends StatelessWidget {
           onSelected: (selected) =>
               onSelectionChanged('${contacts[index]['_id']}', selected),
           onChanged: onChanged,
+          voterList: contacts,
+          currentIndex: index,
         ),
       ],
       if (result.pages > 1)
@@ -3171,6 +3210,8 @@ class _PhoneContactTile extends StatelessWidget {
     required this.selectionMode,
     required this.onSelected,
     required this.onChanged,
+    required this.voterList,
+    required this.currentIndex,
   });
 
   final Map<String, dynamic> voter;
@@ -3178,6 +3219,8 @@ class _PhoneContactTile extends StatelessWidget {
   final bool selectionMode;
   final ValueChanged<bool> onSelected;
   final VoidCallback onChanged;
+  final List<Map<String, dynamic>> voterList;
+  final int currentIndex;
 
   @override
   Widget build(BuildContext context) {
@@ -3205,8 +3248,12 @@ class _PhoneContactTile extends StatelessWidget {
           Navigator.push(
             context,
             MaterialPageRoute(
-              builder: (_) =>
-                  VoterDetailPage(voter: voter, onChanged: onChanged),
+              builder: (_) => VoterDetailPage(
+                voter: voter,
+                onChanged: onChanged,
+                voterList: voterList,
+                currentIndex: currentIndex,
+              ),
             ),
           );
         },
@@ -5319,7 +5366,12 @@ class VoterTable extends StatelessWidget {
     void openProfile(Map<String, dynamic> voter) => Navigator.push(
           context,
           MaterialPageRoute(
-            builder: (_) => VoterDetailPage(voter: voter, onChanged: refresh),
+            builder: (_) => VoterDetailPage(
+              voter: voter,
+              onChanged: refresh,
+              voterList: items,
+              currentIndex: items.indexOf(voter),
+            ),
           ),
         );
     return SectionCard(
@@ -5382,6 +5434,8 @@ class VoterTable extends StatelessWidget {
                                 '${entry.value['_id']}', selected),
                             selectionMode: selectedIds.isNotEmpty,
                             refresh: refresh,
+                            voterList: items,
+                            currentIndex: entry.key,
                           ))
                       .toList())
         else
@@ -5452,7 +5506,10 @@ class VoterTable extends StatelessWidget {
                                       context,
                                       MaterialPageRoute(
                                           builder: (_) => VoterEditPage(
-                                              voter: m, onSaved: refresh))),
+                                              voter: m,
+                                              onSaved: refresh,
+                                              voterList: items,
+                                              currentIndex: items.indexOf(m)))),
                                   icon: const Icon(Icons.edit, color: blue)),
                               IconButton(
                                   tooltip: 'हटाएं',
@@ -5550,6 +5607,8 @@ class _VoterRow extends StatelessWidget {
     required this.onSelected,
     required this.selectionMode,
     required this.refresh,
+    required this.voterList,
+    required this.currentIndex,
   });
   final int index;
   final Map<String, dynamic> member;
@@ -5557,6 +5616,8 @@ class _VoterRow extends StatelessWidget {
   final ValueChanged<bool> onSelected;
   final bool selectionMode;
   final VoidCallback refresh;
+  final List<Map<String, dynamic>> voterList;
+  final int currentIndex;
 
   @override
   Widget build(BuildContext context) {
@@ -5698,7 +5759,10 @@ class _VoterRow extends StatelessWidget {
                           context,
                           MaterialPageRoute(
                               builder: (_) => VoterEditPage(
-                                  voter: member, onSaved: refresh)));
+                                  voter: member,
+                                  onSaved: refresh,
+                                  voterList: voterList,
+                                  currentIndex: currentIndex)));
                     } else if (action == 'delete') {
                       final id = '${member['_id']}';
                       await api.delete('/api/members/$id');
@@ -5827,6 +5891,7 @@ class _VoterPhoto extends StatelessWidget {
     );
   }
 }
+
 class _VoterCardImageSection extends StatelessWidget {
   const _VoterCardImageSection({required this.voter});
   final Map<String, dynamic> voter;
@@ -5834,7 +5899,10 @@ class _VoterCardImageSection extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final source = voter['sourceDocument'];
-    final path = (source is Map ? '${source['ocrCardImage'] ?? ''}' : '${voter['ocrCardImage'] ?? ''}').trim();
+    final path = (source is Map
+            ? '${source['ocrCardImage'] ?? ''}'
+            : '${voter['ocrCardImage'] ?? ''}')
+        .trim();
     if (path.isEmpty) return const SizedBox.shrink();
     final url = voterPhotoUrl(path);
     return Container(
@@ -5852,7 +5920,8 @@ class _VoterCardImageSection extends StatelessWidget {
             Icon(Icons.document_scanner_outlined, color: blue, size: 20),
             SizedBox(width: 8),
             Text('मूल मतदाता कार्ड (Voter Card Image)',
-                style: TextStyle(fontWeight: FontWeight.w900, color: navy, fontSize: 15)),
+                style: TextStyle(
+                    fontWeight: FontWeight.w900, color: navy, fontSize: 15)),
           ]),
           const SizedBox(height: 10),
           ClipRRect(
@@ -5883,10 +5952,17 @@ class _VoterCardImageSection extends StatelessWidget {
 }
 
 class VoterDetailPage extends StatefulWidget {
-  const VoterDetailPage(
-      {super.key, required this.voter, required this.onChanged});
+  const VoterDetailPage({
+    super.key,
+    required this.voter,
+    required this.onChanged,
+    this.voterList,
+    this.currentIndex,
+  });
   final Map<String, dynamic> voter;
   final VoidCallback onChanged;
+  final List<Map<String, dynamic>>? voterList;
+  final int? currentIndex;
 
   @override
   State<VoterDetailPage> createState() => _VoterDetailPageState();
@@ -5979,8 +6055,12 @@ class _VoterDetailPageState extends State<VoterDetailPage> {
                 Navigator.push(
                   context,
                   MaterialPageRoute(
-                    builder: (_) =>
-                        VoterEditPage(voter: voter, onSaved: _refreshProfile),
+                    builder: (_) => VoterEditPage(
+                      voter: voter,
+                      onSaved: _refreshProfile,
+                      voterList: widget.voterList,
+                      currentIndex: widget.currentIndex,
+                    ),
                   ),
                 );
               }
@@ -6035,8 +6115,12 @@ class _VoterDetailPageState extends State<VoterDetailPage> {
               onTap: () => Navigator.push(
                 context,
                 MaterialPageRoute(
-                  builder: (_) =>
-                      VoterEditPage(voter: voter, onSaved: _refreshProfile),
+                  builder: (_) => VoterEditPage(
+                    voter: voter,
+                    onSaved: _refreshProfile,
+                    voterList: widget.voterList,
+                    currentIndex: widget.currentIndex,
+                  ),
                 ),
               ),
             ),

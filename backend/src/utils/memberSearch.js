@@ -401,6 +401,13 @@ const buildFieldSearchConditions = (query, mode) => {
 };
 const buildSearchConditions = (query) => searchTokens(query)
   .map((token) => {
+    const digits = compactDigits(token);
+    // A numeric value typed in the main search is a voter serial, not a text
+    // fragment. Anchoring it prevents 59 from also returning 159, 590, or a
+    // voter whose unrelated mobile/address happens to contain 59.
+    if (digits && digits.length === token.length) {
+      return { voterSerial: new RegExp('^' + escapeRegex(digits) + '$', 'i') };
+    }
     const loose = looseHindiToken(token);
     const fuzzyKeys = deletionKeys(token);
     const searchKeyConditions = [

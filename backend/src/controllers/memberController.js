@@ -201,7 +201,8 @@ exports.list = async (req, res, next) => {
     if (party) filter.party = party;
     if (supportLevel) filter.supportLevel = supportLevel;
     if (partyPreference) filter.partyPreference = partyPreference;
-    if (favorite === 'true' && req.currentUser.role === 'admin') filter.isFavorite = true;
+    if (favorite === 'true') filter.isFavorite = true;
+    if (req.query.label) filter.labels = String(req.query.label).trim();
     if (gender) filter.gender = gender;
     if (ward) filter.ward = ward;
     if (area) filter.area = area;
@@ -1198,16 +1199,150 @@ exports.duplicates = async (req, res, next) => {
   try {
     const scope = applyMemberScope(req.currentUser, {});
     const mobile = await Member.aggregate([
-      { $match: { ...scope, mobile: { $ne: null } } },
+      { $match: { ...scope, mobile: { $nin: [null, ''] } } },
       { $group: { _id: '$mobile', count: { $sum: 1 }, members: { $push: '$_id' } } },
       { $match: { count: { $gt: 1 } } },
+      { $limit: 50 },
+    ]);
+    const voterId = await Member.aggregate([
+      { $match: { ...scope, voterId: { $nin: [null, ''] } } },
+      { $group: { _id: '$voterId', count: { $sum: 1 }, members: { $push: '$_id' } } },
+      { $match: { count: { $gt: 1 } } },
+      { $limit: 50 },
     ]);
     const address = await Member.aggregate([
       { $match: { ...scope, address: { $nin: [null, ''] } } },
       { $group: { _id: '$address', count: { $sum: 1 }, members: { $push: '$_id' } } },
       { $match: { count: { $gt: 1 } } },
+      { $limit: 50 },
     ]);
-    res.json({ mobile, address });
+
+    // Populate candidate member info for easy review & merge
+    const memberIds = [...new Set([...mobile, ...voterId, ...address].flatMap((g) => g.members))];
+    const memberDocs = memberIds.length
+      ? await Member.find({ _id: { $in: memberIds } })
+        .select('name guardianName mobile voterId houseNumber sectionName photo isFavorite labels')
+        .lean()
+      : [];
+    const memberMap = new Map(memberDocs.map((m) => [String(m._id), m]));
+
+    const formatGroup = (group) => ({
+      key: group._id,
+      count: group.count,
+      members: group.members.map((id) => memberMap.get(String(id))).filter(Boolean),
+    });
+
+    res.json({
+      mobile: mobile.map(formatGroup),
+      voterId: voterId.map(formatGroup),
+      address: address.map(formatGroup),
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+exports.merge = async (req, res, next) => {
+  try {
+    const { primaryId, secondaryId } = req.body;
+    if (!primaryId || !secondaryId || primaryId === secondaryId) {
+      return res.status(400).json({ message: 'Primary and Secondary member IDs are required and must be different.' });
+    }
+    const primary = await Member.findById(primaryId);
+    const secondary = await Member.findById(secondaryId);
+    if (!primary || !secondary) return res.status(404).json({ message: 'One or both members not found.' });
+
+    // Consolidate fields
+    if (!primary.mobile && secondary.mobile) primary.mobile = secondary.mobile;
+    if (!primary.altMobile && secondary.altMobile) primary.altMobile = secondary.altMobile;
+    if (!primary.dob && secondary.dob) primary.dob = secondary.dob;
+    if (!primary.anniversary && secondary.anniversary) primary.anniversary = secondary.anniversary;
+    if (!primary.photo && secondary.photo) primary.photo = secondary.photo;
+    if (!primary.caste && secondary.caste) primary.caste = secondary.caste;
+
+    // Consolidate labels & favorites
+    const combinedLabels = [...new Set([...(primary.labels || []), ...(secondary.labels || [])])];
+    primary.labels = combinedLabels;
+    if (secondary.isFavorite) primary.isFavorite = true;
+
+    // Consolidate extra details & notes
+    if (secondary.notes) primary.notes = [primary.notes, secondary.notes].filter(Boolean).join('\n\n--- Merged Notes ---\n');
+    if (secondary.extraDetails?.length) {
+      const existingLabels = new Set((primary.extraDetails || []).map((e) => e.label));
+      for (const extra of secondary.extraDetails) {
+        if (!existingLabels.has(extra.label)) primary.extraDetails.push(extra);
+      }
+    }
+
+    // Merge array collections
+    if (secondary.visits?.length) primary.visits.push(...secondary.visits);
+    if (secondary.followUps?.length) primary.followUps.push(...secondary.followUps);
+
+    primary.updatedBy = req.currentUser._id;
+    await primary.save();
+
+    // Re-link family memberships and remove secondary record
+    await syncMemberFamily(primary);
+    await removeMemberFromFamilies(secondaryId);
+    await Member.findByIdAndDelete(secondaryId);
+    invalidateMemberData();
+
+    res.json({ message: 'Members successfully merged.', member: primary });
+  } catch (error) {
+    next(error);
+  }
+};
+
+exports.toggleFavorite = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const member = await Member.findById(id);
+    if (!member) return res.status(404).json({ message: 'Member not found.' });
+
+    member.isFavorite = !member.isFavorite;
+    member.updatedBy = req.currentUser._id;
+    await member.save();
+    invalidateMemberData();
+
+    res.json({ message: member.isFavorite ? 'Starred as favorite' : 'Removed from favorites', isFavorite: member.isFavorite });
+  } catch (error) {
+    next(error);
+  }
+};
+
+exports.labels = async (req, res, next) => {
+  try {
+    const scope = applyMemberScope(req.currentUser, {});
+    const result = await Member.aggregate([
+      { $match: { ...scope, 'labels.0': { $exists: true } } },
+      { $unwind: '$labels' },
+      { $group: { _id: '$labels', count: { $sum: 1 } } },
+      { $sort: { count: -1 } },
+    ]);
+    res.json(result.map((r) => ({ label: r._id, count: r.count })));
+  } catch (error) {
+    next(error);
+  }
+};
+
+exports.bulkLabels = async (req, res, next) => {
+  try {
+    const { memberIds = [], label, action = 'add' } = req.body;
+    if (!memberIds.length || !label) {
+      return res.status(400).json({ message: 'memberIds array and label string are required.' });
+    }
+    const cleanLabel = String(label).trim();
+    if (!cleanLabel) return res.status(400).json({ message: 'Invalid label string.' });
+
+    const updateQuery = action === 'remove'
+      ? { $pull: { labels: cleanLabel } }
+      : { $addToSet: { labels: cleanLabel } };
+
+    const scope = applyMemberScope(req.currentUser, { _id: { $in: memberIds } });
+    const result = await Member.updateMany(scope, updateQuery);
+    invalidateMemberData();
+
+    res.json({ message: `Label '${cleanLabel}' ${action === 'remove' ? 'removed from' : 'added to'} ${result.modifiedCount} member(s).` });
   } catch (error) {
     next(error);
   }
@@ -1293,3 +1428,51 @@ exports.recheckOcr = async (req, res, next) => {
     res.json({ requested: members.length, processed: processed.length, failed, members: processed });
   } catch (error) { next(error); }
 };
+
+exports.hierarchicalTree = async (req, res, next) => {
+  try {
+    const filter = applyMemberScope(req.currentUser, {});
+    const pipeline = [
+      { $match: filter },
+      {
+        $group: {
+          _id: {
+            assembly: { $ifNull: ["$assemblyName", "सामान्य विधानसभा"] },
+            municipality: { $ifNull: ["$municipality", ""] },
+            village: { $ifNull: ["$village", "$location"] },
+            partNumber: { $ifNull: ["$partNumber", "अज्ञात"] },
+            sectionName: { $ifNull: ["$sectionName", "सामान्य अनुभाग"] }
+          },
+          count: { $sum: 1 }
+        }
+      }
+    ];
+    const results = await Member.aggregate(pipeline);
+    res.json({ tree: results });
+  } catch (error) { next(error); }
+};
+
+exports.bulkParty = async (req, res, next) => {
+  try {
+    const { memberIds, partyAffiliation } = req.body;
+    if (!Array.isArray(memberIds) || !memberIds.length) {
+      return res.status(400).json({ message: 'मतदाता चुनें।' });
+    }
+    const filter = applyMemberScope(req.currentUser, { _id: { $in: memberIds } });
+    await Member.updateMany(filter, { $set: { partyAffiliation: String(partyAffiliation || '').trim() } });
+    res.json({ message: 'पार्टी/श्रेणी सफलतापूर्वक अपडेट की गई।' });
+  } catch (error) { next(error); }
+};
+
+exports.assignPartToVillage = async (req, res, next) => {
+  try {
+    const { partNumber, village } = req.body;
+    if (!partNumber || !village) {
+      return res.status(400).json({ message: 'भाग संख्या और गाँव दोनों आवश्यक हैं।' });
+    }
+    const filter = applyMemberScope(req.currentUser, { partNumber: String(partNumber).trim() });
+    const result = await Member.updateMany(filter, { $set: { village: String(village).trim() } });
+    res.json({ message: `${result.modifiedCount} मतदाताओं का गाँव ${village} में अपडेट किया गया।` });
+  } catch (error) { next(error); }
+};
+

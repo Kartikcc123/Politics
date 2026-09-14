@@ -137,6 +137,11 @@ const MemberSchema = new mongoose.Schema({
     lat: Number,
     lng: Number,
   },
+  googleMapUrl: { type: String, trim: true, default: '' },
+  partyAffiliation: { type: String, trim: true, default: '' },
+  favoriteGroup: { type: String, trim: true, default: '' },
+  locationState: { type: String, trim: true, default: '' },
+  locationCity: { type: String, trim: true, default: '' },
   ward: { type: mongoose.Schema.Types.ObjectId, ref: 'Ward' },
   booth: {
     type: mongoose.Schema.Types.ObjectId,
@@ -160,6 +165,7 @@ const MemberSchema = new mongoose.Schema({
     default: 'undecided',
     index: true,
   },
+  labels: [{ type: String, trim: true, index: true }],
   isFavorite: { type: Boolean, default: false, index: true },
   supportLevel: {
     type: String,

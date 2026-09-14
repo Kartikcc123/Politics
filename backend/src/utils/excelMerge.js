@@ -7,31 +7,44 @@ const normalizeHeader = (value) => String(value ?? '')
   .trim();
 
 const headerAliases = {
-  name: ['name', 'full name', 'voter name', 'elector name', 'naam', 'नाम', 'मतदाता नाम', 'मतदाता का नाम'],
+  name: ['name', 'full name', 'voter name', 'elector name', 'naam', 'नाम', 'मतदाता नाम', 'मतदाता का नाम', 'namehindi', 'name hindi'],
   surname: ['surname', 'last name', 'उपनाम'],
-  guardianName: ['guardian name', 'father name', "father's name", 'father husband name', 'father or husband name', 'pita name', 'pita', 'father', 'पिता', 'पिता का नाम', 'पति का नाम', 'पिता पति का नाम', 'अभिभावक का नाम'],
-  relationType: ['relation type', 'rln type', 'relationship', 'संबंध', 'सम्बन्ध'],
-  mobile: ['mobile', 'mobile no', 'mobile number', 'phone', 'phone no', 'phone number', 'मोबाइल', 'मोबाइल नंबर', 'फोन', 'फोन नंबर'],
+  guardianName: [
+    'guardian name', 'father name', "father's name", 'father husband name', 'father or husband name',
+    'pita name', 'pita', 'father', 'पिता', 'पिता का नाम', 'पति का नाम', 'पिता पति का नाम', 'अभिभावक का नाम',
+    'parentname', 'partentnamehindi', 'partentname', 'parent name', 'parent name hindi', 'parentnamehindi'
+  ],
+  relationType: ['relation type', 'rln type', 'relationship', 'संबंध', 'सम्बन्ध', 'relation', 'rel'],
+  mobile: [
+    'mobile', 'mobile no', 'mobile number', 'mobilef', 'mobile f', 'mob', 'mob no', 'mob.no', 'mobile_no', 'phone',
+    'phone no', 'phone number', 'मोबाइल', 'मोबाइल नंबर', 'फोन', 'फोन नंबर', 'mobileno', 'contact', 'contact no', 'contact number'
+  ],
   altMobile: ['alternate mobile', 'alternative mobile', 'alt mobile', 'alternate phone', 'दूसरा मोबाइल', 'वैकल्पिक मोबाइल'],
-  voterId: ['voter id', 'epic', 'epic no', 'epic number', 'मतदाता id', 'मतदाता आईडी', 'मतदाता पहचान पत्र', 'पहचान पत्र संख्या'],
-  voterSerial: ['serial', 'serial no', 'serial number', 'sl no in part', 'क्रमांक', 'मतदाता क्रमांक', 'क्र', 'क्र.', 'क्रं', 'क्रं.', 'क', 'क.', 'मतदाता क्र.', 'मतदाता क्रं.', 'सरियल', 'सीरियल'],
-  houseNumber: ['house number', 'house no', 'house', 'मकान संख्या', 'घर संख्या', 'गृह संख्या'],
+  voterId: [
+    'voter id', 'epic', 'epic no', 'epic number', 'epicno', 'epic_no', 'voterid', 'voter_id',
+    'मतदाता id', 'मतदाता आईडी', 'मतदाता पहचान पत्र', 'पहचान पत्र संख्या', 'epicno.'
+  ],
+  voterSerial: [
+    'serial', 'serial no', 'serial number', 'sl no in part', 'क्रमांक', 'मतदाता क्रमांक', 'क्र', 'क्र.', 'क्रं', 'क्रं.',
+    'क', 'क.', 'मतदाता क्र.', 'मतदाता क्रं.', 'सरियल', 'सीरियल', 'sno', 's no', 'sno.', 'sn', 'sn.', 'sn ..', 'sr no', 'srno'
+  ],
+  houseNumber: ['house number', 'house no', 'house', 'मकान संख्या', 'घर संख्या', 'गृह संख्या', 'makan no', 'makan no.', 'makan', 'makan_no', 'house_no'],
   address: ['address', 'full address', 'पता', 'पूरा पता'],
-  gender: ['gender', 'sex', 'लिंग'],
-  age: ['age', 'उम्र', 'आयु'],
+  gender: ['gender', 'sex', 'लिंग', 'gend'],
+  age: ['age', 'उम्र', 'आयु', 'ag'],
   occupation: ['occupation', 'profession', 'work', 'व्यवसाय', 'पेशा'],
   education: ['education', 'qualification', 'शिक्षा', 'योग्यता'],
-  caste: ['caste', 'cast', 'जाति'],
+  caste: ['caste', 'cast', 'जाति', 'जात'],
   subCaste: ['sub caste', 'subcaste', 'उपजाति'],
   organizationPost: ['organization post', 'post', 'position', 'पद'],
   organizationLevel: ['organization level', 'post level', 'पद स्तर'],
-  supportLevel: ['support level', 'support', 'समर्थन स्तर', 'समर्थन'],
+  supportLevel: ['support level', 'support', 'समर्थन स्तर', 'समर्थन', 'samarthak', 'समर्थक'],
   assemblyNumber: ['assembly number', 'assembly no', 'ac no', 'विधानसभा संख्या'],
   assemblyName: ['assembly name', 'assembly', 'vidhansabha', 'विधानसभा', 'विधानसभा नाम'],
-  partNumber: ['part number', 'part no', 'भाग संख्या', 'भाग नं'],
-  sectionNumber: ['section number', 'section no', 'अनुभाग संख्या', 'अनुभाग नं'],
-  sectionName: ['section name', 'section', 'अनुभाग नाम', 'मोहल्ला', 'मोहल्ला नाम'],
-  village: ['village', 'villege', 'gram', 'गांव', 'गाँव', 'ग्राम'],
+  partNumber: ['part number', 'part no', 'भाग संख्या', 'भाग नं', 'partno', 'part_no'],
+  sectionNumber: ['section number', 'section no', 'अनुभाग संख्या', 'अनुभाग नं', 'sectionno', 'section_no'],
+  sectionName: ['section name', 'section', 'अनुभाग नाम', 'मोहल्ला', 'मोहल्ला नाम', 'sectionn', 'mohalla'],
+  village: ['village', 'villege', 'gram', 'गांव', 'गाँव', 'ग्राम', 'gaon'],
   gramPanchayat: ['gram panchayat', 'panchayat', 'ग्राम पंचायत', 'पंचायत'],
   tehsil: ['tehsil', 'block', 'तहसील', 'ब्लॉक'],
   pinCode: ['pin code', 'pincode', 'pin', 'postal code', 'पिन कोड', 'पिन'],

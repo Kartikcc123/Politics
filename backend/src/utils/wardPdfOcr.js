@@ -204,7 +204,12 @@ exports.ocrWardPdf = async (pdfPath, importFileName, { onProgress } = {}) => {
     record.wardNumber = result.header.wardNumber || record.wardNumber || '';
     record.partNumber = result.header.partNumber || record.partNumber || '';
   }
-  fs.rmSync(workDir, { recursive: true, force: true });
+  // Clean up temporary rendered page PNGs, but preserve cropped voter photo files
+  for (const pageFile of pages) {
+    if (fs.existsSync(pageFile)) {
+      try { fs.unlinkSync(pageFile); } catch (_) {}
+    }
+  }
   return {
     ...result,
     type: 'municipal',

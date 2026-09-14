@@ -166,3 +166,11 @@ test('dedicated PIN and village search remain correctly scoped', () => {
   assert.ok(!pinQuery[0].$or.some((item) => item.pinCode?.test('311804')));
   assert.ok(target.searchPinKeys.length > 0);
 });
+test('treats a numeric general search as an exact voter serial', () => {
+  const conditions = buildSearchConditions('59');
+  assert.equal(conditions.length, 1);
+  assert.ok(conditions[0].voterSerial.test('59'));
+  assert.ok(!conditions[0].voterSerial.test('159'));
+  assert.ok(!conditions[0].voterSerial.test('590'));
+  assert.ok(!conditions[0].voterSerial.test('99'));
+});

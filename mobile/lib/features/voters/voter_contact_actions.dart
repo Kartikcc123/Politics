@@ -31,6 +31,21 @@ class VoterContactActions extends StatelessWidget {
           icon: const Icon(Icons.notification_add_outlined),
           label: const Text('Follow-up'),
         ),
+        IconButton(
+          icon: Icon(
+            voter['isFavorite'] == true ? Icons.star : Icons.star_border,
+            color: voter['isFavorite'] == true ? Colors.amber : null,
+          ),
+          tooltip: voter['isFavorite'] == true ? 'पसंदीदा से हटाएं' : 'पसंदीदा बनाएं',
+          onPressed: () async {
+            await api.post('/api/members/${voter['_id']}/favorite', {});
+            if (context.mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(content: Text(voter['isFavorite'] == true ? 'पसंदीदा सूची से हटाया गया।' : 'पसंदीदा सूची में जोड़ा गया।')),
+              );
+            }
+          },
+        ),
       ]);
 
   Future<void> _addFollowUp(BuildContext context) async {

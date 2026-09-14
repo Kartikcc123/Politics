@@ -508,6 +508,33 @@ class Api {
         filename: file.filename, contentType: file.contentType);
   }
 
+  Future<Map<String, dynamic>> toggleFavorite(String memberId) async {
+    return Map<String, dynamic>.from(await post('/api/members/$memberId/favorite', {}));
+  }
+
+  Future<Map<String, dynamic>> mergeMembers(String primaryId, String secondaryId) async {
+    return Map<String, dynamic>.from(await post('/api/members/merge', {
+      'primaryId': primaryId,
+      'secondaryId': secondaryId,
+    }));
+  }
+
+  Future<List<dynamic>> getLabels() async {
+    return List<dynamic>.from(await get('/api/members/labels'));
+  }
+
+  Future<Map<String, dynamic>> bulkApplyLabel(List<String> memberIds, String label, {String action = 'add'}) async {
+    return Map<String, dynamic>.from(await post('/api/members/bulk-labels', {
+      'memberIds': memberIds,
+      'label': label,
+      'action': action,
+    }));
+  }
+
+  Future<Map<String, dynamic>> getReminders({int days = 7}) async {
+    return Map<String, dynamic>.from(await get('/api/notifications/today?days=$days'));
+  }
+
   String? _filenameFromDisposition(String? header) {
     if (header == null || header.isEmpty) return null;
     final utf = RegExp("filename\\*=UTF-8''([^;]+)").firstMatch(header);

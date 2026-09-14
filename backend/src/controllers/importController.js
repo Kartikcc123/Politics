@@ -1483,13 +1483,14 @@ exports.importMembers = async (req, res, next) => {
           m: 'mother', mother: 'mother',
         })[relation] || 'other';
       }
-      if (!data.name && !data.caste) {
-        skipped.push({ row, reason: 'Name or Caste required' });
+      const hasValidEpic = isValidEpic(data.voterId);
+      if (!data.name && !data.caste && !hasValidEpic) {
+        skipped.push({ row, reason: 'Name, Caste, or valid EPIC number required' });
         processed += 1;
         setProgress(uploadId, { processed, imported: affected.length, skipped: skipped.length });
         continue;
       }
-      if (!isValidEpic(data.voterId)) {
+      if (!hasValidEpic) {
         skipped.push({ row, reason: 'Valid EPIC number required' });
         processed += 1;
         setProgress(uploadId, { processed, imported: affected.length, skipped: skipped.length });

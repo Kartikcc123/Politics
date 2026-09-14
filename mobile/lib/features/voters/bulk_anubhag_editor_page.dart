@@ -233,6 +233,24 @@ class _BulkAnubhagEditorPageState extends State<BulkAnubhagEditorPage> {
       return;
     }
 
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('बल्क अपडेट की पुष्टि करें', style: TextStyle(fontWeight: FontWeight.bold)),
+        content: Text('क्या आप वाकई चुने हुए ${selectedIds.length} मतदाताओं का गाँव / अनुभाग अपडेट करना चाहते हैं?'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('रद्द करें')),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.blue.shade800, foregroundColor: Colors.white),
+            child: const Text('हाँ, अपडेट करें'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm != true) return;
+
     setState(() => applying = true);
     try {
       final res = await api.post('/api/members/bulk-location-correction', {
@@ -518,36 +536,68 @@ class _BulkAnubhagEditorPageState extends State<BulkAnubhagEditorPage> {
           children: [
             const Text('सही गाँव और अनुभाग (Anubhag) टाइप करें:', style: TextStyle(fontWeight: FontWeight.bold, color: navy, fontSize: 13)),
             const SizedBox(height: 8),
-            TextField(
-              controller: villageNameController,
-              decoration: InputDecoration(
-                hintText: 'गाँव का नाम (उदा: भीटा माजरा)',
-                filled: true,
-                fillColor: Colors.white,
-                contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-              ),
+            Autocomplete<String>(
+              optionsBuilder: (textEditingValue) {
+                if (textEditingValue.text.isEmpty) return villages;
+                return villages.where((v) => v.toLowerCase().contains(textEditingValue.text.toLowerCase()));
+              },
+              onSelected: (selection) => villageNameController.text = selection,
+              fieldViewBuilder: (context, controller, focusNode, onEditingComplete) {
+                if (villageNameController.text.isNotEmpty && controller.text.isEmpty) {
+                  controller.text = villageNameController.text;
+                }
+                return TextField(
+                  controller: controller,
+                  focusNode: focusNode,
+                  onChanged: (text) => villageNameController.text = text,
+                  decoration: InputDecoration(
+                    hintText: 'गाँव का नाम (सुझाव में से चुनें या टाइप करें)',
+                    filled: true,
+                    fillColor: Colors.white,
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                  ),
+                );
+              },
             ),
             const SizedBox(height: 8),
             Row(
               children: [
                 Expanded(
                   flex: 3,
-                  child: TextField(
-                    controller: sectionNameController,
-                    onChanged: (text) {
-                      final match = RegExp(r'^(\d+)').firstMatch(text.trim());
-                      if (match != null && sectionNumberController.text.isEmpty) {
-                        sectionNumberController.text = match.group(1)!;
-                      }
+                  child: Autocomplete<String>(
+                    optionsBuilder: (textEditingValue) {
+                      if (textEditingValue.text.isEmpty) return existingSections;
+                      return existingSections.where((s) => s.toLowerCase().contains(textEditingValue.text.toLowerCase()));
                     },
-                    decoration: InputDecoration(
-                      hintText: 'अनुभाग नाम (उदा: 1- भीटा माजरा)',
-                      filled: true,
-                      fillColor: Colors.white,
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                    ),
+                    onSelected: (selection) {
+                      sectionNameController.text = selection;
+                      final match = RegExp(r'^(\d+)').firstMatch(selection.trim());
+                      if (match != null) sectionNumberController.text = match.group(1)!;
+                    },
+                    fieldViewBuilder: (context, controller, focusNode, onEditingComplete) {
+                      if (sectionNameController.text.isNotEmpty && controller.text.isEmpty) {
+                        controller.text = sectionNameController.text;
+                      }
+                      return TextField(
+                        controller: controller,
+                        focusNode: focusNode,
+                        onChanged: (text) {
+                          sectionNameController.text = text;
+                          final match = RegExp(r'^(\d+)').firstMatch(text.trim());
+                          if (match != null && sectionNumberController.text.isEmpty) {
+                            sectionNumberController.text = match.group(1)!;
+                          }
+                        },
+                        decoration: InputDecoration(
+                          hintText: 'अनुभाग नाम (उदा: 1- भीटा माजरा)',
+                          filled: true,
+                          fillColor: Colors.white,
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                        ),
+                      );
+                    },
                   ),
                 ),
                 const SizedBox(width: 8),

@@ -176,7 +176,16 @@ class OfflineVoterCache {
           _ => allText,
         };
         final text = _normalize(scopedText.join(' '));
-        if (!queryTokens.every(text.contains)) return false;
+        final serial = _normalize('${item['voterSerial'] ?? ''}');
+        bool matchesToken(String token) {
+          // Keep cached results identical to the server: a number entered in
+          // general search is an exact voter serial, never a substring.
+          if (mode.isEmpty && RegExp(r'^\d+$').hasMatch(token)) {
+            return serial == token;
+          }
+          return text.contains(token);
+        }
+        if (!queryTokens.every(matchesToken)) return false;
       }
       if (query['favorite'] == 'true' && item['isFavorite'] != true) {
         return false;
