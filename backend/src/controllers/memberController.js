@@ -1388,9 +1388,34 @@ const applyRecheckOcr = async (member, user, req) => {
   if (!image) throw new Error('No saved voter card image is available.');
   const result = await recheckCardOcr(image);
   for (const field of recheckFields) {
-    const value = result[field];
-    if (value !== undefined && value !== null && String(value).trim() !== '') member[field] = value;
+    let value = result[field];
+    if (value !== undefined && value !== null && String(value).trim() !== '') {
+      if (field === 'houseNumber') {
+        const currentHouse = String(member.houseNumber || '').trim();
+        let newHouse = String(value).trim();
+        
+        // Auto-fix 7->1 serif OCR confusion on 3 or 4-digit numbers (e.g. 7675 -> 1675, 749 -> 149)
+        if (/^7\d{2,3}$/.test(newHouse)) {
+          newHouse = '1' + newHouse.slice(1);
+          value = newHouse;
+          result.houseNumber = newHouse;
+        }
+
+        // If member already has an established valid house number:
+        if (currentHouse && currentHouse !== '0') {
+          if (newHouse === '0' || newHouse === '') {
+            continue; // Retain existing valid house number
+          }
+          // If OCR missed leading digit(s) (e.g. existing 1162 vs OCR 62 or 162)
+          if (currentHouse.length > newHouse.length && currentHouse.endsWith(newHouse)) {
+            continue; // Retain complete existing house number
+          }
+        }
+      }
+      member[field] = value;
+    }
   }
+
   const currentValues = member.ocrValues?.toObject?.() || member.ocrValues || {};
   member.ocrValues = { raw: result.rawText ? { ...(currentValues.raw || {}), recheckRawText: result.rawText } : (currentValues.raw || {}), suggested: { ...(currentValues.suggested || {}), ...Object.fromEntries([...recheckFields, 'voterId'].filter((key) => result[key] !== undefined && result[key] !== null && String(result[key]).trim() !== '').map((key) => [key, result[key]])) }, verified: currentValues.verified || {}, status: result.validationPassed ? 'suggested' : (currentValues.status || 'raw'), verifiedBy: currentValues.verifiedBy, verifiedAt: currentValues.verifiedAt };
   member.ocrConfidence = result.confidence || 0;
@@ -1420,22 +1445,66 @@ exports.recheckOcr = async (req, res, next) => {
   try {
     const ids = req.params.id ? [req.params.id] : (Array.isArray(req.body.memberIds) ? req.body.memberIds : (Array.isArray(req.body.ids) ? req.body.ids : []));
     const filter = applyMemberScope(req.currentUser, {});
-    if (ids.length) filter._id = { $in: ids.filter((id) => mongoose.isValidObjectId(id)) };
-    else {
-      const scopeFields = ['booth', 'ward', 'sectionNumber', 'sectionName', 'partNumber', 'assemblyNumber'];
+    if (ids.length) {
+      filter._id = { $in: ids.filter((id) => mongoose.isValidObjectId(id)) };
+    } else {
+      const scopeFields = [
+        'booth', 'ward', 'sectionNumber', 'sectionName', 'partNumber',
+        'assemblyNumber', 'village', 'gramPanchayat', 'tehsil', 'municipality'
+      ];
       const selected = scopeFields.filter((field) => String(req.body[field] || '').trim());
-      if (!selected.length) return res.status(400).json({ message: 'Select voters or provide booth, ward, section, part, or assembly scope.' });
+      if (req.body.q) {
+        addSmartLocationSearch(filter, req.body.q);
+      }
+      if (!selected.length && !req.body.all && !req.body.q) {
+        return res.status(400).json({
+          message: 'Select voters or provide booth, ward, section, part, village, or assembly scope.'
+        });
+      }
       for (const field of selected) filter[field] = String(req.body[field]).trim();
     }
     const limit = Math.min(Math.max(Number(req.body.limit) || 500, 1), 500);
     const members = await Member.find(filter).limit(limit);
-    const processed = []; const failed = [];
-    for (const member of members) {
-      try { const outcome = await applyRecheckOcr(member, req.currentUser, req); processed.push({ id: member._id, member: outcome.member, reviewReasons: outcome.result.reviewReasons || [] }); }
-      catch (error) { failed.push({ id: member._id, message: error.message }); }
+    const processed = [];
+    const failed = [];
+
+    // Process members concurrently in small batches of 3 to prevent timeouts while avoiding CPU exhaustion
+    const concurrency = Math.min(3, Math.max(1, members.length));
+    let cursor = 0;
+    const worker = async () => {
+      while (cursor < members.length) {
+        const currentIndex = cursor++;
+        const member = members[currentIndex];
+        try {
+          const outcome = await applyRecheckOcr(member, req.currentUser, req);
+          processed.push({
+            id: member._id,
+            member: outcome.member,
+            reviewReasons: outcome.result.reviewReasons || []
+          });
+        } catch (error) {
+          failed.push({
+            id: member._id,
+            voterId: member.voterId,
+            name: member.name,
+            message: error.message
+          });
+        }
+      }
+    };
+
+    if (members.length > 0) {
+      await Promise.all(Array.from({ length: concurrency }, () => worker()));
     }
+
     invalidateMemberData();
-    res.json({ requested: members.length, processed: processed.length, failed, members: processed });
+    res.json({
+      requested: members.length,
+      processed: processed.length,
+      failedCount: failed.length,
+      failed,
+      members: processed
+    });
   } catch (error) { next(error); }
 };
 

@@ -694,31 +694,173 @@ class _VoterManagementPageState extends State<VoterManagementPage> {
     if (api.user?['role'] != 'admin') return;
     final selected = selectedIds.toList();
     final scope = <String, dynamic>{
-      for (final key in ['sectionNumber', 'sectionName', 'partNumber', 'assemblyNumber'])
+      for (final key in [
+        'sectionNumber',
+        'sectionName',
+        'partNumber',
+        'assemblyNumber',
+        'village',
+        'gramPanchayat',
+        'tehsil',
+        'municipality',
+        'booth',
+        'ward'
+      ])
         if ((filterQuery[key] ?? '').trim().isNotEmpty) key: filterQuery[key],
     };
-    if (selected.isEmpty && scope.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Pehle voters select karein ya section/part/assembly filter lagayein.')));
-      return;
+    if (filterQuery['q'] != null && (filterQuery['q'] as String).trim().isNotEmpty) {
+      scope['q'] = filterQuery['q'];
     }
-    final countLabel = selected.isNotEmpty ? '${selected.length} selected voters' : 'filtered voters (maximum 500)';
-    final confirmed = await showDialog<bool>(context: context, builder: (context) => AlertDialog(
-      icon: const Icon(Icons.document_scanner_outlined, color: blue, size: 38),
-      title: const Text('2nd Pass OCR Re-check?'),
-      content: Text('$countLabel ke saved voter-card images dobara scan honge aur valid OCR fields auto-update honge.'),
-      actions: [TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')), FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Start re-check'))],
-    ));
+
+    final payload = <String, dynamic>{
+      if (selected.isNotEmpty) 'memberIds': selected,
+      ...scope,
+    };
+    if (selected.isEmpty && scope.isEmpty) {
+      payload['all'] = true;
+    }
+
+    final countLabel = selected.isNotEmpty
+        ? '${selected.length} चयनित मतदाताओं'
+        : (scope.isNotEmpty
+            ? 'फ़िल्टर किए गए मतदाताओं (अधिकतम 500)'
+            : 'सभी मतदाताओं (अधिकतम 500)');
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        icon: const Icon(Icons.document_scanner_outlined, color: blue, size: 44),
+        title: const Text('2nd Pass OCR Re-check शुरू करें?'),
+        content: Text(
+          '$countLabel के सुरक्षित वोटर-कार्ड इमेज को OCR द्वारा दोबारा स्कैन किया जाएगा और EPIC/नाम/संबंध/उम्र आदि स्वतः अपडेट होंगे।\n\nइस प्रक्रिया में कुछ समय लग सकता है।',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('रद्द करें (Cancel)'),
+          ),
+          FilledButton.icon(
+            icon: const Icon(Icons.play_arrow_rounded),
+            onPressed: () => Navigator.pop(context, true),
+            label: const Text('Re-check शुरू करें'),
+          ),
+        ],
+      ),
+    );
     if (confirmed != true) return;
+
+    if (!mounted) return;
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogCtx) => PopScope(
+        canPop: false,
+        child: AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          content: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 12),
+            child: Row(
+              children: [
+                const SizedBox(
+                  width: 42,
+                  height: 42,
+                  child: CircularProgressIndicator(strokeWidth: 3.5),
+                ),
+                const SizedBox(width: 20),
+                Expanded(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'OCR Re-check जारी है...',
+                        style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        'वोटर कार्ड इमेज दोबारा स्कैन हो रहे हैं। कृपया प्रतीक्षा करें...',
+                        style: TextStyle(fontSize: 13, color: Colors.grey.shade700),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+
     try {
-      final response = await api.post('/api/members/recheck-ocr', selected.isNotEmpty ? {'memberIds': selected} : scope);
+      final response = await api.post('/api/members/recheck-ocr', payload);
       final done = (response['processed'] as num?)?.toInt() ?? 0;
-      final failed = (response['failed'] as List?)?.length ?? 0;
+      final failed = (response['failedCount'] ??
+              (response['failed'] as List?)?.length ??
+              0) as num;
+      final requested = (response['requested'] as num?)?.toInt() ??
+          (selected.isNotEmpty ? selected.length : 0);
+
       api.notifyDataChanged();
+      if (mounted) {
+        Navigator.of(context, rootNavigator: true).pop();
+      }
+
       if (!mounted) return;
-      setState(() { selectedIds.clear(); refreshVoters(); });
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('OCR re-check complete: $done updated${failed > 0 ? ', $failed failed' : ''}.')));
+      setState(() {
+        selectedIds.clear();
+        refreshVoters();
+      });
+
+      await showDialog(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          icon: Icon(
+            done > 0 ? Icons.check_circle_outline_rounded : Icons.info_outline_rounded,
+            color: done > 0 ? Colors.green : Colors.orange,
+            size: 48,
+          ),
+          title: const Text('OCR Re-check परिणाम'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('कुल लक्षित मतदाता: $requested'),
+              const SizedBox(height: 6),
+              Text('✅ सफलतापूर्वक अपडेट: $done',
+                  style: const TextStyle(color: Colors.green, fontWeight: FontWeight.bold)),
+              if (failed > 0) ...[
+                const SizedBox(height: 6),
+                Text('⚠️ अपरिवर्तित / कार्ड इमेज अनुपलब्ध: $failed',
+                    style: const TextStyle(color: Colors.orange)),
+              ],
+            ],
+          ),
+          actions: [
+            FilledButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('ठीक है (OK)'),
+            ),
+          ],
+        ),
+      );
     } catch (error) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('OCR re-check failed: $error'), backgroundColor: Colors.red));
+      if (mounted) {
+        Navigator.of(context, rootNavigator: true).pop();
+        showDialog(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            icon: const Icon(Icons.error_outline_rounded, color: Colors.red, size: 48),
+            title: const Text('OCR Re-check त्रुटि'),
+            content: Text('प्रक्रिया के दौरान त्रुटि आई:\n$error'),
+            actions: [
+              FilledButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('बंद करें'),
+              ),
+            ],
+          ),
+        );
+      }
     }
   }
   Future<void> deleteSelectedContacts() async {

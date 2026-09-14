@@ -3,10 +3,12 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/api_client.dart';
 import '../../core/contact_actions.dart';
+import '../../core/india_locations.dart';
 import '../../core/offline_voter_cache.dart';
 import '../../core/picked_file_source.dart';
 import '../../core/print_helper.dart';
@@ -147,7 +149,9 @@ class _VoterEditPageState extends State<VoterEditPage> {
   void _switchVoter(int newIndex) {
     if (widget.voterList == null ||
         newIndex < 0 ||
-        newIndex >= widget.voterList!.length) return;
+        newIndex >= widget.voterList!.length) {
+      return;
+    }
     setState(() {
       currentIndex = newIndex;
       currentVoter = widget.voterList![newIndex];
@@ -320,13 +324,52 @@ class _VoterEditPageState extends State<VoterEditPage> {
 
   Future<void> recheckOcr() async {
     if (api.user?['role'] != 'admin' || recheckingOcr) return;
-    final yes = await showDialog<bool>(context: context, builder: (context) => AlertDialog(
-      title: const Text('2nd Pass OCR Re-check?'),
-      content: const Text('Saved voter card dobara scan hoga. Valid OCR fields automatically update honge.'),
-      actions: [TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')), FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Re-check'))],
-    ));
+    final yes = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        icon: const Icon(Icons.document_scanner_outlined, color: blue, size: 40),
+        title: const Text('2nd Pass OCR Re-check शुरू करें?'),
+        content: const Text(
+            'इस मतदाता के सुरक्षित वोटर-कार्ड इमेज को OCR द्वारा पुनः स्कैन किया जाएगा और EPIC, नाम, संबंध, घर संख्या, आयु, लिंग आदि स्वतः अपडेट होंगे।'),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('रद्द करें')),
+          FilledButton.icon(
+            icon: const Icon(Icons.play_arrow_rounded),
+            onPressed: () => Navigator.pop(context, true),
+            label: const Text('Re-check शुरू करें'),
+          ),
+        ],
+      ),
+    );
     if (yes != true) return;
     setState(() => recheckingOcr = true);
+
+    if (!mounted) return;
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => const PopScope(
+        canPop: false,
+        child: AlertDialog(
+          content: Row(
+            children: [
+              SizedBox(
+                width: 36,
+                height: 36,
+                child: CircularProgressIndicator(strokeWidth: 3),
+              ),
+              SizedBox(width: 20),
+              Expanded(
+                child: Text('कार्ड OCR दोबारा स्कैन हो रहा है...\nकृपया प्रतीक्षा करें।'),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+
     try {
       final updated = await api.post('/api/members/${currentVoter['_id']}/recheck-ocr', {});
       final members = updated['members'] as List?;
@@ -336,10 +379,26 @@ class _VoterEditPageState extends State<VoterEditPage> {
         _loadVoterData(currentVoter);
         await OfflineVoterCache.merge([currentVoter]);
       }
-      api.notifyDataChanged(); widget.onSaved();
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('OCR re-check complete.')));
-    } catch (error) { if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('OCR re-check failed: $error'), backgroundColor: Colors.red)); }
-    finally { if (mounted) setState(() => recheckingOcr = false); }
+      api.notifyDataChanged();
+      widget.onSaved();
+      if (mounted) {
+        Navigator.of(context, rootNavigator: true).pop(); // Dismiss loading
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('✅ OCR re-check पूर्ण: विवरण स्वतः अपडेट हो गए हैं।'),
+          backgroundColor: Colors.green,
+        ));
+      }
+    } catch (error) {
+      if (mounted) {
+        Navigator.of(context, rootNavigator: true).pop(); // Dismiss loading
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('OCR re-check विफल: $error'),
+          backgroundColor: Colors.red,
+        ));
+      }
+    } finally {
+      if (mounted) setState(() => recheckingOcr = false);
+    }
   }
   Future<void> remove() async {
     final yes = await showDialog<bool>(
@@ -554,19 +613,7 @@ class _VoterEditPageState extends State<VoterEditPage> {
             _field('gramPanchayat', 'ग्राम पंचायत'),
             _field('village', 'गाँव'),
             _field('municipality', 'नगर पालिका / वार्ड'),
-            _field('googleMapUrl', 'Google Map Location Link'),
-            if ((fields['googleMapUrl']?.text ?? '').isNotEmpty)
-              Padding(
-                padding: const EdgeInsets.only(top: 6),
-                child: ElevatedButton.icon(
-                  onPressed: () async {
-                    final url = Uri.parse(fields['googleMapUrl']!.text.trim());
-                    if (await canLaunchUrl(url)) await launchUrl(url, mode: LaunchMode.externalApplication);
-                  },
-                  icon: const Icon(Icons.map_outlined, color: Colors.blue),
-                  label: const Text('Google Maps पर खोलें'),
-                ),
-              ),
+            _googleMapLocationSection(),
           ]),
         ]),
         _stepPage([
@@ -605,15 +652,17 @@ class _VoterEditPageState extends State<VoterEditPage> {
             _field('occupation', 'व्यवसाय'),
             _field('education', 'शिक्षा'),
             _field('workplaceVillage', 'कार्य-स्थान गाँव'),
-            _field('workplaceCity', 'कार्य-स्थान शहर'),
-            _field('workplaceState', 'कार्य-स्थान राज्य'),
+            _statePickerField('workplaceState', 'कार्य-स्थान राज्य'),
+            _cityPickerField('workplaceCity', 'कार्य-स्थान शहर',
+                stateKey: 'workplaceState'),
           ]),
           _section('विवाह संबंधी जानकारी', Icons.favorite_outline, [
             _field('spouseName', 'जीवनसाथी का नाम'),
             _dateField('anniversary', 'विवाह वर्षगांठ'),
             _field('marriageVillage', 'विवाह संबंध वाला गाँव'),
-            _field('marriageCity', 'विवाह संबंध वाला शहर'),
-            _field('marriageState', 'विवाह संबंध वाला राज्य'),
+            _statePickerField('marriageState', 'विवाह संबंध वाला राज्य'),
+            _cityPickerField('marriageCity', 'विवाह संबंध वाला शहर',
+                stateKey: 'marriageState'),
           ]),
           _section('सर्वे पूर्णता', Icons.fact_check_outlined, [
             _dropdown(
@@ -1091,6 +1140,730 @@ class _VoterEditPageState extends State<VoterEditPage> {
                 })
             : null,
       );
+
+  Widget _googleMapLocationSection() {
+    final currentUrl = (fields['googleMapUrl']?.text ?? '').trim();
+    final hasUrl = currentUrl.isNotEmpty;
+
+    return _FullWidth(
+      Container(
+        margin: const EdgeInsets.symmetric(vertical: 4),
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: hasUrl ? const Color(0xfff0fdf4) : const Color(0xfff8fafc),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: hasUrl ? const Color(0xffbbf7d0) : const Color(0xffe2e8f0),
+            width: 1.5,
+          ),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(
+                  hasUrl ? Icons.check_circle_rounded : Icons.map_outlined,
+                  color: hasUrl ? const Color(0xff16a34a) : blue,
+                  size: 22,
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  hasUrl ? 'Google Maps लोकेशन सेट है' : 'Google Maps लोकेशन',
+                  style: TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.bold,
+                    color: hasUrl ? const Color(0xff15803d) : navy,
+                  ),
+                ),
+              ],
+            ),
+            if (hasUrl) ...[
+              const SizedBox(height: 6),
+              Text(
+                currentUrl,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(fontSize: 12, color: Colors.black54),
+              ),
+              const SizedBox(height: 10),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  FilledButton.tonalIcon(
+                    icon: const Icon(Icons.open_in_new_rounded, size: 17),
+                    label: const Text('Maps में खोलें'),
+                    onPressed: () async {
+                      final uri = Uri.parse(currentUrl);
+                      if (await canLaunchUrl(uri)) {
+                        await launchUrl(uri,
+                            mode: LaunchMode.externalApplication);
+                      } else {
+                        if (mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('Maps नहीं खुल सका।')),
+                          );
+                        }
+                      }
+                    },
+                  ),
+                  OutlinedButton.icon(
+                    icon: const Icon(Icons.edit_location_alt_rounded, size: 17),
+                    label: const Text('बदलें'),
+                    onPressed: _openGoogleMapLocationPicker,
+                  ),
+                  TextButton.icon(
+                    icon: const Icon(Icons.delete_outline_rounded,
+                        color: Colors.red, size: 17),
+                    label: const Text('हटाएं',
+                        style: TextStyle(color: Colors.red)),
+                    onPressed: () =>
+                        setState(() => fields['googleMapUrl']!.clear()),
+                  ),
+                ],
+              ),
+            ] else ...[
+              const SizedBox(height: 6),
+              const Text(
+                'मतदाता के घर/दुकान की Google Maps लोकेशन आसानी से जोड़ें ताकि नेविगेशन में सुविधा रहे।',
+                style: TextStyle(fontSize: 13, color: muted),
+              ),
+              const SizedBox(height: 10),
+              FilledButton.icon(
+                icon: const Icon(Icons.add_location_alt_rounded),
+                label: const Text('Google Maps से लोकेशन सेट करें'),
+                onPressed: _openGoogleMapLocationPicker,
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _openGoogleMapLocationPicker() async {
+    final addressParts = [
+      fields['houseNumber']?.text,
+      fields['address']?.text,
+      fields['location']?.text,
+      fields['village']?.text,
+      fields['gramPanchayat']?.text,
+      fields['tehsil']?.text,
+      'Rajasthan',
+      'India'
+    ]
+        .where((p) => p != null && p.trim().isNotEmpty)
+        .map((p) => p!.trim())
+        .toList();
+
+    final suggestedQuery = addressParts.take(4).join(', ');
+
+    await showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (sheetCtx) {
+        return Padding(
+          padding: EdgeInsets.fromLTRB(
+            16,
+            12,
+            16,
+            MediaQuery.of(sheetCtx).viewInsets.bottom + 24,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Center(
+                child: Container(
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade300,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+              const Row(
+                children: [
+                  Icon(Icons.pin_drop_rounded, color: Colors.red, size: 24),
+                  SizedBox(width: 8),
+                  Text(
+                    'Google Maps लोकेशन चुनें',
+                    style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                        color: navy),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              if (suggestedQuery.isNotEmpty)
+                Card(
+                  elevation: 0,
+                  color: const Color(0xffeff6ff),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    side: const BorderSide(color: Color(0xffbfdbfe)),
+                  ),
+                  child: ListTile(
+                    contentPadding:
+                        const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                    leading: const CircleAvatar(
+                      backgroundColor: Color(0xff3b82f6),
+                      child: Icon(Icons.home_rounded,
+                          color: Colors.white, size: 20),
+                    ),
+                    title: const Text(
+                      'मतदाता के पते से लोकेशन लिंक बनाएं (1-Click)',
+                      style:
+                          TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                    ),
+                    subtitle: Text(
+                      suggestedQuery,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style:
+                          const TextStyle(fontSize: 12, color: Colors.black87),
+                    ),
+                    trailing:
+                        const Icon(Icons.arrow_forward_ios_rounded, size: 16),
+                    onTap: () {
+                      final mapUrl =
+                          'https://www.google.com/maps/search/?api=1&query=${Uri.encodeComponent(suggestedQuery)}';
+                      setState(() => fields['googleMapUrl']!.text = mapUrl);
+                      Navigator.pop(sheetCtx);
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                            content: Text(
+                                '✅ पते से Google Maps लिंक सेट हो गया।')),
+                      );
+                    },
+                  ),
+                ),
+              const SizedBox(height: 10),
+              Card(
+                elevation: 0,
+                color: const Color(0xfff8fafc),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  side: const BorderSide(color: Color(0xffe2e8f0)),
+                ),
+                child: ListTile(
+                  contentPadding:
+                      const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                  leading: const CircleAvatar(
+                    backgroundColor: Color(0xff10b981),
+                    child: Icon(Icons.search_rounded,
+                        color: Colors.white, size: 20),
+                  ),
+                  title: const Text(
+                    'लैंडमार्क या जगह के नाम से खोजें',
+                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                  ),
+                  subtitle: const Text(
+                    'दुकान, चौराहा, स्कूल या मंदिर का नाम लिखकर लिंक बनाएं',
+                    style: TextStyle(fontSize: 12, color: muted),
+                  ),
+                  trailing:
+                      const Icon(Icons.arrow_forward_ios_rounded, size: 16),
+                  onTap: () async {
+                    Navigator.pop(sheetCtx);
+                    final query =
+                        await _promptPlaceSearchDialog(suggestedQuery);
+                    if (query != null && query.trim().isNotEmpty) {
+                      final mapUrl =
+                          'https://www.google.com/maps/search/?api=1&query=${Uri.encodeComponent(query.trim())}';
+                      setState(() => fields['googleMapUrl']!.text = mapUrl);
+                      if (mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                              content:
+                                  Text('✅ Google Maps लिंक सेट हो गया।')),
+                        );
+                      }
+                    }
+                  },
+                ),
+              ),
+              const SizedBox(height: 10),
+              Card(
+                elevation: 0,
+                color: const Color(0xfff8fafc),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  side: const BorderSide(color: Color(0xffe2e8f0)),
+                ),
+                child: ListTile(
+                  contentPadding:
+                      const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                  leading: const CircleAvatar(
+                    backgroundColor: Color(0xffea4335),
+                    child:
+                        Icon(Icons.map_rounded, color: Colors.white, size: 20),
+                  ),
+                  title: const Text(
+                    'Google Maps ऐप खोलें',
+                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                  ),
+                  subtitle: const Text(
+                    'Maps ऐप में लोकेशन देखें और शेयर लिंक क्लिपबोर्ड पर कॉपी करें',
+                    style: TextStyle(fontSize: 12, color: muted),
+                  ),
+                  trailing: const Icon(Icons.open_in_new_rounded, size: 18),
+                  onTap: () async {
+                    final query = suggestedQuery.isNotEmpty
+                        ? suggestedQuery
+                        : 'Rajasthan';
+                    final mapUri = Uri.parse(
+                        'https://www.google.com/maps/search/?api=1&query=${Uri.encodeComponent(query)}');
+                    if (await canLaunchUrl(mapUri)) {
+                      await launchUrl(mapUri,
+                          mode: LaunchMode.externalApplication);
+                    }
+                  },
+                ),
+              ),
+              const SizedBox(height: 10),
+              ListTile(
+                leading: const Icon(Icons.content_paste_rounded, color: blue),
+                title: const Text(
+                    'क्लिपबोर्ड से लिंक चिपकाएं (Paste from Clipboard)'),
+                onTap: () async {
+                  final data =
+                      await Clipboard.getData(Clipboard.kTextPlain);
+                  final text = (data?.text ?? '').trim();
+                  if (text.isNotEmpty) {
+                    setState(() => fields['googleMapUrl']!.text = text);
+                    if (sheetCtx.mounted) Navigator.pop(sheetCtx);
+                    if (mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                            content: Text(
+                                '✅ लिंक चिपकाया गया: ${text.length > 35 ? "${text.substring(0, 35)}..." : text}')),
+                      );
+                    }
+                  } else {
+                    if (mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('क्लिपबोर्ड खाली है।')),
+                      );
+                    }
+                  }
+                },
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Future<String?> _promptPlaceSearchDialog(String initialText) async {
+    final textCtrl = TextEditingController(text: initialText);
+    return showDialog<String>(
+      context: context,
+      builder: (dialogCtx) => AlertDialog(
+        title: const Text('जगह या लैंडमार्क खोजें'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'गाँव, मोहल्ला, दुकान या लैंडमार्क का नाम लिखें:',
+              style: TextStyle(fontSize: 13, color: muted),
+            ),
+            const SizedBox(height: 10),
+            TextField(
+              controller: textCtrl,
+              autofocus: true,
+              decoration: const InputDecoration(
+                hintText: 'उदा. बस स्टैंड गंगापुर या शनि मंदिर',
+                border: OutlineInputBorder(),
+                prefixIcon: Icon(Icons.place_rounded),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogCtx),
+            child: const Text('रद्द करें'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogCtx, textCtrl.text),
+            child: const Text('लिंक सेट करें'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _statePickerField(String key, String label,
+      {ValueChanged<String>? onStateChanged}) {
+    final controller = fields[key]!;
+    final locked = _isBoothVoter && _sourceLockedFields.contains(key);
+    return InkWell(
+      onTap: locked ? null : () => _showStatePicker(key, label, onStateChanged),
+      borderRadius: BorderRadius.circular(10),
+      child: IgnorePointer(
+        child: TextFormField(
+          controller: controller,
+          readOnly: true,
+          decoration: InputDecoration(
+            labelText: label,
+            prefixIcon: const Icon(Icons.map_outlined, size: 20),
+            suffixIcon: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (controller.text.isNotEmpty && !locked)
+                  IconButton(
+                    icon: const Icon(Icons.clear_rounded, size: 18),
+                    onPressed: () => setState(() => controller.clear()),
+                  ),
+                const Icon(Icons.arrow_drop_down_rounded, size: 24),
+                const SizedBox(width: 6),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _cityPickerField(String key, String label,
+      {required String stateKey}) {
+    final controller = fields[key]!;
+    final locked = _isBoothVoter && _sourceLockedFields.contains(key);
+    return InkWell(
+      onTap: locked ? null : () => _showCityPicker(key, label, stateKey),
+      borderRadius: BorderRadius.circular(10),
+      child: IgnorePointer(
+        child: TextFormField(
+          controller: controller,
+          readOnly: true,
+          decoration: InputDecoration(
+            labelText: label,
+            prefixIcon: const Icon(Icons.location_city_rounded, size: 20),
+            suffixIcon: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (controller.text.isNotEmpty && !locked)
+                  IconButton(
+                    icon: const Icon(Icons.clear_rounded, size: 18),
+                    onPressed: () => setState(() => controller.clear()),
+                  ),
+                const Icon(Icons.arrow_drop_down_rounded, size: 24),
+                const SizedBox(width: 6),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _showStatePicker(String key, String label,
+      ValueChanged<String>? onStateChanged) async {
+    final controller = fields[key]!;
+    String searchQuery = '';
+    final result = await showModalBottomSheet<String>(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (sheetCtx) {
+        return StatefulBuilder(
+          builder: (context, setSheetState) {
+            final filteredStates = IndiaLocations.states.where((s) {
+              final q = searchQuery.toLowerCase().trim();
+              return q.isEmpty || s.toLowerCase().contains(q);
+            }).toList();
+
+            return DraggableScrollableSheet(
+              expand: false,
+              initialChildSize: 0.75,
+              minChildSize: 0.4,
+              maxChildSize: 0.9,
+              builder: (ctx, scrollController) {
+                return Column(
+                  children: [
+                    Container(
+                      margin: const EdgeInsets.symmetric(vertical: 10),
+                      width: 40,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: Colors.grey.shade300,
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.map_rounded, color: blue),
+                          const SizedBox(width: 8),
+                          Text(
+                            label,
+                            style: const TextStyle(
+                                fontSize: 17,
+                                fontWeight: FontWeight.bold,
+                                color: navy),
+                          ),
+                          const Spacer(),
+                          TextButton.icon(
+                            icon: const Icon(Icons.edit_note_rounded, size: 18),
+                            label: const Text('हाथ से लिखें'),
+                            onPressed: () async {
+                              Navigator.pop(sheetCtx);
+                              final custom =
+                                  await _showCustomTextInputDialog(label);
+                              if (custom != null && custom.trim().isNotEmpty) {
+                                setState(() {
+                                  controller.text = custom.trim();
+                                  onStateChanged?.call(custom.trim());
+                                });
+                              }
+                            },
+                          ),
+                        ],
+                      ),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 16, vertical: 4),
+                      child: TextField(
+                        autofocus: false,
+                        decoration: InputDecoration(
+                          hintText:
+                              'राज्य खोजें (उदा. राजस्थान, गुजरात, MP)...',
+                          prefixIcon: const Icon(Icons.search_rounded),
+                          border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12)),
+                          contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 14, vertical: 10),
+                        ),
+                        onChanged: (val) =>
+                            setSheetState(() => searchQuery = val),
+                      ),
+                    ),
+                    const Divider(height: 16),
+                    Expanded(
+                      child: ListView.builder(
+                        controller: scrollController,
+                        itemCount: filteredStates.length,
+                        itemBuilder: (context, idx) {
+                          final state = filteredStates[idx];
+                          final isSelected = controller.text == state ||
+                              (controller.text.isNotEmpty &&
+                                  state.startsWith(controller.text));
+                          return ListTile(
+                            leading: Icon(
+                              isSelected
+                                  ? Icons.check_circle_rounded
+                                  : Icons.radio_button_unchecked_rounded,
+                              color: isSelected ? blue : Colors.grey,
+                            ),
+                            title: Text(
+                              state,
+                              style: TextStyle(
+                                fontWeight: isSelected
+                                    ? FontWeight.bold
+                                    : FontWeight.normal,
+                                color: isSelected ? blue : Colors.black87,
+                              ),
+                            ),
+                            onTap: () => Navigator.pop(sheetCtx, state),
+                          );
+                        },
+                      ),
+                    ),
+                  ],
+                );
+              },
+            );
+          },
+        );
+      },
+    );
+
+    if (result != null) {
+      setState(() {
+        controller.text = result;
+        onStateChanged?.call(result);
+      });
+    }
+  }
+
+  Future<void> _showCityPicker(
+      String key, String label, String stateKey) async {
+    final controller = fields[key]!;
+    final currentState = fields[stateKey]?.text.trim();
+    final cities = IndiaLocations.getCities(currentState);
+    String searchQuery = '';
+
+    final result = await showModalBottomSheet<String>(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (sheetCtx) {
+        return StatefulBuilder(
+          builder: (context, setSheetState) {
+            final filteredCities = cities.where((c) {
+              final q = searchQuery.toLowerCase().trim();
+              return q.isEmpty || c.toLowerCase().contains(q);
+            }).toList();
+
+            return DraggableScrollableSheet(
+              expand: false,
+              initialChildSize: 0.75,
+              minChildSize: 0.4,
+              maxChildSize: 0.9,
+              builder: (ctx, scrollController) {
+                return Column(
+                  children: [
+                    Container(
+                      margin: const EdgeInsets.symmetric(vertical: 10),
+                      width: 40,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: Colors.grey.shade300,
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.location_city_rounded, color: blue),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              currentState != null && currentState.isNotEmpty
+                                  ? '$label ($currentState)'
+                                  : label,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.bold,
+                                  color: navy),
+                            ),
+                          ),
+                          TextButton.icon(
+                            icon: const Icon(Icons.edit_note_rounded, size: 18),
+                            label: const Text('नया शहर लिखें'),
+                            onPressed: () async {
+                              Navigator.pop(sheetCtx);
+                              final custom =
+                                  await _showCustomTextInputDialog(label);
+                              if (custom != null && custom.trim().isNotEmpty) {
+                                setState(
+                                    () => controller.text = custom.trim());
+                              }
+                            },
+                          ),
+                        ],
+                      ),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 16, vertical: 4),
+                      child: TextField(
+                        autofocus: false,
+                        decoration: InputDecoration(
+                          hintText:
+                              'शहर / कस्बा खोजें (उदा. भीलवाड़ा, गंगापुर, जयपुर)...',
+                          prefixIcon: const Icon(Icons.search_rounded),
+                          border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12)),
+                          contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 14, vertical: 10),
+                        ),
+                        onChanged: (val) =>
+                            setSheetState(() => searchQuery = val),
+                      ),
+                    ),
+                    const Divider(height: 16),
+                    Expanded(
+                      child: ListView.builder(
+                        controller: scrollController,
+                        itemCount: filteredCities.length,
+                        itemBuilder: (context, idx) {
+                          final city = filteredCities[idx];
+                          final isSelected = controller.text == city ||
+                              (controller.text.isNotEmpty &&
+                                  city.startsWith(controller.text));
+                          return ListTile(
+                            leading: Icon(
+                              isSelected
+                                  ? Icons.check_circle_rounded
+                                  : Icons.location_on_outlined,
+                              color: isSelected ? blue : Colors.grey,
+                            ),
+                            title: Text(
+                              city,
+                              style: TextStyle(
+                                fontWeight: isSelected
+                                    ? FontWeight.bold
+                                    : FontWeight.normal,
+                                color: isSelected ? blue : Colors.black87,
+                              ),
+                            ),
+                            onTap: () => Navigator.pop(sheetCtx, city),
+                          );
+                        },
+                      ),
+                    ),
+                  ],
+                );
+              },
+            );
+          },
+        );
+      },
+    );
+
+    if (result != null) {
+      setState(() => controller.text = result);
+    }
+  }
+
+  Future<String?> _showCustomTextInputDialog(String title) async {
+    final textCtrl = TextEditingController();
+    return showDialog<String>(
+      context: context,
+      builder: (dialogCtx) => AlertDialog(
+        title: Text('$title दर्ज करें'),
+        content: TextField(
+          controller: textCtrl,
+          autofocus: true,
+          decoration: InputDecoration(
+            labelText: title,
+            hintText: 'नाम लिखें...',
+            border: const OutlineInputBorder(),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogCtx),
+            child: const Text('रद्द करें'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogCtx, textCtrl.text),
+            child: const Text('सुरक्षित करें'),
+          ),
+        ],
+      ),
+    );
+  }
 
   Widget _dangerActions() => Padding(
         padding: const EdgeInsets.only(bottom: 24),

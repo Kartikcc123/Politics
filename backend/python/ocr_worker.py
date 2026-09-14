@@ -241,8 +241,10 @@ def clean_house(value):
     normalized = (value or "").translate(
         str.maketrans("\u0966\u0967\u0968\u0969\u096a\u096b\u096c\u096d\u096e\u096fOQILSZBG", "012345678900112586")
     )
-    # Recover leading '1' when OCR misreads '1' as a vertical line, slash, exclamation, or bracket before 2-digit house numbers (e.g. '|49', '/50', '!60', 'l49')
-    normalized = re.sub(r"(?:^|[:;\s]+)(?:[\|/\\!liI\[])(?=\d{2}(?!\d))", " 1", normalized.strip())
+    # Recover leading '11' or '1' when OCR misreads '1' as vertical line, pipe, slash, exclamation, bracket, or letter l/I
+    # Handles: '||62' -> '1162', '|162' -> '1162', '|675' -> '1675', '|49' -> '149'
+    normalized = re.sub(r"(?:^|[:;\s]+)(?:[\|/\\!liI\[]{2})(?=\d{1,4}(?!\d))", " 11", normalized.strip())
+    normalized = re.sub(r"(?:^|[:;\s]+)(?:[\|/\\!liI\[])(?=\d{1,4}(?!\d))", " 1", normalized.strip())
     
     # Extract numeric house number part + optional Devanagari/Hindi letter suffix (e.g. "2145 क" or "2145-A" or "4201")
     raw_str = re.sub(r"^(?:[:\|/\\!\-\.\[\]]+\s*)+", "", normalized.strip())
@@ -254,8 +256,11 @@ def clean_house(value):
     # Filter out single-character Hindi/English noise letters (e.g., 'ह', 'x', 'r') attached to house numbers
     suffix = raw_suffix if (raw_suffix and (raw_suffix in ("क", "ख", "ग", "घ", "A", "B", "C", "D", "E", "F", "K"))) else ""
 
-    # Fix border artifact where a left card border line is misread as a leading '7' or '4' before house numbers
-    if len(val) == 3 and val.startswith("7") and not "-" in val and not "/" in val:
+    # In Indian electoral rolls font, top serif on '1' is consistently misread by Tesseract as '7'
+    # (e.g. 7675 -> 1675, 7162 -> 1162, 749 -> 149, 725 -> 125, 762 -> 162).
+    # Since polling booth house numbers do not reach 7000, any 4-digit number starting with 7 is 1xxx.
+    # Similarly, 3-digit numbers starting with 7 in rural booths are 1xx.
+    if len(val) in (3, 4) and val.startswith("7") and not "-" in val and not "/" in val:
         val = "1" + val[1:]
     elif len(val) == 2 and val.startswith("0"):
         val = val
@@ -267,6 +272,7 @@ def clean_house(value):
             val = parts[0]
 
     return f"{val} {suffix}".strip() if suffix else val
+
 
 
 def get_digits(value):
@@ -336,65 +342,71 @@ def ocr_house(card, card_full_text=None):
     """Read the full house-number row and parse the value using regex."""
     height, width = card.shape[:2]
     
+    house_label_pattern = (
+        r"(?:"
+        r"(?:गृह|गह|गुह|ग्ह|गृ|गृ\.|गृ०|मकान|House|H\.?No|Te|ye|Hea|Hen|Ge|\S*ह|\S*स)\s*(?:संख्या|सख्या|सं\.?|सं०|नं\.?|क्र\.?|Number|No\.?)?"
+        r"|(?:संख्या|सख्या|सं\.?|सं०|नं\.?)\s*"
+        r")\s*[:：;\-।|!.]?\s*([^\n]+)"
+    )
+
     c_full = ""
     if card_full_text:
-        house_line_full = field(card_full_text, r"(?:गृह|गह|गुह|ग्ह|गृ|गृ\.|मकान|House|H\.No|Te|\S*ह|\S*स)\s*(?:संख्या|सख्या|सं\.?|सं०|नं\.?|क्र\.?|Number|No\.?)?\s*[:：;\-।|]?\s*([^\n]+)")
+        house_line_full = field(card_full_text, house_label_pattern)
         c_full = clean_house(house_line_full)
 
-    # Crop house number ROI (y: 0.45 to 0.80, x: 0.00 to 0.70) to prevent chopping off leading digits
+    # Crop house number ROI (y: 0.48 to 0.78, x: 0.00 to 0.70)
     region = card[
-        round(height * 0.45):round(height * 0.80),
+        round(height * 0.48):round(height * 0.78),
         0:round(width * 0.70),
     ]
     if region.size == 0:
         return c_full
     gray = cv2.cvtColor(region, cv2.COLOR_BGR2GRAY)
-    
-    gray_2x = cv2.resize(gray, None, fx=2.5, fy=2.5, interpolation=cv2.INTER_CUBIC)
-    gray_3x = cv2.resize(gray, None, fx=3.0, fy=3.0, interpolation=cv2.INTER_CUBIC)
+    gray_res = cv2.resize(gray, None, fx=1.5, fy=1.5, interpolation=cv2.INTER_CUBIC)
     
     variants = [
-        gray_2x,
-        gray_3x,
-        cv2.createCLAHE(3.0, (8, 8)).apply(gray_2x),
-        cv2.threshold(gray_2x, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)[1],
+        gray_res,
+        cv2.createCLAHE(2.5, (8, 8)).apply(gray_res),
+        cv2.threshold(gray_res, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)[1],
     ]
     c1_values = []
-    c2_values = []
     for variant in variants:
-        t_hin = safe_image_to_string(variant, lang="hin+eng", config="--psm 6")
-        house_line = field(t_hin, r"(?:गृह|गह|गुह|ग्ह|गृ|गृ\.|मकान|House|H\.No|Te|\S*ह|\S*स)\s*(?:संख्या|सख्या|सं\.?|सं०|नं\.?|क्र\.?|Number|No\.?)?\s*[:：;\-।|]?\s*([^\n]+)")
-        c1 = clean_house(house_line)
-        if c1:
-            c1_values.append(c1)
-
-        t_eng = safe_image_to_string(
-            variant, lang="eng", config="--psm 6 -c tessedit_char_whitelist=0123456789/-",
-        )
-        c2 = clean_house(t_eng)
-        if c2:
-            c2_values.append(c2)
+        for psm in (6, 7):
+            t_hin = safe_image_to_string(variant, lang="hin+eng", config=f"--psm {psm}")
+            house_line = field(t_hin, house_label_pattern)
+            c1 = clean_house(house_line)
+            if c1:
+                c1_values.append(c1)
 
     # 1. Prioritize Devanagari house line regex extraction (c1_values or c_full)
     if c1_values:
         counts = {v: c1_values.count(v) for v in set(c1_values)}
-        winner, _ = max(counts.items(), key=lambda x: (x[1], len(x[0])))
+        # Prefer higher frequency, then longer numeric length (e.g. 1162 over 62)
+        winner, _ = max(counts.items(), key=lambda x: (x[1], len(re.findall(r"\d", x[0]))))
         if winner:
-            if c_full and len(c_full) > len(winner):
+            if c_full and len(re.findall(r"\d", c_full)) > len(re.findall(r"\d", winner)):
                 return c_full
             return winner
 
     if c_full:
         return c_full
 
-    # 2. Fallback to English digit whitelist OCR if label regex yielded nothing
-    if c2_values:
-        counts = {v: c2_values.count(v) for v in set(c2_values)}
-        winner, _ = max(counts.items(), key=lambda x: (x[1], len(x[0])))
-        if winner:
-            return winner
+    # 2. Targeted fallback: strictly read the right half of the house ROI (after label) for digits
+    # Only if the house label pattern didn't match directly
+    sub_region = region[:, round(region.shape[1] * 0.35):]
+    if sub_region.size > 0:
+        sub_gray = cv2.cvtColor(sub_region, cv2.COLOR_BGR2GRAY)
+        sub_res = cv2.resize(sub_gray, None, fx=2.5, fy=2.5, interpolation=cv2.INTER_CUBIC)
+        sub_thresh = cv2.threshold(sub_res, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)[1]
+        for v in (sub_res, sub_thresh):
+            for psm in (7, 8):
+                txt = safe_image_to_string(v, lang="eng", config=f"--psm {psm} -c tessedit_char_whitelist=0123456789/-")
+                cand = clean_house(txt)
+                if cand and cand.isdigit() and len(cand) >= 1:
+                    return cand
 
     return c_full
+
 
 def _dual_fixed_choice(card, y1, y2, x1, x2, extractor, language="eng", whitelist=""):
     """Return a fixed-region value only when two preprocessing passes agree."""
@@ -714,12 +726,16 @@ def parse_card(text, epic_text, photo_path, page_no, cell_no, focused_house="", 
     husband = clean_person_name(raw_husband)
     mother = clean_person_name(raw_mother)
     raw_house = clean_house(
-        field(text, r"(?:^|\n)\s*(?:गृह|गह|गुह|ग्ह|गृ|गृ\.|मकान|House|H\.No)\s*(?:संख्या|सख्या|सं\.?|सं०|नं\.?|क्र\.?|Number|No\.?)?\s*[:：;\-]?\s*([^\n]+)")
-        or field(text, r"(?:^|\n)\s*(?:संख्या|सख्या)\s*[:：;\-]\s*([^\n]+)")
+        field(text, r"(?:(?:गृह|गह|गुह|ग्ह|गृ|गृ\.|गृ०|मकान|House|H\.?No|Te|ye|Hea|Hen|Ge|\S*ह|\S*स)\s*(?:संख्या|सख्या|सं\.?|सं०|नं\.?|क्र\.?|Number|No\.?)?|(?:संख्या|सख्या|सं\.?|सं०|नं\.?)\s*)[:：;\-।|!.]?\s*([^\n]+)")
     )
-    if raw_house != "" and len(raw_house) >= len(focused_house):
+    if raw_house and focused_house:
+        if len(re.findall(r"\d", raw_house)) >= len(re.findall(r"\d", focused_house)):
+            house = raw_house
+        else:
+            house = focused_house
+    elif raw_house:
         house = raw_house
-    elif focused_house != "":
+    elif focused_house:
         house = focused_house
     else:
         house = ""

@@ -23,30 +23,46 @@ const runWorker = (cardPath) => new Promise((resolve, reject) => {
 
 async function resolveCardImage(source, directory) {
   const value = String(source || '').trim();
-  const media = value.match(/^\/media\/([a-f\d]{24})(?:$|[?#])/i);
-  if (media && mongoose.isValidObjectId(media[1])) {
-    const asset = await MediaAsset.findById(media[1]).select('+data contentType');
-    if (!asset?.data) throw new Error('Saved voter card image is unavailable.');
+  if (!value) throw new Error('Saved voter card image path is empty.');
+
+  // 1. Direct file on local disk
+  if (fs.existsSync(value) && fs.statSync(value).isFile()) {
+    return value;
+  }
+
+  // 2. MediaAsset ID: '/media/6aa...', 'http://.../media/6aa...', or raw 24-hex ObjectId
+  const mediaMatch = value.match(/(?:^|[/\\])media[/\\]([a-f\d]{24})(?:$|[?#])/i) ||
+                     (mongoose.isValidObjectId(value) ? [null, value] : null);
+  if (mediaMatch && mongoose.isValidObjectId(mediaMatch[1])) {
+    const asset = await MediaAsset.findById(mediaMatch[1]).select('+data contentType');
+    if (!asset?.data) throw new Error('Saved voter card image is unavailable in media asset.');
     const target = path.join(directory, /png/i.test(asset.contentType) ? 'card.png' : 'card.jpg');
     fs.writeFileSync(target, Buffer.from(asset.data));
     return target;
   }
-  if (/^\/uploads\//i.test(value)) {
-    const target = resolveUploadPublicPath(value);
+
+  // 3. /uploads/... path (relative or URL)
+  const uploadMatch = value.match(/(?:^|[/\\])uploads[/\\]([^?#]+)/i);
+  if (uploadMatch) {
+    const target = resolveUploadPublicPath('/uploads/' + uploadMatch[1]);
     if (fs.existsSync(target)) return target;
   }
-  if (/^https:\/\//i.test(value)) {
-    const key = decodeURIComponent(new URL(value).pathname.replace(/^\//, ''));
-    const object = await getFromS3(key);
-    if (object?.Body) {
-      const chunks = [];
-      for await (const chunk of object.Body) chunks.push(Buffer.from(chunk));
-      const target = path.join(directory, /png/i.test(object.ContentType || value) ? 'card.png' : 'card.jpg');
-      fs.writeFileSync(target, Buffer.concat(chunks));
-      return target;
-    }
+
+  // 4. Remote HTTP/HTTPS URL
+  if (/^https?:\/\//i.test(value)) {
+    try {
+      const key = decodeURIComponent(new URL(value).pathname.replace(/^\//, ''));
+      const object = await getFromS3(key);
+      if (object?.Body) {
+        const chunks = [];
+        for await (const chunk of object.Body) chunks.push(Buffer.from(chunk));
+        const target = path.join(directory, /png/i.test(object.ContentType || value) ? 'card.png' : 'card.jpg');
+        fs.writeFileSync(target, Buffer.concat(chunks));
+        return target;
+      }
+    } catch (_) {}
   }
-  throw new Error('Saved voter card image is unavailable locally.');
+  throw new Error(`Saved voter card image is unavailable locally (${value.slice(0, 50)}).`);
 }
 
 exports.recheckCardOcr = async (source) => {
