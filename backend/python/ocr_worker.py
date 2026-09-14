@@ -1887,27 +1887,40 @@ def parse_header_numbers(text):
 
     section_map = {}
     section_block = re.search(
-        r"(?:भाग\s*में\s*आने\s*वाले\s*अनुभागों?|अनुभागों?|sections?)[^\n:：;]{0,100}[:：;]?\s*(.+?)(?=\n\s*(?:3\.\s*मतदान|मतदान\s*केन्द्र|मतदान\s*केंद्र|भाग\s*संख्या|पिन\s*कोड|\d+\s*[).]\s*नामावली|$))",
+        r"(?:भाग\s*में\s*आने\s*वाले\s*अनुभाग[^\n:]*[:\s]*)(.+?)(?=\n\s*(?:3\.\s*मतदान|मतदान\s*केन्द्र|मतदान\s*केंद्र|$))",
         normalized,
         re.IGNORECASE | re.DOTALL,
     )
     section_source = section_block.group(1) if section_block else normalized
-    for match in re.finditer(
-        r"(?:^|\n)\s*([0-9०-९OQILSZBG]{1,2})\s*[-–.)]\s*([^\n]+)",
-        section_source,
-        re.IGNORECASE,
-    ):
-        number = normalize_section_number(match.group(1))
-        raw_name_val = match.group(2)
-        # Skip matched substrings that occur inside a ward description (e.g. '19-20' inside 'वार्ड सं 19-20')
-        prefix_len = match.start(1) - match.start(0)
-        prefix_text = match.group(0)[:prefix_len]
-        if re.search(r"^\s*\d{1,2}\s*गंगापुर", raw_name_val) or re.search(r"(?:वार्ड|Ward)\s*(?:संख्या|सं|नं\.?)?\s*$", prefix_text, re.IGNORECASE):
-            continue
-        name = canonical_section_name(tidy_name(raw_name_val))
-        if number and name and not re.search(r"(?:EPIC|RJ/|मतदाता|निर्वाचक)", name, re.IGNORECASE) and has_devanagari(name) >= 2:
-            if len(name) >= len(section_map.get(number, '')):
-                section_map[number] = name
+    
+    # Process section block line by line with sequence continuity
+    sec_lines = [clean(l) for l in section_source.splitlines() if clean(l)]
+    sec_prev_num = 0
+    for l in sec_lines:
+        if re.search(r"(?:शहर\s*/\s*मुख्य\s*ग्राम|डाक\s*घर|पिन\s*कोड|3\.\s*मतदान)", l):
+            break
+        m = re.match(r"^(?:([0-9\u0966-\u096f]{1,2})|[-–|।\?Il])\s*[-–.)\s]?\s*(.+)$", l)
+        if m:
+            digit_str = m.group(1)
+            raw_name_val = m.group(2).strip()
+            if digit_str is not None:
+                val = int(normalize_digits(digit_str))
+                # Fix OCR mistakes: reading 10 as 0 or 11 as 1
+                if val == 0 and sec_prev_num == 9:
+                    val = 10
+                elif val <= sec_prev_num and sec_prev_num >= 9:
+                    val = sec_prev_num + 1
+                sec_prev_num = val
+            else:
+                val = sec_prev_num + 1
+            s_num = str(val)
+            s_name = canonical_section_name(tidy_name(raw_name_val))
+            if s_num != "0" and s_name and has_devanagari(s_name) >= 2 and not re.search(r"(?:EPIC|RJ/|मतदाता|पिन|डाक|तहसील|सहाडा)", s_name):
+                section_map[s_num] = s_name
+
+    # Remove invalid '0' or empty key if present
+    section_map.pop("0", None)
+    section_map.pop("", None)
 
     section_matches = list(re.finditer(
         r"(?:अनुभाग|section|SUT|UM|UT|SU|अिुभाग|अनुमाग|(?:^|\n)\s*अनुभाग\s*की\s*संख्या\s*व\s*नाम)[^\n:：;\-0-9,]{0,60}[:：;\-]?\s*([0-9०-९OQILSZBG\-\|Il?]{1,3})\s*[-–:.)\s]\s*([^\n]+)",
@@ -1924,20 +1937,6 @@ def parse_header_numbers(text):
             m for m in raw_candidates
             if not re.search(r"(?:विधान\s*सभा|assembly|constituency|AC|furs|Seat|वार्ड|Ward)", m.group(0), re.IGNORECASE)
         ]
-
-    # OCR commonly reads the first section marker (?/?) as a danda.
-    # Recover numbered section names line-by-line so all sections from the
-    # master page are preserved instead of keeping only the first match.
-    for line in normalized.splitlines():
-        line = clean(line)
-        match = re.match(r"^(?:([0-9\u0966-\u096f]{1,3})|[??Il])\s*[-?.)?:]\s*(.+)$", line)
-        if not match:
-            continue
-        raw_number = match.group(1)
-        number = normalize_section_number(raw_number) if raw_number else "1"
-        name = canonical_section_name(tidy_name(match.group(2)))
-        if number and name and has_devanagari(name) >= 2 and not re.search(r"\u092e\u0924\u0926\u093e\u0928|\u0915\u0947\u0902\u0926\u094d\u0930|\u0935\u093f\u0935\u0930\u0923|\u092a\u0941\u0930\u0941\u0937|\u092e\u0939\u093f\u0932\u093e|\u0938\u093e\u092e\u093e\u0928\u094d\u092f", name) and len(name) >= len(section_map.get(number, "")):
-            section_map[number] = name
 
     section_number = ""
     section_name = ""
