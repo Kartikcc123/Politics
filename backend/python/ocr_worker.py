@@ -243,8 +243,13 @@ def clean_house(value):
     )
     # Recover leading '11' or '1' when OCR misreads '1' as vertical line, pipe, slash, exclamation, bracket, or letter l/I
     # Handles: '||62' -> '1162', '|162' -> '1162', '|675' -> '1675', '|49' -> '149'
-    normalized = re.sub(r"(?:^|[:;\s]+)(?:[\|/\\!liI\[]{2})(?=\d{1,4}(?!\d))", " 11", normalized.strip())
-    normalized = re.sub(r"(?:^|[:;\s]+)(?:[\|/\\!liI\[])(?=\d{1,4}(?!\d))", " 1", normalized.strip())
+    normalized = re.sub(r"(?:^|[:;\s]+)(?:[\|!liI\[]{2})(?=\d{1,4}(?!\d))", " 11", normalized.strip())
+    normalized = re.sub(r"(?:^|[:;\s]+)(?:[\|!liI\[])(?=\d{1,4}(?!\d))", " 1", normalized.strip())
+    # Recover trailing '1' when OCR misreads '1' as pipe, exclamation, l, I, i, bracket, or parenthesis
+    # Handles: '376 |' -> '3761', '376!' -> '3761', '376 i' -> '3761', '376 l' -> '3761'
+    normalized = re.sub(r"(?<=\d)\s*[\|!liI\[\])]+(?:\s*|$|[^\w\d/\\-])", "1", normalized)
+    # Join split digits (e.g. '376 1' -> '3761', '1 162' -> '1162', '11 62' -> '1162')
+    normalized = re.sub(r"(?<=\d)\s+(?=\d)", "", normalized)
     
     # Extract numeric house number part + optional Devanagari/Hindi letter suffix (e.g. "2145 क" or "2145-A" or "4201")
     raw_str = re.sub(r"^(?:[:\|/\\!\-\.\[\]]+\s*)+", "", normalized.strip())
@@ -353,38 +358,44 @@ def ocr_house(card, card_full_text=None):
         house_line_full = field(card_full_text, house_label_pattern)
         c_full = clean_house(house_line_full)
 
-    # Crop house number ROI (y: 0.48 to 0.78, x: 0.00 to 0.70)
+    # Crop house number ROI (y: 0.48 to 0.78, x: 0.00 to 0.75)
+    # Widen to 0.75 so 4-digit house numbers (e.g. 3761) and trailing 1/pipes are not sliced off
     region = card[
         round(height * 0.48):round(height * 0.78),
-        0:round(width * 0.70),
+        0:round(width * 0.75),
     ]
     if region.size == 0:
         return c_full
     gray = cv2.cvtColor(region, cv2.COLOR_BGR2GRAY)
-    gray_res = cv2.resize(gray, None, fx=1.5, fy=1.5, interpolation=cv2.INTER_CUBIC)
     
-    variants = [
-        gray_res,
-        cv2.createCLAHE(2.5, (8, 8)).apply(gray_res),
-        cv2.threshold(gray_res, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)[1],
-    ]
     c1_values = []
-    for variant in variants:
-        for psm in (6, 7):
-            t_hin = safe_image_to_string(variant, lang="hin+eng", config=f"--psm {psm}")
-            house_line = field(t_hin, house_label_pattern)
-            c1 = clean_house(house_line)
-            if c1:
-                c1_values.append(c1)
+    for scale in (1.5, 2.0):
+        gray_res = cv2.resize(gray, None, fx=scale, fy=scale, interpolation=cv2.INTER_CUBIC)
+        variants = [
+            gray_res,
+            cv2.createCLAHE(2.5, (8, 8)).apply(gray_res),
+            cv2.threshold(gray_res, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)[1],
+        ]
+        for variant in variants:
+            for psm in (6, 7):
+                t_hin = safe_image_to_string(variant, lang="hin+eng", config=f"--psm {psm}")
+                house_line = field(t_hin, house_label_pattern)
+                c1 = clean_house(house_line)
+                if c1:
+                    c1_values.append(c1)
 
     # 1. Prioritize Devanagari house line regex extraction (c1_values or c_full)
     if c1_values:
         counts = {v: c1_values.count(v) for v in set(c1_values)}
-        # Prefer higher frequency, then longer numeric length (e.g. 1162 over 62)
+        # Prefer higher frequency, then longer numeric length (e.g. 3761 over 376, 1162 over 62)
         winner, _ = max(counts.items(), key=lambda x: (x[1], len(re.findall(r"\d", x[0]))))
+        # If any candidate is a longer complete number that contains the winner as prefix/suffix, take the longer one
+        for v in counts.keys():
+            v_digits = "".join(re.findall(r"\d", v))
+            winner_digits = "".join(re.findall(r"\d", winner))
+            if len(v_digits) > len(winner_digits) and (v_digits.startswith(winner_digits) or v_digits.endswith(winner_digits)):
+                winner = v
         if winner:
-            if c_full and len(re.findall(r"\d", c_full)) > len(re.findall(r"\d", winner)):
-                return c_full
             return winner
 
     if c_full:
@@ -449,24 +460,43 @@ def ocr_serial(card, card_full_text=""):
             if s_val and 1 <= int(s_val) <= 99999:
                 candidates.append(s_val)
 
-    # 2. Widen serial box region (x: 0.0..0.38, y: 0.0..0.24) so digits like 155 are not clipped
-    region = card[0:round(height * 0.24), 0:round(width * 0.38)]
+    # 2. Widen serial box region (x: 0.0..0.40, y: 0.0..0.26)
+    region = card[0:round(height * 0.26), 0:round(width * 0.40)]
     if region.size > 0:
         gray = cv2.cvtColor(region, cv2.COLOR_BGR2GRAY)
-        resized = cv2.resize(gray, None, fx=2.5, fy=2.5, interpolation=cv2.INTER_CUBIC)
-        clahe = cv2.createCLAHE(3.0, (8, 8)).apply(resized)
-        thresh = cv2.threshold(resized, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)[1]
         
-        for variant in (clahe, thresh, resized):
-            for psm in (7, 6, 8, 11):
-                try:
-                    txt = safe_image_to_string(variant, lang="eng", config=f"--psm {psm} -c tessedit_char_whitelist=0123456789")
-                    clean_txt = re.sub(r"[^\d]", "", txt or "")
-                    match = re.search(r"(?<!\d)(\d{1,5})(?!\d)", clean_txt)
-                    if match:
-                        candidates.append(match.group(1))
-                except Exception:
-                    pass
+        # Detect inner serial box contour to strip outer black border lines cleanly
+        thresh_inv = cv2.threshold(gray, 180, 255, cv2.THRESH_BINARY_INV)[1]
+        contours, _ = cv2.findContours(thresh_inv, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+        crops = []
+        for c in contours:
+            bx, by, bw, bh = cv2.boundingRect(c)
+            if bw > region.shape[1] * 0.35 and bh > region.shape[0] * 0.35:
+                pad_x = max(3, round(bw * 0.03))
+                pad_y = max(3, round(bh * 0.08))
+                inner = region[by + pad_y : by + bh - pad_y, bx + pad_x : bx + bw - pad_x]
+                if inner.size > 0:
+                    crops.append(inner)
+                break
+        crops.append(region)
+
+        for crop in crops:
+            padded = cv2.copyMakeBorder(crop, 15, 15, 20, 20, cv2.BORDER_CONSTANT, value=[255, 255, 255])
+            c_gray = cv2.cvtColor(padded, cv2.COLOR_BGR2GRAY) if len(padded.shape) == 3 else padded
+            for scale in (2.5, 3.5):
+                resized = cv2.resize(c_gray, None, fx=scale, fy=scale, interpolation=cv2.INTER_CUBIC)
+                clahe = cv2.createCLAHE(3.0, (8, 8)).apply(resized)
+                thresh = cv2.threshold(resized, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)[1]
+                for variant in (resized, clahe, thresh):
+                    for psm in (6, 7, 8, 10, 11):
+                        try:
+                            txt = safe_image_to_string(variant, lang="eng", config=f"--psm {psm} -c tessedit_char_whitelist=0123456789")
+                            clean_txt = re.sub(r"[^\d]", "", txt or "")
+                            match = re.search(r"(?<!\d)(\d{1,5})(?!\d)", clean_txt)
+                            if match and 1 <= int(match.group(1)) <= 99999:
+                                candidates.append(match.group(1))
+                        except Exception:
+                            pass
 
     if not candidates:
         return "", False
@@ -743,15 +773,10 @@ def parse_card(text, epic_text, photo_path, page_no, cell_no, focused_house="", 
     raw_house = clean_house(
         field(text, r"(?:(?:गृह|गह|गुह|ग्ह|गृ|गृ\.|गृ०|मकान|House|H\.?No|Te|ye|Hea|Hen|Ge|\S*ह|\S*स)\s*(?:संख्या|सख्या|सं\.?|सं०|नं\.?|क्र\.?|Number|No\.?)?|(?:संख्या|सख्या|सं\.?|सं०|नं\.?)\s*)[:：;\-।|!.]?\s*([^\n]+)")
     )
-    if raw_house and focused_house:
-        if len(re.findall(r"\d", raw_house)) >= len(re.findall(r"\d", focused_house)):
-            house = raw_house
-        else:
-            house = focused_house
+    if focused_house:
+        house = focused_house
     elif raw_house:
         house = raw_house
-    elif focused_house:
-        house = focused_house
     else:
         house = ""
     age_raw = field(

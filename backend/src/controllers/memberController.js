@@ -1417,8 +1417,8 @@ const applyRecheckOcr = async (member, user, req) => {
           const head = await Member.findOne(guardianQuery).select('houseNumber').lean();
           if (head && head.houseNumber && head.houseNumber !== '0') {
             const headHouse = String(head.houseNumber).trim();
-            // If newHouse is a truncated suffix of headHouse (e.g. head has 1162, OCR got 162 or 62)
-            if (headHouse.length > newHouse.length && headHouse.endsWith(newHouse)) {
+            // If newHouse is a truncated prefix or suffix of headHouse (e.g. head has 1162, OCR got 162; or head has 3761, OCR got 376)
+            if (headHouse.length > newHouse.length && (headHouse.endsWith(newHouse) || headHouse.startsWith(newHouse))) {
               newHouse = headHouse;
               value = headHouse;
               result.houseNumber = headHouse;
@@ -1435,7 +1435,7 @@ const applyRecheckOcr = async (member, user, req) => {
           if (newHouse === '0' || newHouse === '') {
             continue; // Retain existing valid house number
           }
-          if (currentHouse.length > newHouse.length && currentHouse.endsWith(newHouse)) {
+          if (currentHouse.length > newHouse.length && (currentHouse.endsWith(newHouse) || currentHouse.startsWith(newHouse))) {
             continue; // Retain complete existing house number
           }
         }
@@ -1443,8 +1443,8 @@ const applyRecheckOcr = async (member, user, req) => {
       if (field === 'voterSerial') {
         const currentSerial = String(member.voterSerial || '').trim();
         let newSerial = String(value).trim();
-        // If OCR dropped leading digit (e.g. existing 155 vs OCR 55)
-        if (currentSerial && currentSerial.length > newSerial.length && currentSerial.endsWith(newSerial)) {
+        // If OCR dropped leading or trailing digit (e.g. existing 155 vs OCR 55 or 15)
+        if (currentSerial && currentSerial.length > newSerial.length && (currentSerial.endsWith(newSerial) || currentSerial.startsWith(newSerial))) {
           continue; // Retain complete existing serial
         }
       }
