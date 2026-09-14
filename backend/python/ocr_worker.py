@@ -256,11 +256,10 @@ def clean_house(value):
     # Filter out single-character Hindi/English noise letters (e.g., 'ह', 'x', 'r') attached to house numbers
     suffix = raw_suffix if (raw_suffix and (raw_suffix in ("क", "ख", "ग", "घ", "A", "B", "C", "D", "E", "F", "K"))) else ""
 
-    # In Indian electoral rolls font, top serif on '1' is consistently misread by Tesseract as '7'
-    # (e.g. 7675 -> 1675, 7162 -> 1162, 749 -> 149, 725 -> 125, 762 -> 162).
-    # Since polling booth house numbers do not reach 7000, any 4-digit number starting with 7 is 1xxx.
-    # Similarly, 3-digit numbers starting with 7 in rural booths are 1xx.
-    if len(val) in (3, 4) and val.startswith("7") and not "-" in val and not "/" in val:
+    # In Indian electoral rolls font, top serif on '1' is consistently misread by Tesseract as '7' or '4'
+    # (e.g. 7675 -> 1675, 4675 -> 1675, 7162 -> 1162, 4162 -> 1162, 749 -> 149, 449 -> 149, 725 -> 125, 762 -> 162).
+    # Since polling booth house numbers do not reach 4000/7000, any 4-digit number starting with 7 or 4 is 1xxx.
+    if len(val) in (3, 4) and (val.startswith("7") or val.startswith("4")) and not "-" in val and not "/" in val:
         val = "1" + val[1:]
     elif len(val) == 2 and val.startswith("0"):
         val = val
@@ -393,16 +392,17 @@ def ocr_house(card, card_full_text=None):
 
     # 2. Targeted fallback: strictly read the right half of the house ROI (after label) for digits
     # Only if the house label pattern didn't match directly
-    sub_region = region[:, round(region.shape[1] * 0.35):]
+    # Use 0.18 ratio so digits starting early (like '1162') are not cut off
+    sub_region = region[:, round(region.shape[1] * 0.18):]
     if sub_region.size > 0:
         sub_gray = cv2.cvtColor(sub_region, cv2.COLOR_BGR2GRAY)
-        sub_res = cv2.resize(sub_gray, None, fx=2.5, fy=2.5, interpolation=cv2.INTER_CUBIC)
+        sub_res = cv2.resize(sub_gray, None, fx=2.0, fy=2.0, interpolation=cv2.INTER_CUBIC)
         sub_thresh = cv2.threshold(sub_res, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)[1]
         for v in (sub_res, sub_thresh):
-            for psm in (7, 8):
+            for psm in (7, 8, 6):
                 txt = safe_image_to_string(v, lang="eng", config=f"--psm {psm} -c tessedit_char_whitelist=0123456789/-")
                 cand = clean_house(txt)
-                if cand and cand.isdigit() and len(cand) >= 1:
+                if cand and any(ch.isdigit() for ch in cand) and len(cand) >= 1:
                     return cand
 
     return c_full
@@ -433,38 +433,53 @@ def _dual_fixed_choice(card, y1, y2, x1, x2, extractor, language="eng", whitelis
     return (values[0] if agreed else ""), disagreement
 
 
-def ocr_serial(card):
+def ocr_serial(card, card_full_text=""):
     """Dedicated pass for serial number box at top-left of voter card."""
     height, width = card.shape[:2]
-    # Crop serial box region strictly to top-left (x: 0.0..0.24, y: 0.0..0.23) to avoid EPIC box bleed
-    region = card[0:round(height * 0.23), 0:round(width * 0.24)]
-    if region.size == 0:
-        return "", False
-    gray = cv2.cvtColor(region, cv2.COLOR_BGR2GRAY)
-    resized = cv2.resize(gray, None, fx=2.5, fy=2.5, interpolation=cv2.INTER_CUBIC)
-    clahe = cv2.createCLAHE(3.0, (8, 8)).apply(resized)
-    thresh = cv2.threshold(resized, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)[1]
-    
     candidates = []
-    for variant in (clahe, thresh, resized):
-        for psm in (7, 6, 8, 11):
-            try:
-                txt = safe_image_to_string(variant, lang="eng", config=f"--psm {psm} -c tessedit_char_whitelist=0123456789")
-                clean_txt = re.sub(r"[^\d]", "", txt or "")
-                match = re.search(r"(?<!\d)(\d{1,5})(?!\d)", clean_txt)
-                if match:
-                    candidates.append(match.group(1))
-            except Exception:
-                pass
+
+    # 1. Full-text top line confirmation (serial is printed top-left before EPIC or alone in box)
+    if card_full_text:
+        # Match serial at top before EPIC or slash, e.g. "155 RJ/20/152/354062" or "497 SNE..."
+        m_top = re.search(r"(?:^|\n)\s*[|\[\(!Il]?\s*(\d{1,5})\s*[|\]\)]?\s*(?:[A-Z]{3}\d{7}|RJ/|[A-Z0-9]{10})", card_full_text)
+        if not m_top:
+            m_top = re.search(r"(?:^|\n)\s*[|\[\(!Il]?\s*(\d{1,5})\s*(?:\||\s+[A-Z0-9]{5,})", card_full_text)
+        if m_top:
+            s_val = m_top.group(1).strip()
+            if s_val and 1 <= int(s_val) <= 99999:
+                candidates.append(s_val)
+
+    # 2. Widen serial box region (x: 0.0..0.38, y: 0.0..0.24) so digits like 155 are not clipped
+    region = card[0:round(height * 0.24), 0:round(width * 0.38)]
+    if region.size > 0:
+        gray = cv2.cvtColor(region, cv2.COLOR_BGR2GRAY)
+        resized = cv2.resize(gray, None, fx=2.5, fy=2.5, interpolation=cv2.INTER_CUBIC)
+        clahe = cv2.createCLAHE(3.0, (8, 8)).apply(resized)
+        thresh = cv2.threshold(resized, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)[1]
+        
+        for variant in (clahe, thresh, resized):
+            for psm in (7, 6, 8, 11):
+                try:
+                    txt = safe_image_to_string(variant, lang="eng", config=f"--psm {psm} -c tessedit_char_whitelist=0123456789")
+                    clean_txt = re.sub(r"[^\d]", "", txt or "")
+                    match = re.search(r"(?<!\d)(\d{1,5})(?!\d)", clean_txt)
+                    if match:
+                        candidates.append(match.group(1))
+                except Exception:
+                    pass
+
     if not candidates:
         return "", False
-    # Count occurrences of candidate strings
-    counts = {c: candidates.count(c) for c in set(candidates)}
-    # Sort candidates preferring higher frequency, then longer digit length
-    winner, support = max(counts.items(), key=lambda item: (item[1], len(item[0])))
-    # Disagreement if candidates contain differing values of equal or distinct lengths
+
+    # Prefer longer complete candidate (e.g. '155' over '55' when box crop clipped leading 1)
+    max_len = max(len(c) for c in candidates)
+    longest = [c for c in candidates if len(c) == max_len]
+    counts = {c: candidates.count(c) for c in set(longest)}
+    winner, support = max(counts.items(), key=lambda item: item[1])
+
     disagreement = len(set(candidates)) > 1 and not all(c == winner for c in candidates)
     return winner, disagreement
+
 
 
 def ocr_gender(card):
@@ -1121,7 +1136,7 @@ def _process_single_card(args):
     focused_age = ocr_age(card, card_full_text=text)
     # Read serial only from its dedicated top-left box. Full-card OCR can
     # confuse EPIC fragments, age or house number with the printed serial.
-    focused_serial, serial_disagreement = ocr_serial(card)
+    focused_serial, serial_disagreement = ocr_serial(card, card_full_text=text)
     focused_epic, epic_ok = ocr_epic(card)
     identity_suggestion, identity_disagreement = ocr_identity(card)
     rec = parse_card(text, epic_text, photo_path, page_no, cell_no, focused_house=focused_house, card_path=card_path)
@@ -1157,7 +1172,7 @@ def process_card_image(card_path):
     epic_region = card[0:round(height * 0.25), 0:width]
     epic_text = safe_image_to_string(cv2.resize(clahe.apply(cv2.cvtColor(epic_region, cv2.COLOR_BGR2GRAY)), None, fx=1.5, fy=1.5, interpolation=cv2.INTER_CUBIC), lang="eng", config="--psm 6")
     focused_house = ocr_house(card, card_full_text=text)
-    focused_serial, serial_disagreement = ocr_serial(card)
+    focused_serial, serial_disagreement = ocr_serial(card, card_full_text=text)
     focused_epic, epic_ok = ocr_epic(card)
     identity_suggestion, identity_disagreement = ocr_identity(card)
     record = parse_card(text, epic_text, "", 1, 0, focused_house=focused_house, card_path=str(card_path))

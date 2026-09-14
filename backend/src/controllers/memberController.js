@@ -1394,8 +1394,8 @@ const applyRecheckOcr = async (member, user, req) => {
         const currentHouse = String(member.houseNumber || '').trim();
         let newHouse = String(value).trim();
         
-        // Auto-fix 7->1 serif OCR confusion on 3 or 4-digit numbers (e.g. 7675 -> 1675, 749 -> 149)
-        if (/^7\d{2,3}$/.test(newHouse)) {
+        // Auto-fix 7->1 or 4->1 serif OCR confusion on 3 or 4-digit numbers (e.g. 7675 -> 1675, 4675 -> 1675, 749 -> 149)
+        if (/^[74]\d{2,3}$/.test(newHouse)) {
           newHouse = '1' + newHouse.slice(1);
           value = newHouse;
           result.houseNumber = newHouse;
@@ -1410,6 +1410,14 @@ const applyRecheckOcr = async (member, user, req) => {
           if (currentHouse.length > newHouse.length && currentHouse.endsWith(newHouse)) {
             continue; // Retain complete existing house number
           }
+        }
+      }
+      if (field === 'voterSerial') {
+        const currentSerial = String(member.voterSerial || '').trim();
+        let newSerial = String(value).trim();
+        // If OCR dropped leading digit (e.g. existing 155 vs OCR 55)
+        if (currentSerial && currentSerial.length > newSerial.length && currentSerial.endsWith(newSerial)) {
+          continue; // Retain complete existing serial
         }
       }
       member[field] = value;
