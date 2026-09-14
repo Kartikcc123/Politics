@@ -1394,8 +1394,12 @@ const applyRecheckOcr = async (member, user, req) => {
         const currentHouse = String(member.houseNumber || '').trim();
         let newHouse = String(value).trim();
         
-        // Auto-fix 7->1 or 4->1 serif OCR confusion on 3 or 4-digit numbers (e.g. 7675 -> 1675, 4675 -> 1675, 749 -> 149, 449 -> 149)
-        if (/^[74]\d{2,3}$/.test(newHouse)) {
+        // Auto-fix 7->1 or 4->1 serif OCR confusion on 3 or 4-digit numbers (e.g. 7762/1762 -> 1162, 7675/4675 -> 1675, 749 -> 149)
+        if (/^(?:77|44|71|41|17|14)\d{2}$/.test(newHouse)) {
+          newHouse = '11' + newHouse.slice(2);
+          value = newHouse;
+          result.houseNumber = newHouse;
+        } else if (/^[74]\d{2,3}$/.test(newHouse)) {
           newHouse = '1' + newHouse.slice(1);
           value = newHouse;
           result.houseNumber = newHouse;
@@ -1419,6 +1423,10 @@ const applyRecheckOcr = async (member, user, req) => {
             const headHouse = String(head.houseNumber).trim();
             // If newHouse is a truncated prefix or suffix of headHouse (e.g. head has 1162, OCR got 162; or head has 3761, OCR got 376)
             if (headHouse.length > newHouse.length && (headHouse.endsWith(newHouse) || headHouse.startsWith(newHouse))) {
+              newHouse = headHouse;
+              value = headHouse;
+              result.houseNumber = headHouse;
+            } else if (headHouse.length === newHouse.length && headHouse.slice(2) === newHouse.slice(2)) {
               newHouse = headHouse;
               value = headHouse;
               result.houseNumber = headHouse;

@@ -262,10 +262,14 @@ def clean_house(value):
     suffix = raw_suffix if (raw_suffix and (raw_suffix in ("क", "ख", "ग", "घ", "A", "B", "C", "D", "E", "F", "K"))) else ""
 
     # In Indian electoral rolls font, top serif on '1' is consistently misread by Tesseract as '7' or '4'
-    # (e.g. 7675 -> 1675, 4675 -> 1675, 7162 -> 1162, 4162 -> 1162, 749 -> 149, 449 -> 149, 725 -> 125, 762 -> 162).
+    # (e.g. 7675 -> 1675, 4675 -> 1675, 7762 -> 1162, 1762 -> 1162, 7162 -> 1162, 4162 -> 1162, 749 -> 149, 449 -> 149, 725 -> 125, 762 -> 162).
     # Since polling booth house numbers do not reach 4000/7000, any 4-digit number starting with 7 or 4 is 1xxx.
-    if len(val) in (3, 4) and (val.startswith("7") or val.startswith("4")) and not "-" in val and not "/" in val:
-        val = "1" + val[1:]
+    # Additionally, double '11' is misread as '77', '17', '71', '44', '41', or '14'.
+    if len(val) in (3, 4) and not "-" in val and not "/" in val:
+        if len(val) == 4 and (val.startswith("77") or val.startswith("44") or val.startswith("71") or val.startswith("41") or val.startswith("17") or val.startswith("14")):
+            val = "11" + val[2:]
+        elif val.startswith("7") or val.startswith("4"):
+            val = "1" + val[1:]
     elif len(val) == 2 and val.startswith("0"):
         val = val
 
