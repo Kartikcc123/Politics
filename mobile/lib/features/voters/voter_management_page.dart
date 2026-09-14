@@ -5821,6 +5821,8 @@ class _VoterRow extends StatelessWidget {
                       builder: (_) => VoterEditPage(
                         voter: member,
                         onSaved: refresh,
+                        voterList: voterList,
+                        currentIndex: currentIndex,
                       ),
                     ),
                   ),

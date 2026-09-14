@@ -1009,8 +1009,18 @@ exports.update = async (req, res, next) => {
     await attachBoothWard(updates, req.currentUser);
     if (updates.booth) assertBoothAccess(req.currentUser, updates.booth);
     if (updates.ward) assertWardAccess(req.currentUser, updates.ward);
-    if (updates.voterId && requireValidEpic(updates.voterId) !== member.voterId) {
-      return res.status(409).json({ message: 'EPIC नंबर स्थायी है और बदला नहीं जा सकता।' });
+    if (updates.voterId) {
+      const cleanEpic = requireValidEpic(updates.voterId);
+      if (cleanEpic !== member.voterId) {
+        if (req.currentUser.role !== 'admin') {
+          return res.status(403).json({ message: 'EPIC नंबर केवल admin बदल सकते हैं।' });
+        }
+        const existingWithEpic = await Member.findOne({ voterId: cleanEpic, _id: { $ne: member._id } });
+        if (existingWithEpic) {
+          return res.status(409).json({ message: `EPIC नंबर ${cleanEpic} पहले से किसी अन्य मतदाता (${existingWithEpic.name}) में दर्ज है।` });
+        }
+        member.voterId = cleanEpic;
+      }
     }
     delete updates.voterId;
     Object.assign(member, updates);

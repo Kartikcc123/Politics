@@ -1,3 +1,4 @@
+import 'dart:io' as io;
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:file_picker/file_picker.dart';
@@ -949,13 +950,21 @@ class _VoterEditPageState extends State<VoterEditPage> {
       );
 
   Widget _photoPreview() {
-    if (selectedPhoto?.bytes != null) {
-      return Image.memory(selectedPhoto!.bytes!, fit: BoxFit.contain);
+    if (selectedPhoto != null) {
+      if (selectedPhoto!.bytes != null) {
+        return Image.memory(selectedPhoto!.bytes!, fit: BoxFit.contain);
+      }
+      final path = pickedFilePath(selectedPhoto!);
+      if (path != null && path.isNotEmpty) {
+        return Image.file(io.File(path), fit: BoxFit.contain);
+      }
     }
-    final photo = '${widget.voter['photo'] ?? ''}';
+    final photo = '${currentVoter['photo'] ?? widget.voter['photo'] ?? ''}'.trim();
     if (photo.isNotEmpty) {
+      final url = photo.startsWith('http') ? photo : '${api.baseUrl}$photo';
       return Image.network(
-        photo.startsWith('http') ? photo : '${api.baseUrl}$photo',
+        url,
+        headers: voterPhotoHeaders(url),
         fit: BoxFit.contain,
         errorBuilder: (_, __, ___) => const Icon(Icons.person, size: 52),
       );
