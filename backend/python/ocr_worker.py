@@ -493,7 +493,9 @@ def ocr_serial(card, card_full_text=""):
                 if inner.size > 0:
                     crops.append(inner)
                 break
-        crops.append(region)
+        # Only fallback to full region if no inner box contour was detected
+        if not crops:
+            crops.append(region)
 
         for crop in crops:
             padded = cv2.copyMakeBorder(crop, 15, 15, 20, 20, cv2.BORDER_CONSTANT, value=[255, 255, 255])
@@ -516,11 +518,10 @@ def ocr_serial(card, card_full_text=""):
     if not candidates:
         return "", False
 
-    # Prefer longer complete candidate (e.g. '155' over '55' when box crop clipped leading 1)
-    max_len = max(len(c) for c in candidates)
-    longest = [c for c in candidates if len(c) == max_len]
-    counts = {c: candidates.count(c) for c in set(longest)}
-    winner, support = max(counts.items(), key=lambda item: item[1])
+    # Rank by vote frequency first, then by plausibility
+    counts = {c: candidates.count(c) for c in set(candidates)}
+    sorted_candidates = sorted(counts.items(), key=lambda item: item[1], reverse=True)
+    winner, support = sorted_candidates[0]
 
     disagreement = len(set(candidates)) > 1 and not all(c == winner for c in candidates)
     return winner, disagreement
@@ -1010,6 +1011,8 @@ def preserve_card_serials(records, global_start_serial):
 
         is_exact = (raw is not None and raw == expected_serial)
         is_next_consecutive = (next_raw is not None and next_raw == expected_serial + 1)
+        # Check if raw has leading box border noise (e.g. corner '7' prepended to '172' giving '7172', or '6' prepended to '178' giving '6178')
+        is_prefix_noise = bool(raw is not None and len(str(raw)) > len(str(expected_serial)) and str(raw).endswith(str(expected_serial)))
         is_anomaly = (raw is not None and (raw < expected_serial or abs(raw - expected_serial) > 5) and (is_next_consecutive or raw <= 30))
 
         if is_exact:
@@ -1017,7 +1020,7 @@ def preserve_card_serials(records, global_start_serial):
             record["voterSerial"] = str(actual_serial)
             record["voterSerialConfidence"] = 95
             previous_serial = actual_serial
-        elif is_next_consecutive or is_anomaly or raw is None:
+        elif is_next_consecutive or is_anomaly or is_prefix_noise or raw is None:
             # Single-card OCR anomaly or cell-position reset: repair to expected_serial
             if raw is not None:
                 record["rawVoterSerial"] = str(raw)
