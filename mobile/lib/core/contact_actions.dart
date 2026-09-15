@@ -25,6 +25,43 @@ Future<void> openWhatsApp(
   }
 }
 
+Future<void> launchMapLocation(BuildContext context, String? rawUrl) async {
+  var trimmed = (rawUrl ?? '').trim();
+  if (trimmed.isEmpty) {
+    _error(context, 'लोकेशन लिंक उपलब्ध नहीं है।');
+    return;
+  }
+  if (!trimmed.startsWith('http://') &&
+      !trimmed.startsWith('https://') &&
+      !trimmed.startsWith('geo:')) {
+    trimmed = 'https://$trimmed';
+  }
+  final uri = Uri.tryParse(trimmed);
+  if (uri == null) {
+    _error(context, 'अमान्य Maps लिंक');
+    return;
+  }
+  try {
+    final launched = await launchUrl(uri, mode: LaunchMode.externalApplication);
+    if (!launched) {
+      final launchedDef =
+          await launchUrl(uri, mode: LaunchMode.platformDefault);
+      if (!launchedDef) {
+        await launchUrl(uri, mode: LaunchMode.inAppBrowserView);
+      }
+    }
+  } catch (_) {
+    try {
+      await launchUrl(uri, mode: LaunchMode.platformDefault);
+    } catch (_) {
+      if (context.mounted) {
+        _error(context, 'Maps नहीं खुल सका। कृपया ब्राउज़र या Google Maps जांचें।');
+      }
+    }
+  }
+}
+
 void _error(BuildContext context, String text) {
   ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(text)));
 }
+

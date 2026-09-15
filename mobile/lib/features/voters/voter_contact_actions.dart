@@ -31,6 +31,42 @@ class VoterContactActions extends StatelessWidget {
           icon: const Icon(Icons.notification_add_outlined),
           label: const Text('Follow-up'),
         ),
+        OutlinedButton.icon(
+          style: OutlinedButton.styleFrom(
+            foregroundColor: const Color(0xffea4335),
+            side: const BorderSide(color: Color(0xfffca5a5)),
+          ),
+          onPressed: () {
+            final mapUrl = (voter['googleMapUrl'] ?? '').toString().trim();
+            if (mapUrl.isNotEmpty) {
+              launchMapLocation(context, mapUrl);
+            } else {
+              final searchParts = [
+                voter['houseNumber'],
+                voter['address'],
+                voter['location'],
+                voter['village'],
+                voter['gramPanchayat'],
+                voter['tehsil'],
+                'Rajasthan',
+              ]
+                  .where((p) => p != null && p.toString().trim().isNotEmpty)
+                  .map((p) => p.toString().trim())
+                  .toList();
+              final q = searchParts.take(3).join(', ');
+              if (q.isNotEmpty) {
+                launchMapLocation(context,
+                    'https://www.google.com/maps/search/?api=1&query=${Uri.encodeComponent(q)}');
+              } else {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('लोकेशन या पता उपलब्ध नहीं है।')),
+                );
+              }
+            }
+          },
+          icon: const Icon(Icons.location_on_rounded, size: 18),
+          label: const Text('मैप'),
+        ),
         IconButton(
           icon: Icon(
             voter['isFavorite'] == true ? Icons.star : Icons.star_border,

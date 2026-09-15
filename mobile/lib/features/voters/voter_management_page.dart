@@ -6268,6 +6268,39 @@ class _VoterDetailPageState extends State<VoterDetailPage> {
                 ),
               ),
             ),
+            _ProfileAction(
+              icon: Icons.location_on_rounded,
+              label: 'Map',
+              color: const Color(0xffea4335),
+              onTap: () {
+                final mapUrl = (voter['googleMapUrl'] ?? '').toString().trim();
+                if (mapUrl.isNotEmpty) {
+                  launchMapLocation(context, mapUrl);
+                } else {
+                  final searchParts = [
+                    voter['houseNumber'],
+                    voter['address'],
+                    voter['location'],
+                    voter['village'],
+                    voter['gramPanchayat'],
+                    voter['tehsil'],
+                    'Rajasthan',
+                  ]
+                      .where((p) => p != null && p.toString().trim().isNotEmpty)
+                      .map((p) => p.toString().trim())
+                      .toList();
+                  final q = searchParts.take(3).join(', ');
+                  if (q.isNotEmpty) {
+                    launchMapLocation(context,
+                        'https://www.google.com/maps/search/?api=1&query=${Uri.encodeComponent(q)}');
+                  } else {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('लोकेशन या पता उपलब्ध नहीं है।')),
+                    );
+                  }
+                }
+              },
+            ),
             if (!isBoothManager)
               _ProfileAction(
                 icon: Icons.print_rounded,
@@ -6302,7 +6335,22 @@ class _VoterDetailPageState extends State<VoterDetailPage> {
             _ProfileInfoRow(
                 icon: Icons.location_on_rounded,
                 title: place.isEmpty ? '${voter['address'] ?? '-'}' : place,
-                subtitle: 'पता / क्षेत्र'),
+                subtitle: (voter['googleMapUrl'] ?? '').toString().trim().isNotEmpty
+                    ? 'Google Maps लोकेशन सेट है'
+                    : 'पता / क्षेत्र',
+                trailing: (voter['googleMapUrl'] ?? '').toString().trim().isNotEmpty
+                    ? IconButton(
+                        icon: const Icon(Icons.directions_rounded, color: Color(0xffea4335), size: 22),
+                        tooltip: 'Google Maps में नेविगेट करें',
+                        onPressed: () => launchMapLocation(context, '${voter['googleMapUrl']}'),
+                      )
+                    : null,
+                onTap: () {
+                  final mapUrl = (voter['googleMapUrl'] ?? '').toString().trim();
+                  if (mapUrl.isNotEmpty) {
+                    launchMapLocation(context, mapUrl);
+                  }
+                }),
             _ProfileInfoRow(
                 icon: Icons.cake_outlined,
                 title:
@@ -6399,37 +6447,52 @@ class _ProfileInfoRow extends StatelessWidget {
     required this.icon,
     required this.title,
     required this.subtitle,
+    this.trailing,
+    this.onTap,
     this.last = false,
   });
   final IconData icon;
   final String title;
   final String subtitle;
+  final Widget? trailing;
+  final VoidCallback? onTap;
   final bool last;
 
   @override
-  Widget build(BuildContext context) => Container(
-        padding: const EdgeInsets.symmetric(vertical: 14),
-        decoration: BoxDecoration(
-          border: last
-              ? null
-              : const Border(bottom: BorderSide(color: Color(0xffedf0f5))),
+  Widget build(BuildContext context) {
+    final rowContent = Container(
+      padding: const EdgeInsets.symmetric(vertical: 14),
+      decoration: BoxDecoration(
+        border: last
+            ? null
+            : const Border(bottom: BorderSide(color: Color(0xffedf0f5))),
+      ),
+      child: Row(children: [
+        Icon(icon, color: muted, size: 21),
+        const SizedBox(width: 14),
+        Expanded(
+          child:
+              Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text(title,
+                style: const TextStyle(
+                    color: navy, fontSize: 14, fontWeight: FontWeight.w800)),
+            const SizedBox(height: 2),
+            Text(subtitle,
+                style: const TextStyle(color: muted, fontSize: 11)),
+          ]),
         ),
-        child: Row(children: [
-          Icon(icon, color: muted, size: 21),
-          const SizedBox(width: 14),
-          Expanded(
-            child:
-                Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text(title,
-                  style: const TextStyle(
-                      color: navy, fontSize: 14, fontWeight: FontWeight.w800)),
-              const SizedBox(height: 2),
-              Text(subtitle,
-                  style: const TextStyle(color: muted, fontSize: 11)),
-            ]),
-          ),
-        ]),
+        if (trailing != null) trailing!,
+      ]),
+    );
+    if (onTap != null) {
+      return InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(8),
+        child: rowContent,
       );
+    }
+    return rowContent;
+  }
 }
 
 class _ProfileSection extends StatelessWidget {

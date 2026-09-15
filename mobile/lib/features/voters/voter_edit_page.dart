@@ -881,6 +881,19 @@ class _VoterEditPageState extends State<VoterEditPage> {
             onTap: _sendSms,
           ),
           _HeroAction(
+            icon: Icons.location_on_rounded,
+            label: 'मैप लोकेशन',
+            color: const Color(0xffea4335),
+            onTap: () {
+              final mapUrl = (fields['googleMapUrl']?.text ?? '').trim();
+              if (mapUrl.isNotEmpty) {
+                launchMapLocation(context, mapUrl);
+              } else {
+                _openGoogleMapLocationPicker();
+              }
+            },
+          ),
+          _HeroAction(
             icon: Icons.bookmark_border_rounded,
             label: 'सेव करें',
             color: navy,
@@ -1163,79 +1176,151 @@ class _VoterEditPageState extends State<VoterEditPage> {
             Row(
               children: [
                 Icon(
-                  hasUrl ? Icons.check_circle_rounded : Icons.map_outlined,
-                  color: hasUrl ? const Color(0xff16a34a) : blue,
+                  hasUrl ? Icons.check_circle_rounded : Icons.location_on_rounded,
+                  color: hasUrl ? const Color(0xff16a34a) : const Color(0xffea4335),
                   size: 22,
                 ),
                 const SizedBox(width: 8),
-                Text(
-                  hasUrl ? 'Google Maps लोकेशन सेट है' : 'Google Maps लोकेशन',
-                  style: TextStyle(
-                    fontSize: 15,
-                    fontWeight: FontWeight.bold,
-                    color: hasUrl ? const Color(0xff15803d) : navy,
+                Expanded(
+                  child: Text(
+                    hasUrl ? 'Google Maps लोकेशन सेट है' : 'Google Maps लोकेशन जोड़ें',
+                    style: TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.bold,
+                      color: hasUrl ? const Color(0xff15803d) : navy,
+                    ),
                   ),
+                ),
+                if (hasUrl)
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: const Color(0xffdcfce7),
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: const Text(
+                      'सक्रिय',
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.bold,
+                        color: Color(0xff15803d),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            TextFormField(
+              controller: fields['googleMapUrl'],
+              style: const TextStyle(fontSize: 13),
+              decoration: InputDecoration(
+                isDense: true,
+                labelText: 'Google Maps लिंक / URL',
+                hintText: 'लिंक यहाँ पेस्ट करें (https://maps.app.goo.gl/...)',
+                prefixIcon: const Icon(Icons.link_rounded, size: 20),
+                suffixIcon: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (hasUrl) ...[
+                      IconButton(
+                        icon: const Icon(Icons.open_in_new_rounded, size: 20, color: Color(0xff15803d)),
+                        tooltip: 'Maps में खोलें',
+                        onPressed: () => launchMapLocation(context, currentUrl),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.clear_rounded, size: 20, color: Colors.red),
+                        tooltip: 'हटाएं',
+                        onPressed: () => setState(() => fields['googleMapUrl']!.clear()),
+                      ),
+                    ] else ...[
+                      IconButton(
+                        icon: const Icon(Icons.content_paste_rounded, size: 20, color: blue),
+                        tooltip: 'क्लिपबोर्ड से पेस्ट करें',
+                        onPressed: () async {
+                          final data = await Clipboard.getData(Clipboard.kTextPlain);
+                          final text = (data?.text ?? '').trim();
+                          if (text.isNotEmpty) {
+                            setState(() => fields['googleMapUrl']!.text = text);
+                            if (mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(content: Text('✅ लिंक क्लिपबोर्ड से पेस्ट हो गया।')),
+                              );
+                            }
+                          } else {
+                            if (mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(content: Text('क्लिपबोर्ड खाली है।')),
+                              );
+                            }
+                          }
+                        },
+                      ),
+                    ],
+                  ],
+                ),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              ),
+              onChanged: (_) => setState(() {}),
+            ),
+            const SizedBox(height: 10),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                if (hasUrl)
+                  FilledButton.icon(
+                    style: FilledButton.styleFrom(
+                      backgroundColor: const Color(0xff16a34a),
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    ),
+                    icon: const Icon(Icons.directions_rounded, size: 18),
+                    label: const Text('Maps में खोलें'),
+                    onPressed: () => launchMapLocation(context, currentUrl),
+                  ),
+                OutlinedButton.icon(
+                  style: OutlinedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  ),
+                  icon: const Icon(Icons.auto_fix_high_rounded, size: 17, color: blue),
+                  label: const Text('पते से 1-Click लिंक बनाएं'),
+                  onPressed: () {
+                    final addressParts = [
+                      fields['houseNumber']?.text,
+                      fields['address']?.text,
+                      fields['location']?.text,
+                      fields['village']?.text,
+                      fields['gramPanchayat']?.text,
+                      fields['tehsil']?.text,
+                      'Rajasthan',
+                    ]
+                        .where((p) => p != null && p.trim().isNotEmpty)
+                        .map((p) => p!.trim())
+                        .toList();
+                    final query = addressParts.take(4).join(', ');
+                    if (query.trim().isNotEmpty) {
+                      final url = 'https://www.google.com/maps/search/?api=1&query=${Uri.encodeComponent(query)}';
+                      setState(() => fields['googleMapUrl']!.text = url);
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('✅ मतदाता के पते से Google Maps लिंक सेट हो गया।')),
+                      );
+                    } else {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('कृपया पहले मतदाता का पता या गाँव दर्ज करें।')),
+                      );
+                    }
+                  },
+                ),
+                OutlinedButton.icon(
+                  style: OutlinedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  ),
+                  icon: const Icon(Icons.search_rounded, size: 17),
+                  label: const Text('स्थान खोजें / अन्य विकल्प'),
+                  onPressed: _openGoogleMapLocationPicker,
                 ),
               ],
             ),
-            if (hasUrl) ...[
-              const SizedBox(height: 6),
-              Text(
-                currentUrl,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(fontSize: 12, color: Colors.black54),
-              ),
-              const SizedBox(height: 10),
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: [
-                  FilledButton.tonalIcon(
-                    icon: const Icon(Icons.open_in_new_rounded, size: 17),
-                    label: const Text('Maps में खोलें'),
-                    onPressed: () async {
-                      final uri = Uri.parse(currentUrl);
-                      if (await canLaunchUrl(uri)) {
-                        await launchUrl(uri,
-                            mode: LaunchMode.externalApplication);
-                      } else {
-                        if (mounted) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(content: Text('Maps नहीं खुल सका।')),
-                          );
-                        }
-                      }
-                    },
-                  ),
-                  OutlinedButton.icon(
-                    icon: const Icon(Icons.edit_location_alt_rounded, size: 17),
-                    label: const Text('बदलें'),
-                    onPressed: _openGoogleMapLocationPicker,
-                  ),
-                  TextButton.icon(
-                    icon: const Icon(Icons.delete_outline_rounded,
-                        color: Colors.red, size: 17),
-                    label: const Text('हटाएं',
-                        style: TextStyle(color: Colors.red)),
-                    onPressed: () =>
-                        setState(() => fields['googleMapUrl']!.clear()),
-                  ),
-                ],
-              ),
-            ] else ...[
-              const SizedBox(height: 6),
-              const Text(
-                'मतदाता के घर/दुकान की Google Maps लोकेशन आसानी से जोड़ें ताकि नेविगेशन में सुविधा रहे।',
-                style: TextStyle(fontSize: 13, color: muted),
-              ),
-              const SizedBox(height: 10),
-              FilledButton.icon(
-                icon: const Icon(Icons.add_location_alt_rounded),
-                label: const Text('Google Maps से लोकेशन सेट करें'),
-                onPressed: _openGoogleMapLocationPicker,
-              ),
-            ],
           ],
         ),
       ),
@@ -1419,12 +1504,9 @@ class _VoterEditPageState extends State<VoterEditPage> {
                     final query = suggestedQuery.isNotEmpty
                         ? suggestedQuery
                         : 'Rajasthan';
-                    final mapUri = Uri.parse(
-                        'https://www.google.com/maps/search/?api=1&query=${Uri.encodeComponent(query)}');
-                    if (await canLaunchUrl(mapUri)) {
-                      await launchUrl(mapUri,
-                          mode: LaunchMode.externalApplication);
-                    }
+                    final mapUrl =
+                        'https://www.google.com/maps/search/?api=1&query=${Uri.encodeComponent(query)}';
+                    await launchMapLocation(sheetCtx, mapUrl);
                   },
                 ),
               ),
