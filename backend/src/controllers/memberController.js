@@ -1394,13 +1394,9 @@ const applyRecheckOcr = async (member, user, req) => {
         const currentHouse = String(member.houseNumber || '').trim();
         let newHouse = String(value).trim();
         
-        // Auto-fix 7->1 or 4->1 serif OCR confusion on 3 or 4-digit numbers (e.g. 7762/1762 -> 1162, 7675/4675 -> 1675, 749 -> 149)
-        if (/^(?:77|44|71|41|17|14)\d{2}$/.test(newHouse)) {
+        // Auto-fix double 11 optical confusion on 4-digit numbers (e.g. 7762 -> 1162, 4462 -> 1162)
+        if (/^(?:77|44|71|41)\d{2}$/.test(newHouse)) {
           newHouse = '11' + newHouse.slice(2);
-          value = newHouse;
-          result.houseNumber = newHouse;
-        } else if (/^[74]\d{2,3}$/.test(newHouse)) {
-          newHouse = '1' + newHouse.slice(1);
           value = newHouse;
           result.houseNumber = newHouse;
         }
@@ -1426,7 +1422,7 @@ const applyRecheckOcr = async (member, user, req) => {
               newHouse = headHouse;
               value = headHouse;
               result.houseNumber = headHouse;
-            } else if (headHouse.length === newHouse.length && headHouse.slice(2) === newHouse.slice(2)) {
+            } else if (headHouse.length === newHouse.length && headHouse.slice(2) === newHouse.slice(2) && headHouse.startsWith('11') && newHouse.startsWith('17')) {
               newHouse = headHouse;
               value = headHouse;
               result.houseNumber = headHouse;
@@ -1438,22 +1434,17 @@ const applyRecheckOcr = async (member, user, req) => {
           }
         }
 
-        // If member already had an established complete house number, protect against truncation
-        if (currentHouse && currentHouse !== '0') {
-          if (newHouse === '0' || newHouse === '') {
-            continue; // Retain existing valid house number
-          }
-          if (currentHouse.length > newHouse.length && (currentHouse.endsWith(newHouse) || currentHouse.startsWith(newHouse))) {
-            continue; // Retain complete existing house number
-          }
+        // If new house is empty or '0', keep existing valid house
+        if (currentHouse && currentHouse !== '0' && (!newHouse || newHouse === '0')) {
+          continue;
         }
       }
       if (field === 'voterSerial') {
-        const currentSerial = String(member.voterSerial || '').trim();
-        let newSerial = String(value).trim();
-        // If OCR dropped leading or trailing digit (e.g. existing 155 vs OCR 55 or 15)
-        if (currentSerial && currentSerial.length > newSerial.length && (currentSerial.endsWith(newSerial) || currentSerial.startsWith(newSerial))) {
-          continue; // Retain complete existing serial
+        const newSerial = String(value || '').trim();
+        // If newSerial is valid digits, always update the member's serial on recheck
+        if (newSerial && /^\d{1,5}$/.test(newSerial) && parseInt(newSerial, 10) > 0) {
+          member.voterSerial = newSerial;
+          continue;
         }
       }
       member[field] = value;
