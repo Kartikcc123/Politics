@@ -161,7 +161,7 @@ def clean_person_name(value):
     text = re.sub(r"\bदेबी\b", "देवी", text)
     text = re.sub(r"\bगोर्धघन\b|\bगोवर्धण\b", "गोवर्धन", text)
     text = re.sub(r"(?<=\u0900-\u097F)चित्\b|(?<=\u0900-\u097F)चन्त\b|(?<=\u0900-\u097F)चन्च\b", "चन्द", text)
-    text = re.sub(r"\bप्रिाप\b|\bप्रिा\b|\bप्रताश\b|\bप्रताप\s+सिंह\b", "प्रताप", text)
+    text = re.sub(r"\bप्रिाप\b|\bप्रिा\b|\bप्रताश\b", "प्रताप", text)
     text = re.sub(r"\bकन्द्रया\b|\bकन्हेया\b", "कन्हैया", text)
     text = re.sub(r"\bरतनी ब्\b|\bरतनी ब्र\b|\bकेली ब्\b", lambda m: m.group(0).replace("ब्", "बाई").replace("ब्र", "बाई"), text)
     text = re.sub(r"(?:^|\s)(?:पुशपा|पुष्या|पुषपा)(?=$|\s)", " पुष्पा ", text)
@@ -178,8 +178,6 @@ def clean_person_name(value):
     text = re.sub(r"\bराजेस\b", "राजेश", text)
     text = re.sub(r"\bकवर\b|\bकँवर\b", "कंवर", text)
     text = re.sub(r"\bजसवन्त\b", "जसवंत", text)
-    text = re.sub(r"\bसायरी\b", "सावरी", text)
-    text = re.sub(r"\bनारायनी\b", "नारायण", text)
     text = clean(text).strip(" .-|:")
     
     # Dictionary lookup & fuzzy correction
