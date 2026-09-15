@@ -238,16 +238,11 @@ def clean_house(value):
     normalized = (value or "").translate(
         str.maketrans("\u0966\u0967\u0968\u0969\u096a\u096b\u096c\u096d\u096e\u096f", "0123456789")
     )
-    # Recover leading '11' or '1' when OCR misreads '1' as vertical line, pipe, exclamation, bracket, or letter l/I
-    normalized = re.sub(r"(?:^|[:;\s]+)(?:[\|!liI\[]{2})(?=\d{1,4}(?!\d))", " 11", normalized.strip())
-    normalized = re.sub(r"(?:^|[:;\s]+)(?:[\|!liI\[])(?=\d{1,4}(?!\d))", " 1", normalized.strip())
-    # Recover trailing '1' when OCR misreads '1' as pipe, exclamation, l, I, i, bracket, or parenthesis
-    normalized = re.sub(r"(?<=\d)\s*[\|!liI\[\])]+(?:\s*|$|[^\w\d/\\-])", "1", normalized)
-    # Join split digits (e.g. '376 1' -> '3761', '1 162' -> '1162', '11 62' -> '1162')
+    # Strip noise characters around digits and join split digits (e.g. '376 1' -> '3761')
     normalized = re.sub(r"(?<=\d)\s+(?=\d)", "", normalized)
     
     # Extract numeric house number part + optional Devanagari/Hindi letter suffix (e.g. "2145 क" or "2145-A" or "4201")
-    raw_str = re.sub(r"^(?:[:\|/\\!\-\.\[\]]+\s*)+", "", normalized.strip())
+    raw_str = re.sub(r"^(?:[:\|/\\!\-\.\[\]\(\)]+\s*)+", "", normalized.strip())
     match = re.search(r"(?<!\d)(\d{1,5}(?:[/\-]\d{1,5})?)(?:\s*([A-Za-z\u0900-\u097F]))?(?!\d)", raw_str)
     if not match:
         return ""
@@ -590,7 +585,7 @@ def ocr_age(card, card_full_text=""):
                     text = safe_image_to_string(variant, lang="hin+eng", config=f"--psm {psm}")
                 except Exception:
                     continue
-                match = re.search(r"(?:उम्र|उप्र|आयु|Age|3म्र|34)[^\d\n]{0,12}([0-9०-९OQILSZBG]{1,3})", text, re.IGNORECASE)
+                match = re.search(r"(?:उम्र|उप्र|आयु|Age|3म्र|34)[^\d\n]{0,12}([0-9०-९]{1,3})", text, re.IGNORECASE)
                 if not match:
                     # Fallback match: grab age numbers preceding 'लिंग' or 'महिला'/'पुरुष' or pattern like '31:' or '31)'
                     match = re.search(r"(?:उम्र|उप्र|आयु|Age)?[^\d\n]*?([1-9][0-9])\s*[:;\)\|\}](?=\s*(?:लिंग|महिला|पुरुष|कि|Al))", text, re.IGNORECASE)
@@ -600,8 +595,8 @@ def ocr_age(card, card_full_text=""):
                     continue
                 raw_target = match.group(1)
                 clean_raw_age = re.sub(r"[\]\|।:;\-\s]", "", raw_target)
-                value = clean(clean_raw_age).upper().translate(
-                    str.maketrans("०१२३४५६७८९OQILSZBG", "012345678900112586")
+                value = clean(clean_raw_age).translate(
+                    str.maketrans("०१२३४५६७८९", "0123456789")
                 )
                 digits = "".join(re.findall(r"\d", value))
                 if digits.isdigit() and 18 <= int(digits) <= 120:
@@ -801,11 +796,11 @@ def parse_card(text, epic_text, photo_path, page_no, cell_no, focused_house="", 
         house = ""
     age_raw = field(
         text,
-        r"(?:उम्र|उप्र|आयु)\s*[:：;\-]?\s*([0-9०-९OQILSZBG]{1,3})",
+        r"(?:उम्र|उप्र|आयु)\s*[:：;\-]?\s*([0-9०-९]{1,3})",
     )
     clean_age_raw = re.sub(r"[\]\|।:;\-]", "", age_raw)
-    age = clean(clean_age_raw).upper().translate(
-        str.maketrans("०१२३४५६७८९OQILSZBG", "012345678900112586")
+    age = clean(clean_age_raw).translate(
+        str.maketrans("०१२३४५६७८९", "0123456789")
     )
     age = "".join(re.findall(r"\d", age))
     
@@ -1510,7 +1505,7 @@ def ocr_fixed_region(image, bounds, lang="eng", psm=7, whitelist=""):
 
 def fixed_header_number(text, max_digits, prefer_tail=False):
     normalized = (text or "").upper().translate(
-        str.maketrans("\u0966\u0967\u0968\u0969\u096a\u096b\u096c\u096d\u096e\u096fOQILSZBG", "012345678900112586")
+        str.maketrans("\u0966\u0967\u0968\u0969\u096a\u096b\u096c\u096d\u096e\u096f", "0123456789")
     )
     values = re.findall(r"\d+", normalized)
     if not values:
@@ -1862,24 +1857,16 @@ def read_fixed_header(page_path, is_voter_page=True):
 def parse_header_numbers(text):
     value = text or ""
     normalized = re.sub(r"[ \t]+", " ", value.replace("\r", "\n"))
-    digit_map = str.maketrans("०१२३४५६७८९OQILSZBG", "012345678900112586")
+    digit_map = str.maketrans("०१२३४५६७८९", "0123456789")
 
     def normalize_digits(raw):
         return clean(raw or "").translate(digit_map)
 
     def normalize_assembly_number(raw):
-        number = normalize_digits(raw)
-        if len(number) == 3 and number.isdigit() and int(number) > 200:
-            tail = number[1:]
-            if tail.isdigit() and 1 <= int(tail) <= 200:
-                return tail
-        return number
+        return normalize_digits(raw)
 
     def normalize_section_number(raw):
-        number = normalize_digits(raw)
-        if len(number) == 2 and number[0] == number[1]:
-            return number[0]
-        return number
+        return normalize_digits(raw)
 
     def has_devanagari(val):
         return len(re.findall(r"[\u0900-\u097F]", val or ""))
