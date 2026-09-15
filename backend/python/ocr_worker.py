@@ -236,17 +236,14 @@ def correct_name_with_dictionary(name_text):
 def clean_house(value):
     if not value:
         return ""
-    # Map Devanagari digits ०-९ and common OCR optical confusion characters to ASCII digits.
-    # Note: Devanagari letters like 'क', 'ख' are suffix qualifiers (e.g. '2145 क') and MUST NOT be translated to numbers like '7'.
+    # Map Devanagari digits ०-९ to ASCII digits 0-9
     normalized = (value or "").translate(
-        str.maketrans("\u0966\u0967\u0968\u0969\u096a\u096b\u096c\u096d\u096e\u096fOQILSZBG", "012345678900112586")
+        str.maketrans("\u0966\u0967\u0968\u0969\u096a\u096b\u096c\u096d\u096e\u096f", "0123456789")
     )
-    # Recover leading '11' or '1' when OCR misreads '1' as vertical line, pipe, slash, exclamation, bracket, or letter l/I
-    # Handles: '||62' -> '1162', '|162' -> '1162', '|675' -> '1675', '|49' -> '149'
+    # Recover leading '11' or '1' when OCR misreads '1' as vertical line, pipe, exclamation, bracket, or letter l/I
     normalized = re.sub(r"(?:^|[:;\s]+)(?:[\|!liI\[]{2})(?=\d{1,4}(?!\d))", " 11", normalized.strip())
     normalized = re.sub(r"(?:^|[:;\s]+)(?:[\|!liI\[])(?=\d{1,4}(?!\d))", " 1", normalized.strip())
     # Recover trailing '1' when OCR misreads '1' as pipe, exclamation, l, I, i, bracket, or parenthesis
-    # Handles: '376 |' -> '3761', '376!' -> '3761', '376 i' -> '3761', '376 l' -> '3761'
     normalized = re.sub(r"(?<=\d)\s*[\|!liI\[\])]+(?:\s*|$|[^\w\d/\\-])", "1", normalized)
     # Join split digits (e.g. '376 1' -> '3761', '1 162' -> '1162', '11 62' -> '1162')
     normalized = re.sub(r"(?<=\d)\s+(?=\d)", "", normalized)
@@ -260,14 +257,6 @@ def clean_house(value):
     raw_suffix = match.group(2) if match.group(2) else ""
     # Filter out single-character Hindi/English noise letters (e.g., 'ह', 'x', 'r') attached to house numbers
     suffix = raw_suffix if (raw_suffix and (raw_suffix in ("क", "ख", "ग", "घ", "A", "B", "C", "D", "E", "F", "K"))) else ""
-
-    # In Indian electoral rolls font, double '11' is often misread by Tesseract as '77' or '44'
-    # (since polling booths contain ~1200 voters, numbers like 7762/4462 are optical confusions for 1162).
-    if len(val) == 4 and not "-" in val and not "/" in val:
-        if val.startswith("77") or val.startswith("44") or val.startswith("71") or val.startswith("41"):
-            val = "11" + val[2:]
-    elif len(val) == 2 and val.startswith("0"):
-        val = val
 
     # If hyphenated with identical numbers (e.g., 3-3 -> 3, 56-56 -> 56)
     if "-" in val or "/" in val:
@@ -343,7 +332,7 @@ def coordinate_age(words, x, y, card_w, card_h):
 
 
 def ocr_house(card, card_full_text=None):
-    """Read the full house-number row and parse the value using regex."""
+    """Read the full house-number row and parse the value using bilingual multi-scale OCR."""
     height, width = card.shape[:2]
     
     house_label_pattern = (
@@ -368,6 +357,30 @@ def ocr_house(card, card_full_text=None):
         return c_full
     gray = cv2.cvtColor(region, cv2.COLOR_BGR2GRAY)
     
+    # 1. Primary English Digit Detection:
+    # Dedicated English digit OCR on word bounding boxes within the house number row.
+    # Eliminates Devanagari font confusion (such as Tesseract misreading thin '11' as '77' or '44')
+    # directly from image pixels without ANY arbitrary digit mutation rules.
+    eng_candidates = []
+    try:
+        res_eng = cv2.resize(gray, None, fx=2.0, fy=2.0, interpolation=cv2.INTER_CUBIC)
+        data = pytesseract.image_to_data(res_eng, lang="eng", config="--psm 6", output_type=pytesseract.Output.DICT)
+        h_box, w_box = res_eng.shape[:2]
+        for i in range(len(data['text'])):
+            txt = data['text'][i].strip()
+            if not txt:
+                continue
+            top = data['top'][i]
+            left = data['left'][i]
+            # House row is in upper half of region (above Age row), right of Hindi label
+            if top < h_box * 0.55 and left >= w_box * 0.18:
+                c = clean_house(txt)
+                if c and any(ch.isdigit() for ch in c):
+                    eng_candidates.append(c)
+    except Exception:
+        pass
+
+    # 2. Devanagari line extraction (captures Hindi suffixes like 'क', 'ख' and Devanagari digits):
     c1_values = []
     for scale in (1.5, 2.0):
         gray_res = cv2.resize(gray, None, fx=scale, fy=scale, interpolation=cv2.INTER_CUBIC)
@@ -384,7 +397,18 @@ def ocr_house(card, card_full_text=None):
                 if c1:
                     c1_values.append(c1)
 
-    # 1. Prioritize Devanagari house line regex extraction (c1_values or c_full)
+    # If we have an accurate English digit candidate (e.g. 1162, 3761, 4506):
+    if eng_candidates:
+        primary_eng = eng_candidates[0]
+        # Check if Hindi OCR identified a Devanagari suffix (e.g., 'क', 'ख')
+        for h in c1_values:
+            suffix_match = re.search(r"[\u0900-\u097F]+$", h)
+            if suffix_match and suffix_match.group(0) in ("क", "ख", "ग", "घ"):
+                primary_eng = f"{primary_eng} {suffix_match.group(0)}"
+                break
+        return primary_eng
+
+    # Otherwise, prioritize Devanagari house line regex extraction (c1_values or c_full)
     if c1_values:
         counts = {v: c1_values.count(v) for v in set(c1_values)}
         # Prefer higher frequency, then longer numeric length (e.g. 3761 over 376, 1162 over 62)
@@ -401,9 +425,7 @@ def ocr_house(card, card_full_text=None):
     if c_full:
         return c_full
 
-    # 2. Targeted fallback: strictly read the right half of the house ROI (after label) for digits
-    # Only if the house label pattern didn't match directly
-    # Use 0.18 ratio so digits starting early (like '1162') are not cut off
+    # 3. Targeted fallback: strictly read the right half of the house ROI (after label) for digits
     sub_region = region[:, round(region.shape[1] * 0.18):]
     if sub_region.size > 0:
         sub_gray = cv2.cvtColor(sub_region, cv2.COLOR_BGR2GRAY)

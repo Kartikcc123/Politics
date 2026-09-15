@@ -1394,13 +1394,6 @@ const applyRecheckOcr = async (member, user, req) => {
         const currentHouse = String(member.houseNumber || '').trim();
         let newHouse = String(value).trim();
         
-        // Auto-fix double 11 optical confusion on 4-digit numbers (e.g. 7762 -> 1162, 4462 -> 1162)
-        if (/^(?:77|44|71|41)\d{2}$/.test(newHouse)) {
-          newHouse = '11' + newHouse.slice(2);
-          value = newHouse;
-          result.houseNumber = newHouse;
-        }
-
         // Automatic Hybrid Cross-Check:
         // If extracted house is short/truncated (e.g. 162 or 62) or missing,
         // cross-check with guardian in the same booth/section automatically!
@@ -1419,10 +1412,6 @@ const applyRecheckOcr = async (member, user, req) => {
             const headHouse = String(head.houseNumber).trim();
             // If newHouse is a truncated prefix or suffix of headHouse (e.g. head has 1162, OCR got 162; or head has 3761, OCR got 376)
             if (headHouse.length > newHouse.length && (headHouse.endsWith(newHouse) || headHouse.startsWith(newHouse))) {
-              newHouse = headHouse;
-              value = headHouse;
-              result.houseNumber = headHouse;
-            } else if (headHouse.length === newHouse.length && headHouse.slice(2) === newHouse.slice(2) && headHouse.startsWith('11') && newHouse.startsWith('17')) {
               newHouse = headHouse;
               value = headHouse;
               result.houseNumber = headHouse;
