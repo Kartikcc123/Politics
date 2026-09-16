@@ -1534,8 +1534,6 @@ def fixed_section_name(text):
     value = re.sub(r"\b[A-Z0-9]{10}\b", "", value)
     value = re.sub(r"[\|=_\"`{}\u0964\u0965]", "", value)
     value = clean(value).strip(" -,:;|\u0964\u0965")
-    if re.search(r"\u092a\u091f\u0935\u093e\u0930\s*.*\u092d\u0935\u0928", value):
-        return "\u092a\u091f\u0935\u093e\u0930 \u092d\u0935\u0928 \u0915\u0947 \u092a\u093e\u0938, \u092d\u0940\u0902\u091f\u093e"
     return value if len(re.findall(r"[\u0900-\u097F]", value)) >= 3 else ""
 
 
@@ -1605,41 +1603,37 @@ def fixed_master_section_map(image):
     for variant in variants:
         for psm in (6, 4, 11):
             text = safe_image_to_string(variant, lang=os.getenv("OCR_LANGUAGES", "hin+eng"), config=f"--psm {psm}")
-        rows = []
-        for raw_line in text.splitlines():
-            line = clean(raw_line).translate(digit_translation).strip()
-            match = re.match(
-                r"^(?:([1-9][0-9]{0,2})|[|Il\u0965\u0964])\s*[-\u2013\u2014.:)]\s*(.+)$",
-                line,
-            )
-            if not match:
-                continue
-            number = match.group(1) or ""
-            raw_name_text = match.group(2) or ""
-            # Strip leading noise symbols like '=', '-', '~'
-            clean_name_text = re.sub(r"^[^\u0900-\u097F]+", "", raw_name_text)
-            name = clean(clean_name_text).strip(" -,:;|\u0964=")
-            if re.search(r"\u092d\u093e\u0917\s*\u0935\s*\u092e\u0924\u0926\u093e\u0928|\u092e\u0924\u0926\u093e\u0928\s*\u0915\u0947\u0902\u0926\u094d\u0930|\u0935\u093f\u0935\u0930\u0923|\u092a\u0941\u0928\u0930\u0940\u0915\u094d\u0937\u0923", name):
-                continue
-            name = re.split(
-                r"\s+(?:\u092e\u0941\u0916\u094d\u092f\s+(?:\u0936\u0939\u0930|\u0917\u094d\u0930\u093e\u092e)|\u0935\u093e\u0930\u094d\u0921|\u092a\u094b\u0938\u094d\u091f\s*(?:\u0911\u092b\u093f\u0938|\u0906\u092b\u093f\u0938)|\u092a\u0941\u0932\u093f\u0938\s*\u0925\u093e\u0928\u093e|\u0924\u0939\u0938\u0940\u0932|\u091c\u093f\u0932\u093e|\u092a\u093f\u0928\s*\u0915\u094b\u0921)\b",
-                name, maxsplit=1,
-            )[0].strip(" -,:;|\u0964=")
-            name = re.sub(r"^(?:=parad|=पाराद|पाराद|\bपारद\b|=)\s*", "", name)
-            if name.startswith("मौहल्ला") or name.startswith("मोहल्ला"):
-                name = "कुमावत " + name
-            name = re.sub(r"\s*,\s*", ",", name)
-            # Recover a missing boundary before a stable electoral-roll domain word.
-            name = re.sub(r"(?<=[\u0900-\u097F])(\u0935\u093f\u0926\u094d\u092f\u093e\u0932\u092f)\b", r" \1", name)
-            if len(re.findall(r"[\u0900-\u097F]", name)) >= 3:
-                rows.append([number, name])
-        # Do not invent section "1" for an unnumbered OCR row. A missed number can occur
-        # on any row; assigning it to 1 could map every voter in section 1 to a later locality.
-        for number, name in rows:
-            if not number:
-                continue
-            votes = candidate_votes.setdefault(number, {})
-            votes[name] = votes.get(name, 0) + 1
+            rows = []
+            for raw_line in text.splitlines():
+                line = clean(raw_line).translate(digit_translation).strip()
+                match = re.match(
+                    r"^(?:([1-9][0-9]{0,2})|[|Il\u0965\u0964])\s*[-\u2013\u2014.:)]\s*(.+)$",
+                    line,
+                )
+                if not match:
+                    continue
+                number = match.group(1) or ""
+                raw_name_text = match.group(2) or ""
+                # Strip leading noise symbols like '=', '-', '~'
+                clean_name_text = re.sub(r"^[^\u0900-\u097F]+", "", raw_name_text)
+                name = clean(clean_name_text).strip(" -,:;|\u0964=")
+                if re.search(r"\u092d\u093e\u0917\s*\u0935\s*\u092e\u0924\u0926\u093e\u0928|\u092e\u0924\u0926\u093e\u0928\s*\u0915\u0947\u0902\u0926\u094d\u0930|\u0935\u093f\u0935\u0930\u0923|\u092a\u0941\u0928\u0930\u0940\u0915\u094d\u0937\u0923", name):
+                    continue
+                name = re.split(
+                    r"\s+(?:\u092e\u0941\u0916\u094d\u092f\s+(?:\u0936\u0939\u0930|\u0917\u094d\u0930\u093e\u092e)|\u0935\u093e\u0930\u094d\u0921|\u092a\u094b\u0938\u094d\u091f\s*(?:\u0911\u092b\u093f\u0938|\u0906\u092b\u093f\u0938)|\u092a\u0941\u0932\u093f\u0938\s*\u0925\u093e\u0928\u093e|\u0924\u0939\u0938\u0940\u0932|\u091c\u093f\u0932\u093e|\u092a\u093f\u0928\s*\u0915\u094b\u0921)\b",
+                    name, maxsplit=1,
+                )[0].strip(" -,:;|\u0964=")
+                name = re.sub(r"^(?:=parad|=पाराद|पाराद|\bपारद\b|=)\s*", "", name)
+                name = re.sub(r"\s*,\s*", ",", name)
+                # Recover a missing boundary before a stable electoral-roll domain word.
+                name = re.sub(r"(?<=[\u0900-\u097F])(\u0935\u093f\u0926\u094d\u092f\u093e\u0932\u092f)\b", r" \1", name)
+                if len(re.findall(r"[\u0900-\u097F]", name)) >= 3:
+                    rows.append([number, name])
+            for number, name in rows:
+                if not number:
+                    continue
+                votes = candidate_votes.setdefault(number, {})
+                votes[name] = votes.get(name, 0) + 1
 
     def candidate_quality(value):
         devanagari = len(re.findall(r"[\u0900-\u097F]", value))
@@ -1904,16 +1898,6 @@ def parse_header_numbers(text):
         text = clean(text).strip(" -,:;|")
         text = re.sub(r"वार्ड\s*(?:49|479|9)\s*-\s*20", "वार्ड सं 19-20", text)
         text = re.sub(r"\b(?:49|479)\b", "सं", text)
-        if re.search(r"(?:\u092a\u091f\u0935\u093e\u0930|Weare)\s*.*\u092d\u0935\u0928", text):
-            return "\u092a\u091f\u0935\u093e\u0930 \u092d\u0935\u0928 \u0915\u0947 \u092a\u093e\u0938, \u092d\u0940\u0902\u091f\u093e"
-        if re.search(r"\u091a\u094c\u0930\u093e\u092f\u093e", text):
-            return "\u091a\u094c\u0930\u093e\u092f\u093e \u0915\u0947 \u092a\u093e\u0938, \u092d\u0940\u0902\u091f\u093e"
-        if re.search(r"\u0930\u093e\u0935\u0932\u093e|\u0930\u0935\u0932\u093e|\u0936\u0935\u0932\u093e", text):
-            return "\u0930\u093e\u0935\u0932\u093e \u0915\u0947 \u092a\u093e\u0938, \u092d\u0940\u0902\u091f\u093e"
-        if re.search(r"\u0926\u0947\u0935\u0930\u0940", text):
-            return "\u0926\u0947\u0935\u0930\u0940 \u092e\u0917\u0930\u0940, \u092d\u0940\u0902\u091f\u093e"
-        if re.search(r"\u0938\u092e\u094d\u092a\u0942\u0930\u094d\u0923", text):
-            return "\u0938\u092e\u094d\u092a\u0942\u0930\u094d\u0923 \u0938\u0947\u092e\u0932\u093e\u091f, \u0938\u0947\u092e\u0932\u093e\u091f"
         return text
 
     def labeled_value(labels, numeric=False):
@@ -2039,8 +2023,6 @@ def parse_header_numbers(text):
         r"(?:\u092a\u093e\u0938|\u092e\u0917\u0930\u0940)\s*[,،]?\s*", village
     ):
         village = ""
-    if village:
-        village = re.sub(r"\bभीटा\b", "भींटा", village)
 
     raw_pin = labeled_value(
         [r"\u092a\u093f\u0928\s*\u0915\u094b\u0921", r"pin\s*code"], numeric=True
