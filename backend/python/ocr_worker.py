@@ -2158,10 +2158,27 @@ def main():
         if sv:
             doc_section_map[sk] = re.sub(r"वार्ड\s*(?:सं\.?|स|संख्या)?\s*(?:49|9)-20", "वार्ड सं 19-20", sv)
 
-    # Only prune clearly invalid section keys (> 40 or < 1)
+    # Filter non-numeric keys, non-Devanagari values, and clean section names
     for k in list(doc_section_map.keys()):
-        if k.isdigit() and (int(k) > 40 or int(k) < 1):
+        val = str(doc_section_map.get(k) or "")
+        clean_v = fixed_section_name(val)
+        if not str(k).strip().isdigit() or not (1 <= int(k) <= 30) or len(re.findall(r"[\u0900-\u097F]", clean_v)) < 3:
             doc_section_map.pop(k, None)
+        else:
+            doc_section_map[str(int(k))] = clean_v
+
+    # Filter isolated outlier keys (e.g. 27 or 35 when real booth sections are 1..9)
+    num_keys = sorted([int(k) for k in doc_section_map.keys() if k.isdigit()])
+    if num_keys:
+        max_valid = 1
+        for nk in num_keys:
+            if nk <= max_valid + 2:
+                max_valid = max(max_valid, nk)
+            else:
+                break
+        for k in list(doc_section_map.keys()):
+            if int(k) > max_valid:
+                doc_section_map.pop(k, None)
 
     # Auto-extract Village from header fields or section names if master village is missing/blank
     if not master_context.get("village"):
