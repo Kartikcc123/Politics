@@ -19,7 +19,7 @@ const {
   searchExactCandidates,
 } = require('../utils/memberSearch');
 
-const populate = 'party ward booth area createdBy updatedBy';
+const populate = 'party ward booth area createdBy updatedBy groups';
 const maskMobile = (value) => {
   const text = String(value || '');
   return text.length >= 4 ? `${'*'.repeat(Math.max(0, text.length - 4))}${text.slice(-4)}` : text;
@@ -202,7 +202,19 @@ exports.list = async (req, res, next) => {
     if (supportLevel) filter.supportLevel = supportLevel;
     if (partyPreference) filter.partyPreference = partyPreference;
     if (favorite === 'true') filter.isFavorite = true;
+    if (req.query.favoriteRating !== undefined && req.query.favoriteRating !== '') {
+      const fr = parseInt(req.query.favoriteRating, 10);
+      if (!isNaN(fr) && fr >= 0 && fr <= 3) filter.favoriteRating = fr;
+    }
     if (req.query.label) filter.labels = String(req.query.label).trim();
+    if (req.query.groupId) filter.groups = req.query.groupId;
+    if (req.query.group) {
+      if (mongoose.Types.ObjectId.isValid(req.query.group)) {
+        filter.groups = req.query.group;
+      } else {
+        filter.labels = String(req.query.group).trim();
+      }
+    }
     if (gender) filter.gender = gender;
     if (ward) filter.ward = ward;
     if (area) filter.area = area;
@@ -296,7 +308,7 @@ exports.list = async (req, res, next) => {
     }
 
     const listQuery = (query) => Member.find(query)
-      .select('contactType photo ocrCardImage cardImage name surname mobile altMobile dob estimatedDob anniversary voterId voterSerial guardianName houseNumber address location area tehsil gramPanchayat village municipality caste subCaste organizationPost organizationLevel influenceLevel occupation workplaceState workplaceCity workplaceVillage spouseName marriageState marriageCity marriageVillage education extraDetails supportLevel partyPreference isFavorite ward booth updatedAt age gender sectionNumber sectionName assemblyNumber assemblyName partNumber partName postOffice policeStation district pinCode verificationStatus profileCompletionStatus profileCompletedBy profileCompletedAt ocrConfidence houseNumberConfidence locationMatchConfidence locationResolution ocrReviewReasons ocrValidationPassed ocrFieldConfidence ocrValues sourceDocument hasAssemblyMembership hasMunicipalMembership municipalWardNumbers googleMapUrl')
+      .select('contactType photo ocrCardImage cardImage name surname mobile altMobile dob estimatedDob anniversary voterId voterSerial guardianName houseNumber address location area tehsil gramPanchayat village municipality caste subCaste organizationPost organizationLevel influenceLevel occupation workplaceState workplaceCity workplaceVillage spouseName marriageState marriageCity marriageVillage education extraDetails supportLevel partyPreference isFavorite favoriteRating groups labels ward booth updatedAt age gender sectionNumber sectionName assemblyNumber assemblyName partNumber partName postOffice policeStation district pinCode verificationStatus profileCompletionStatus profileCompletedBy profileCompletedAt ocrConfidence houseNumberConfidence locationMatchConfidence locationResolution ocrReviewReasons ocrValidationPassed ocrFieldConfidence ocrValues sourceDocument hasAssemblyMembership hasMunicipalMembership municipalWardNumbers googleMapUrl')
       .populate(populate)
       .sort(sortObj)
       .collation({ locale: 'en', numericOrdering: true, strength: 1 });
@@ -1306,15 +1318,28 @@ exports.merge = async (req, res, next) => {
 exports.toggleFavorite = async (req, res, next) => {
   try {
     const { id } = req.params;
+    const { rating } = req.body || {};
     const member = await Member.findById(id);
     if (!member) return res.status(404).json({ message: 'Member not found.' });
 
-    member.isFavorite = !member.isFavorite;
+    if (rating !== undefined && rating !== null) {
+      const parsed = parseInt(rating, 10);
+      member.favoriteRating = isNaN(parsed) ? 0 : Math.max(0, Math.min(3, parsed));
+    } else {
+      // Cycle: 0 -> 1 -> 2 -> 3 -> 0
+      member.favoriteRating = (member.favoriteRating >= 3 ? 0 : (member.favoriteRating || 0) + 1);
+    }
+    member.isFavorite = member.favoriteRating > 0;
     member.updatedBy = req.currentUser._id;
     await member.save();
     invalidateMemberData();
 
-    res.json({ message: member.isFavorite ? 'Starred as favorite' : 'Removed from favorites', isFavorite: member.isFavorite });
+    const starDesc = member.favoriteRating === 0 ? 'हटाया गया' : `${member.favoriteRating} स्टार`;
+    res.json({
+      message: member.isFavorite ? `पसंदीदा (${starDesc}) में जोड़ा गया` : 'पसंदीदा सूची से हटाया गया',
+      isFavorite: member.isFavorite,
+      favoriteRating: member.favoriteRating,
+    });
   } catch (error) {
     next(error);
   }
@@ -1353,6 +1378,173 @@ exports.bulkLabels = async (req, res, next) => {
     invalidateMemberData();
 
     res.json({ message: `Label '${cleanLabel}' ${action === 'remove' ? 'removed from' : 'added to'} ${result.modifiedCount} member(s).` });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// --- Custom Groups (Google Contacts Style) CRUD ---
+exports.listGroups = async (req, res, next) => {
+  try {
+    const Group = require('../models/Group');
+    const groups = await Group.find({
+      $or: [
+        { createdBy: req.currentUser._id },
+        { createdBy: { $exists: false } },
+        { createdBy: null },
+      ],
+    }).sort({ name: 1 });
+
+    const groupCounts = await Member.aggregate([
+      { $match: applyMemberScope(req.currentUser, { 'groups.0': { $exists: true } }) },
+      { $unwind: '$groups' },
+      { $group: { _id: '$groups', count: { $sum: 1 } } },
+    ]);
+    const countMap = new Map(groupCounts.map((c) => [String(c._id), c.count]));
+
+    const result = groups.map((g) => ({
+      _id: g._id,
+      name: g.name,
+      color: g.color || '#1A73E8',
+      icon: g.icon || 'label',
+      description: g.description || '',
+      memberCount: countMap.get(String(g._id)) || 0,
+      createdAt: g.createdAt,
+    }));
+
+    res.json(result);
+  } catch (error) {
+    next(error);
+  }
+};
+
+exports.createGroup = async (req, res, next) => {
+  try {
+    const Group = require('../models/Group');
+    const { name, color, icon, description } = req.body;
+    const cleanName = String(name || '').trim();
+    if (!cleanName) {
+      return res.status(400).json({ message: 'ग्रुप का नाम आवश्यक है।' });
+    }
+
+    const existing = await Group.findOne({
+      name: new RegExp(`^${escapeRegex(cleanName)}$`, 'i'),
+      $or: [{ createdBy: req.currentUser._id }, { createdBy: null }, { createdBy: { $exists: false } }],
+    });
+    if (existing) {
+      return res.status(400).json({ message: 'इस नाम का ग्रुप पहले से मौजूद है।' });
+    }
+
+    const group = await Group.create({
+      name: cleanName,
+      color: color || '#1A73E8',
+      icon: icon || 'label',
+      description: description || '',
+      createdBy: req.currentUser._id,
+    });
+
+    res.status(201).json({ message: `ग्रुप '${cleanName}' सफलतापूर्वक बनाया गया।`, group });
+  } catch (error) {
+    next(error);
+  }
+};
+
+exports.updateGroup = async (req, res, next) => {
+  try {
+    const Group = require('../models/Group');
+    const { id } = req.params;
+    const { name, color, icon, description } = req.body;
+    const group = await Group.findOne({ _id: id, createdBy: req.currentUser._id });
+    if (!group) return res.status(404).json({ message: 'ग्रुप नहीं मिला।' });
+
+    const oldName = group.name;
+    if (name) group.name = String(name).trim();
+    if (color) group.color = color;
+    if (icon) group.icon = icon;
+    if (description !== undefined) group.description = description;
+    await group.save();
+
+    if (name && oldName !== group.name) {
+      await Member.updateMany(
+        { groups: group._id, labels: oldName },
+        { $set: { 'labels.$': group.name } },
+      );
+      invalidateMemberData();
+    }
+
+    res.json({ message: 'ग्रुप अपडेट हो गया।', group });
+  } catch (error) {
+    next(error);
+  }
+};
+
+exports.deleteGroup = async (req, res, next) => {
+  try {
+    const Group = require('../models/Group');
+    const { id } = req.params;
+    const group = await Group.findOne({ _id: id, createdBy: req.currentUser._id });
+    if (!group) return res.status(404).json({ message: 'ग्रुप नहीं मिला।' });
+
+    await Member.updateMany(
+      { groups: group._id },
+      { $pull: { groups: group._id, labels: group.name } },
+    );
+    await Group.findByIdAndDelete(id);
+    invalidateMemberData();
+
+    res.json({ message: `ग्रुप '${group.name}' हटा दिया गया।` });
+  } catch (error) {
+    next(error);
+  }
+};
+
+exports.bulkAssignGroup = async (req, res, next) => {
+  try {
+    const Group = require('../models/Group');
+    const { memberIds = [], groupId, action = 'add' } = req.body;
+    if (!memberIds.length || !groupId) {
+      return res.status(400).json({ message: 'memberIds array and groupId are required.' });
+    }
+    const group = await Group.findOne({ _id: groupId, createdBy: req.currentUser._id });
+    if (!group) return res.status(404).json({ message: 'ग्रुप नहीं मिला।' });
+
+    const scope = applyMemberScope(req.currentUser, { _id: { $in: memberIds } });
+    const updateQuery = action === 'remove'
+      ? { $pull: { groups: group._id, labels: group.name } }
+      : { $addToSet: { groups: group._id, labels: group.name } };
+
+    const result = await Member.updateMany(scope, updateQuery);
+    invalidateMemberData();
+
+    res.json({
+      message: `${result.modifiedCount} वोटर(्स) को ग्रुप '${group.name}' ${action === 'remove' ? 'से हटाया गया' : 'में जोड़ा गया'}।`,
+      modifiedCount: result.modifiedCount,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+exports.assignMemberGroups = async (req, res, next) => {
+  try {
+    const Group = require('../models/Group');
+    const { id } = req.params;
+    const { groupIds = [] } = req.body;
+    const member = await Member.findById(id);
+    if (!member) return res.status(404).json({ message: 'Member not found.' });
+
+    const validGroups = await Group.find({ _id: { $in: groupIds } });
+    const groupNames = validGroups.map((g) => g.name);
+
+    member.groups = validGroups.map((g) => g._id);
+    const nonGroupLabels = (member.labels || []).filter((l) => !groupNames.includes(l));
+    member.labels = [...new Set([...nonGroupLabels, ...groupNames])];
+    member.updatedBy = req.currentUser._id;
+    await member.save();
+    invalidateMemberData();
+
+    const populated = await Member.findById(id).populate('groups', 'name color icon');
+    res.json({ message: 'ग्रुप्स अपडेट हो गए।', member: populated });
   } catch (error) {
     next(error);
   }

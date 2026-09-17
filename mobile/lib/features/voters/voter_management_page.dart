@@ -64,6 +64,9 @@ class _VoterManagementPageState extends State<VoterManagementPage> {
   bool listening = false;
   bool showAdvancedFilters = false;
   bool favoriteOnly = false;
+  int favoriteRatingFilter = 0;
+  String selectedGroupId = '';
+  String selectedGroupName = '';
   bool searchOptionsVisible = false;
   String gender = '';
   String verificationStatus = '';
@@ -164,7 +167,9 @@ class _VoterManagementPageState extends State<VoterManagementPage> {
       'gender': gender,
       'verificationStatus': verificationStatus,
       'profileCompletionStatus': profileCompletionStatus,
-      'favorite': favoriteOnly ? 'true' : '',
+      'favorite': (favoriteOnly || favoriteRatingFilter > 0) ? 'true' : '',
+      if (favoriteRatingFilter > 0) 'favoriteRating': '$favoriteRatingFilter',
+      if (selectedGroupId.isNotEmpty) 'groupId': selectedGroupId,
       'area': widget.initialAreaId,
       'letter': nameLetter,
       if (queryMode.isNotEmpty) 'qMode': queryMode,
@@ -1348,6 +1353,216 @@ class _VoterManagementPageState extends State<VoterManagementPage> {
     nextVoterSerial.dispose();
   }
 
+  void _showStarFilterSheet() {
+    showModalBottomSheet<void>(
+      context: context,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(16))),
+      builder: (_) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Padding(
+              padding: EdgeInsets.all(16),
+              child: Text('पसंदीदा फ़िल्टर (Favorite Rating Filter)', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+            ),
+            ListTile(
+              leading: const Icon(Icons.clear, color: Colors.grey),
+              title: const Text('सभी मतदाता (फ़िल्टर हटाएं)'),
+              trailing: (!favoriteOnly && favoriteRatingFilter == 0) ? const Icon(Icons.check, color: Colors.blue) : null,
+              onTap: () {
+                Navigator.pop(context);
+                setState(() {
+                  favoriteOnly = false;
+                  favoriteRatingFilter = 0;
+                  currentPage = 1;
+                  refreshVoters();
+                });
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.star, color: orange),
+              title: const Text('सभी पसंदीदा (All Favorites)'),
+              trailing: (favoriteOnly && favoriteRatingFilter == 0) ? const Icon(Icons.check, color: Colors.blue) : null,
+              onTap: () {
+                Navigator.pop(context);
+                setState(() {
+                  favoriteOnly = true;
+                  favoriteRatingFilter = 0;
+                  currentPage = 1;
+                  refreshVoters();
+                });
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.star, color: Colors.amber),
+              title: const Text('★ 1-स्टार पसंदीदा'),
+              trailing: favoriteRatingFilter == 1 ? const Icon(Icons.check, color: Colors.blue) : null,
+              onTap: () {
+                Navigator.pop(context);
+                setState(() {
+                  favoriteOnly = true;
+                  favoriteRatingFilter = 1;
+                  currentPage = 1;
+                  refreshVoters();
+                });
+              },
+            ),
+            ListTile(
+              leading: Row(mainAxisSize: MainAxisSize.min, children: const [Icon(Icons.star, color: Colors.amber, size: 18), Icon(Icons.star, color: Colors.amber, size: 18)]),
+              title: const Text('★★ 2-स्टार पसंदीदा'),
+              trailing: favoriteRatingFilter == 2 ? const Icon(Icons.check, color: Colors.blue) : null,
+              onTap: () {
+                Navigator.pop(context);
+                setState(() {
+                  favoriteOnly = true;
+                  favoriteRatingFilter = 2;
+                  currentPage = 1;
+                  refreshVoters();
+                });
+              },
+            ),
+            ListTile(
+              leading: Row(mainAxisSize: MainAxisSize.min, children: const [Icon(Icons.star, color: Colors.amber, size: 18), Icon(Icons.star, color: Colors.amber, size: 18), Icon(Icons.star, color: Colors.amber, size: 18)]),
+              title: const Text('★★★ 3-स्टार पसंदीदा (VIP/परिवार)'),
+              trailing: favoriteRatingFilter == 3 ? const Icon(Icons.check, color: Colors.blue) : null,
+              onTap: () {
+                Navigator.pop(context);
+                setState(() {
+                  favoriteOnly = true;
+                  favoriteRatingFilter = 3;
+                  currentPage = 1;
+                  refreshVoters();
+                });
+              },
+            ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _showGroupFilterSheet() async {
+    List<dynamic> groups = [];
+    try {
+      groups = await api.getGroups();
+    } catch (_) {}
+
+    if (!mounted) return;
+
+    showModalBottomSheet<void>(
+      context: context,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(16))),
+      builder: (_) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Padding(
+              padding: EdgeInsets.all(16),
+              child: Text('कस्टम ग्रुप्स (Google Contacts Groups)', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+            ),
+            ListTile(
+              leading: const Icon(Icons.clear, color: Colors.grey),
+              title: const Text('सभी ग्रुप्स (फ़िल्टर हटाएं)'),
+              trailing: selectedGroupId.isEmpty ? const Icon(Icons.check, color: Colors.blue) : null,
+              onTap: () {
+                Navigator.pop(context);
+                setState(() {
+                  selectedGroupId = '';
+                  selectedGroupName = '';
+                  currentPage = 1;
+                  refreshVoters();
+                });
+              },
+            ),
+            const Divider(),
+            if (groups.isEmpty)
+              const Padding(
+                padding: EdgeInsets.all(16),
+                child: Text('अभी कोई ग्रुप नहीं बना है। नीचे बटन से नया ग्रुप बनाएं।', style: TextStyle(color: Colors.grey)),
+              )
+            else
+              Flexible(
+                child: ListView.builder(
+                  shrinkWrap: true,
+                  itemCount: groups.length,
+                  itemBuilder: (_, i) {
+                    final g = groups[i];
+                    final gId = '${g['_id']}';
+                    final gName = '${g['name']}';
+                    final count = g['memberCount'] ?? 0;
+                    final isSelected = selectedGroupId == gId;
+                    return ListTile(
+                      leading: const Icon(Icons.label, color: Color(0xff1A73E8)),
+                      title: Text(gName),
+                      subtitle: Text('$count मतदाता'),
+                      trailing: isSelected ? const Icon(Icons.check, color: Colors.blue) : null,
+                      onTap: () {
+                        Navigator.pop(context);
+                        setState(() {
+                          selectedGroupId = gId;
+                          selectedGroupName = gName;
+                          currentPage = 1;
+                          refreshVoters();
+                        });
+                      },
+                    );
+                  },
+                ),
+              ),
+            const Divider(),
+            ListTile(
+              leading: const Icon(Icons.add_circle_outline, color: Color(0xff1A73E8)),
+              title: const Text('+ नया ग्रुप बनाएं (Create Group)'),
+              onTap: () async {
+                Navigator.pop(context);
+                final ctrl = TextEditingController();
+                final ok = await showDialog<bool>(
+                  context: context,
+                  builder: (ctx) => AlertDialog(
+                    title: const Text('नया ग्रुप बनाएं'),
+                    content: TextField(
+                      controller: ctrl,
+                      autofocus: true,
+                      decoration: const InputDecoration(
+                        labelText: 'ग्रुप का नाम (उदा. परिवार, युवा मोर्चा)',
+                        hintText: 'ग्रुप नाम लिखें',
+                      ),
+                    ),
+                    actions: [
+                      TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('रद्द करें')),
+                      FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('बनाएं')),
+                    ],
+                  ),
+                );
+                if (ok == true && ctrl.text.trim().isNotEmpty) {
+                  try {
+                    final res = await api.createGroup(ctrl.text.trim());
+                    final newG = res['group'];
+                    if (newG != null) {
+                      setState(() {
+                        selectedGroupId = '${newG['_id']}';
+                        selectedGroupName = '${newG['name']}';
+                        currentPage = 1;
+                        refreshVoters();
+                      });
+                    }
+                  } catch (e) {
+                    if (mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text('ग्रुप बनाने में त्रुटि: $e')),
+                      );
+                    }
+                  }
+                }
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget buildPhoneBookMobile(BuildContext context) => RefreshIndicator(
         onRefresh: () async {
           setState(refreshVoters);
@@ -1495,20 +1710,52 @@ class _VoterManagementPageState extends State<VoterManagementPage> {
                   icon: Icon(Icons.document_scanner_outlined, color: Theme.of(context).colorScheme.primary),
                 ),
               if (api.user?['role'] == 'admin')
-                IconButton(
-                  tooltip: favoriteOnly ? 'सभी संपर्क' : 'Favorites',
-                  onPressed: () => setState(() {
-                    favoriteOnly = !favoriteOnly;
-                    currentPage = 1;
-                    refreshVoters();
-                  }),
-                  icon: Icon(
-                    favoriteOnly
-                        ? Icons.star_rounded
-                        : Icons.star_border_rounded,
-                    color: favoriteOnly ? orange : muted,
+                GestureDetector(
+                  onLongPress: _showStarFilterSheet,
+                  child: IconButton(
+                    tooltip: favoriteRatingFilter > 0
+                        ? '$favoriteRatingFilter★ पसंदीदा'
+                        : (favoriteOnly ? 'सभी पसंदीदा' : 'Favorites (लंबा दबाएं: 1-3★)'),
+                    onPressed: () => setState(() {
+                      if (favoriteRatingFilter > 0) {
+                        favoriteRatingFilter = 0;
+                        favoriteOnly = false;
+                      } else {
+                        favoriteOnly = !favoriteOnly;
+                      }
+                      currentPage = 1;
+                      refreshVoters();
+                    }),
+                    icon: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          (favoriteOnly || favoriteRatingFilter > 0)
+                              ? Icons.star_rounded
+                              : Icons.star_border_rounded,
+                          color: (favoriteOnly || favoriteRatingFilter > 0) ? orange : muted,
+                        ),
+                        if (favoriteRatingFilter > 0)
+                          Text(
+                            '$favoriteRatingFilter',
+                            style: const TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.bold,
+                              color: orange,
+                            ),
+                          ),
+                      ],
+                    ),
                   ),
                 ),
+              IconButton(
+                tooltip: selectedGroupId.isNotEmpty ? 'ग्रुप: $selectedGroupName' : 'कस्टम ग्रुप्स (Groups)',
+                onPressed: _showGroupFilterSheet,
+                icon: Icon(
+                  selectedGroupId.isNotEmpty ? Icons.label : Icons.label_outline,
+                  color: selectedGroupId.isNotEmpty ? const Color(0xff1A73E8) : muted,
+                ),
+              ),
               IconButton(
                 tooltip: 'फ़िल्टर',
                 onPressed: openPhoneFilters,
@@ -3419,13 +3666,34 @@ class _PhoneContactTile extends StatelessWidget {
               child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('${voter['name'] ?? '-'}',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                            color: navy,
-                            fontSize: 15,
-                            fontWeight: FontWeight.w900)),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text('${voter['name'] ?? '-'}',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                  color: navy,
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.w900)),
+                        ),
+                        if ((int.tryParse('${voter['favoriteRating']}') ?? (voter['isFavorite'] == true ? 1 : 0)) > 0)
+                          Padding(
+                            padding: const EdgeInsets.only(left: 4),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const Icon(Icons.star, color: Colors.amber, size: 15),
+                                if ((int.tryParse('${voter['favoriteRating']}') ?? 1) > 1)
+                                  Text(
+                                    '${int.tryParse('${voter['favoriteRating']}') ?? 1}',
+                                    style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.amber),
+                                  ),
+                              ],
+                            ),
+                          ),
+                      ],
+                    ),
                     const SizedBox(height: 3),
                     Text(
                         mobile.isEmpty
@@ -3441,6 +3709,12 @@ class _PhoneContactTile extends StatelessWidget {
                     ],
                     const SizedBox(height: 5),
                     Wrap(spacing: 5, runSpacing: 4, children: [
+                      if (voter['groups'] is List && (voter['groups'] as List).isNotEmpty)
+                        for (final g in (voter['groups'] as List).take(3))
+                          _MembershipBadge(
+                            label: g is Map ? '${g['name']}' : '$g',
+                            color: const Color(0xff1A73E8),
+                          ),
                       if (hasAssembly)
                         const _MembershipBadge(label: 'विधानसभा', color: blue),
                       if (hasMunicipal)

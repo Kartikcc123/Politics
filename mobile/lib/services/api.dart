@@ -508,8 +508,9 @@ class Api {
         filename: file.filename, contentType: file.contentType);
   }
 
-  Future<Map<String, dynamic>> toggleFavorite(String memberId) async {
-    return Map<String, dynamic>.from(await post('/api/members/$memberId/favorite', {}));
+  Future<Map<String, dynamic>> toggleFavorite(String memberId, {int? rating}) async {
+    final body = rating != null ? {'rating': rating} : <String, dynamic>{};
+    return Map<String, dynamic>.from(await post('/api/members/$memberId/favorite', body));
   }
 
   Future<Map<String, dynamic>> mergeMembers(String primaryId, String secondaryId) async {
@@ -528,6 +529,44 @@ class Api {
       'memberIds': memberIds,
       'label': label,
       'action': action,
+    }));
+  }
+
+  Future<List<dynamic>> getGroups() async {
+    return await list('/api/members/groups');
+  }
+
+  Future<Map<String, dynamic>> createGroup(String name, {String color = '#1A73E8', String description = ''}) async {
+    return Map<String, dynamic>.from(await post('/api/members/groups', {
+      'name': name,
+      'color': color,
+      'description': description,
+    }));
+  }
+
+  Future<Map<String, dynamic>> updateGroup(String id, {String? name, String? color, String? description}) async {
+    final body = <String, dynamic>{};
+    if (name != null) body['name'] = name;
+    if (color != null) body['color'] = color;
+    if (description != null) body['description'] = description;
+    return Map<String, dynamic>.from(await put('/api/members/groups/$id', body));
+  }
+
+  Future<void> deleteGroup(String id) async {
+    await delete('/api/members/groups/$id');
+  }
+
+  Future<Map<String, dynamic>> bulkAssignGroup(List<String> memberIds, String groupId, {String action = 'add'}) async {
+    return Map<String, dynamic>.from(await post('/api/members/groups/bulk-assign', {
+      'memberIds': memberIds,
+      'groupId': groupId,
+      'action': action,
+    }));
+  }
+
+  Future<Map<String, dynamic>> assignMemberGroups(String memberId, List<String> groupIds) async {
+    return Map<String, dynamic>.from(await put('/api/members/$memberId/groups', {
+      'groupIds': groupIds,
     }));
   }
 

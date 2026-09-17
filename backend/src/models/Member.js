@@ -166,7 +166,9 @@ const MemberSchema = new mongoose.Schema({
     index: true,
   },
   labels: [{ type: String, trim: true, index: true }],
+  groups: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Group', index: true }],
   isFavorite: { type: Boolean, default: false, index: true },
+  favoriteRating: { type: Number, default: 0, min: 0, max: 3, index: true },
   supportLevel: {
     type: String,
     enum: ['supporter', 'neutral', 'opposite', 'undecided'],
@@ -236,6 +238,14 @@ const MemberSchema = new mongoose.Schema({
 }, { timestamps: true });
 
 MemberSchema.pre('validate', function updateSearchData(next) {
+  // The numeric rating is canonical; keep the legacy boolean synchronized.
+  if (this.isModified('favoriteRating')) {
+    const rating = Number(this.favoriteRating);
+    this.favoriteRating = Number.isFinite(rating) ? Math.max(0, Math.min(3, Math.trunc(rating))) : 0;
+    this.isFavorite = this.favoriteRating > 0;
+  } else if (this.isModified('isFavorite')) {
+    this.favoriteRating = this.isFavorite ? Math.max(1, Number(this.favoriteRating) || 0) : 0;
+  }
   if (!String(this.voterId || '').trim() && (this.contactType === 'personal' || this.hasMunicipalMembership)) {
     this.voterId = undefined;
   }
