@@ -1627,8 +1627,8 @@ def fixed_location_name(text):
 def fixed_master_section_map(image):
     """Read the numbered section table without mixing in the location column."""
     height, width = image.shape[:2]
-    # Widen y (0.20 to 0.65) and x (0.0 to 0.75) to accurately capture all section list table rows
-    region = image[round(height * 0.20):round(height * 0.65), 0:round(width * 0.75)]
+    # Widen y (0.12 to 0.70) and x (0.0 to 0.80) to capture section 1 at top through all section rows
+    region = image[round(height * 0.12):round(height * 0.70), 0:round(width * 0.80)]
     if region.size == 0:
         return {}
     gray = cv2.cvtColor(region, cv2.COLOR_BGR2GRAY)
@@ -1647,7 +1647,7 @@ def fixed_master_section_map(image):
             for raw_line in text.splitlines():
                 line = clean(raw_line).translate(digit_translation).strip()
                 match = re.match(
-                    r"^(?:([1-9][0-9]{0,2})|[|Il\u0965\u0964])\s*[-\u2013\u2014.:)]\s*(.+)$",
+                    r"^(?:([1-9][0-9]{0,2})|[|Il\u0965\u0964])(?:\s*[-\u2013\u2014.:)]\s*|\s+)(.+)$",
                     line,
                 )
                 if not match:
@@ -1660,7 +1660,7 @@ def fixed_master_section_map(image):
                 clean_name_text = re.sub(r"[A-Za-z]+", " ", clean_name_text)
                 clean_name_text = re.sub(r"^[^\u0900-\u097F]+", "", clean_name_text)
                 name = clean(clean_name_text).strip(" -,:;|\u0964=")
-                if re.search(r"\u092d\u093e\u0917\s*\u0935\s*\u092e\u0924\u0926\u093e\u0928|\u092e\u0924\u0926\u093e\u0928\s*\u0915\u0947\u0902\u0926\u094d\u0930|\u0935\u093f\u0935\u0930\u0923|\u092a\u0941\u0928\u0930\u0940\u0915\u094d\u0937\u0923", name):
+                if re.search(r"\u092d\u093e\u0917\s*\u0935\s*\u092e\u0924\u0926\u093e\u0928|\u092e\u0924\u0926\u093e\u0928\s*\u0915\u0947\u0902\u0926\u094d\u0930|\u0935\u093f\u0935\u0930\u0923|\u092a\u0941\u0928\u0930\u0940\u0915\u094d\u0937\u0923|\u0905\u0928\u0941\u092d\u093e\u0917\u094b\u0902\s*\u0915\u0940\s*\u0938\u0902\u0916\u094d\u092f\u093e", name):
                     continue
                 name = re.split(
                     r"\s+(?:\u092e\u0941\u0916\u094d\u092f\s+(?:\u0936\u0939\u0930|\u0917\u094d\u0930\u093e\u092e)|\u0935\u093e\u0930\u094d\u0921|\u092a\u094b\u0938\u094d\u091f\s*(?:\u0911\u092b\u093f\u0938|\u0906\u092b\u093f\u0938)|\u092a\u0941\u0932\u093f\u0938\s*\u0925\u093e\u0928\u093e|\u0924\u0939\u0938\u0940\u0932|\u091c\u093f\u0932\u093e|\u092a\u093f\u0928\s*\u0915\u094b\u0921)\b",
