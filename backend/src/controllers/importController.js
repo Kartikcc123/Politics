@@ -1060,7 +1060,8 @@ const parsePdfTextLayerMembers = async (filePath) => {
       const mother = cleanValue(cardText.match(/माता\s*(?:का)?\s*नाम\s*[:：ः-]?\s*([^\n]+)/i)?.[1]);
       const houseNumber = cleanValue(cardText.match(/(?:गृह|मकान)\s*संख्या\s*[:：-]?\s*([^\n]+)/i)?.[1]);
       const ageText = cardText.match(/(?:उम्र|आयु)\s*[:：-]?\s*(\d{1,3})/i)?.[1];
-      const serial = cardText.match(/^\s*(\d{1,4})/)?.[1];
+      const rawSerial = cardText.match(/^\s*(\d{1,4})/)?.[1];
+      const safeSerial = (rawSerial && rawSerial !== ageText) ? rawSerial : '';
       const header = {
         ...documentHeader,
         ...Object.fromEntries(Object.entries(pageHeader).filter(([, value]) => value)),
@@ -1070,7 +1071,7 @@ const parsePdfTextLayerMembers = async (filePath) => {
         name,
         mobile: '',
         voterId,
-        voterSerial: serial,
+        voterSerial: safeSerial,
         guardianName: father || husband || mother || '',
         relationType: father ? 'father' : husband ? 'husband' : mother ? 'mother' : '',
         houseNumber,
@@ -1220,17 +1221,19 @@ const parsePdfMembers = async (filePath, importFileName, onOcrProgress) => {
         const ocrHouse = cleanValue(ocrMem.houseNumber);
         const ageStr = String(prev.age || ocrMem.age || '');
 
-        // Embedded PDF text is authoritative for serial and house number.
-        // OCR is only a fallback when the text field is absent or invalid.
         const validTextHouse = (textHouse && textHouse !== ageStr) ? textHouse : '';
         const validOcrHouse = (ocrHouse && ocrHouse !== ageStr) ? ocrHouse : '';
         const preferredHouse = validTextHouse || validOcrHouse || '';
+
+        const validOcrSerial = (ocrMem.voterSerial && /^\d{1,5}$/.test(ocrMem.voterSerial)) ? String(ocrMem.voterSerial) : '';
+        const validPrevSerial = (prev.voterSerial && /^\d{1,5}$/.test(prev.voterSerial) && String(prev.voterSerial) !== ageStr) ? String(prev.voterSerial) : '';
+        const preferredSerial = validOcrSerial || validPrevSerial || '';
 
         mergedMap.set(targetKey, {
           ...prev,
           ...ocrMem,
           voterId: preferredEpic,
-          voterSerial: prev.voterSerial || ocrMem.voterSerial,
+          voterSerial: preferredSerial,
           houseNumber: preferredHouse || ocrMem.houseNumber || '',
           photo: ocrMem.photo || prev.photo || '',
           cardImage: ocrMem.cardImage || prev.cardImage || '',

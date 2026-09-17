@@ -466,50 +466,53 @@ def ocr_serial(card, card_full_text=""):
 
     # 1. Full-text top line confirmation (serial is printed top-left before EPIC or alone in box)
     if card_full_text:
-        # Match serial at top before EPIC or slash, e.g. "155 RJ/20/152/354062" or "497 SNE..."
-        m_top = re.search(r"(?:^|\n)\s*[|\[\(!Il]?\s*(\d{1,5})\s*[|\]\)]?\s*(?:[A-Z]{3}\d{7}|RJ/|[A-Z0-9]{10})", card_full_text)
+        # Match serial at top before EPIC or slash, e.g. "155 RJ/20/152/354062" or "497 SNE..." or "# 551 SNE..."
+        m_top = re.search(r"(?:^|\n)\s*[#№\|\[\(!Ilसंक्रN\.\s\-]*\s*(\d{1,5})\s*[|\]\)]?\s*(?:[A-Z]{3}\d{7}|RJ/|[A-Z0-9]{10})", card_full_text, re.IGNORECASE)
         if not m_top:
-            m_top = re.search(r"(?:^|\n)\s*[|\[\(!Il]?\s*(\d{1,5})\s*(?:\||\s+[A-Z0-9]{5,})", card_full_text)
+            m_top = re.search(r"(?:^|\n)\s*[#№\|\[\(!Ilसंक्रN\.\s\-]*\s*(\d{1,5})\s*(?:\||\s+[A-Z0-9]{5,})", card_full_text, re.IGNORECASE)
         if m_top:
             s_val = m_top.group(1).strip()
             if s_val and 1 <= int(s_val) <= 99999:
                 candidates.append(s_val)
 
-    # 2. Widen serial box region (x: 0.0..0.40, y: 0.0..0.26)
-    region = card[0:round(height * 0.26), 0:round(width * 0.40)]
+    # 2. Widen serial box region (x: 0.0..0.42, y: 0.0..0.28)
+    region = card[0:round(height * 0.28), 0:round(width * 0.42)]
     if region.size > 0:
         gray = cv2.cvtColor(region, cv2.COLOR_BGR2GRAY)
         
         # Detect inner serial box contour to strip outer black border lines cleanly
         thresh_inv = cv2.threshold(gray, 180, 255, cv2.THRESH_BINARY_INV)[1]
         contours, _ = cv2.findContours(thresh_inv, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
-        crops = []
+        crops = [region]
         for c in contours:
             bx, by, bw, bh = cv2.boundingRect(c)
-            if bw > region.shape[1] * 0.35 and bh > region.shape[0] * 0.35:
-                pad_x = max(3, round(bw * 0.03))
-                pad_y = max(3, round(bh * 0.08))
+            if bw > region.shape[1] * 0.30 and bh > region.shape[0] * 0.30:
+                pad_x = max(2, round(bw * 0.02))
+                pad_y = max(2, round(bh * 0.04))
                 inner = region[by + pad_y : by + bh - pad_y, bx + pad_x : bx + bw - pad_x]
                 if inner.size > 0:
-                    crops.append(inner)
+                    crops.insert(0, inner)
                 break
-        # Only fallback to full region if no inner box contour was detected
-        if not crops:
-            crops.append(region)
 
         for crop in crops:
             padded = cv2.copyMakeBorder(crop, 15, 15, 20, 20, cv2.BORDER_CONSTANT, value=[255, 255, 255])
             c_gray = cv2.cvtColor(padded, cv2.COLOR_BGR2GRAY) if len(padded.shape) == 3 else padded
-            for scale in (2.5, 3.5):
+            for scale in (2.0, 3.0):
                 resized = cv2.resize(c_gray, None, fx=scale, fy=scale, interpolation=cv2.INTER_CUBIC)
                 clahe = cv2.createCLAHE(3.0, (8, 8)).apply(resized)
                 thresh = cv2.threshold(resized, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)[1]
                 for variant in (resized, clahe, thresh):
-                    for psm in (6, 7, 8, 10, 11):
+                    # Use line and word PSMs only (exclude PSM 10 which forces single character and turns 80 into 8!)
+                    for psm in (7, 6, 8):
                         try:
-                            txt = safe_image_to_string(variant, lang="eng", config=f"--psm {psm} -c tessedit_char_whitelist=0123456789")
-                            clean_txt = re.sub(r"[^\d]", "", txt or "")
-                            match = re.search(r"(?<!\d)(\d{1,5})(?!\d)", clean_txt)
+                            # Allow #, N, No, -, . in whitelist so '#' is not forced into digit '9'
+                            txt = safe_image_to_string(
+                                variant,
+                                lang="eng",
+                                config=f"--psm {psm} -c tessedit_char_whitelist=0123456789#№N.- "
+                            )
+                            clean_txt = re.sub(r"^[#№N\s:.\-_]+", "", (txt or "").strip())
+                            match = re.search(r"\b(\d{1,5})\b", clean_txt)
                             if match and 1 <= int(match.group(1)) <= 99999:
                                 candidates.append(match.group(1))
                         except Exception:
@@ -518,9 +521,17 @@ def ocr_serial(card, card_full_text=""):
     if not candidates:
         return "", False
 
-    # Rank by vote frequency first, then by plausibility
-    counts = {c: candidates.count(c) for c in set(candidates)}
-    sorted_candidates = sorted(counts.items(), key=lambda item: item[1], reverse=True)
+    # Score candidates: merge truncated variants so multi-digit numbers (e.g. '80', '561') always beat truncated pieces ('8', '61')
+    counts = {}
+    for c in candidates:
+        counts[c] = counts.get(c, 0) + 1
+
+    for c, cnt in list(counts.items()):
+        for other in list(counts.keys()):
+            if other != c and len(other) > len(c) and (other.startswith(c) or other.endswith(c)):
+                counts[other] += cnt * 0.8
+
+    sorted_candidates = sorted(counts.items(), key=lambda item: (item[1], len(item[0])), reverse=True)
     winner, support = sorted_candidates[0]
 
     disagreement = len(set(candidates)) > 1 and not all(c == winner for c in candidates)
@@ -986,6 +997,7 @@ def validate_record(record):
 
 def preserve_card_serials(records, global_start_serial):
     """Keep card serials authoritative while automatically repairing sequence breaks caused by single-card OCR noise."""
+    from collections import Counter
     digit_translation = str.maketrans("०१२३४५६७८९", "0123456789")
     
     raw_serials = []
@@ -994,11 +1006,16 @@ def preserve_card_serials(records, global_start_serial):
         raw_serials.append(int(s) if s.isdigit() and 1 <= int(s) <= 99999 else None)
     
     start_serial = global_start_serial if isinstance(global_start_serial, int) and global_start_serial > 0 else None
-    if start_serial is None:
-        for i in range(min(5, len(records))):
-            if raw_serials[i] is not None:
-                start_serial = max(1, raw_serials[i] - i)
-                break
+    if start_serial is None and records:
+        implied_starts = [
+            s - i for i, s in enumerate(raw_serials)
+            if s is not None and (s - i) > 0
+        ]
+        if implied_starts:
+            counts = Counter(implied_starts)
+            # Sort by frequency descending, then by value descending (prefer true sequence over stray 1)
+            sorted_starts = sorted(counts.items(), key=lambda x: (x[1], x[0]), reverse=True)
+            start_serial = sorted_starts[0][0]
         if start_serial is None:
             start_serial = 1
 
@@ -1006,26 +1023,43 @@ def preserve_card_serials(records, global_start_serial):
 
     for index, record in enumerate(records):
         raw = raw_serials[index]
-        expected_serial = previous_serial + 1 if previous_serial is not None else start_serial + index
+        page_baseline_serial = start_serial + index
+        expected_serial = (previous_serial + 1) if (previous_serial is not None and abs(previous_serial + 1 - page_baseline_serial) <= 2) else page_baseline_serial
         next_raw = raw_serials[index + 1] if index + 1 < len(records) else None
 
         is_exact = (raw is not None and raw == expected_serial)
         is_next_consecutive = (next_raw is not None and next_raw == expected_serial + 1)
-        # Check if raw has leading box border noise (e.g. corner '7' prepended to '172' giving '7172', or '6' prepended to '178' giving '6178')
+        # Check if raw has leading box border noise (e.g. '7172' for '172', or '9551' for '551')
         is_prefix_noise = bool(raw is not None and len(str(raw)) > len(str(expected_serial)) and str(raw).endswith(str(expected_serial)))
-        is_anomaly = (raw is not None and (raw < expected_serial or abs(raw - expected_serial) > 5) and (is_next_consecutive or raw <= 30))
+        # Check if raw has dropped digits (e.g. '61' for '561', '62' for '562', or '8' for '80')
+        is_partial_match = bool(
+            raw is not None and
+            len(str(raw)) < len(str(expected_serial)) and
+            (str(expected_serial).endswith(str(raw)) or str(expected_serial).startswith(str(raw)))
+        )
+        # Check if raw is a cell index (1..30) while expected serial is much larger
+        is_cell_index_noise = bool(raw is not None and raw <= 30 and expected_serial > 30)
+        # Check if raw is an isolated jump/glitch
+        is_anomaly = (
+            raw is not None and (
+                is_partial_match or
+                is_prefix_noise or
+                is_cell_index_noise or
+                (abs(raw - expected_serial) > 2 and (is_next_consecutive or abs(raw - page_baseline_serial) > 2))
+            )
+        )
 
         if is_exact:
             actual_serial = raw
             record["voterSerial"] = str(actual_serial)
             record["voterSerialConfidence"] = 95
             previous_serial = actual_serial
-        elif is_next_consecutive or is_anomaly or is_prefix_noise or raw is None:
-            # Single-card OCR anomaly or cell-position reset: repair to expected_serial
+        elif is_next_consecutive or is_anomaly or raw is None:
+            # Single-card OCR anomaly, dropped digit, or cell-position reset: repair to expected_serial
             if raw is not None:
                 record["rawVoterSerial"] = str(raw)
             record["voterSerial"] = str(expected_serial)
-            record["voterSerialConfidence"] = 85
+            record["voterSerialConfidence"] = 90 if is_partial_match else 85
             record["serialSequenceExpected"] = str(expected_serial)
             previous_serial = expected_serial
         else:

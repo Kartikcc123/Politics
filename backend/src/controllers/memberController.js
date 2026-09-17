@@ -1430,7 +1430,19 @@ const applyRecheckOcr = async (member, user, req) => {
       }
       if (field === 'voterSerial') {
         const newSerial = String(value || '').trim();
-        // If newSerial is valid digits, always update the member's serial on recheck
+        const currentSerial = String(member.voterSerial || '').trim();
+        // Guard: do not overwrite a valid multi-digit serial with a truncated OCR scan
+        // (e.g. '80' -> '8' where current starts/ends with new, or '561' -> '61' where current ends with new)
+        if (
+          currentSerial &&
+          /^\d{2,5}$/.test(currentSerial) &&
+          newSerial &&
+          /^\d{1,4}$/.test(newSerial) &&
+          newSerial.length < currentSerial.length &&
+          (currentSerial.endsWith(newSerial) || currentSerial.startsWith(newSerial))
+        ) {
+          continue;
+        }
         if (newSerial && /^\d{1,5}$/.test(newSerial) && parseInt(newSerial, 10) > 0) {
           member.voterSerial = newSerial;
           continue;
