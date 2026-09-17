@@ -13,6 +13,13 @@ const { cleanGarbageAreas } = require('./src/controllers/areaController');
 const ImportJob = require('./src/models/ImportJob');
 const Member = require('./src/models/Member');
 const ElectoralMembership = require('./src/models/ElectoralMembership');
+const Group = require('./src/models/Group');
+const Family = require('./src/models/Family');
+const Booth = require('./src/models/Booth');
+const Ward = require('./src/models/Ward');
+const Area = require('./src/models/Area');
+const Party = require('./src/models/Party');
+const User = require('./src/models/User');
 const { ensureMemberSearchData } = require('./src/utils/memberSearch');
 
 configureTessdataPrefix();

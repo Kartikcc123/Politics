@@ -391,7 +391,7 @@ const lowMemoryOcrPdf = async (pdfPath, importFileName, pageRange = {}) => {
     let rendered;
     try {
       const isMaster = pageNumber === Number(process.env.OCR_MASTER_PAGE || 1);
-      rendered = await renderPage(pdfPath, workDir, pageNumber, isMaster ? (process.env.OCR_MASTER_DPI || '350') : (process.env.OCR_DPI || '350'));
+      rendered = await renderPage(pdfPath, workDir, pageNumber, isMaster ? (process.env.OCR_MASTER_DPI || '300') : (process.env.OCR_DPI || '300'));
       onProgress?.({
         phase: 'ocr',
         processedPages: offset,
