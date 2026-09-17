@@ -245,10 +245,18 @@ const looksLikeBadLatinSection = (value = '') => {
 const cleanSectionName = (value = '') => {
   let text = cleanHeaderName(value);
   if (!text) return '';
-  text = text.replace(/\s*(?:we\s*,?\s*fer|wrefer|ore|hier|uzar|sifer|zadt|merit|oiler|freran|after|aftet)\b.*$/gi, '').trim();
-  if (/EPIC|RJ\/|Google|Polling|Station|Map|View|[\[\]{}|\\&_~]/i.test(text)) return '';
+  if (/EPIC|RJ\//i.test(text)) return '';
+  // Remove known noise phrases and words
+  text = text.replace(/\b(?:google|polling|station|view|map|after|aftet|hier|uzar|zadt|merit|oiler|sffzr|freran|ore)\b/gi, ' ');
+  // Strip any remaining Latin / English letters/words (e.g. BHPATea, Village, etc.)
+  text = text.replace(/[A-Za-z]+/g, ' ');
+  // Clean punctuation and non-Devanagari noise at start/end
+  text = text.replace(/^[^\u0900-\u097F]+/, '').trim();
+  text = text.replace(/\s+\d+$/, '').trim();
+  text = text.replace(/[\s\-_,:;|/\\+=–—\u0964\u0965]+$/, '').trim();
+  text = text.replace(/\s*,\s*/g, ', ').replace(/\s{2,}/g, ' ').trim();
   if (text.length > 150) return '';
-  if (devanagariTextCount(text) < 2 || looksLikeBadLatinSection(text)) return '';
+  if (devanagariTextCount(text) < 2) return '';
   return text;
 };
 // OCR headers sometimes contain a whole noisy page line. Never store that as

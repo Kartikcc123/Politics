@@ -11,6 +11,8 @@ console.log('Running Section Mapping & Name Cleaning Tests...');
 assert.strictEqual(cleanSectionName('पटवार भवन के ore, Hier'), 'पटवार भवन के');
 assert.strictEqual(cleanSectionName('पटवार भवन के sifer after'), 'पटवार भवन के');
 assert.strictEqual(cleanSectionName('चौराया के पास, भीटा'), 'चौराया के पास, भीटा');
+assert.strictEqual(cleanSectionName('BHPATea मौहल्ला,कोचरिया'), 'मौहल्ला, कोचरिया');
+assert.strictEqual(cleanSectionName('पटवार भवन के पास, भीटा Polling Station'), 'पटवार भवन के पास, भीटा');
 assert.strictEqual(cleanSectionName('google polling station view'), '');
 console.log('✔ Test 1 Passed: Section name cleaning & English gibberish rejection');
 

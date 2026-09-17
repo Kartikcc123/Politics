@@ -455,7 +455,26 @@ const lowMemoryOcrPdf = async (pdfPath, importFileName, pageRange = {}) => {
     'postOffice', 'policeStation', 'tehsil', 'district',
     'gramPanchayat', 'village', 'pinCode',
   ];
-  const docSectionMap = header.sectionMap && typeof header.sectionMap === 'object' ? header.sectionMap : {};
+  const cleanSecNameStr = (text = '') => {
+    if (!text) return '';
+    let s = String(text)
+      .replace(/\b(?:google|polling|station|view|map|after|aftet|hier|uzar|zadt|merit|oiler|sffzr|freran|ore)\b/gi, ' ')
+      .replace(/[A-Za-z]+/g, ' ')
+      .replace(/^[^\u0900-\u097F]+/, '')
+      .replace(/[\s\-_,:;|/\\+=–—\u0964\u0965]+$/, '')
+      .replace(/\s*,\s*/g, ', ')
+      .replace(/\s{2,}/g, ' ')
+      .trim();
+    return /[\u0900-\u097F]/.test(s) ? s : '';
+  };
+
+  const docSectionMap = {};
+  if (header.sectionMap && typeof header.sectionMap === 'object') {
+    for (const [k, v] of Object.entries(header.sectionMap)) {
+      const cv = cleanSecNameStr(v);
+      if (k && cv) docSectionMap[String(k).trim()] = cv;
+    }
+  }
   const defaultSecNum = docSectionMap['1'] ? '1' : (Object.keys(docSectionMap)[0] || '');
 
   let lastKnownSecNum = '';
@@ -477,24 +496,26 @@ const lowMemoryOcrPdf = async (pdfPath, importFileName, pageRange = {}) => {
       inherited.village = header.village;
     }
     let secNum = String(inherited.sectionNumber || '').trim();
-    if (!secNum || !docSectionMap[secNum]) {
-      if (secNum && docSectionMap) {
-        const matchEntry = Object.entries(docSectionMap).find(([k, v]) => v && inherited.sectionName && (v.includes(inherited.sectionName) || inherited.sectionName.includes(v)));
-        if (matchEntry) secNum = matchEntry[0];
-      }
-      if (!secNum || !docSectionMap[secNum]) {
-        if (lastKnownSecNum && docSectionMap[lastKnownSecNum]) {
-          secNum = lastKnownSecNum;
-        } else if (defaultSecNum) {
-          secNum = defaultSecNum;
-        }
+    if (!secNum && inherited.sectionName && Object.keys(docSectionMap).length > 0) {
+      const matchEntry = Object.entries(docSectionMap).find(([k, v]) => v && (v.includes(inherited.sectionName) || inherited.sectionName.includes(v)));
+      if (matchEntry) secNum = matchEntry[0];
+    }
+    if (!secNum) {
+      if (lastKnownSecNum) {
+        secNum = lastKnownSecNum;
+      } else if (defaultSecNum) {
+        secNum = defaultSecNum;
       }
     }
-    if (secNum && docSectionMap[secNum]) {
+    if (secNum) {
       inherited.sectionNumber = secNum;
-      inherited.sectionName = docSectionMap[secNum];
+      if (docSectionMap[secNum]) {
+        inherited.sectionName = docSectionMap[secNum];
+      } else {
+        inherited.sectionName = cleanSecNameStr(inherited.sectionName);
+      }
       if ((!inherited.village || String(inherited.village).trim() === '' || !/[\u0900-\u097F]/.test(inherited.village))) {
-        const cleanSecName = String(docSectionMap[secNum]).replace(/^\d+[\s\-\:\.\,]+/, '').trim();
+        const cleanSecName = String(inherited.sectionName || '').replace(/^\d+[\s\-\:\.\,]+/, '').trim();
         if (cleanSecName) inherited.village = cleanSecName;
       }
       lastKnownSecNum = secNum;

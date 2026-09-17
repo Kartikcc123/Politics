@@ -1529,11 +1529,17 @@ def fixed_section_name(text):
     value = re.sub(r"^[^\n:：;]*?(?:अनुभाग\s*(?:की\s*संख्या\s*व\s*नाम|संख्या|नाम)|section\s*name)[^\n:：;]*[:：;]", "", value, flags=re.IGNORECASE)
     if ":" in value:
         value = value.rsplit(":", 1)[1]
-    value = re.sub(r"^[\s\-:;|\u0964\u09650-9\u0966-\u096f\\|/\.\,\+=\-–—]+", "", value).strip()
     value = re.sub(r"\[.*?\]", "", value)
     value = re.sub(r"\b[A-Z0-9]{10}\b", "", value)
     value = re.sub(r"[\|=_\"`{}\u0964\u0965]", "", value)
-    value = clean(value).strip(" -,:;|\u0964\u0965")
+    # Strip noise phrases and English/Latin characters
+    value = re.sub(r"\b(?:google|polling|station|view|map|after|aftet|hier|uzar|zadt|merit|oiler|sffzr|freran|ore)\b", " ", value, flags=re.IGNORECASE)
+    value = re.sub(r"[A-Za-z]+", " ", value)
+    value = re.sub(r"^[\s\-:;|\u0964\u09650-9\u0966-\u096f\\|/\.\,\+=\-–—]+", "", value).strip()
+    value = re.sub(r"\s+\d+$", "", value).strip()
+    value = re.sub(r"[\s\-:;|\u0964\u0965,.]+$", "", value).strip()
+    value = re.sub(r"\s*,\s*", ", ", value)
+    value = re.sub(r"\s{2,}", " ", value).strip()
     return value if len(re.findall(r"[\u0900-\u097F]", value)) >= 3 else ""
 
 
@@ -1587,8 +1593,8 @@ def fixed_location_name(text):
 def fixed_master_section_map(image):
     """Read the numbered section table without mixing in the location column."""
     height, width = image.shape[:2]
-    # Widen y (0.24 to 0.58) and x (0.0 to 0.55) to accurately capture all section list table rows
-    region = image[round(height * 0.24):round(height * 0.58), 0:round(width * 0.55)]
+    # Widen y (0.20 to 0.65) and x (0.0 to 0.75) to accurately capture all section list table rows
+    region = image[round(height * 0.20):round(height * 0.65), 0:round(width * 0.75)]
     if region.size == 0:
         return {}
     gray = cv2.cvtColor(region, cv2.COLOR_BGR2GRAY)
@@ -1614,8 +1620,11 @@ def fixed_master_section_map(image):
                     continue
                 number = match.group(1) or ""
                 raw_name_text = match.group(2) or ""
-                # Strip leading noise symbols like '=', '-', '~'
+                # Strip noise words and English/Latin characters
                 clean_name_text = re.sub(r"^[^\u0900-\u097F]+", "", raw_name_text)
+                clean_name_text = re.sub(r"\b(?:google|polling|station|view|map|after|aftet|hier|uzar|zadt|merit|oiler|sffzr|freran|ore)\b", " ", clean_name_text, flags=re.IGNORECASE)
+                clean_name_text = re.sub(r"[A-Za-z]+", " ", clean_name_text)
+                clean_name_text = re.sub(r"^[^\u0900-\u097F]+", "", clean_name_text)
                 name = clean(clean_name_text).strip(" -,:;|\u0964=")
                 if re.search(r"\u092d\u093e\u0917\s*\u0935\s*\u092e\u0924\u0926\u093e\u0928|\u092e\u0924\u0926\u093e\u0928\s*\u0915\u0947\u0902\u0926\u094d\u0930|\u0935\u093f\u0935\u0930\u0923|\u092a\u0941\u0928\u0930\u0940\u0915\u094d\u0937\u0923", name):
                     continue
@@ -1624,7 +1633,7 @@ def fixed_master_section_map(image):
                     name, maxsplit=1,
                 )[0].strip(" -,:;|\u0964=")
                 name = re.sub(r"^(?:=parad|=पाराद|पाराद|\bपारद\b|=)\s*", "", name)
-                name = re.sub(r"\s*,\s*", ",", name)
+                name = re.sub(r"\s*,\s*", ", ", name)
                 # Recover a missing boundary before a stable electoral-roll domain word.
                 name = re.sub(r"(?<=[\u0900-\u097F])(\u0935\u093f\u0926\u094d\u092f\u093e\u0932\u092f)\b", r" \1", name)
                 if len(re.findall(r"[\u0900-\u097F]", name)) >= 3:
@@ -1675,16 +1684,10 @@ def fixed_master_section_map(image):
             if re.sub(r'[ंँ]', '', clean(suffix).strip()) == dominant_key:
                 result[number] = prefix.rstrip() + ',' + dominant
 
-    # Filter out spurious isolated section numbers that were misread from ward suffixes (e.g. 9 or 19 with name '20 गंगापुर')
-    valid_int_keys = sorted([int(k) for k in result.keys() if k.isdigit()])
-    if valid_int_keys:
-        max_seq = 1
-        while max_seq in valid_int_keys:
-            max_seq += 1
-        max_valid_seq = max_seq - 1
-        for k in list(result.keys()):
-            if k.isdigit() and int(k) > max_valid_seq + 2:
-                result.pop(k, None)
+    # Filter out spurious isolated section numbers that were misread
+    for k in list(result.keys()):
+        if k.isdigit() and (int(k) > 40 or int(k) < 1):
+            result.pop(k, None)
 
     return result
 
@@ -1842,7 +1845,13 @@ def read_fixed_header(page_path, is_voter_page=True):
             lang=os.getenv("OCR_LANGUAGES", "hin+eng"),
             psm=6,
         )
-        sec_num_match = re.search(r"(?:अनुभाग|अिुभाग|अनुमाग|section|\bsec\b)[^\d\n]{0,40}[:：;\-]?\s*([0-9\u0966-\u096f]{1,2})", section_text, re.IGNORECASE)
+        sec_num_match = re.search(
+            r"(?:अनुभाग|अिुभाग|अनुमाग|section|\bsec\b)[^\d\n]{0,45}?(?:संख्या|सं\.?|क्रमांक|नं\.?)?\s*[:：;\-]?\s*([0-9\u0966-\u096f]{1,2})\b",
+            section_text,
+            re.IGNORECASE,
+        )
+        if not sec_num_match:
+            sec_num_match = re.search(r"(?:अनुभाग|section)\b[^\d\n]{0,25}\b([0-9\u0966-\u096f]{1,2})\b", section_text, re.IGNORECASE)
         if sec_num_match:
             result["sectionNumber"] = clean(sec_num_match.group(1)).translate(str.maketrans("०१२३४५६७८९", "0123456789"))
         section_name = fixed_section_name(section_text)
@@ -2098,9 +2107,10 @@ def main():
         # sheet. Read the larger header area but never treat it as voter cards.
         if page_no == master_page:
             return read_header(page, is_voter_page=False), [], read_fixed_header(page, is_voter_page=False)
-        # Cover/index pages must not create empty or duplicate voter records.
+        # Cover/index/detail pages (e.g. Page 2) must not create voter cards,
+        # but must still extract sectionMap and master headers!
         if page_no in skip_pages:
-            return "", [], {}
+            return read_header(page, is_voter_page=False), [], read_fixed_header(page, is_voter_page=False)
         header = read_header(page, is_voter_page=True)
         return header, process_page(page, output_dir, page_no), read_fixed_header(page, is_voter_page=True)
 
@@ -2148,16 +2158,10 @@ def main():
         if sv:
             doc_section_map[sk] = re.sub(r"वार्ड\s*(?:सं\.?|स|संख्या)?\s*(?:49|9)-20", "वार्ड सं 19-20", sv)
 
-    # Remove non-contiguous section keys extracted from ward text (e.g. 9 or 19 when sections are 1..5)
-    valid_keys = sorted([int(k) for k in doc_section_map.keys() if k.isdigit()])
-    if valid_keys:
-        max_seq = 1
-        while max_seq in valid_keys:
-            max_seq += 1
-        max_valid_seq = max_seq - 1
-        for k in list(doc_section_map.keys()):
-            if k.isdigit() and int(k) > max_valid_seq + 1:
-                doc_section_map.pop(k, None)
+    # Only prune clearly invalid section keys (> 40 or < 1)
+    for k in list(doc_section_map.keys()):
+        if k.isdigit() and (int(k) > 40 or int(k) < 1):
+            doc_section_map.pop(k, None)
 
     # Auto-extract Village from header fields or section names if master village is missing/blank
     if not master_context.get("village"):
@@ -2190,21 +2194,21 @@ def main():
             continue
         raw_header = page_headers[index]
 
-        # Self-healing: if voter page header has a valid section number (1..30) & name missing from doc_section_map, heal it
+        # Self-healing: if voter page header has a valid section number (1..40) & name missing from doc_section_map, heal it
         raw_sec_num = str(raw_header.get("sectionNumber") or "").strip()
-        raw_sec_name = str(raw_header.get("sectionName") or "").strip()
-        if raw_sec_num and raw_sec_num.isdigit() and 1 <= int(raw_sec_num) <= 30 and raw_sec_name:
-            if raw_sec_num not in doc_section_map:
+        raw_sec_name = fixed_section_name(str(raw_header.get("sectionName") or ""))
+        if raw_sec_num and raw_sec_num.isdigit() and 1 <= int(raw_sec_num) <= 40:
+            if raw_sec_num not in doc_section_map and raw_sec_name:
                 doc_section_map[raw_sec_num] = raw_sec_name
 
         # The first/master page table is authoritative; voter-page OCR only fills absent keys.
         page_sec_map = {**(raw_header.get("sectionMap") or {}), **doc_section_map}
 
         hdr_sec_num = str(raw_header.get("sectionNumber") or "").strip()
-        hdr_sec_name = str(raw_header.get("sectionName") or "").strip()
+        hdr_sec_name = raw_sec_name
 
-        # Reject noise section numbers not matching doc_section_map or > 50
-        if not hdr_sec_num or (hdr_sec_num.isdigit() and int(hdr_sec_num) > 50) or (page_sec_map and hdr_sec_num not in page_sec_map):
+        # Reject numbers outside realistic section range (1..40)
+        if not hdr_sec_num or not hdr_sec_num.isdigit() or not (1 <= int(hdr_sec_num) <= 40):
             hdr_sec_num = ""
 
         # Scan raw page header text for any section number or section name from page_sec_map
@@ -2282,12 +2286,13 @@ def main():
     for record in records:
         validate_record(record)
 
-    # Section Name Auto-Repair: Sync sectionName from doc_section_map
-    if doc_section_map:
-        for record in records:
-            sec_k = str(record.get("sectionNumber") or "").strip()
-            if sec_k and doc_section_map.get(sec_k):
-                record["sectionName"] = doc_section_map[sec_k]
+    # Section Name Auto-Repair: Sync sectionName from doc_section_map and ensure clean Hindi
+    for record in records:
+        sec_k = str(record.get("sectionNumber") or "").strip()
+        if sec_k and doc_section_map.get(sec_k):
+            record["sectionName"] = doc_section_map[sec_k]
+        elif record.get("sectionName"):
+            record["sectionName"] = fixed_section_name(record["sectionName"])
 
     # Safe document-level house repair rules:
     # - only same-section cards can contribute a neighbour house number;
