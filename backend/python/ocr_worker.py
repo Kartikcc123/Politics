@@ -2201,18 +2201,10 @@ def main():
         else:
             doc_section_map[str(int(k))] = clean_v
 
-    # Filter isolated outlier keys (e.g. 27 or 35 when real booth sections are 1..9)
-    num_keys = sorted([int(k) for k in doc_section_map.keys() if k.isdigit()])
-    if num_keys:
-        max_valid = 1
-        for nk in num_keys:
-            if nk <= max_valid + 2:
-                max_valid = max(max_valid, nk)
-            else:
-                break
-        for k in list(doc_section_map.keys()):
-            if int(k) > max_valid:
-                doc_section_map.pop(k, None)
+    # Filter outlier keys > 40
+    for k in list(doc_section_map.keys()):
+        if int(k) > 40:
+            doc_section_map.pop(k, None)
 
     # Auto-extract Village from header fields or section names if master village is missing/blank
     if not master_context.get("village"):

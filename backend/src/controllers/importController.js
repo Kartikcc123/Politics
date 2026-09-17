@@ -1102,12 +1102,14 @@ const parsePdfMembers = async (filePath, importFileName, onOcrProgress) => {
     // The first/master page OCR owns the section map. Text-layer extraction can
     // pair a valid locality name with the wrong section number, so never let it
     // replace the master map used to resolve voter-page records.
+    const combinedSectionMap = {
+      ...(textLayer.header?.sectionMap || {}),
+      ...(ocr.header && typeof ocr.header.sectionMap === 'object' ? ocr.header.sectionMap : {}),
+    };
     const header = {
       ...(ocr.header || {}),
       ...textLayer.header,
-      sectionMap: (ocr.header && typeof ocr.header.sectionMap === 'object')
-        ? ocr.header.sectionMap
-        : textLayer.header.sectionMap,
+      sectionMap: combinedSectionMap,
     };
     const sectionNames = new Map();
     for (const member of textLayer.members) {
@@ -1115,7 +1117,7 @@ const parsePdfMembers = async (filePath, importFileName, onOcrProgress) => {
         sectionNames.set(String(member.sectionNumber), member.sectionName);
       }
     }
-    const headerSectionMap = safeSectionMap(header.sectionMap);
+    const headerSectionMap = safeSectionMap({ ...Object.fromEntries(sectionNames), ...combinedSectionMap });
     const useHeaderSectionFallback = Object.keys(headerSectionMap).length <= 1;
     const ocrMembers = (ocr.voterRecords || []).map((record) => {
       let recSecName = cleanSectionName(record.sectionName || '');
