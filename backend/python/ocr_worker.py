@@ -165,7 +165,7 @@ def clean_person_name(value):
     text = re.sub(r"(?:^|\s)(?:लाटु|लाडु|लादु)(?=$|\s)", " लादू ", text)
     text = re.sub(r"(?:^|\s)डालु(?=$|\s)", " डालू ", text)
     text = re.sub(r"(?<=\u0900-\u097F)ताल\b", "लाल", text)
-    text = re.sub(r"\bअजपुर्नताल\b|\bअजपुर्नलाल\b|\bअर्जुुनलाल\b", "अर्जुनलाल", text)
+    text = re.sub(r"\bअरजुर्नलाल\b|\bअरजुनलाल\b|\bअजुर्नलाल\b|\bअजपुर्नताल\b|\bअजपुर्नलाल\b|\bअर्जुुनलाल\b", "अर्जुनलाल", text)
     text = re.sub(r"(?<=\u0900-\u097F)ताम\b", "राम", text)
     text = re.sub(r"\bकुमारr\b|\bकुभार\b|\bकुसार\b|\bकुनार\b|\bकुभारr\b", "कुमार", text)
     text = re.sub(r"\bदेबी\b", "देवी", text)
@@ -471,18 +471,7 @@ def ocr_serial(card, card_full_text=""):
     height, width = card.shape[:2]
     candidates = []
 
-    # 1. Full-text top line confirmation (serial is printed top-left before EPIC or alone in box)
-    if card_full_text:
-        # Match serial at top before EPIC or slash, e.g. "155 RJ/20/152/354062" or "497 SNE..." or "# 551 SNE..."
-        m_top = re.search(r"(?:^|\n)\s*[#№\|\[\(!Ilसंक्रN\.\s\-]*\s*(\d{1,5})\s*[|\]\)]?\s*(?:[A-Z]{3}\d{7}|RJ/|[A-Z0-9]{10})", card_full_text, re.IGNORECASE)
-        if not m_top:
-            m_top = re.search(r"(?:^|\n)\s*[#№\|\[\(!Ilसंक्रN\.\s\-]*\s*(\d{1,5})\s*(?:\||\s+[A-Z0-9]{5,})", card_full_text, re.IGNORECASE)
-        if m_top:
-            s_val = m_top.group(1).strip()
-            if s_val and 1 <= int(s_val) <= 99999:
-                candidates.append(s_val)
-
-    # 2. Widen serial box region (x: 0.0..0.42, y: 0.0..0.28)
+    # 1. Dedicated serial box region (x: 0.0..0.42, y: 0.0..0.28)
     region = card[0:round(height * 0.28), 0:round(width * 0.42)]
     if region.size > 0:
         gray = cv2.cvtColor(region, cv2.COLOR_BGR2GRAY)
@@ -510,7 +499,7 @@ def ocr_serial(card, card_full_text=""):
                     res = cv2.resize(p_gray, None, fx=3.0, fy=3.0, interpolation=cv2.INTER_CUBIC)
                     clahe = cv2.createCLAHE(3.0, (8, 8)).apply(res)
                     thresh = cv2.threshold(res, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)[1]
-                    for var in (clahe, thresh):
+                    for var in (clahe, res, thresh):
                         for psm in (7, 6):
                             try:
                                 txt = safe_image_to_string(
@@ -523,23 +512,35 @@ def ocr_serial(card, card_full_text=""):
                             except Exception:
                                 pass
 
+    # 2. Fallback to full-text ONLY if dedicated box crops found no candidates
+    if not candidates and card_full_text:
+        m_top = re.search(r"(?:^|\n)\s*[#№\|\[\(!Ilसंक्रN\.\s\-]*\s*(\d{1,5})\s*[|\]\)]?\s*(?:[A-Z]{3}\d{7}|RJ/|[A-Z0-9]{10})", card_full_text, re.IGNORECASE)
+        if not m_top:
+            m_top = re.search(r"(?:^|\n)\s*[#№\|\[\(!Ilसंक्रN\.\s\-]*\s*(\d{1,5})\s*(?:\||\s+[A-Z0-9]{5,})", card_full_text, re.IGNORECASE)
+        if m_top:
+            s_val = m_top.group(1).strip()
+            if s_val and 1 <= int(s_val) <= 99999:
+                candidates.append(s_val)
+
     if not candidates:
         return "", False
 
-    # Score candidates: merge truncated variants so multi-digit numbers (e.g. '80', '561') always beat truncated pieces ('8', '61')
+    # Score candidates: merge truncated variants into the longer number and discount truncated fragment
     counts = {}
     for c in candidates:
-        counts[c] = counts.get(c, 0) + 1
+        counts[c] = counts.get(c, 0.0) + 1.0
 
     for c, cnt in list(counts.items()):
         for other in list(counts.keys()):
             if other != c and len(other) > len(c) and (other.startswith(c) or other.endswith(c)):
-                counts[other] += cnt * 0.8
+                counts[other] += cnt * 1.0
+                counts[c] *= 0.5
 
     sorted_candidates = sorted(counts.items(), key=lambda item: (item[1], len(item[0])), reverse=True)
     winner, support = sorted_candidates[0]
 
-    disagreement = len(set(candidates)) > 1 and not all(c == winner for c in candidates)
+    runner_up_support = sorted_candidates[1][1] if len(sorted_candidates) > 1 else 0.0
+    disagreement = bool(runner_up_support >= support * 0.65)
     return winner, disagreement
 
 
