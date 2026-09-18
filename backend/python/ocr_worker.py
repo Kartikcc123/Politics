@@ -657,10 +657,14 @@ def epic_from(text):
     # Standard 10-character EPIC codes (e.g., ZBY1234567, TWB1234567, RWR1234567, UPX1234567)
     for value in re.findall(r"[A-Z0-9]{10}", compact):
         prefix = value[:3]
+        if prefix == "KOY":
+            prefix = "KDY"
         suffix = value[3:].translate(digit_map)
         if re.fullmatch(r"[A-Z]{3}", prefix) and re.fullmatch(r"[0-9]{7}", suffix):
             return prefix + suffix
         translated_prefix = prefix.translate(letter_map)
+        if translated_prefix == "KOY":
+            translated_prefix = "KDY"
         if re.fullmatch(r"[A-Z]{3}", translated_prefix) and re.fullmatch(r"[0-9]{7}", suffix):
             return translated_prefix + suffix
 
@@ -669,10 +673,14 @@ def epic_from(text):
         clean_v = re.sub(r"[^A-Z0-9]", "", value)
         if len(clean_v) == 10:
             prefix = clean_v[:3]
+            if prefix == "KOY":
+                prefix = "KDY"
             suffix = clean_v[3:].translate(digit_map)
             if re.fullmatch(r"[A-Z]{3}", prefix) and re.fullmatch(r"[0-9]{7}", suffix):
                 return prefix + suffix
             translated_prefix = prefix.translate(letter_map)
+            if translated_prefix == "KOY":
+                translated_prefix = "KDY"
             if re.fullmatch(r"[A-Z]{3}", translated_prefix) and re.fullmatch(r"[0-9]{7}", suffix):
                 return translated_prefix + suffix
     return ""
@@ -689,29 +697,27 @@ def ocr_epic(card, reference=""):
         if region.size == 0:
             continue
         gray = cv2.cvtColor(region, cv2.COLOR_BGR2GRAY)
-        gray = cv2.resize(gray, None, fx=1.5, fy=1.5, interpolation=cv2.INTER_CUBIC)
-        variants = [
-            cv2.createCLAHE(3.0, (8, 8)).apply(gray),
-            cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)[1],
-        ]
-        for variant in variants:
-            for psm in (7, 11):
-                try:
-                    text = safe_image_to_string(
-                        variant,
-                        lang="eng",
-                        config=f"--psm {psm} -c tessedit_char_whitelist=ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789/",
-                    )
-                except Exception:
-                    continue
-                value = epic_from(text)
-                if not value:
-                    continue
-                candidates.append(value)
-                if reference and value == reference:
-                    return reference, True
-                if not reference and candidates.count(value) >= 2:
-                    return value, True
+        for fx in (1.5, 2.0):
+            res = cv2.resize(gray, None, fx=fx, fy=fx, interpolation=cv2.INTER_CUBIC)
+            clahe = cv2.createCLAHE(2.0, (8, 8)).apply(res)
+            for variant in (res, clahe):
+                for psm in (6, 7):
+                    try:
+                        text = safe_image_to_string(
+                            variant,
+                            lang="eng",
+                            config=f"--psm {psm} -c tessedit_char_whitelist=ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789/",
+                        )
+                    except Exception:
+                        continue
+                    value = epic_from(text)
+                    if not value:
+                        continue
+                    candidates.append(value)
+                    if reference and value == reference:
+                        return reference, True
+                    if not reference and candidates.count(value) >= 2:
+                        return value, True
     if not candidates:
         return reference, False
     counts = {}
