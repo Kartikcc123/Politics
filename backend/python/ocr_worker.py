@@ -1239,7 +1239,7 @@ def _process_single_card(args):
     gray_res = cv2.resize(gray_clahe, None, fx=1.5, fy=1.5, interpolation=cv2.INTER_CUBIC)
     text = safe_image_to_string(gray_res, lang=os.getenv("OCR_LANGUAGES", "hin+eng"), config="--psm 6")
 
-    epic_region = card[0:round(h * 0.25), 0:w]
+    epic_region = card[0:round(h * 0.32), round(w * 0.40):w]
     epic_gray = cv2.cvtColor(epic_region, cv2.COLOR_BGR2GRAY)
     epic_clahe = clahe.apply(epic_gray)
     epic_gray_res = cv2.resize(epic_clahe, None, fx=1.5, fy=1.5, interpolation=cv2.INTER_CUBIC)
@@ -1309,7 +1309,7 @@ def process_card_image(card_path):
     gray = cv2.cvtColor(card, cv2.COLOR_BGR2GRAY)
     clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
     text = safe_image_to_string(cv2.resize(clahe.apply(gray), None, fx=1.5, fy=1.5, interpolation=cv2.INTER_CUBIC), lang=os.getenv("OCR_LANGUAGES", "hin+eng"), config="--psm 6")
-    epic_region = card[0:round(height * 0.25), 0:width]
+    epic_region = card[0:round(height * 0.32), round(width * 0.40):width]
     epic_text = safe_image_to_string(cv2.resize(clahe.apply(cv2.cvtColor(epic_region, cv2.COLOR_BGR2GRAY)), None, fx=1.5, fy=1.5, interpolation=cv2.INTER_CUBIC), lang="eng", config="--psm 6")
     focused_house = ocr_house(card, card_full_text=text)
     focused_age = ocr_age(card, card_full_text=text)
