@@ -754,56 +754,101 @@ class _VoterManagementPageState extends State<VoterManagementPage> {
     );
     if (confirmed != true) return;
 
+    int totalDone = 0;
+    int totalFailed = 0;
+    int currentProgress = 0;
+    final totalTarget = selected.isNotEmpty ? selected.length : 0;
+    void Function(void Function())? updateDialog;
+
     if (!mounted) return;
     showDialog(
       context: context,
       barrierDismissible: false,
       builder: (dialogCtx) => PopScope(
         canPop: false,
-        child: AlertDialog(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-          content: Padding(
-            padding: const EdgeInsets.symmetric(vertical: 12),
-            child: Row(
-              children: [
-                const SizedBox(
-                  width: 42,
-                  height: 42,
-                  child: CircularProgressIndicator(strokeWidth: 3.5),
-                ),
-                const SizedBox(width: 20),
-                Expanded(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        'OCR Re-check जारी है...',
-                        style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-                      ),
-                      const SizedBox(height: 6),
-                      Text(
-                        'वोटर कार्ड इमेज दोबारा स्कैन हो रहे हैं। कृपया प्रतीक्षा करें...',
-                        style: TextStyle(fontSize: 13, color: Colors.grey.shade700),
+        child: StatefulBuilder(
+          builder: (ctx, setDialogState) {
+            updateDialog = setDialogState;
+            final double? progressValue = (totalTarget > 0)
+                ? (currentProgress / totalTarget).clamp(0.0, 1.0)
+                : null;
+            return AlertDialog(
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+              content: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        const SizedBox(
+                          width: 36,
+                          height: 36,
+                          child: CircularProgressIndicator(strokeWidth: 3),
+                        ),
+                        const SizedBox(width: 16),
+                        Expanded(
+                          child: Text(
+                            totalTarget > 1
+                                ? 'OCR Re-check: $currentProgress / $totalTarget'
+                                : 'OCR Re-check जारी है...',
+                            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                          ),
+                        ),
+                      ],
+                    ),
+                    if (totalTarget > 1) ...[
+                      const SizedBox(height: 14),
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(4),
+                        child: LinearProgressIndicator(
+                          value: progressValue,
+                          minHeight: 6,
+                          backgroundColor: Colors.grey.shade200,
+                        ),
                       ),
                     ],
-                  ),
+                    const SizedBox(height: 10),
+                    Text(
+                      totalTarget > 1
+                          ? 'वोटर कार्ड इमेज बैच में स्कैन हो रहे हैं ($currentProgress / $totalTarget)...'
+                          : 'वोटर कार्ड इमेज दोबारा स्कैन हो रहे हैं। कृपया प्रतीक्षा करें...',
+                      style: TextStyle(fontSize: 13, color: Colors.grey.shade700),
+                    ),
+                  ],
                 ),
-              ],
-            ),
-          ),
+              ),
+            );
+          },
         ),
       ),
     );
 
     try {
-      final response = await api.post('/api/members/recheck-ocr', payload);
-      final done = (response['processed'] as num?)?.toInt() ?? 0;
-      final failed = (response['failedCount'] ??
-              (response['failed'] as List?)?.length ??
-              0) as num;
-      final requested = (response['requested'] as num?)?.toInt() ??
-          (selected.isNotEmpty ? selected.length : 0);
+      if (selected.isNotEmpty) {
+        const batchSize = 10;
+        for (var i = 0; i < selected.length; i += batchSize) {
+          final chunk = selected.sublist(i, (i + batchSize > selected.length) ? selected.length : i + batchSize);
+          try {
+            final res = await api.post('/api/members/recheck-ocr', {'memberIds': chunk});
+            totalDone += (res['processed'] as num?)?.toInt() ?? 0;
+            totalFailed += (res['failedCount'] ?? (res['failed'] as List?)?.length ?? 0) as int;
+          } catch (err) {
+            totalFailed += chunk.length;
+          }
+          currentProgress = i + chunk.length;
+          if (updateDialog != null) {
+            updateDialog!(() {});
+          }
+        }
+      } else {
+        final response = await api.post('/api/members/recheck-ocr', payload);
+        totalDone = (response['processed'] as num?)?.toInt() ?? 0;
+        totalFailed = (response['failedCount'] ?? (response['failed'] as List?)?.length ?? 0) as int;
+      }
+
+      final requested = totalTarget > 0 ? totalTarget : totalDone + totalFailed;
 
       api.notifyDataChanged();
       if (mounted) {
@@ -820,8 +865,8 @@ class _VoterManagementPageState extends State<VoterManagementPage> {
         context: context,
         builder: (ctx) => AlertDialog(
           icon: Icon(
-            done > 0 ? Icons.check_circle_outline_rounded : Icons.info_outline_rounded,
-            color: done > 0 ? Colors.green : Colors.orange,
+            totalDone > 0 ? Icons.check_circle_outline_rounded : Icons.info_outline_rounded,
+            color: totalDone > 0 ? Colors.green : Colors.orange,
             size: 48,
           ),
           title: const Text('OCR Re-check परिणाम'),
@@ -831,11 +876,11 @@ class _VoterManagementPageState extends State<VoterManagementPage> {
             children: [
               Text('कुल लक्षित मतदाता: $requested'),
               const SizedBox(height: 6),
-              Text('✅ सफलतापूर्वक अपडेट: $done',
+              Text('✅ सफलतापूर्वक अपडेट: $totalDone',
                   style: const TextStyle(color: Colors.green, fontWeight: FontWeight.bold)),
-              if (failed > 0) ...[
+              if (totalFailed > 0) ...[
                 const SizedBox(height: 6),
-                Text('⚠️ अपरिवर्तित / कार्ड इमेज अनुपलब्ध: $failed',
+                Text('⚠️ अपरिवर्तित / कार्ड इमेज अनुपलब्ध: $totalFailed',
                     style: const TextStyle(color: Colors.orange)),
               ],
             ],

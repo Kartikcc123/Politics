@@ -9,14 +9,35 @@ const { getFromS3 } = require('./s3');
 const { commandFromEnv, subprocessEnv } = require('./ocrRuntime');
 
 const runWorker = (cardPath) => new Promise((resolve, reject) => {
-  const child = spawn(process.env.PYTHON_PATH || 'python', [path.join(__dirname, '../../python/ocr_worker.py')], { windowsHide: true, env: { ...subprocessEnv(), TESSERACT_PATH: commandFromEnv('TESSERACT_PATH', 'tesseract'), PYTHONIOENCODING: 'utf-8' } });
+  let settled = false;
+  const child = spawn(process.env.PYTHON_PATH || 'python', [path.join(__dirname, '../../python/ocr_worker.py')], {
+    windowsHide: true,
+    env: { ...subprocessEnv(), TESSERACT_PATH: commandFromEnv('TESSERACT_PATH', 'tesseract'), PYTHONIOENCODING: 'utf-8' }
+  });
   let stdout = ''; let stderr = '';
+  const timer = setTimeout(() => {
+    if (!settled) {
+      settled = true;
+      try { child.kill('SIGKILL'); } catch (_) {}
+      reject(new Error('Card OCR worker timed out after 20 seconds.'));
+    }
+  }, 20000);
   child.stdout.on('data', (chunk) => { stdout += chunk; });
   child.stderr.on('data', (chunk) => { stderr += chunk; });
-  child.on('error', reject);
+  child.on('error', (err) => {
+    if (!settled) {
+      settled = true;
+      clearTimeout(timer);
+      reject(err);
+    }
+  });
   child.on('close', (code) => {
-    if (code !== 0) return reject(new Error(stderr || `Card OCR exited with code ${code}`));
-    try { return resolve(JSON.parse(stdout)); } catch (error) { return reject(new Error(`Card OCR returned invalid JSON: ${error.message}`)); }
+    if (!settled) {
+      settled = true;
+      clearTimeout(timer);
+      if (code !== 0) return reject(new Error(stderr || `Card OCR exited with code ${code}`));
+      try { return resolve(JSON.parse(stdout)); } catch (error) { return reject(new Error(`Card OCR returned invalid JSON: ${error.message}`)); }
+    }
   });
   child.stdin.end(JSON.stringify({ mode: 'single_card', cardPath }));
 });

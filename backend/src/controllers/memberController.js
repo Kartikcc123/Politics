@@ -1740,8 +1740,9 @@ exports.recheckOcr = async (req, res, next) => {
     const processed = [];
     const failed = [];
 
-    // Process members concurrently in small batches of 3 to prevent timeouts while avoiding CPU exhaustion
-    const concurrency = Math.min(3, Math.max(1, members.length));
+    // Process members concurrently in small batches to prevent timeouts while avoiding CPU exhaustion
+    const cpuCount = require('os').cpus()?.length || 2;
+    const concurrency = Math.min(Math.max(2, cpuCount), 4);
     let cursor = 0;
     const worker = async () => {
       while (cursor < members.length) {
@@ -1751,7 +1752,18 @@ exports.recheckOcr = async (req, res, next) => {
           const outcome = await applyRecheckOcr(member, req.currentUser, req);
           processed.push({
             id: member._id,
-            member: outcome.member,
+            member: members.length === 1 ? outcome.member : {
+              _id: member._id,
+              voterSerial: member.voterSerial,
+              voterId: member.voterId,
+              name: member.name,
+              guardianName: member.guardianName,
+              relationType: member.relationType,
+              houseNumber: member.houseNumber,
+              age: member.age,
+              gender: member.gender,
+              ocrReviewReasons: member.ocrReviewReasons
+            },
             reviewReasons: outcome.result.reviewReasons || []
           });
         } catch (error) {
