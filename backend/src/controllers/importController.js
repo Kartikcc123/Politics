@@ -1962,36 +1962,47 @@ const runPdfImport = async ({ file, body, currentUser }, uploadId) => {
       item.location = cleanOcrLocation(item.location, { allowSection: true });
       item.address = buildSafeOcrAddress(item.sectionName, item.houseNumber);
       if (!item.name) {
-        const review = await ImportReview.create({
-          sourceType: 'pdf',
-          sourceFile: file.filename,
-          reason: 'Name missing or unreadable',
-          rawData: item.ocrValues?.raw || {},
-          suggestedData: item,
-          ward,
-          booth,
-          createdBy: currentUser._id,
-        });
-        skipped.push({ item, reason: 'Name missing or unreadable', reviewId: review._id });
-        processed += 1;
-        setProgress(uploadId, { processed, imported: created.length, skipped: skipped.length });
-        continue;
+        item.name = 'नाम अपठनीय (समीक्षा आवश्यक)';
+        item.ocrNeedsReview = true;
+        item.ocrReviewReasons = [...new Set([...(item.ocrReviewReasons || []), 'name_missing_or_unreadable'])];
+        try {
+          const review = await ImportReview.create({
+            sourceType: 'pdf',
+            sourceFile: file.filename,
+            reason: 'Name missing or unreadable',
+            rawData: item.ocrValues?.raw || {},
+            suggestedData: item,
+            ward,
+            booth,
+            createdBy: currentUser._id,
+          });
+          item.importReviewId = review._id;
+        } catch (_) {}
       }
       if (!isValidEpic(item.voterId)) {
-        const review = await ImportReview.create({
-          sourceType: 'pdf',
-          sourceFile: file.filename,
-          reason: 'EPIC missing or invalid',
-          rawData: item.ocrValues?.raw || {},
-          suggestedData: { ...item, voterId: item.voterId || '' },
-          ward,
-          booth,
-          createdBy: currentUser._id,
-        });
-        skipped.push({ item, reason: 'EPIC missing or invalid', reviewId: review._id });
-        processed += 1;
-        setProgress(uploadId, { processed, imported: created.length, skipped: skipped.length });
-        continue;
+        let candidateId = normalizeEpic(item.voterId);
+        if (!candidateId || !isValidEpic(candidateId)) {
+          const rawId = String(item.voterId || '').replace(/[^A-Z0-9/-]/gi, '').toUpperCase().slice(0, 20);
+          const cleanSerial = String(item.voterSerial || '').trim() || String(processed + 1);
+          const partTag = String(item.partNumber || docPartNumber || '1').trim();
+          candidateId = rawId.length >= 6 ? rawId : `REV-${partTag}-${cleanSerial}`;
+          item.ocrNeedsReview = true;
+          item.ocrReviewReasons = [...new Set([...(item.ocrReviewReasons || []), 'epic_missing_or_invalid'])];
+        }
+        item.voterId = candidateId;
+        try {
+          const review = await ImportReview.create({
+            sourceType: 'pdf',
+            sourceFile: file.filename,
+            reason: 'EPIC missing or invalid',
+            rawData: item.ocrValues?.raw || {},
+            suggestedData: { ...item, voterId: candidateId },
+            ward,
+            booth,
+            createdBy: currentUser._id,
+          });
+          item.importReviewId = review._id;
+        } catch (_) {}
       }
       if (item.photo) {
         item.photo = await persistLocalImage(item.photo, currentUser._id, true);

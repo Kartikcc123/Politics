@@ -509,8 +509,16 @@ def ocr_serial(card, card_full_text=""):
                                 ).strip()
                                 if txt and txt.isdigit() and 1 <= int(txt) <= 99999:
                                     candidates.append(txt)
+                                    if candidates.count(txt) >= 3:
+                                        break
                             except Exception:
                                 pass
+                        if any(candidates.count(c) >= 3 for c in set(candidates)):
+                            break
+                    if any(candidates.count(c) >= 3 for c in set(candidates)):
+                        break
+            if any(candidates.count(c) >= 3 for c in set(candidates)):
+                break
 
     # 2. Fallback to full-text ONLY if dedicated box crops found no candidates
     if not candidates and card_full_text:
@@ -576,9 +584,14 @@ def ocr_age(card, card_full_text=""):
             for psm in (7, 6, 11):
                 try:
                     text = safe_image_to_string(variant, lang="eng", config=f"--psm {psm} -c tessedit_char_whitelist=0123456789")
-                    candidates.extend(int(value) for value in re.findall(r"\b\d{2}\b", text) if 18 <= int(value) <= 120)
+                    found = [int(value) for value in re.findall(r"\b\d{2}\b", text) if 18 <= int(value) <= 120]
+                    candidates.extend(found)
+                    if any(candidates.count(c) >= 2 for c in set(candidates)):
+                        break
                 except Exception:
                     pass
+            if any(candidates.count(c) >= 2 for c in set(candidates)):
+                break
 
     if not candidates and card_full_text:
         match = re.search(r"(?:उम्र|उप्र|आयु|Age|3म्र|34)[^\d\n]{0,15}([0-9०-९]{2})", card_full_text, re.IGNORECASE)
@@ -705,7 +718,7 @@ def ocr_epic(card, reference=""):
         for fx in (1.5, 2.0):
             res = cv2.resize(gray, None, fx=fx, fy=fx, interpolation=cv2.INTER_CUBIC)
             clahe = cv2.createCLAHE(2.0, (8, 8)).apply(res)
-            for variant in (res, clahe):
+            for variant in (clahe, res):
                 for psm in (6, 7):
                     try:
                         text = safe_image_to_string(
@@ -1229,16 +1242,30 @@ def _process_single_card(args):
     # confuse EPIC fragments, age or house number with the printed serial.
     focused_serial, serial_disagreement = ocr_serial(card, card_full_text=text)
 
-    # EPIC extraction directly from dedicated crop
-    focused_epic, epic_ok = ocr_epic(card)
+    # EPIC extraction directly from dedicated crop, passing candidate_epic as reference
+    candidate_epic = epic_from(epic_text)
+    focused_epic, epic_ok = ocr_epic(card, reference=candidate_epic if (candidate_epic and valid_epic(candidate_epic)) else "")
     if not focused_epic:
-        candidate_epic = epic_from(epic_text)
         if candidate_epic and valid_epic(candidate_epic):
             focused_epic = candidate_epic
             epic_ok = True
 
-    identity_suggestion, identity_disagreement = ocr_identity(card)
     rec = parse_card(text, epic_text, photo_path, page_no, cell_no, focused_house=focused_house, card_path=card_path)
+
+    # Defer heavy identity OCR (11 passes) only when parsed name/guardian is missing or noisy
+    parsed_name = rec.get("name") or ""
+    parsed_guardian = rec.get("guardianName") or ""
+    name_devanagari = len(re.findall(r"[\u0900-\u097F]", parsed_name))
+    guardian_devanagari = len(re.findall(r"[\u0900-\u097F]", parsed_guardian))
+
+    if name_devanagari < 3 or guardian_devanagari < 2 or suspicious_person_name(parsed_name):
+        identity_suggestion, identity_disagreement = ocr_identity(card)
+        if identity_suggestion.get("name"):
+            rec["name"] = identity_suggestion["name"]
+        if identity_suggestion.get("guardianName"):
+            rec["guardianName"] = identity_suggestion["guardianName"]
+        if identity_disagreement:
+            rec["identityOcrDisagreement"] = True
 
     r_age = rec.get("age")
     if r_age is None or r_age == "":
@@ -1256,16 +1283,9 @@ def _process_single_card(args):
         rec["epicConfidence"] = 95
 
     if not rec.get("gender"):
-        g_val = ocr_gender(card)
+        g_val, _ = ocr_gender(card)
         if g_val:
             rec["gender"] = g_val
-
-    if identity_suggestion.get("name"):
-        rec["name"] = identity_suggestion["name"]
-    if identity_suggestion.get("guardianName"):
-        rec["guardianName"] = identity_suggestion["guardianName"]
-    if identity_disagreement:
-        rec["identityOcrDisagreement"] = True
 
     return rec
 
@@ -1285,15 +1305,28 @@ def process_card_image(card_path):
     focused_house = ocr_house(card, card_full_text=text)
     focused_age = ocr_age(card, card_full_text=text)
     focused_serial, serial_disagreement = ocr_serial(card, card_full_text=text)
-    focused_epic, epic_ok = ocr_epic(card)
+    candidate_epic = epic_from(epic_text)
+    focused_epic, epic_ok = ocr_epic(card, reference=candidate_epic if (candidate_epic and valid_epic(candidate_epic)) else "")
     if not focused_epic:
-        candidate_epic = epic_from(epic_text)
         if candidate_epic and valid_epic(candidate_epic):
             focused_epic = candidate_epic
             epic_ok = True
 
-    identity_suggestion, identity_disagreement = ocr_identity(card)
     record = parse_card(text, epic_text, "", 1, 0, focused_house=focused_house, card_path=str(card_path))
+
+    parsed_name = record.get("name") or ""
+    parsed_guardian = record.get("guardianName") or ""
+    name_devanagari = len(re.findall(r"[\u0900-\u097F]", parsed_name))
+    guardian_devanagari = len(re.findall(r"[\u0900-\u097F]", parsed_guardian))
+
+    if name_devanagari < 3 or guardian_devanagari < 2 or suspicious_person_name(parsed_name):
+        identity_suggestion, identity_disagreement = ocr_identity(card)
+        if identity_suggestion.get("name"):
+            record["name"] = identity_suggestion["name"]
+        if identity_suggestion.get("guardianName"):
+            record["guardianName"] = identity_suggestion["guardianName"]
+        if identity_disagreement:
+            record["identityOcrDisagreement"] = True
 
     r_age = record.get("age")
     if r_age is None or r_age == "":
@@ -1311,16 +1344,9 @@ def process_card_image(card_path):
         record["epicConfidence"] = 95
 
     if not record.get("gender"):
-        g_val = ocr_gender(card)
+        g_val, _ = ocr_gender(card)
         if g_val:
             record["gender"] = g_val
-
-    if identity_suggestion.get("name"):
-        record["name"] = identity_suggestion["name"]
-    if identity_suggestion.get("guardianName"):
-        record["guardianName"] = identity_suggestion["guardianName"]
-    if identity_disagreement:
-        record["identityOcrDisagreement"] = True
 
     validate_record(record)
     return record

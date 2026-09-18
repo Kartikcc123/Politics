@@ -386,12 +386,26 @@ const lowMemoryOcrPdf = async (pdfPath, importFileName, pageRange = {}) => {
   const header = {};
   let processedCards = 0;
   let lastTrackedSerial = 0;
+
+  const triggerRender = (pg) => {
+    const isMaster = pg === Number(process.env.OCR_MASTER_PAGE || 1);
+    const dpi = isMaster ? (process.env.OCR_MASTER_DPI || '300') : (process.env.OCR_DPI || '300');
+    return renderPage(pdfPath, workDir, pg, dpi);
+  };
+
+  let nextRenderPromise = totalPages > 0 ? triggerRender(startPage) : null;
+
   for (let offset = 0; offset < totalPages; offset += 1) {
     const pageNumber = startPage + offset;
     let rendered;
     try {
-      const isMaster = pageNumber === Number(process.env.OCR_MASTER_PAGE || 1);
-      rendered = await renderPage(pdfPath, workDir, pageNumber, isMaster ? (process.env.OCR_MASTER_DPI || '300') : (process.env.OCR_DPI || '300'));
+      rendered = await nextRenderPromise;
+      const nextPageNumber = pageNumber + 1;
+      if (nextPageNumber <= endPage) {
+        nextRenderPromise = triggerRender(nextPageNumber);
+      } else {
+        nextRenderPromise = null;
+      }
       onProgress?.({
         phase: 'ocr',
         processedPages: offset,
