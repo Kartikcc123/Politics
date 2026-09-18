@@ -139,15 +139,21 @@ def clean_person_name(value):
         target = re.sub(r"[^\u0900-\u097F\s.-]", " ", value)
 
     text = re.sub(r"[\u0964\u0965\u0966-\u096f]", " ", target)
+    # Fix broken halant conjuncts like 'सन् ्वरा' -> 'सन्वरा'
+    text = re.sub(r"\s*([\u094d])\s*", r"\1", text)
     text = clean(text).strip(" .-|:")
     if not text:
         return ""
     # Remove leading/trailing OCR noise tokens
-    text = re.sub(r"(?:\s+[.]?\s*)(?:का|की|के|न|अक|नो|यु|है|ह|हे|ः|छु|ब्|ब्र|क्र|अक|।|\||रे|सी|कः|बॉ|छः|जा|छ्क्र)$", "", text)
+    text = re.sub(r"(?:\s+[.]?\s*)(?:का|की|के|न|अक|नो|यु|है|ह|हे|ः|छु|ब्|ब्र|क्र|अक|।|\||रे|सी|कः|बॉ|छः|जा|छ्क्र|हु|पे|जमा|खत|ऋण|कक|अर)$", "", text)
     text = re.sub(r"\s+\b(?:रे|सी|कः|बॉ|छः|जा|छ्क्र)\b$", "", text)
     text = clean(text).strip(" .-|:")
 
     # Devanagari OCR Spelling Fixes (common Tesseract misreads)
+    text = re.sub(r"(?<=\u0900-\u097F)चित्\b|(?<=\u0900-\u097F)चन्त\b|(?<=\u0900-\u097F)चन्च\b|(?<=\u0900-\u097F)चनद\b|(?<=\u0900-\u097F)च्द\b", "चन्द", text)
+    text = re.sub(r"\bदाल्चन्द\b|\bदालचन्द\b", "डालचन्द", text)
+    text = re.sub(r"\bदाल्\b", "डाल", text)
+    text = re.sub(r"\bसन्वरा\b|\bसन्देरा\b", "संवरा", text)
     text = re.sub(r"(?:^|\s)(?:सुगणी|सुगी)(?=$|\s)", " सुखी ", text)
     text = re.sub(r"(?:^|\s)बब्रा(?=$|\s)", " बन्ना ", text)
     text = re.sub(r"(?:^|\s)बब्रालाल(?=$|\s)", " बन्नालाल ", text)
@@ -476,71 +482,42 @@ def ocr_serial(card, card_full_text=""):
     region = card[0:round(height * 0.28), 0:round(width * 0.42)]
     if region.size > 0:
         gray = cv2.cvtColor(region, cv2.COLOR_BGR2GRAY)
-        
-        # Detect inner serial box contour to strip outer black border lines cleanly
         thresh_inv = cv2.threshold(gray, 180, 255, cv2.THRESH_BINARY_INV)[1]
         contours, _ = cv2.findContours(thresh_inv, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
-        crops = [region]
+
+        box_contours = []
         for c in contours:
             bx, by, bw, bh = cv2.boundingRect(c)
-            if bw > region.shape[1] * 0.30 and bh > region.shape[0] * 0.30:
-                pad_x = max(2, round(bw * 0.02))
-                pad_y = max(2, round(bh * 0.04))
-                inner = region[by + pad_y : by + bh - pad_y, bx + pad_x : bx + bw - pad_x]
+            if bw > region.shape[1] * 0.25 and bh > region.shape[0] * 0.25:
+                box_contours.append((bw * bh, bx, by, bw, bh))
+        box_contours.sort()
+
+        for _, bx, by, bw, bh in box_contours:
+            pad_x = max(2, round(bw * 0.02))
+            pad_y = max(2, round(bh * 0.04))
+            crops = [
+                region[by + 2 : by + bh - 2, max(0, bx - 1) : min(region.shape[1], bx + bw + 1)],
+                region[by + pad_y : by + bh - pad_y, bx + pad_x : bx + bw - pad_x],
+            ]
+            for inner in crops:
                 if inner.size > 0:
-                    crops.insert(0, inner)
-                break
-
-        found = False
-        for crop in crops:
-            padded = cv2.copyMakeBorder(crop, 15, 15, 20, 20, cv2.BORDER_CONSTANT, value=[255, 255, 255])
-            c_gray = cv2.cvtColor(padded, cv2.COLOR_BGR2GRAY) if len(padded.shape) == 3 else padded
-            resized = cv2.resize(c_gray, None, fx=2.0, fy=2.0, interpolation=cv2.INTER_CUBIC)
-            thresh = cv2.threshold(resized, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)[1]
-            clahe = cv2.createCLAHE(3.0, (8, 8)).apply(resized)
-            for variant in (thresh, clahe):
-                for psm in (7, 6):
-                    try:
-                        txt = safe_image_to_string(
-                            variant,
-                            lang="eng",
-                            config=f"--psm {psm} -c tessedit_char_whitelist=0123456789#№N.- "
-                        )
-                        clean_txt = re.sub(r"^[#№N\s:.\-_]+", "", (txt or "").strip())
-                        match = re.search(r"\b(\d{1,5})\b", clean_txt)
-                        if match and 1 <= int(match.group(1)) <= 99999:
-                            candidates.append(match.group(1))
-                            found = True
-                            break
-                    except Exception:
-                        pass
-                if found:
-                    break
-            if found:
-                break
-
-        # Deep fallback only if Tier 1 found no candidates
-        if not candidates:
-            for crop in crops:
-                padded = cv2.copyMakeBorder(crop, 15, 15, 20, 20, cv2.BORDER_CONSTANT, value=[255, 255, 255])
-                c_gray = cv2.cvtColor(padded, cv2.COLOR_BGR2GRAY) if len(padded.shape) == 3 else padded
-                resized = cv2.resize(c_gray, None, fx=3.0, fy=3.0, interpolation=cv2.INTER_CUBIC)
-                thresh = cv2.threshold(resized, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)[1]
-                clahe = cv2.createCLAHE(3.0, (8, 8)).apply(resized)
-                for variant in (thresh, clahe):
-                    for psm in (8, 7):
-                        try:
-                            txt = safe_image_to_string(
-                                variant,
-                                lang="eng",
-                                config=f"--psm {psm} -c tessedit_char_whitelist=0123456789#№N.- "
-                            )
-                            clean_txt = re.sub(r"^[#№N\s:.\-_]+", "", (txt or "").strip())
-                            match = re.search(r"\b(\d{1,5})\b", clean_txt)
-                            if match and 1 <= int(match.group(1)) <= 99999:
-                                candidates.append(match.group(1))
-                        except Exception:
-                            pass
+                    padded = cv2.copyMakeBorder(inner, 15, 15, 20, 20, cv2.BORDER_CONSTANT, value=[255, 255, 255])
+                    p_gray = cv2.cvtColor(padded, cv2.COLOR_BGR2GRAY) if len(padded.shape) == 3 else padded
+                    res = cv2.resize(p_gray, None, fx=3.0, fy=3.0, interpolation=cv2.INTER_CUBIC)
+                    clahe = cv2.createCLAHE(3.0, (8, 8)).apply(res)
+                    thresh = cv2.threshold(res, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)[1]
+                    for var in (clahe, thresh):
+                        for psm in (7, 6):
+                            try:
+                                txt = safe_image_to_string(
+                                    var,
+                                    lang="eng",
+                                    config=f"--psm {psm} -c tessedit_char_whitelist=0123456789"
+                                ).strip()
+                                if txt and txt.isdigit() and 1 <= int(txt) <= 99999:
+                                    candidates.append(txt)
+                            except Exception:
+                                pass
 
     if not candidates:
         return "", False
@@ -575,13 +552,6 @@ def ocr_gender(card):
 
 def ocr_age(card, card_full_text=""):
     """Retry only the printed age row; never infer an age from nearby fields."""
-    if card_full_text:
-        match = re.search(r"(?:उम्र|उप्र|आयु|Age|3म्र|34)[^\d\n]{0,15}([0-9०-९]{2})", card_full_text, re.IGNORECASE)
-        if match:
-            val = match.group(1).translate(str.maketrans("०१२३४५६७८९", "0123456789"))
-            if val.isdigit() and 18 <= int(val) <= 120:
-                return int(val)
-
     height, width = card.shape[:2]
     # Widen Age ROI (x: 0.0 to 0.70, y: 0.50 to 0.95) to capture age digits reliably
     region = card[
@@ -595,18 +565,22 @@ def ocr_age(card, card_full_text=""):
         variants = [
             cv2.createCLAHE(3.0, (8, 8)).apply(gray),
             cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)[1],
+            gray,
         ]
         for variant in variants:
-            for psm in (7, 6):
+            for psm in (7, 6, 11):
                 try:
                     text = safe_image_to_string(variant, lang="eng", config=f"--psm {psm} -c tessedit_char_whitelist=0123456789")
                     candidates.extend(int(value) for value in re.findall(r"\b\d{2}\b", text) if 18 <= int(value) <= 120)
-                    if candidates:
-                        break
                 except Exception:
                     pass
-            if candidates:
-                break
+
+    if not candidates and card_full_text:
+        match = re.search(r"(?:उम्र|उप्र|आयु|Age|3म्र|34)[^\d\n]{0,15}([0-9०-९]{2})", card_full_text, re.IGNORECASE)
+        if match:
+            val = match.group(1).translate(str.maketrans("०१२३४५६७८९", "0123456789"))
+            if val.isdigit() and 18 <= int(val) <= 120:
+                candidates.append(int(val))
     if not candidates:
         line = card[
             round(height * 0.50):round(height * 0.88),
@@ -799,12 +773,12 @@ def ocr_identity(card):
     disagreement = False
     for index, key in ((0, "name"), (1, "guardianName")):
         values = [result[index] for result in results if result[index]]
-        if len(values) == 2 and values[0] == values[1]:
-            suggestion[key] = values[0]
-        elif values and len(set(values)) > 1:
-            disagreement = True
-        elif len(values) == 1:
-            suggestion[key] = values[0]
+        if values:
+            counts = {v: values.count(v) for v in set(values)}
+            winner, _ = max(counts.items(), key=lambda item: (item[1], len(re.findall(r"[\u0900-\u097F]", item[0]))))
+            suggestion[key] = winner
+            if len(set(values)) > 1:
+                disagreement = True
     if focused_name_cand and not suggestion.get("name"):
         suggestion["name"] = focused_name_cand
     return suggestion, disagreement
@@ -1244,33 +1218,24 @@ def _process_single_card(args):
     # confuse EPIC fragments, age or house number with the printed serial.
     focused_serial, serial_disagreement = ocr_serial(card, card_full_text=text)
 
-    # Fast EPIC check:
-    candidate_epic = epic_from(epic_text + "\n" + text)
-    if candidate_epic and valid_epic(candidate_epic):
-        focused_epic = candidate_epic
-        epic_ok = True
-    else:
-        focused_epic, epic_ok = ocr_epic(card, reference=candidate_epic)
+    # EPIC extraction directly from dedicated crop
+    focused_epic, epic_ok = ocr_epic(card)
+    if not focused_epic:
+        candidate_epic = epic_from(epic_text)
+        if candidate_epic and valid_epic(candidate_epic):
+            focused_epic = candidate_epic
+            epic_ok = True
 
+    identity_suggestion, identity_disagreement = ocr_identity(card)
     rec = parse_card(text, epic_text, photo_path, page_no, cell_no, focused_house=focused_house, card_path=card_path)
 
-    # Conditional Identity Deep Pass: only if name or guardian missing or suspicious
-    name = rec.get("name") or ""
-    guardian = rec.get("guardianName") or ""
-    dev_name = len(re.findall(r"[\u0900-\u097F]", name))
-    dev_guard = len(re.findall(r"[\u0900-\u097F]", guardian))
-
-    if dev_name < 2 or dev_guard < 2 or suspicious_person_name(name) or suspicious_person_name(guardian):
-        identity_suggestion, identity_disagreement = ocr_identity(card)
-        if identity_suggestion.get("name") and (not rec.get("name") or len(identity_suggestion["name"]) >= len(rec["name"])):
-            rec["name"] = identity_suggestion["name"]
-        if identity_suggestion.get("guardianName") and (not rec.get("guardianName") or len(identity_suggestion["guardianName"]) >= len(rec["guardianName"])):
-            rec["guardianName"] = identity_suggestion["guardianName"]
-        if identity_disagreement:
-            rec["identityOcrDisagreement"] = True
-
-    if focused_age and (rec.get("age") is None or rec.get("age") == ""):
-        rec["age"] = focused_age
+    r_age = rec.get("age")
+    if r_age is None or r_age == "":
+        if focused_age:
+            rec["age"] = focused_age
+    elif focused_age and focused_age != r_age:
+        if (r_age % 10 == 7 and focused_age % 10 == 1 and r_age // 10 == focused_age // 10):
+            rec["age"] = focused_age
     rec["voterSerial"] = focused_serial
     rec["voterSerialConfidence"] = 95 if focused_serial else 0
     if serial_disagreement or not focused_serial:
@@ -1278,6 +1243,13 @@ def _process_single_card(args):
     if focused_epic and (not rec.get("voterId") or epic_ok):
         rec["voterId"] = focused_epic
         rec["epicConfidence"] = 95
+
+    if identity_suggestion.get("name") and (not rec.get("name") or len(identity_suggestion["name"]) >= len(rec["name"])):
+        rec["name"] = identity_suggestion["name"]
+    if identity_suggestion.get("guardianName") and (not rec.get("guardianName") or len(identity_suggestion["guardianName"]) >= len(rec["guardianName"])):
+        rec["guardianName"] = identity_suggestion["guardianName"]
+    if identity_disagreement:
+        rec["identityOcrDisagreement"] = True
 
     return rec
 
@@ -1295,33 +1267,25 @@ def process_card_image(card_path):
     epic_region = card[0:round(height * 0.25), 0:width]
     epic_text = safe_image_to_string(cv2.resize(clahe.apply(cv2.cvtColor(epic_region, cv2.COLOR_BGR2GRAY)), None, fx=1.5, fy=1.5, interpolation=cv2.INTER_CUBIC), lang="eng", config="--psm 6")
     focused_house = ocr_house(card, card_full_text=text)
+    focused_age = ocr_age(card, card_full_text=text)
     focused_serial, serial_disagreement = ocr_serial(card, card_full_text=text)
+    focused_epic, epic_ok = ocr_epic(card)
+    if not focused_epic:
+        candidate_epic = epic_from(epic_text)
+        if candidate_epic and valid_epic(candidate_epic):
+            focused_epic = candidate_epic
+            epic_ok = True
 
-    # Fast EPIC check:
-    candidate_epic = epic_from(epic_text + "\n" + text)
-    if candidate_epic and valid_epic(candidate_epic):
-        focused_epic = candidate_epic
-        epic_ok = True
-    else:
-        focused_epic, epic_ok = ocr_epic(card, reference=candidate_epic)
-
+    identity_suggestion, identity_disagreement = ocr_identity(card)
     record = parse_card(text, epic_text, "", 1, 0, focused_house=focused_house, card_path=str(card_path))
 
-    # Conditional Identity Deep Pass
-    name = record.get("name") or ""
-    guardian = record.get("guardianName") or ""
-    dev_name = len(re.findall(r"[\u0900-\u097F]", name))
-    dev_guard = len(re.findall(r"[\u0900-\u097F]", guardian))
-
-    if dev_name < 2 or dev_guard < 2 or suspicious_person_name(name) or suspicious_person_name(guardian):
-        identity_suggestion, identity_disagreement = ocr_identity(card)
-        if identity_suggestion.get("name"):
-            record["name"] = identity_suggestion["name"]
-        if identity_suggestion.get("guardianName"):
-            record["guardianName"] = identity_suggestion["guardianName"]
-        if identity_disagreement:
-            record["identityOcrDisagreement"] = True
-
+    r_age = record.get("age")
+    if r_age is None or r_age == "":
+        if focused_age:
+            record["age"] = focused_age
+    elif focused_age and focused_age != r_age:
+        if (r_age % 10 == 7 and focused_age % 10 == 1 and r_age // 10 == focused_age // 10):
+            record["age"] = focused_age
     record["voterSerial"] = focused_serial
     record["voterSerialConfidence"] = 95 if focused_serial else 0
     if serial_disagreement or not focused_serial:
@@ -1329,6 +1293,14 @@ def process_card_image(card_path):
     if focused_epic and (not record.get("voterId") or epic_ok):
         record["voterId"] = focused_epic
         record["epicConfidence"] = 95
+
+    if identity_suggestion.get("name") and (not record.get("name") or len(identity_suggestion["name"]) >= len(record["name"])):
+        record["name"] = identity_suggestion["name"]
+    if identity_suggestion.get("guardianName") and (not record.get("guardianName") or len(identity_suggestion["guardianName"]) >= len(record["guardianName"])):
+        record["guardianName"] = identity_suggestion["guardianName"]
+    if identity_disagreement:
+        record["identityOcrDisagreement"] = True
+
     validate_record(record)
     return record
 
