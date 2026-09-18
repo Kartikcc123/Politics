@@ -11,13 +11,14 @@ const Area = require('../models/Area');
 const User = require('../models/User');
 const { applyMemberScope, assertBoothAccess, assertWardAccess, requirePermission } = require('../utils/boothAccess');
 const { writeActivity } = require('../middleware/activityLogger');
-const { requireValidEpic } = require('../utils/epic');
+const { requireValidEpic, isValidEpic, normalizeEpic } = require('../utils/epic');
 const { syncMemberFamily, removeMemberFromFamilies } = require('../utils/familySync');
 const { persistLocalImage } = require('../utils/persistentMedia');
 const { recheckCardOcr } = require('../utils/cardOcr');
 const { matchingLocationNames } = require('../utils/locationMerge');
 const { invalidateMemberData } = require('../utils/dataCache');
 const {
+  buildMemberSearchData,
   buildSearchConditions,
   buildFieldSearchConditions,
   buildStrictFieldSearchConditions,
@@ -50,6 +51,13 @@ const normalizeMonthDayDate = (value) => {
   const day = Number(match.length === 4 ? match[3] : match[2]);
   if (!month || !day || month < 1 || month > 12 || day < 1 || day > 31) return undefined;
   return new Date(Date.UTC(2000, month - 1, day));
+};
+
+const estimateDobFromAge = (age) => {
+  const numeric = Number(age);
+  if (!Number.isFinite(numeric) || numeric < 18 || numeric > 120) return undefined;
+  const now = new Date();
+  return new Date(Date.UTC(now.getUTCFullYear() - Math.floor(numeric), 0, 1));
 };
 
 const normalizeMemberDates = (data) => {
@@ -1576,8 +1584,7 @@ exports.suggestions = async (req, res, next) => {
   }
 };
 
-const validRecheckEpic = (value) => /^[A-Z]{3}\d{7}$|^RJ\/\d{1,3}\/\d{1,3}\/\d{6}$/.test(String(value || '').toUpperCase());
-const recheckFields = ['voterSerial', 'name', 'guardianName', 'houseNumber', 'age', 'gender'];
+const recheckFields = ['voterSerial', 'name', 'guardianName', 'relationType', 'houseNumber', 'age', 'gender'];
 
 const applyRecheckOcr = async (member, user, req) => {
   const before = member.toObject();
@@ -1624,26 +1631,23 @@ const applyRecheckOcr = async (member, user, req) => {
         if (currentHouse && currentHouse !== '0' && (!newHouse || newHouse === '0')) {
           continue;
         }
+        member.houseNumber = newHouse;
+        continue;
       }
       if (field === 'voterSerial') {
         const newSerial = String(value || '').trim();
-        const currentSerial = String(member.voterSerial || '').trim();
-        // Guard: do not overwrite a valid multi-digit serial with a truncated OCR scan
-        // (e.g. '80' -> '8' where current starts/ends with new, or '561' -> '61' where current ends with new)
-        if (
-          currentSerial &&
-          /^\d{2,5}$/.test(currentSerial) &&
-          newSerial &&
-          /^\d{1,4}$/.test(newSerial) &&
-          newSerial.length < currentSerial.length &&
-          (currentSerial.endsWith(newSerial) || currentSerial.startsWith(newSerial))
-        ) {
-          continue;
-        }
         if (newSerial && /^\d{1,5}$/.test(newSerial) && parseInt(newSerial, 10) > 0) {
           member.voterSerial = newSerial;
-          continue;
         }
+        continue;
+      }
+      if (field === 'age') {
+        const ageNum = parseInt(value, 10);
+        if (Number.isInteger(ageNum) && ageNum >= 18 && ageNum <= 120) {
+          member.age = ageNum;
+          member.estimatedDob = estimateDobFromAge(ageNum);
+        }
+        continue;
       }
       member[field] = value;
     }
@@ -1656,19 +1660,54 @@ const applyRecheckOcr = async (member, user, req) => {
   member.ocrFieldConfidence = result.fieldConfidence || {};
   const retained = (member.ocrReviewReasons || []).filter((reason) => !/(?:_ocr_disagreement$|^(?:serial|name|guardian_name|house_number|age|gender|voter_id)_(?:missing|ocr))/i.test(reason));
   member.ocrReviewReasons = [...new Set([...retained, ...(result.reviewReasons || [])])];
-  const recheckedEpic = String(result.voterId || '').toUpperCase();
-  const effectiveEpic = validRecheckEpic(recheckedEpic) ? recheckedEpic : member.voterId;
+  
+  const rawEpic = String(result.voterId || '').toUpperCase().trim();
+  const cleanEpic = normalizeEpic(rawEpic);
+  if (cleanEpic && isValidEpic(cleanEpic) && cleanEpic !== member.voterId) {
+    const duplicate = await Member.findOne({ voterId: cleanEpic, _id: { $ne: member._id } });
+    if (!duplicate) {
+      member.voterId = cleanEpic;
+    } else {
+      member.duplicateWarnings = member.duplicateWarnings || [];
+      member.duplicateWarnings.push({
+        field: 'voterId',
+        member: duplicate._id,
+        value: cleanEpic,
+      });
+    }
+  }
+
+  const effectiveEpic = member.voterId;
   const complete = Boolean(member.voterSerial && member.name && member.guardianName && member.houseNumber && effectiveEpic && member.age && member.gender);
   member.profileCompletionStatus = complete ? 'complete' : 'pending';
   if (complete) { member.profileCompletedBy = user._id; member.profileCompletedAt = new Date(); } else { member.profileCompletedBy = undefined; member.profileCompletedAt = undefined; }
   if (!member.ocrReviewReasons.length && member.verificationStatus === 'needs_review') member.verificationStatus = 'pending';
   member.updatedBy = user._id;
+
+  // Re-build all search tokens for accurate searching after rescan
+  Object.assign(member, buildMemberSearchData(member));
   await member.save();
-  const epic = recheckedEpic;
-  if (validRecheckEpic(epic) && epic !== member.voterId) {
-    const duplicate = await Member.exists({ voterId: epic, _id: { $ne: member._id } });
-    if (!duplicate) await Member.collection.updateOne({ _id: member._id }, { $set: { voterId: epic } });
+
+  // Keep collection-level voterId and search fields in sync if duplicate or collection update is needed
+  if (cleanEpic && isValidEpic(cleanEpic) && member.voterId !== cleanEpic) {
+    const duplicate = await Member.findOne({ voterId: cleanEpic, _id: { $ne: member._id } });
+    if (!duplicate) {
+      member.voterId = cleanEpic;
+      const searchData = buildMemberSearchData(member);
+      await Member.collection.updateOne(
+        { _id: member._id },
+        { $set: { voterId: cleanEpic, ...searchData } }
+      );
+    }
   }
+
+  if (member.voterId) {
+    await ElectoralMembership.updateMany(
+      { member: member._id },
+      { $set: { voterId: member.voterId } }
+    );
+  }
+
   const updated = await Member.findById(member._id).populate(populate);
   await writeActivity({ req, action: 'member.ocr_rechecked', module: 'members', entityId: member._id, before, after: updated });
   return { member: updated, result };

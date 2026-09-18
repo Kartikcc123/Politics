@@ -129,7 +129,6 @@ const MemberSchema = new mongoose.Schema({
     required() { return this.contactType !== 'personal' && !this.hasMunicipalMembership; },
     uppercase: true,
     trim: true,
-    immutable: true,
   },
   guardianName: String,
   relationType: { type: String, enum: ['father', 'husband', 'mother', 'other', ''], default: '' },

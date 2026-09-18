@@ -144,10 +144,14 @@ def clean_person_name(value):
     text = clean(text).strip(" .-|:")
     if not text:
         return ""
-    # Remove leading/trailing OCR noise tokens
-    text = re.sub(r"(?:\s+[.]?\s*)(?:का|की|के|न|अक|नो|यु|है|ह|हे|ः|छु|ब्|ब्र|क्र|अक|।|\||रे|सी|कः|बॉ|छः|जा|छ्क्र|हु|पे|जमा|खत|ऋण|कक|अर)$", "", text)
-    text = re.sub(r"\s+\b(?:रे|सी|कः|बॉ|छः|जा|छ्क्र)\b$", "", text)
-    text = clean(text).strip(" .-|:")
+    # Remove leading/trailing OCR noise tokens in a loop until clean
+    noise_pattern = r"(?:\s+[.]?\s*)(?:का|की|के|न|अक|नो|यु|है|ह|हे|ः|छु|ब्|ब्र|क्र|अक|।|\||रे|सी|कः|बॉ|छः|जा|छ्क्र|हु|पे|जमा|खत|ऋण|कक|अर)$"
+    while True:
+        cleaned_t = re.sub(noise_pattern, "", text)
+        cleaned_t = re.sub(r"\s+\b(?:रे|सी|कः|बॉ|छः|जा|छ्क्र)\b$", "", cleaned_t)
+        if cleaned_t == text:
+            break
+        text = clean(cleaned_t).strip(" .-|:")
 
     # Devanagari OCR Spelling Fixes (common Tesseract misreads)
     text = re.sub(r"(?<=\u0900-\u097F)चित्\b|(?<=\u0900-\u097F)चन्त\b|(?<=\u0900-\u097F)चन्च\b|(?<=\u0900-\u097F)चनद\b|(?<=\u0900-\u097F)च्द\b", "चन्द", text)
@@ -1250,9 +1254,14 @@ def _process_single_card(args):
         rec["voterId"] = focused_epic
         rec["epicConfidence"] = 95
 
-    if identity_suggestion.get("name") and (not rec.get("name") or len(identity_suggestion["name"]) >= len(rec["name"])):
+    if not rec.get("gender"):
+        g_val = ocr_gender(card)
+        if g_val:
+            rec["gender"] = g_val
+
+    if identity_suggestion.get("name"):
         rec["name"] = identity_suggestion["name"]
-    if identity_suggestion.get("guardianName") and (not rec.get("guardianName") or len(identity_suggestion["guardianName"]) >= len(rec["guardianName"])):
+    if identity_suggestion.get("guardianName"):
         rec["guardianName"] = identity_suggestion["guardianName"]
     if identity_disagreement:
         rec["identityOcrDisagreement"] = True
@@ -1300,9 +1309,14 @@ def process_card_image(card_path):
         record["voterId"] = focused_epic
         record["epicConfidence"] = 95
 
-    if identity_suggestion.get("name") and (not record.get("name") or len(identity_suggestion["name"]) >= len(record["name"])):
+    if not record.get("gender"):
+        g_val = ocr_gender(card)
+        if g_val:
+            record["gender"] = g_val
+
+    if identity_suggestion.get("name"):
         record["name"] = identity_suggestion["name"]
-    if identity_suggestion.get("guardianName") and (not record.get("guardianName") or len(identity_suggestion["guardianName"]) >= len(record["guardianName"])):
+    if identity_suggestion.get("guardianName"):
         record["guardianName"] = identity_suggestion["guardianName"]
     if identity_disagreement:
         record["identityOcrDisagreement"] = True
