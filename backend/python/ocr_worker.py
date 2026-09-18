@@ -145,8 +145,8 @@ def clean_person_name(value):
     if not text:
         return ""
     # Remove leading/trailing OCR noise tokens in a loop until clean
-    noise_pattern = r"(?:\s+[.]?\s*)(?:का|की|के|न|अक|नो|यु|है|ह|हे|ः|छु|ब्|ब्र|क्र|अक|।|\||रे|सी|कः|बॉ|छः|जा|छ्क्र|हु|पे|जमा|खत|ऋण|कक|अर)$"
-    while True:
+    noise_pattern = r"(?:\s+[.]?\s*)(?:का|की|के|न|अक|नो|यु|है|ह|हे|ः|छु|ब्|ब्र|क्र|अक|।|\||रे|सी|कः|बॉ|छः|जा|छ्क्र|हु|पे|जमा|खत|ऋण|कक|अर|कोड|करार|जज|मय|कं|कि|थे|छआ|चय|दय|द|स|क|ख|ग|घ|च|ज|ट|त|प|म|य|र|ल|व)$"
+    while len(text.split()) > 1:
         cleaned_t = re.sub(noise_pattern, "", text)
         cleaned_t = re.sub(r"\s+\b(?:रे|सी|कः|बॉ|छः|जा|छ्क्र)\b$", "", cleaned_t)
         if cleaned_t == text:
@@ -154,10 +154,17 @@ def clean_person_name(value):
         text = clean(cleaned_t).strip(" .-|:")
 
     # Devanagari OCR Spelling Fixes (common Tesseract misreads)
+    text = re.sub(r"(?:^|\s)स्रुखी(?=$|\s)", " सुखी ", text)
+    text = re.sub(r"(?:^|\s)हंन््?जा(?=$|\s)", " हंजा ", text)
+    text = re.sub(r"(?:^|\s)डालच्नद(?=$|\s)", " डालचन्द ", text)
+    text = re.sub(r"(?:^|\s)सन््वरा(?=$|\s)", " संवरा ", text)
+    text = re.sub(r"(?:^|\s)मॉगी(?=$|\s)", " मांगी ", text)
+    text = re.sub(r"(?:^|\s)भागदती(?=$|\s)", " भागवती ", text)
+    text = re.sub(r"(?:^|\s)नेनुराम(?=$|\s)", " नैनुराम ", text)
     text = re.sub(r"(?<=\u0900-\u097F)चित्\b|(?<=\u0900-\u097F)चन्त\b|(?<=\u0900-\u097F)चन्च\b|(?<=\u0900-\u097F)चनद\b|(?<=\u0900-\u097F)च्द\b", "चन्द", text)
-    text = re.sub(r"\bदाल्चन्द\b|\bदालचन्द\b", "डालचन्द", text)
-    text = re.sub(r"\bदाल्\b", "डाल", text)
-    text = re.sub(r"\bसन्वरा\b|\bसन्देरा\b", "संवरा", text)
+    text = re.sub(r"(?:^|\s)(?:दाल्चन्द|दालचन्द)(?=$|\s)", " डालचन्द ", text)
+    text = re.sub(r"(?:^|\s)दाल्(?=$|\s)", " डाल ", text)
+    text = re.sub(r"(?:^|\s)(?:सन्वरा|सन्देरा)(?=$|\s)", " संवरा ", text)
     text = re.sub(r"(?:^|\s)(?:सुगणी|सुगी)(?=$|\s)", " सुखी ", text)
     text = re.sub(r"(?:^|\s)बब्रा(?=$|\s)", " बन्ना ", text)
     text = re.sub(r"(?:^|\s)बब्रालाल(?=$|\s)", " बन्नालाल ", text)
@@ -492,6 +499,8 @@ def ocr_serial(card, card_full_text=""):
                 region[by + 2 : by + bh - 2, max(0, bx - 1) : min(region.shape[1], bx + bw + 1)],
                 region[by + pad_y : by + bh - pad_y, bx + pad_x : bx + bw - pad_x],
             ]
+            if bw > 25:
+                crops.append(region[by + pad_y : by + bh - pad_y, bx + round(bw * 0.50) : bx + bw - pad_x])
             for inner in crops:
                 if inner.size > 0:
                     padded = cv2.copyMakeBorder(inner, 15, 15, 20, 20, cv2.BORDER_CONSTANT, value=[255, 255, 255])
