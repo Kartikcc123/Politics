@@ -92,7 +92,7 @@ exports.importStatus = async (req, res, next) => {
 
 exports.getActiveImport = async (req, res, next) => {
   try {
-    const staleCutoff = new Date(Date.now() - 3 * 60 * 1000);
+    const staleCutoff = new Date(Date.now() - 10 * 60 * 1000);
     // Auto-fail any stale jobs that were interrupted by server restart
     await ImportJob.updateMany(
       {
@@ -1861,6 +1861,16 @@ const runPdfImport = async ({ file, body, currentUser }, uploadId) => {
   if (String(body?.listType || '').toLowerCase() === 'municipal') {
     return runWardPdfImport({ file, body, currentUser }, uploadId);
   }
+  const heartbeatTimer = setInterval(async () => {
+    try {
+      if (uploadId) {
+        await ImportJob.updateOne(
+          { uploadId, status: { $in: ['processing', 'uploading'] } },
+          { $set: { updatedAt: new Date() } },
+        );
+      }
+    } catch (_) {}
+  }, 10000);
   try {
     setProgress(uploadId, { status: 'processing', stage: 'Reading PDF/OCR text', imported: 0, skipped: 0, processed: 0, total: 0, ocrPagesProcessed: 0, ocrPagesTotal: 0, ocrCardsProcessed: 0, ocrCardsTotal: 0 }, currentUser._id);
     if (!file) {
@@ -2308,6 +2318,7 @@ const runPdfImport = async ({ file, body, currentUser }, uploadId) => {
     }, currentUser?._id);
     throw e;
   } finally {
+    clearInterval(heartbeatTimer);
     if (file?.path) fs.rmSync(file.path, { force: true });
   }
 };
@@ -2500,6 +2511,9 @@ exports.resetAllVoters = async (req, res, next) => {
     ]);
 
     try {
+      const { resetPdfImportQueue } = require('../services/pdfImportQueue');
+      resetPdfImportQueue();
+      importProgress.clear();
       invalidateMemberData();
     } catch (_) {}
 
