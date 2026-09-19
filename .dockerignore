@@ -1,8 +1,11 @@
 .git
 .vscode
-mobile/build
-mobile/.dart_tool
-mobile/android/.gradle
+mobile
+sample-data
+scratch
+*.jpg
+*.png
+*.pdf
 backend/node_modules
 backend/uploads
 backend/whatsapp-sessions
