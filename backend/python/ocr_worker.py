@@ -1245,23 +1245,47 @@ def _process_single_card(args):
     epic_gray_res = cv2.resize(epic_clahe, None, fx=1.5, fy=1.5, interpolation=cv2.INTER_CUBIC)
     epic_text = safe_image_to_string(epic_gray_res, lang="eng", config="--psm 6")
 
-    focused_house = ocr_house(card, card_full_text=text)
-    focused_age = ocr_age(card, card_full_text=text)
-    # Read serial only from its dedicated top-left box. Full-card OCR can
-    # confuse EPIC fragments, age or house number with the printed serial.
+    # 1. Parse initial fields from card text and dedicated EPIC region
+    candidate_epic = epic_from(epic_text) or epic_from(text)
+    rec = parse_card(text, epic_text, photo_path, page_no, cell_no, card_path=card_path)
+
+    # 2. Fast EPIC: if candidate_epic is already valid, use it directly (saves 4-6 OCR passes per card)
+    if candidate_epic and valid_epic(candidate_epic):
+        rec["voterId"] = candidate_epic
+        rec["epicConfidence"] = 95
+    else:
+        focused_epic, epic_ok = ocr_epic(card, reference="")
+        if focused_epic and valid_epic(focused_epic):
+            rec["voterId"] = focused_epic
+            rec["epicConfidence"] = 95
+        elif candidate_epic:
+            rec["voterId"] = candidate_epic
+            rec["epicConfidence"] = 70
+
+    # 3. Fast House: only run focused ocr_house if missing or empty
+    if not rec.get("houseNumber") or str(rec.get("houseNumber")).strip() in ("", "-", "0"):
+        focused_house = ocr_house(card, card_full_text=text)
+        if focused_house:
+            rec["houseNumber"] = focused_house
+
+    # 4. Fast Age: only run focused ocr_age if missing or out of valid voter range
+    r_age = rec.get("age")
+    if r_age is None or not (18 <= r_age <= 120):
+        focused_age = ocr_age(card, card_full_text=text)
+        if focused_age:
+            rec["age"] = focused_age
+
+    # 5. Dedicated Serial: top-left box
     focused_serial, serial_disagreement = ocr_serial(card, card_full_text=text)
+    if focused_serial:
+        rec["voterSerial"] = focused_serial
+        rec["voterSerialConfidence"] = 95
+    elif rec.get("voterSerial") and str(rec.get("voterSerial")).isdigit():
+        rec["voterSerialConfidence"] = 80
+    else:
+        rec["serialOcrDisagreement"] = True
 
-    # EPIC extraction directly from dedicated crop, passing candidate_epic as reference
-    candidate_epic = epic_from(epic_text)
-    focused_epic, epic_ok = ocr_epic(card, reference=candidate_epic if (candidate_epic and valid_epic(candidate_epic)) else "")
-    if not focused_epic:
-        if candidate_epic and valid_epic(candidate_epic):
-            focused_epic = candidate_epic
-            epic_ok = True
-
-    rec = parse_card(text, epic_text, photo_path, page_no, cell_no, focused_house=focused_house, card_path=card_path)
-
-    # Defer heavy identity OCR (11 passes) only when parsed name/guardian is missing or noisy
+    # 6. Defer heavy identity OCR only when parsed name/guardian is missing or noisy
     parsed_name = rec.get("name") or ""
     parsed_guardian = rec.get("guardianName") or ""
     name_devanagari = len(re.findall(r"[\u0900-\u097F]", parsed_name))
@@ -1276,26 +1300,14 @@ def _process_single_card(args):
         if identity_disagreement:
             rec["identityOcrDisagreement"] = True
 
-    r_age = rec.get("age")
-    if r_age is None or r_age == "":
-        if focused_age:
-            rec["age"] = focused_age
-    elif focused_age and focused_age != r_age:
-        if (r_age % 10 == 7 and focused_age % 10 == 1 and r_age // 10 == focused_age // 10):
-            rec["age"] = focused_age
-    rec["voterSerial"] = focused_serial
-    rec["voterSerialConfidence"] = 95 if focused_serial else 0
-    if serial_disagreement or not focused_serial:
-        rec["serialOcrDisagreement"] = True
-    if focused_epic and (not rec.get("voterId") or epic_ok):
-        rec["voterId"] = focused_epic
-        rec["epicConfidence"] = 95
-
+    # 7. Gender if missing
     if not rec.get("gender"):
         g_val, _ = ocr_gender(card)
         if g_val:
             rec["gender"] = g_val
 
+    validate_record(rec)
+    report_card_progress(page_no, cell_no)
     return rec
 
 
