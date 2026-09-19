@@ -2086,21 +2086,33 @@ const runPdfImport = async ({ file, body, currentUser }, uploadId) => {
         if (item.sectionName) existing.sectionName = item.sectionName;
         else if (existing.sectionNumber && docSectionMap[existing.sectionNumber]) existing.sectionName = docSectionMap[existing.sectionNumber];
         else existing.sectionName = cleanSectionName(existing.sectionName);
-        assignNonEmptyFields(existing, item, [
-          'name',
-          'surname',
-          'guardianName',
-          'relationType',
-          'age',
-          'estimatedDob',
-          'gender',
-          'address',
-          'location',
-        ].filter((field) => (
-          existing[field] === undefined
-          || existing[field] === null
-          || String(existing[field]).trim() === ''
-        )));
+        if (!hasVerifiedOcr) {
+          if (item.name && String(item.name).trim()) existing.name = item.name;
+          if (item.surname && String(item.surname).trim()) existing.surname = item.surname;
+          if (item.guardianName && String(item.guardianName).trim()) existing.guardianName = item.guardianName;
+          if (item.relationType) existing.relationType = item.relationType;
+          if (item.age) existing.age = item.age;
+          if (item.estimatedDob) existing.estimatedDob = item.estimatedDob;
+          if (item.gender) existing.gender = item.gender;
+          if (item.address) existing.address = item.address;
+          if (item.location) existing.location = item.location;
+        } else {
+          assignNonEmptyFields(existing, item, [
+            'name',
+            'surname',
+            'guardianName',
+            'relationType',
+            'age',
+            'estimatedDob',
+            'gender',
+            'address',
+            'location',
+          ].filter((field) => (
+            existing[field] === undefined
+            || existing[field] === null
+            || String(existing[field]).trim() === ''
+          )));
+        }
         existing.booth = booth;
         existing.ward = ward;
         existing.area = item.village ? itemArea : (existing.area || assemblyArea);
