@@ -2155,66 +2155,87 @@ const runPdfImport = async ({ file, body, currentUser }, uploadId) => {
         continue;
       }
       const duplicates = [];
-      const member = await Member.create({
-        photo: item.photo || '',
-        ocrCardImage: item.cardImage || '',
-        cardImage: item.cardImage || '',
-        hasAssemblyMembership: true,
-        name: item.name,
-        surname: item.surname,
-        mobile: item.mobile,
-        age: item.age,
-        estimatedDob: item.estimatedDob,
-        gender: item.gender,
-        voterSerial: item.voterSerial,
-        voterId: item.voterId,
-        guardianName: item.guardianName,
-        relationType: item.relationType,
-        houseNumber: item.houseNumber,
-        assemblyNumber: item.assemblyNumber,
-        assemblyName: item.assemblyName,
-        partNumber: item.partNumber,
-        partName: item.partName,
-        sectionNumber: item.sectionNumber,
-        sectionName: item.sectionName,
-        address: item.address,
-        location: item.location,
-        booth,
-        ward,
-        area: itemArea,
-        tehsil: item.tehsil,
-        postOffice: item.postOffice,
-        policeStation: item.policeStation,
-        district: item.district,
-        pinCode: item.pinCode,
-        gramPanchayat: item.gramPanchayat,
-        village: item.village,
-        party: party?._id,
-        createdBy: currentUser._id,
-        updatedBy: currentUser._id,
-        ocrValues: item.ocrValues || { raw: {}, suggested: {}, verified: {}, status: 'raw' },
-        ocrConfidence: item.ocrConfidence,
-        houseNumberConfidence: item.houseNumberConfidence,
-        locationMatchConfidence: item.locationMatchConfidence,
-        locationResolution: item.locationResolution,
-        ocrReviewReasons: item.ocrReviewReasons || [],
-        ocrValidationPassed: Boolean(item.ocrValidationPassed),
-        ocrFieldConfidence: item.ocrFieldConfidence || {},
-        verificationStatus: duplicates.length ? 'duplicate' : item.ocrNeedsReview ? 'needs_review' : 'pending',
-        duplicateWarnings: duplicates.map((d) => ({
-          field: d.voterId === item.voterId ? 'voterId' : d.mobile === item.mobile ? 'mobile' : 'address',
-          member: d._id,
-          value: d.voterId === item.voterId ? item.voterId : d.mobile === item.mobile ? item.mobile : item.address,
-        })),
-        sourceDocument: {
-          type: 'pdf',
-          file: `/uploads/${file.filename}`,
-          rawText: item.rawText || parsed.text.slice(0, 1000),
-          imageExtractionStatus: extractedImages.status,
+      try {
+        const member = await Member.create({
+          photo: item.photo || '',
           ocrCardImage: item.cardImage || '',
-        },
-      });
-      created.push(member);
+          cardImage: item.cardImage || '',
+          hasAssemblyMembership: true,
+          name: item.name,
+          surname: item.surname,
+          mobile: item.mobile,
+          age: item.age,
+          estimatedDob: item.estimatedDob,
+          gender: item.gender,
+          voterSerial: item.voterSerial,
+          voterId: item.voterId,
+          guardianName: item.guardianName,
+          relationType: item.relationType,
+          houseNumber: item.houseNumber,
+          assemblyNumber: item.assemblyNumber,
+          assemblyName: item.assemblyName,
+          partNumber: item.partNumber,
+          partName: item.partName,
+          sectionNumber: item.sectionNumber,
+          sectionName: item.sectionName,
+          address: item.address,
+          location: item.location,
+          booth,
+          ward,
+          area: itemArea,
+          tehsil: item.tehsil,
+          postOffice: item.postOffice,
+          policeStation: item.policeStation,
+          district: item.district,
+          pinCode: item.pinCode,
+          gramPanchayat: item.gramPanchayat,
+          village: item.village,
+          party: party?._id,
+          createdBy: currentUser._id,
+          updatedBy: currentUser._id,
+          ocrValues: item.ocrValues || { raw: {}, suggested: {}, verified: {}, status: 'raw' },
+          ocrConfidence: item.ocrConfidence,
+          houseNumberConfidence: item.houseNumberConfidence,
+          locationMatchConfidence: item.locationMatchConfidence,
+          locationResolution: item.locationResolution,
+          ocrReviewReasons: item.ocrReviewReasons || [],
+          ocrValidationPassed: Boolean(item.ocrValidationPassed),
+          ocrFieldConfidence: item.ocrFieldConfidence || {},
+          verificationStatus: duplicates.length ? 'duplicate' : item.ocrNeedsReview ? 'needs_review' : 'pending',
+          duplicateWarnings: duplicates.map((d) => ({
+            field: d.voterId === item.voterId ? 'voterId' : d.mobile === item.mobile ? 'mobile' : 'address',
+            member: d._id,
+            value: d.voterId === item.voterId ? item.voterId : d.mobile === item.mobile ? item.mobile : item.address,
+          })),
+          sourceDocument: {
+            type: 'pdf',
+            file: `/uploads/${file.filename}`,
+            rawText: item.rawText || parsed.text.slice(0, 1000),
+            imageExtractionStatus: extractedImages.status,
+            ocrCardImage: item.cardImage || '',
+          },
+        });
+        created.push(member);
+      } catch (createErr) {
+        if (createErr.code === 11000 || (createErr.message && createErr.message.includes('11000'))) {
+          try {
+            const collision = await Member.findOne({ voterId: item.voterId });
+            if (collision) {
+              assignNonEmptyFields(collision, item, ['photo', 'cardImage', 'name', 'guardianName', 'houseNumber', 'age', 'gender', 'voterSerial']);
+              await collision.save();
+              created.push(collision);
+            }
+          } catch (_) {}
+        } else {
+          console.warn(`[PDF Import] Row skipped due to card error:`, createErr.message);
+          skipped.push({
+            row: processed + 1,
+            voterId: item.voterId,
+            name: item.name,
+            reason: createErr.message || 'Validation error',
+          });
+        }
+      }
       processed += 1;
       setProgress(uploadId, { processed, imported: created.length, skipped: skipped.length });
     }
