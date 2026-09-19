@@ -103,7 +103,12 @@ class OfflineVoterCache {
       final id = _itemId(item);
       if (id.isNotEmpty) byId[id] = item;
     }
-    await save(byId.values.toList());
+    const maxCacheLimit = 2000;
+    var list = byId.values.toList();
+    if (list.length > maxCacheLimit) {
+      list = list.sublist(list.length - maxCacheLimit);
+    }
+    await save(list);
   }
 
   static String _itemId(dynamic item) {
