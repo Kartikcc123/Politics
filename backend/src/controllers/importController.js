@@ -92,9 +92,30 @@ exports.importStatus = async (req, res, next) => {
 
 exports.getActiveImport = async (req, res, next) => {
   try {
-    const job = await ImportJob.findOne({ owner: req.currentUser._id })
+    const staleCutoff = new Date(Date.now() - 3 * 60 * 1000);
+    // Auto-fail any stale jobs that were interrupted by server restart
+    await ImportJob.updateMany(
+      {
+        owner: req.currentUser._id,
+        status: { $in: ['processing', 'uploading'] },
+        updatedAt: { $lt: staleCutoff },
+      },
+      {
+        $set: {
+          status: 'failed',
+          stage: 'PDF import was interrupted. Please upload the PDF again.',
+        },
+      },
+    );
+
+    const job = await ImportJob.findOne({
+      owner: req.currentUser._id,
+      status: { $in: ['processing', 'uploading'] },
+      updatedAt: { $gte: staleCutoff },
+    })
       .sort({ updatedAt: -1 })
       .lean();
+
     if (!job) return res.json({ active: false });
     return res.json({ active: true, job });
   } catch (error) { next(error); }

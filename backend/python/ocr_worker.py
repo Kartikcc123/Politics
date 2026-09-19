@@ -1358,6 +1358,7 @@ def process_card_image(card_path):
             record["gender"] = g_val
 
     validate_record(record)
+    report_card_progress(page_no, cell_no)
     return record
 
 
