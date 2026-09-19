@@ -12,6 +12,7 @@ router.put('/members/pdf/chunks/:uploadId/:index', auth, permission('canImportDa
 router.post('/members/pdf/chunks/:uploadId/complete', auth, permission('canImportData'), c.completePdfChunks);
 router.post('/members', auth, permission('canImportData'), c.trackUploadProgress, upload.single('file'), c.importMembers);
 router.post('/members/pdf', auth, permission('canImportData'), c.trackUploadProgress, upload.single('file'), c.importPdfMembers);
+router.post('/cleanup-duplicates', auth, permission('canImportData'), c.cleanupDuplicates);
 
 module.exports = router;
 

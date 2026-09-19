@@ -1361,13 +1361,52 @@ def process_card_image(card_path):
     return record
 
 
+def is_voter_page(image, page_no=None):
+    """
+    Determines whether a page image contains voter cards or is a non-voter page
+    (Page 1 Cover, Page 2 Map, or trailing statistical summary / revision tables).
+    Returns False for non-voter pages to prevent unwanted cropping of fake cards.
+    """
+    if image is None or getattr(image, "size", 0) == 0:
+        return False
+    if page_no is not None and int(page_no) in (1, 2):
+        return False
+    boxes = detect_card_boxes(image)
+    if len(boxes) >= 6:
+        return True
+
+    h, w = image.shape[:2]
+    sample = image[int(h * 0.15):int(h * 0.85), int(w * 0.05):int(w * 0.95)]
+    text = safe_image_to_string(sample, lang="hin+eng")
+
+    summary_patterns = [
+        r"I\s*\+\s*II\s*-\s*III",
+        r"E2\s*-\s*|S2\s*-\s*|R2\s*-\s*|Q2\s*-\s*",
+        r"मतदाताओं\s*की\s*संख्या",
+        r"सांख्यिकीय\s*सारांश",
+        r"संशोधनों\s*की\s*संख्या",
+        r"शुद्ध\s*निर्वाचक",
+        r"घटक\s*सूची",
+        r"नक्शा|मतदान\s*केन्द्र\s*का\s*भवन",
+    ]
+    if any(re.search(p, text, re.IGNORECASE) for p in summary_patterns):
+        return False
+
+    voter_fields = len(re.findall(r"(?:पिता|पति|माता)\s*का\s*नाम|गृह\s*संख्या|(?:उम्र|आयु)\s*[:：]|लिंग\s*[:：]", text))
+    return voter_fields >= 3
+
+
 def process_page(page_path, output_dir, page_no):
     image = cv2.imread(str(page_path))
     if image is None:
         return []
+    if page_no is not None and int(page_no) in (1, 2):
+        return []
     image = auto_deskew(image)
     boxes = detect_card_boxes(image)
     if not boxes:
+        if not is_voter_page(image, page_no):
+            return []
         height, width = image.shape[:2]
         left = round(width * 0.02)
         top = round(height * 0.03)
@@ -2234,8 +2273,13 @@ def main():
             return read_header(page, is_voter_page=False), [], read_fixed_header(page, is_voter_page=False)
         # Cover/index/detail pages (e.g. Page 2) must not create voter cards,
         # but must still extract sectionMap and master headers!
-        if page_no in skip_pages:
+        if page_no in skip_pages or (page_no is not None and int(page_no) in (1, 2)):
             return read_header(page, is_voter_page=False), [], read_fixed_header(page, is_voter_page=False)
+
+        page_img = cv2.imread(str(page))
+        if page_img is not None and not is_voter_page(page_img, page_no):
+            return read_header(page, is_voter_page=False), [], read_fixed_header(page, is_voter_page=False)
+
         header = read_header(page, is_voter_page=True)
         return header, process_page(page, output_dir, page_no), read_fixed_header(page, is_voter_page=True)
 

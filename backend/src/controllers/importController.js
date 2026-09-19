@@ -2029,9 +2029,39 @@ const runPdfImport = async ({ file, body, currentUser }, uploadId) => {
             : 'location_unmatched',
         ])];
       }
-      const existing = await Member.findOne({ voterId: item.voterId });
+      let existing = null;
+      if (item.voterId && !item.voterId.startsWith('REV-') && !item.voterId.startsWith('TMP-')) {
+        existing = await Member.findOne({ voterId: item.voterId });
+      }
+      if (!existing && booth && item.voterSerial) {
+        const cleanSer = String(item.voterSerial).replace(/\D/g, '').trim();
+        if (cleanSer) {
+          existing = await Member.findOne({ booth, voterSerial: cleanSer });
+        }
+      }
+      if (!existing && booth && item.name && String(item.name).trim().length >= 2) {
+        const cleanName = String(item.name).trim();
+        const nameRegex = new RegExp(`^${cleanName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i');
+        const query = { booth, name: nameRegex };
+        if (item.guardianName && String(item.guardianName).trim().length >= 2) {
+          const cleanG = String(item.guardianName).trim();
+          query.guardianName = new RegExp(`^${cleanG.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i');
+        }
+        existing = await Member.findOne(query);
+      }
+      if (!existing && item.photo && booth) {
+        const photoMatch = String(item.photo).match(/p\d+_c\d+/);
+        if (photoMatch) {
+          existing = await Member.findOne({ booth, photo: new RegExp(photoMatch[0]) });
+        }
+      }
       if (existing) {
         existing.hasAssemblyMembership = true;
+        if (item.voterId && isValidEpic(item.voterId)) {
+          if (!isValidEpic(existing.voterId) || existing.voterId.startsWith('REV-') || existing.voterId.startsWith('TMP-') || (item.ocrConfidence || 0) > (existing.ocrConfidence || 0)) {
+            existing.voterId = item.voterId;
+          }
+        }
         const currentOcrValues = existing.ocrValues?.toObject?.() || existing.ocrValues || {};
         const hasVerifiedOcr = ['verified', 'manual'].includes(currentOcrValues.status);
         // PDF/OCR is authoritative for roll-specific fields, but it must not
@@ -2282,6 +2312,117 @@ exports.cleanSectionName = cleanSectionName;
 exports.safeSectionMap = safeSectionMap;
 exports.sectionHeaderForRecord = sectionHeaderForRecord;
 exports.parseHeader = parseHeader;
+
+exports.cleanupDuplicates = async (req, res, next) => {
+  try {
+    const filter = {};
+    if (req.query.booth) filter.booth = req.query.booth;
+    if (req.query.ward) filter.ward = req.query.ward;
+
+    // 1. Same booth + voterSerial
+    const serialDuplicates = await Member.aggregate([
+      {
+        $match: {
+          ...filter,
+          voterSerial: { $nin: ['', null, 'undefined', 'null', 'none', '-'] },
+          booth: { $exists: true, $ne: null }
+        }
+      },
+      {
+        $group: {
+          _id: { booth: '$booth', voterSerial: '$voterSerial' },
+          count: { $sum: 1 },
+          ids: { $push: '$_id' }
+        }
+      },
+      { $match: { count: { $gt: 1 } } }
+    ]);
+
+    // 2. Same booth + name + guardianName
+    const nameDuplicates = await Member.aggregate([
+      {
+        $match: {
+          ...filter,
+          name: { $nin: ['', null] },
+          guardianName: { $nin: ['', null] },
+          booth: { $exists: true, $ne: null }
+        }
+      },
+      {
+        $group: {
+          _id: { booth: '$booth', name: '$name', guardianName: '$guardianName' },
+          count: { $sum: 1 },
+          ids: { $push: '$_id' }
+        }
+      },
+      { $match: { count: { $gt: 1 } } }
+    ]);
+
+    const allClusters = [...serialDuplicates, ...nameDuplicates];
+    const processedIds = new Set();
+    let removedCount = 0;
+    let mergedCount = 0;
+
+    for (const cluster of allClusters) {
+      const ids = cluster.ids.filter((id) => !processedIds.has(String(id)));
+      if (ids.length <= 1) continue;
+
+      const members = await Member.find({ _id: { $in: ids } });
+      if (members.length <= 1) continue;
+
+      members.sort((a, b) => {
+        const aValidEpic = isValidEpic(a.voterId) ? 100 : 0;
+        const bValidEpic = isValidEpic(b.voterId) ? 100 : 0;
+        if (aValidEpic !== bValidEpic) return bValidEpic - aValidEpic;
+
+        const aPhoto = a.photo ? 50 : 0;
+        const bPhoto = b.photo ? 50 : 0;
+        if (aPhoto !== bPhoto) return bPhoto - aPhoto;
+
+        const aConf = a.ocrConfidence || 0;
+        const bConf = b.ocrConfidence || 0;
+        if (aConf !== bConf) return bConf - aConf;
+
+        return new Date(b.updatedAt || 0) - new Date(a.updatedAt || 0);
+      });
+
+      const winner = members[0];
+      const losers = members.slice(1);
+
+      for (const loser of losers) {
+        if (!winner.mobile && loser.mobile) winner.mobile = loser.mobile;
+        if (!winner.altMobile && loser.altMobile) winner.altMobile = loser.altMobile;
+        if (!winner.caste && loser.caste) winner.caste = loser.caste;
+        if (!winner.houseNumber && loser.houseNumber) winner.houseNumber = loser.houseNumber;
+        if (loser.isFavorite && !winner.isFavorite) winner.isFavorite = true;
+        if (loser.partyPreference && loser.partyPreference !== 'undecided') winner.partyPreference = loser.partyPreference;
+      }
+
+      await winner.save();
+      const deleteIds = losers.map((m) => m._id);
+      await Member.deleteMany({ _id: { $in: deleteIds } });
+
+      for (const m of members) {
+        processedIds.add(String(m._id));
+      }
+      removedCount += losers.length;
+      mergedCount += 1;
+    }
+
+    if (removedCount > 0) {
+      invalidateMemberData();
+    }
+
+    res.json({
+      success: true,
+      message: `${removedCount} duplicate member record(s) merged into ${mergedCount} unique voter(s).`,
+      mergedCount,
+      removedCount,
+    });
+  } catch (err) {
+    next(err);
+  }
+};
 
 
 
