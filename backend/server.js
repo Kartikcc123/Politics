@@ -65,8 +65,7 @@ async function ensureElectoralMembershipIndexes() {
     );
     await collection.createIndex({ electoralList: 1, epic: 1 });
   } catch (error) {
-    console.error('Electoral membership index preparation failed:', error.message);
-    throw error;
+    console.warn('Electoral membership index preparation warning (non-fatal):', error.message);
   }
 }
 const app = express();
@@ -135,27 +134,31 @@ const serverTimeoutMs = Number(process.env.UPLOAD_TIMEOUT_MINUTES || 30) * 60 * 
 
 connectDB()
   .then(async () => {
-    await ensureMemberIndexes();
-    await ensureElectoralMembershipIndexes();
-    const garbageCleanResult = await cleanGarbageAreas();
-    if (garbageCleanResult.cleanedCount) console.log('Cleaned ' + garbageCleanResult.cleanedCount + ' invalid garbage area entry/entries.');
-    const indexedMembers = await ensureMemberSearchData(Member);
-    if (indexedMembers) console.log('Prepared ' + indexedMembers + ' voter record(s) for easy search.');
-    const staleImportMinutes = Math.max(5, Number(process.env.IMPORT_JOB_STALE_MINUTES || 15));
-    const staleImportCutoff = new Date(Date.now() - staleImportMinutes * 60 * 1000);
-    await ImportJob.updateMany(
-      {
-        status: { $in: ['uploading', 'processing'] },
-        updatedAt: { $lt: staleImportCutoff },
-      },
-      {
-        $set: {
-          status: 'failed',
-          stage: 'PDF import stopped before completion. Please upload the PDF again.',
-          expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+    try {
+      await ensureMemberIndexes();
+      await ensureElectoralMembershipIndexes();
+      const garbageCleanResult = await cleanGarbageAreas();
+      if (garbageCleanResult.cleanedCount) console.log('Cleaned ' + garbageCleanResult.cleanedCount + ' invalid garbage area entry/entries.');
+      const indexedMembers = await ensureMemberSearchData(Member);
+      if (indexedMembers) console.log('Prepared ' + indexedMembers + ' voter record(s) for easy search.');
+      const staleImportMinutes = Math.max(5, Number(process.env.IMPORT_JOB_STALE_MINUTES || 15));
+      const staleImportCutoff = new Date(Date.now() - staleImportMinutes * 60 * 1000);
+      await ImportJob.updateMany(
+        {
+          status: { $in: ['uploading', 'processing'] },
+          updatedAt: { $lt: staleImportCutoff },
         },
-      },
-    );
+        {
+          $set: {
+            status: 'failed',
+            stage: 'PDF import stopped before completion. Please upload the PDF again.',
+            expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+          },
+        },
+      );
+    } catch (startupErr) {
+      console.warn('Startup database maintenance warning (non-fatal):', startupErr.message);
+    }
     const server = app.listen(PORT, () => console.log(`Political Booth Management CRM API running on ${PORT}`));
     server.requestTimeout = serverTimeoutMs;
     server.headersTimeout = serverTimeoutMs + 5000;
