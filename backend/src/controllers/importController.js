@@ -2457,6 +2457,43 @@ exports.cleanupDuplicates = async (req, res, next) => {
   }
 };
 
+exports.resetAllVoters = async (req, res, next) => {
+  try {
+    const Family = require('../models/Family');
+    const ElectoralMembership = require('../models/ElectoralMembership');
+    const ImportPreview = require('../models/ImportPreview');
+    const ImportReview = require('../models/ImportReview');
+    const { invalidateMemberData } = require('../utils/dataCache');
+
+    try {
+      await mongoose.connection.db.collection('mediaassets').drop();
+    } catch (_) {}
+
+    const [memberDel, familyDel, elecDel, jobDel, prevDel, revDel] = await Promise.all([
+      Member.deleteMany({}),
+      Family.deleteMany({}),
+      ElectoralMembership.deleteMany({}),
+      ImportJob.deleteMany({}),
+      ImportPreview.deleteMany({}),
+      ImportReview.deleteMany({}),
+    ]);
+
+    try {
+      invalidateMemberData();
+    } catch (_) {}
+
+    res.json({
+      success: true,
+      message: 'All voter test data, media assets, and import jobs have been completely reset.',
+      deletedMembers: memberDel.deletedCount,
+      deletedFamilies: familyDel.deletedCount,
+      deletedJobs: jobDel.deletedCount,
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
 
 
 

@@ -13,6 +13,7 @@ router.post('/members/pdf/chunks/:uploadId/complete', auth, permission('canImpor
 router.post('/members', auth, permission('canImportData'), c.trackUploadProgress, upload.single('file'), c.importMembers);
 router.post('/members/pdf', auth, permission('canImportData'), c.trackUploadProgress, upload.single('file'), c.importPdfMembers);
 router.post('/cleanup-duplicates', auth, permission('canImportData'), c.cleanupDuplicates);
+router.post('/reset-all-voters', auth, permission('canImportData'), c.resetAllVoters);
 
 module.exports = router;
 
