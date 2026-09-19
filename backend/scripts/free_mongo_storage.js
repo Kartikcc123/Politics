@@ -36,6 +36,15 @@ async function main() {
   console.log('🧹 CLEANING STORAGE TO UNBLOCK ATLAS WRITES');
   console.log('====================================================');
 
+  // 0. Drop MediaAssets (removes all binary images that choked MongoDB Atlas quota)
+  try {
+    const mediaCount = await db.collection('mediaassets').countDocuments();
+    await db.collection('mediaassets').drop();
+    console.log(`✅ Dropped mediaassets collection (${mediaCount} binary image docs removed - hundreds of MBs freed!).`);
+  } catch (_) {
+    console.log('ℹ️  mediaassets collection was already empty or dropped.');
+  }
+
   // 1. Delete all ImportJobs (ImportJob results store massive raw OCR dumps)
   const jobDel = await ImportJob.deleteMany({});
   console.log(`✅ Deleted ${jobDel.deletedCount} ImportJob records (large OCR JSON dumps freed).`);
