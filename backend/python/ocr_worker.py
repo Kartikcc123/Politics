@@ -1112,9 +1112,12 @@ def preserve_card_serials(records, global_start_serial):
         )
         # Check if raw is a cell index (1..30) while expected serial is much larger
         is_cell_index_noise = bool(raw is not None and raw <= 30 and expected_serial > 30)
-        # Check if raw is a true OCR anomaly (dropped digit, border prefix digit, or cell index reset)
+        # Check if raw jumps backwards behind previous_serial (e.g. read 8 after 24)
+        is_backward_jump = bool(raw is not None and previous_serial is not None and raw <= previous_serial)
+        # Check if raw is a true OCR anomaly (backward jump, dropped digit, border prefix digit, or cell index reset)
         is_repairable_anomaly = (
             raw is not None and (
+                is_backward_jump or
                 is_partial_match or
                 is_prefix_noise or
                 is_cell_index_noise or
