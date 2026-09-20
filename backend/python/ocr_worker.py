@@ -1513,12 +1513,9 @@ def process_page(page_path, output_dir, page_no):
     records = [
         r for r in records
         if (
-            r.get("name")
-            or r.get("guardianName")
-            or r.get("voterId")
-            or r.get("houseNumber")
-            or r.get("age") is not None
-            or r.get("voterSerial")
+            (r.get("name") and len(re.findall(r"[\u0900-\u097F]", r.get("name") or "")) >= 2)
+            or (r.get("voterId") and valid_epic(r.get("voterId")))
+            or (r.get("guardianName") and len(re.findall(r"[\u0900-\u097F]", r.get("guardianName") or "")) >= 2)
             or r.get("isDeleted")
         )
     ]
