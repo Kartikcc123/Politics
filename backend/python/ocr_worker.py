@@ -653,107 +653,133 @@ def field(text, pattern):
     return clean(match.group(1)) if match else ""
 
 
-def epic_from(text):
-    if not text:
+PREFIX_CORRECTIONS = {
+    "KOV": "KDY", "KOY": "KDY", "OVO": "KDY", "KDV": "KDY",
+    "KOW": "KDY", "KPY": "KDY", "KTY": "KDY", "KDT": "KDY",
+    "QDY": "KDY", "ODY": "KDY", "RDY": "KDY", "KOO": "KDY",
+    "SSN": "SNE", "SME": "SNE", "SN3": "SNE", "SHE": "SNE",
+    "5NE": "SNE", "SNE3": "SNE", "SNEI": "SNE", "SMF": "SNE"
+}
+
+DIGIT_MAP = str.maketrans({
+    "O": "0", "Q": "0", "D": "0", "I": "1", "L": "1", "l": "1",
+    "Z": "2", "z": "2", "S": "5", "s": "5", "B": "8", "G": "6",
+    "T": "7", "A": "4", "E": "3"
+})
+
+
+def clean_epic(raw):
+    if not raw:
         return ""
-    compact = re.sub(r"[^A-Z0-9/]", "", text.upper().replace("\\", "/"))
-    # Legacy state formats: e.g. RJ/01/02/001234, UP/01/02/001234, MP/..., HR/...
-    legacy = re.search(r"([A-Z]{2,3})/([0-9O]{1,3})/([0-9O]{1,3})/([0-9O]{5,6})", compact)
-    if legacy:
-        prefix = legacy.group(1)
-        if prefix.startswith("R"):
-            prefix = "RJ"
-        return "{}/{}/{}/{}".format(
-            prefix,
-            legacy.group(2).replace("O", "0"),
-            legacy.group(3).replace("O", "0"),
-            legacy.group(4).replace("O", "0"),
+    compact = re.sub(r"[^A-Za-z0-9/]", "", str(raw)).upper()
+
+    # 1. Legacy format: RJ/xx/xxx/xxxxxx
+    m_leg = re.search(r"(RJ|[A-Z]{2,3})/([0-9O]{1,3})/([0-9O]{1,3})/([0-9O]{5,6})", compact)
+    if m_leg:
+        p1 = "RJ" if m_leg.group(1).startswith("R") else m_leg.group(1)
+        return (
+            p1 + "/" +
+            m_leg.group(2).replace("O", "0") + "/" +
+            m_leg.group(3).replace("O", "0") + "/" +
+            m_leg.group(4).replace("O", "0")
         )
 
-    legacy_parts = re.search(r"[A-Z0-9]{0,3}/([0-9O]{1,3})/([0-9O]{1,3})/([0-9O]{5,6})", compact)
-    if legacy_parts:
-        return "RJ/{}/{}/{}".format(
-            legacy_parts.group(1).replace("O", "0"),
-            legacy_parts.group(2).replace("O", "0"),
-            legacy_parts.group(3).replace("O", "0"),
-        )
+    # 2. Known 4-character prefix misreads followed by 7 digits (e.g. SSN31949700 -> SNE + 1949700)
+    for p4, repl in PREFIX_CORRECTIONS.items():
+        if len(p4) == 4:
+            m4 = re.search(re.escape(p4) + r"([0-9OQDILLZSBGTAE]{7})", compact)
+            if m4:
+                s = m4.group(1).translate(DIGIT_MAP)
+                if len(s) == 7 and s.isdigit():
+                    return repl + s
 
-    letter_map = str.maketrans({"0": "O", "1": "I", "2": "Z", "4": "A", "5": "S", "6": "G", "7": "T", "8": "B", "3": "E"})
-    digit_map = str.maketrans({"O": "0", "Q": "0", "D": "0", "I": "1", "L": "1", "Z": "2", "S": "5", "B": "8", "G": "6", "T": "7", "A": "4", "E": "3"})
+    # 3. Known 3-character prefixes (KDY, SNE, KOV, etc.) followed by 7 digits anywhere
+    for p3, repl in PREFIX_CORRECTIONS.items():
+        if len(p3) == 3:
+            m3 = re.search(re.escape(p3) + r"([0-9OQDILLZSBGTAE]{7})", compact)
+            if m3:
+                s = m3.group(1).translate(DIGIT_MAP)
+                if len(s) == 7 and s.isdigit():
+                    return repl + s
 
-    # Standard 10-character EPIC codes (e.g., ZBY1234567, TWB1234567, RWR1234567, UPX1234567)
-    for value in re.findall(r"[A-Z0-9]{10}", compact):
-        prefix = value[:3]
-        if prefix == "KOY":
-            prefix = "KDY"
-        suffix = value[3:].translate(digit_map)
-        if re.fullmatch(r"[A-Z]{3}", prefix) and re.fullmatch(r"[0-9]{7}", suffix):
-            return prefix + suffix
-        translated_prefix = prefix.translate(letter_map)
-        if translated_prefix == "KOY":
-            translated_prefix = "KDY"
-        if re.fullmatch(r"[A-Z]{3}", translated_prefix) and re.fullmatch(r"[0-9]{7}", suffix):
-            return translated_prefix + suffix
+    # 4. Standard 3 uppercase letters followed by 7 digits anywhere
+    m_std = re.search(r"([A-Z]{3})([0-9OQDILLZSBGTAE]{7})", compact)
+    if m_std:
+        p = m_std.group(1)
+        if p in PREFIX_CORRECTIONS:
+            p = PREFIX_CORRECTIONS[p]
+        s = m_std.group(2).translate(DIGIT_MAP)
+        if re.fullmatch(r"[A-Z]{3}", p) and re.fullmatch(r"[0-9]{7}", s):
+            return p + s
 
-    # Candidate with slash or 3-letter + 7-digit misreads
-    for value in re.findall(r"[A-Z0-9]{3}/?[A-Z0-9]{7}", compact):
-        clean_v = re.sub(r"[^A-Z0-9]", "", value)
-        if len(clean_v) == 10:
-            prefix = clean_v[:3]
-            if prefix == "KOY":
-                prefix = "KDY"
-            suffix = clean_v[3:].translate(digit_map)
-            if re.fullmatch(r"[A-Z]{3}", prefix) and re.fullmatch(r"[0-9]{7}", suffix):
-                return prefix + suffix
-            translated_prefix = prefix.translate(letter_map)
-            if translated_prefix == "KOY":
-                translated_prefix = "KDY"
-            if re.fullmatch(r"[A-Z]{3}", translated_prefix) and re.fullmatch(r"[0-9]{7}", suffix):
-                return translated_prefix + suffix
     return ""
+
+
+def epic_from(text):
+    return clean_epic(text)
 
 
 def ocr_epic(card, reference=""):
     height, width = card.shape[:2]
-    regions = [
-        card[0:round(height * 0.35), round(width * 0.45):width],
-        card[0:round(height * 0.35), 0:width],
-    ]
-    candidates = []
-    for region in regions:
-        if region.size == 0:
-            continue
-        gray = cv2.cvtColor(region, cv2.COLOR_BGR2GRAY)
-        for fx in (1.5, 2.0):
-            res = cv2.resize(gray, None, fx=fx, fy=fx, interpolation=cv2.INTER_CUBIC)
-            clahe = cv2.createCLAHE(2.0, (8, 8)).apply(res)
-            for variant in (clahe, res):
-                for psm in (6, 7):
-                    try:
-                        text = safe_image_to_string(
-                            variant,
-                            lang="eng",
-                            config=f"--psm {psm} -c tessedit_char_whitelist=ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789/",
-                        )
-                    except Exception:
-                        continue
-                    value = epic_from(text)
-                    if not value:
-                        continue
-                    candidates.append(value)
-                    if reference and value == reference:
-                        return reference, True
-                    if not reference and candidates.count(value) >= 2:
-                        return value, True
-    if not candidates:
-        return reference, False
-    counts = {}
-    for candidate in candidates:
-        counts[candidate] = counts.get(candidate, 0) + 1
-    winner, support = max(counts.items(), key=lambda item: item[1])
-    if reference and winner != reference and support < 2:
-        return reference, False
-    return winner, support >= 2
+    # Precise ROI: strictly top-right area above voter photo
+    crop = card[0:round(height * 0.26), round(width * 0.48):width]
+    if crop.size == 0:
+        return "", False
+
+    gray = cv2.cvtColor(crop, cv2.COLOR_BGR2GRAY)
+    res = cv2.resize(gray, None, fx=3.0, fy=3.0, interpolation=cv2.INTER_CUBIC)
+    pad = cv2.copyMakeBorder(res, 15, 15, 15, 15, cv2.BORDER_CONSTANT, value=255)
+
+    whitelist_cfg = "-c tessedit_char_whitelist=ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789/"
+    cfg7 = f"--psm 7 {whitelist_cfg}"
+    cfg6 = f"--psm 6 {whitelist_cfg}"
+
+    # Pass 1: Raw padded with PSM 7 (fastest & most accurate for single line)
+    t1 = safe_image_to_string(pad, lang="eng", config=cfg7)
+    e1 = clean_epic(t1)
+    if e1 and (e1.startswith("KDY") or e1.startswith("SNE") or e1.startswith("RJ/")):
+        return e1, True
+
+    # Pass 2: Raw padded with PSM 6
+    t2 = safe_image_to_string(pad, lang="eng", config=cfg6)
+    e2 = clean_epic(t2)
+    if e2 and (e2.startswith("KDY") or e2.startswith("SNE") or e2.startswith("RJ/")):
+        return e2, True
+
+    # Pass 3: CLAHE with PSM 7 & 6
+    clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8)).apply(pad)
+    t3 = safe_image_to_string(clahe, lang="eng", config=cfg7)
+    e3 = clean_epic(t3)
+    if e3:
+        return e3, True
+    t4 = safe_image_to_string(clahe, lang="eng", config=cfg6)
+    e4 = clean_epic(t4)
+    if e4:
+        return e4, True
+
+    # Pass 4: Otsu threshold
+    _, otsu = cv2.threshold(pad, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+    t5 = safe_image_to_string(otsu, lang="eng", config=cfg7)
+    e5 = clean_epic(t5)
+    if e5:
+        return e5, True
+
+    winner = e1 or e2 or clean_epic(t1) or clean_epic(t2)
+    if winner:
+        return winner, False
+
+    # Wider crop fallback if card header was slightly displaced
+    wider = card[0:round(height * 0.30), round(width * 0.42):width]
+    if wider.size > 0:
+        w_gray = cv2.cvtColor(wider, cv2.COLOR_BGR2GRAY)
+        w_res = cv2.resize(w_gray, None, fx=2.5, fy=2.5, interpolation=cv2.INTER_CUBIC)
+        w_pad = cv2.copyMakeBorder(w_res, 15, 15, 15, 15, cv2.BORDER_CONSTANT, value=255)
+        w_txt = safe_image_to_string(w_pad, lang="eng", config=cfg7)
+        w_epic = clean_epic(w_txt)
+        if w_epic:
+            return w_epic, False
+
+    return reference, False
 def ocr_name_focused(card):
     """Dedicated focused ROI crop pass for voter name line only."""
     height, width = card.shape[:2]
@@ -1239,28 +1265,19 @@ def _process_single_card(args):
     gray_res = cv2.resize(gray_clahe, None, fx=1.5, fy=1.5, interpolation=cv2.INTER_CUBIC)
     text = safe_image_to_string(gray_res, lang=os.getenv("OCR_LANGUAGES", "hin+eng"), config="--psm 6")
 
-    epic_region = card[0:round(h * 0.32), round(w * 0.40):w]
-    epic_gray = cv2.cvtColor(epic_region, cv2.COLOR_BGR2GRAY)
-    epic_clahe = clahe.apply(epic_gray)
-    epic_gray_res = cv2.resize(epic_clahe, None, fx=1.5, fy=1.5, interpolation=cv2.INTER_CUBIC)
-    epic_text = safe_image_to_string(epic_gray_res, lang="eng", config="--psm 6")
+    # 1. Dedicated high-accuracy EPIC extraction (single-line, 3x scale, padded, multi-pass)
+    focused_epic, epic_ok = ocr_epic(card, reference="")
+    rec = parse_card(text, focused_epic, photo_path, page_no, cell_no, card_path=card_path)
 
-    # 1. Parse initial fields from card text and dedicated EPIC region
-    candidate_epic = epic_from(epic_text) or epic_from(text)
-    rec = parse_card(text, epic_text, photo_path, page_no, cell_no, card_path=card_path)
-
-    # 2. Fast EPIC: if candidate_epic is already valid, use it directly (saves 4-6 OCR passes per card)
-    if candidate_epic and valid_epic(candidate_epic):
-        rec["voterId"] = candidate_epic
-        rec["epicConfidence"] = 95
+    # 2. Assign high-accuracy EPIC
+    if focused_epic and valid_epic(focused_epic):
+        rec["voterId"] = focused_epic
+        rec["epicConfidence"] = 98 if epic_ok else 90
     else:
-        focused_epic, epic_ok = ocr_epic(card, reference="")
-        if focused_epic and valid_epic(focused_epic):
-            rec["voterId"] = focused_epic
-            rec["epicConfidence"] = 95
-        elif candidate_epic:
-            rec["voterId"] = candidate_epic
-            rec["epicConfidence"] = 70
+        cand = epic_from(text)
+        if cand and valid_epic(cand):
+            rec["voterId"] = cand
+            rec["epicConfidence"] = 75
 
     # 3. Fast House: only run focused ocr_house if missing or empty
     if not rec.get("houseNumber") or str(rec.get("houseNumber")).strip() in ("", "-", "0"):
@@ -1321,19 +1338,12 @@ def process_card_image(card_path):
     gray = cv2.cvtColor(card, cv2.COLOR_BGR2GRAY)
     clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
     text = safe_image_to_string(cv2.resize(clahe.apply(gray), None, fx=1.5, fy=1.5, interpolation=cv2.INTER_CUBIC), lang=os.getenv("OCR_LANGUAGES", "hin+eng"), config="--psm 6")
-    epic_region = card[0:round(height * 0.32), round(width * 0.40):width]
-    epic_text = safe_image_to_string(cv2.resize(clahe.apply(cv2.cvtColor(epic_region, cv2.COLOR_BGR2GRAY)), None, fx=1.5, fy=1.5, interpolation=cv2.INTER_CUBIC), lang="eng", config="--psm 6")
     focused_house = ocr_house(card, card_full_text=text)
     focused_age = ocr_age(card, card_full_text=text)
     focused_serial, serial_disagreement = ocr_serial(card, card_full_text=text)
-    candidate_epic = epic_from(epic_text)
-    focused_epic, epic_ok = ocr_epic(card, reference=candidate_epic if (candidate_epic and valid_epic(candidate_epic)) else "")
-    if not focused_epic:
-        if candidate_epic and valid_epic(candidate_epic):
-            focused_epic = candidate_epic
-            epic_ok = True
+    focused_epic, epic_ok = ocr_epic(card, reference="")
 
-    record = parse_card(text, epic_text, "", 1, 0, focused_house=focused_house, card_path=str(card_path))
+    record = parse_card(text, focused_epic, "", 1, 0, focused_house=focused_house, card_path=str(card_path))
 
     parsed_name = record.get("name") or ""
     parsed_guardian = record.get("guardianName") or ""
@@ -1370,7 +1380,6 @@ def process_card_image(card_path):
             record["gender"] = g_val
 
     validate_record(record)
-    report_card_progress(page_no, cell_no)
     return record
 
 
@@ -1477,6 +1486,29 @@ def process_page(page_path, output_dir, page_no):
             record["rawVoterId"] = epic
             record["voterId"] = match.group(1) + match.group(2)[:-2]
             record["epicConfidence"] = min(int(record.get("epicConfidence") or 90), 95)
+
+    # Page-level EPIC prefix consensus:
+    # Rolls typically use 1 or 2 dominant prefixes (e.g. KDY, SNE). Correct isolated single-char misreads.
+    prefix_counts = {}
+    for r in records:
+        vid = str(r.get("voterId") or "").strip()
+        if len(vid) == 10 and vid[:3].isalpha() and vid[3:].isdigit():
+            p = vid[:3]
+            prefix_counts[p] = prefix_counts.get(p, 0) + 1
+
+    dominant_prefixes = [p for p, count in prefix_counts.items() if count >= 2]
+    if dominant_prefixes:
+        for r in records:
+            vid = str(r.get("voterId") or "").strip()
+            if len(vid) == 10 and vid[3:].isdigit() and vid[:3].isalpha():
+                p = vid[:3]
+                if p not in dominant_prefixes:
+                    for dom in dominant_prefixes:
+                        diffs = sum(1 for a, b in zip(p, dom) if a != b)
+                        if diffs == 1:
+                            r["voterId"] = dom + vid[3:]
+                            r["epicConfidence"] = 95
+                            break
 
     records = smooth_house_numbers(ordered_records)
     records = reconcile_family_tree_houses(records)
