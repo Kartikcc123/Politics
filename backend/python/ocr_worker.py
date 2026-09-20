@@ -495,9 +495,12 @@ def ocr_serial(card, card_full_text=""):
         s_res = cv2.resize(s_gray, None, fx=3.5, fy=3.5, interpolation=cv2.INTER_CUBIC)
         s_pad = cv2.copyMakeBorder(s_res, 15, 15, 15, 15, cv2.BORDER_CONSTANT, value=255)
         s_clahe = cv2.createCLAHE(3.0, (8, 8)).apply(s_pad)
-        txt = safe_image_to_string(s_clahe, lang="eng", config="--psm 7 -c tessedit_char_whitelist=0123456789").strip()
-        if txt and txt.isdigit() and 1 <= int(txt) <= 99999:
-            return txt, False
+        for psm in (6, 7):
+            txt = safe_image_to_string(s_clahe, lang="eng", config=f"--psm {psm} -c tessedit_char_whitelist=0123456789").strip()
+            if txt and txt.isdigit() and 1 <= int(txt) <= 99999:
+                candidates.append(txt)
+        if any(len(c) >= 2 for c in candidates):
+            return max(candidates, key=len), False
 
     # 2. Dedicated serial box region (x: 0.0..0.42, y: 0.0..0.28)
     region = card[0:round(height * 0.28), 0:round(width * 0.42)]
@@ -595,78 +598,72 @@ def ocr_gender(card):
 
 def ocr_age(card, card_full_text=""):
     """Retry only the printed age row; never infer an age from nearby fields."""
-    height, width = card.shape[:2]
-    # Widen Age ROI (x: 0.0 to 0.70, y: 0.50 to 0.95) to capture age digits reliably
-    region = card[
-        round(height * 0.50):round(height * 0.95),
-        0:round(width * 0.70),
-    ]
-    candidates = []
-    if region.size > 0:
-        gray = cv2.cvtColor(region, cv2.COLOR_BGR2GRAY)
-        gray = cv2.resize(gray, None, fx=2.0, fy=2.0, interpolation=cv2.INTER_CUBIC)
-        variants = [
-            cv2.createCLAHE(3.0, (8, 8)).apply(gray),
-            cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)[1],
-            gray,
-        ]
-        for variant in variants:
-            for psm in (7, 6, 11):
-                try:
-                    text = safe_image_to_string(variant, lang="eng", config=f"--psm {psm} -c tessedit_char_whitelist=0123456789")
-                    found = [int(value) for value in re.findall(r"\b\d{2}\b", text) if 18 <= int(value) <= 120]
-                    candidates.extend(found)
-                    if any(candidates.count(c) >= 2 for c in set(candidates)):
-                        break
-                except Exception:
-                    pass
-            if any(candidates.count(c) >= 2 for c in set(candidates)):
-                break
-
-    if not candidates and card_full_text:
-        match = re.search(r"(?:उम्र|उप्र|आयु|Age|3म्र|34)[^\d\n]{0,15}([0-9०-९]{2})", card_full_text, re.IGNORECASE)
+    # 1. Primary: Context-bound age directly from labeled card text
+    if card_full_text:
+        # Repair glyph 1 misrecognitions like 3], 2], 3|
+        repaired_text = re.sub(
+            r"([0-9०-९])([\]\|!IliI\)])(?=\s*(?:लिंग|महिला|पुरुष|$|\n))",
+            r"\g<1>1",
+            card_full_text,
+        )
+        match = re.search(
+            r"(?:उम्र|उप्र|आयु|Age|3म्र|34)[^\d\n]{0,15}([0-9०-९]{2})",
+            repaired_text,
+            re.IGNORECASE,
+        )
         if match:
             val = match.group(1).translate(str.maketrans("०१२३४५६७८९", "0123456789"))
             if val.isdigit() and 18 <= int(val) <= 120:
-                candidates.append(int(val))
-    if not candidates:
-        line = card[
-            round(height * 0.50):round(height * 0.88),
-            0:round(width * 0.55),
-        ]
+                return int(val)
+
+    # Check if text had only a single leading digit e.g. 'उम्र : 6' or 'उम्र : 8'
+    prefix_digit = ""
+    if card_full_text:
+        m1 = re.search(
+            r"(?:उम्र|उप्र|आयु|Age|3म्र|34)[^\d\n]{0,15}([1-9०-९])(?=\s*(?:लिंग|महिला|पुरुष|$|\n))",
+            card_full_text,
+            re.IGNORECASE,
+        )
+        if m1:
+            prefix_digit = m1.group(1).translate(str.maketrans("०१२३४५६७८९", "0123456789"))
+
+    height, width = card.shape[:2]
+    # Age row is line 4 of the card body (y: 0.58..0.76, x: 0..0.55)
+    row = card[round(height * 0.58):round(height * 0.76), 0:round(width * 0.55)]
+    if row.size > 0:
+        gray = cv2.cvtColor(row, cv2.COLOR_BGR2GRAY)
+        res = cv2.resize(gray, None, fx=2.5, fy=2.5, interpolation=cv2.INTER_CUBIC)
+        pad = cv2.copyMakeBorder(res, 10, 10, 10, 10, cv2.BORDER_CONSTANT, value=255)
+        try:
+            txt = safe_image_to_string(pad, lang="eng", config="--psm 6 -c tessedit_char_whitelist=0123456789:").strip()
+            matches = [int(x) for x in re.findall(r"\b[1-9][0-9]\b", txt) if 18 <= int(x) <= 120]
+            if prefix_digit:
+                matching = [x for x in matches if str(x).startswith(prefix_digit)]
+                if matching:
+                    return matching[0]
+            elif matches:
+                return matches[-1]
+        except Exception:
+            pass
+
+    # 3. Fallback: hin+eng on age line
+    line = card[round(height * 0.50):round(height * 0.88), 0:round(width * 0.55)]
+    if line.size > 0:
         line_gray = cv2.cvtColor(line, cv2.COLOR_BGR2GRAY)
-        line_gray = cv2.resize(line_gray, None, fx=1.5, fy=1.5, interpolation=cv2.INTER_CUBIC)
-        line_variants = [
-            cv2.createCLAHE(3.0, (8, 8)).apply(line_gray),
-            cv2.threshold(line_gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)[1],
-        ]
-        for variant in line_variants:
+        line_res = cv2.resize(line_gray, None, fx=1.8, fy=1.8, interpolation=cv2.INTER_CUBIC)
+        clahe = cv2.createCLAHE(2.0, (8, 8)).apply(line_res)
+        for var in (clahe, line_res):
             for psm in (6, 11):
                 try:
-                    text = safe_image_to_string(variant, lang="hin+eng", config=f"--psm {psm}")
+                    text = safe_image_to_string(var, lang="hin+eng", config=f"--psm {psm}")
+                    m = re.search(r"(?:उम्र|उप्र|आयु|Age)?[^\d\n]*?([1-9][0-9])(?=\s*(?:लिंग|महिला|पुरुष|वर्ष|:))", text)
+                    if m and 18 <= int(m.group(1)) <= 120:
+                        return int(m.group(1))
                 except Exception:
-                    continue
-                match = re.search(r"(?:उम्र|उप्र|आयु|Age|3म्र|34)[^\d\n]{0,12}([0-9०-९]{1,3})", text, re.IGNORECASE)
-                if not match:
-                    # Fallback match: grab age numbers preceding 'लिंग' or 'महिला'/'पुरुष' or pattern like '31:' or '31)'
-                    match = re.search(r"(?:उम्र|उप्र|आयु|Age)?[^\d\n]*?([1-9][0-9])\s*[:;\)\|\}](?=\s*(?:लिंग|महिला|पुरुष|कि|Al))", text, re.IGNORECASE)
-                if not match:
-                    match = re.search(r"(?<!\d)([1-9][0-9])(?=\s*(?:लिंग|महिला|पुरुष|वर्ष))", text, re.IGNORECASE)
-                if not match:
-                    continue
-                raw_target = match.group(1)
-                clean_raw_age = re.sub(r"[\]\|।:;\-\s]", "", raw_target)
-                value = clean(clean_raw_age).translate(
-                    str.maketrans("०१२३४५६७८९", "0123456789")
-                )
-                digits = "".join(re.findall(r"\d", value))
-                if digits.isdigit() and 18 <= int(digits) <= 120:
-                    candidates.append(int(digits))
-    if not candidates:
-        return None
-    counts = {value: candidates.count(value) for value in set(candidates)}
-    winner, support = max(counts.items(), key=lambda item: item[1])
-    return winner if (support >= 2 or (len(candidates) >= 1 and 18 <= winner <= 120)) else None
+                    pass
+    return None
+
+
 
 
 def field(text, pattern):
