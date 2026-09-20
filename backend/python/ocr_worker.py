@@ -8,6 +8,7 @@ if hasattr(sys.stdout, 'reconfigure'):
 if hasattr(sys.stdin, 'reconfigure'):
     sys.stdin.reconfigure(encoding='utf-8')
 import unicodedata
+from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
 from difflib import SequenceMatcher
 from pathlib import Path
@@ -176,7 +177,7 @@ def clean_person_name(value):
     text = re.sub(r"(?<=\u0900-\u097F)ताम\b", "राम", text)
     text = re.sub(r"\bकुमारr\b|\bकुभार\b|\bकुसार\b|\bकुनार\b|\bकुभारr\b", "कुमार", text)
     text = re.sub(r"\bदेबी\b", "देवी", text)
-    text = re.sub(r"\bगोर्धघन\b|\bगोवर्धण\b", "गोवर्धन", text)
+    text = re.sub(r"\bगोर्धघन\b|\bगोवर्धण\b|\bगोर्चन\b", "गोर्धन", text)
     text = re.sub(r"(?<=\u0900-\u097F)चित्\b|(?<=\u0900-\u097F)चन्त\b|(?<=\u0900-\u097F)चन्च\b", "चन्द", text)
     text = re.sub(r"\bप्रिाप\b|\bप्रिा\b|\bप्रताश\b", "प्रताप", text)
     text = re.sub(r"\bकन्द्रया\b|\bकन्हेया\b", "कन्हैया", text)
@@ -210,6 +211,7 @@ try:
         with open(dict_file_path, "r", encoding="utf-8") as f:
             data = json.load(f)
             HINDI_NAME_DICT = set(data.get("names", []))
+    HINDI_NAME_DICT.update(["नारायण", "सांवरी", "सांयरी", "गोर्धन", "गोवर्धन", "डूगां", "डूंगर", "माधू"])
 # Loaded Master Hindi Voter Name Dictionary
 except Exception:
     pass
@@ -235,6 +237,11 @@ def correct_name_with_dictionary(name_text):
         len_tok = len(clean_tok)
         candidates = [w for w in HINDI_NAME_DICT if abs(len(w) - len_tok) <= 1 and w[0] == clean_tok[0]]
         for candidate in candidates:
+            # Protect gender matras: never replace if ending in 'ी' or 'ा' differs
+            if clean_tok.endswith("ी") != candidate.endswith("ी"):
+                continue
+            if clean_tok.endswith("ा") != candidate.endswith("ा"):
+                continue
             r = SequenceMatcher(None, clean_tok, candidate).ratio()
             if r > best_ratio:
                 best_ratio = r
@@ -347,7 +354,7 @@ def ocr_house(card, card_full_text=None):
     
     house_label_pattern = (
         r"(?:"
-        r"(?:गृह|गह|गुह|ग्ह|गृ|गृ\.|गृ०|मकान|House|H\.?No|Te|ye|Hea|Hen|Ge|\S*ह|\S*स)\s*(?:संख्या|सख्या|सं\.?|सं०|नं\.?|क्र\.?|Number|No\.?)?"
+        r"(?:गृह|गह|गुह|ग्ह|गृ|गृ\.|गृ०|मकान|House|H\.?No|Te|ye|Hea|Hen|Ge)\s*(?:संख्या|सख्या|सं\.?|सं०|नं\.?|क्र\.?|Number|No\.?)?"
         r"|(?:संख्या|सख्या|सं\.?|सं०|नं\.?)\s*"
         r")\s*[:：;\-।|!.]?\s*([^\n]+)"
     )
@@ -368,25 +375,28 @@ def ocr_house(card, card_full_text=None):
     gray = cv2.cvtColor(region, cv2.COLOR_BGR2GRAY)
     
     # 1. Primary English Digit Detection:
-    # Dedicated English digit OCR on word bounding boxes within the house number row.
-    # Eliminates Devanagari font confusion (such as Tesseract misreading thin '11' as '77' or '44')
-    # directly from image pixels without ANY arbitrary digit mutation rules.
+    # Check Otsu binary threshold first (crisp digits), followed by grayscale.
+    # Eliminates Devanagari font confusion (such as Tesseract misreading thin '01' as '04' or '1' as '7')
     eng_candidates = []
     try:
-        res_eng = cv2.resize(gray, None, fx=2.0, fy=2.0, interpolation=cv2.INTER_CUBIC)
-        data = pytesseract.image_to_data(res_eng, lang="eng", config="--psm 6", output_type=pytesseract.Output.DICT)
-        h_box, w_box = res_eng.shape[:2]
-        for i in range(len(data['text'])):
-            txt = data['text'][i].strip()
-            if not txt:
-                continue
-            top = data['top'][i]
-            left = data['left'][i]
-            # House row is in upper half of region (above Age row), right of Hindi label
-            if top < h_box * 0.55 and left >= w_box * 0.18:
-                c = clean_house(txt)
-                if c and any(ch.isdigit() for ch in c):
-                    eng_candidates.append(c)
+        _, thresh = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+        for img_variant in [thresh, gray]:
+            res_eng = cv2.resize(img_variant, None, fx=2.0, fy=2.0, interpolation=cv2.INTER_CUBIC)
+            data = pytesseract.image_to_data(res_eng, lang="eng", config="--psm 6", output_type=pytesseract.Output.DICT)
+            h_box, w_box = res_eng.shape[:2]
+            for i in range(len(data['text'])):
+                txt = data['text'][i].strip()
+                if not txt:
+                    continue
+                top = data['top'][i]
+                left = data['left'][i]
+                # House row is in upper half of region (above Age row), right of Hindi label
+                if top < h_box * 0.55 and left >= w_box * 0.18:
+                    c = clean_house(txt)
+                    if c and any(ch.isdigit() for ch in c):
+                        eng_candidates.append(c)
+            if eng_candidates:
+                break
     except Exception:
         pass
 
@@ -745,39 +755,31 @@ def ocr_epic(card, reference=""):
     cfg7 = f"--psm 7 {whitelist_cfg}"
     cfg6 = f"--psm 6 {whitelist_cfg}"
 
-    # Pass 1: Raw padded with PSM 7 (fastest & most accurate for single line)
-    t1 = safe_image_to_string(pad, lang="eng", config=cfg7)
-    e1 = clean_epic(t1)
-    if e1 and (e1.startswith("KDY") or e1.startswith("SNE") or e1.startswith("RJ/")):
-        return e1, True
+    cands = []
+    # 1. Raw padded with PSM 7 & 6
+    for cfg in (cfg7, cfg6):
+        c = clean_epic(safe_image_to_string(pad, lang="eng", config=cfg))
+        if c and valid_epic(c):
+            cands.append(c)
 
-    # Pass 2: Raw padded with PSM 6
-    t2 = safe_image_to_string(pad, lang="eng", config=cfg6)
-    e2 = clean_epic(t2)
-    if e2 and (e2.startswith("KDY") or e2.startswith("SNE") or e2.startswith("RJ/")):
-        return e2, True
-
-    # Pass 3: CLAHE with PSM 7 & 6
+    # 2. CLAHE with PSM 7 & 6
     clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8)).apply(pad)
-    t3 = safe_image_to_string(clahe, lang="eng", config=cfg7)
-    e3 = clean_epic(t3)
-    if e3:
-        return e3, True
-    t4 = safe_image_to_string(clahe, lang="eng", config=cfg6)
-    e4 = clean_epic(t4)
-    if e4:
-        return e4, True
+    for cfg in (cfg7, cfg6):
+        c = clean_epic(safe_image_to_string(clahe, lang="eng", config=cfg))
+        if c and valid_epic(c):
+            cands.append(c)
 
-    # Pass 4: Otsu threshold
+    # 3. Otsu threshold with PSM 7 & 6
     _, otsu = cv2.threshold(pad, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-    t5 = safe_image_to_string(otsu, lang="eng", config=cfg7)
-    e5 = clean_epic(t5)
-    if e5:
-        return e5, True
+    for cfg in (cfg7, cfg6):
+        c = clean_epic(safe_image_to_string(otsu, lang="eng", config=cfg))
+        if c and valid_epic(c):
+            cands.append(c)
 
-    winner = e1 or e2 or clean_epic(t1) or clean_epic(t2)
-    if winner:
-        return winner, False
+    if cands:
+        counts = Counter(cands)
+        winner, most = counts.most_common(1)[0]
+        return winner, True
 
     # Wider crop fallback if card header was slightly displaced
     wider = card[0:round(height * 0.30), round(width * 0.42):width]
@@ -871,7 +873,7 @@ def parse_card(text, epic_text, photo_path, page_no, cell_no, focused_house="", 
     husband = clean_person_name(raw_husband)
     mother = clean_person_name(raw_mother)
     raw_house = clean_house(
-        field(text, r"(?:(?:गृह|गह|गुह|ग्ह|गृ|गृ\.|गृ०|मकान|House|H\.?No|Te|ye|Hea|Hen|Ge|\S*ह|\S*स)\s*(?:संख्या|सख्या|सं\.?|सं०|नं\.?|क्र\.?|Number|No\.?)?|(?:संख्या|सख्या|सं\.?|सं०|नं\.?)\s*)[:：;\-।|!.]?\s*([^\n]+)")
+        field(text, r"(?:(?:गृह|गह|गुह|ग्ह|गृ|गृ\.|गृ०|मकान|House|H\.?No|Te|ye|Hea|Hen|Ge)\s*(?:संख्या|सख्या|सं\.?|सं०|नं\.?|क्र\.?|Number|No\.?)?|(?:संख्या|सख्या|सं\.?|सं०|नं\.?)\s*)[:：;\-।|!.]?\s*([^\n]+)")
     )
     if focused_house:
         house = focused_house
@@ -1303,13 +1305,13 @@ def _process_single_card(args):
         b_gray = cv2.cvtColor(body_crop, cv2.COLOR_BGR2GRAY)
         b_res = cv2.resize(b_gray, None, fx=1.8, fy=1.8, interpolation=cv2.INTER_CUBIC)
         b_clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8)).apply(b_res)
-        text = safe_image_to_string(b_clahe, lang=os.getenv("OCR_LANGUAGES", "hin+eng"), config="--psm 6")
+        text = safe_image_to_string(b_clahe, lang="hin", config="--psm 6")
     else:
         gray = cv2.cvtColor(card, cv2.COLOR_BGR2GRAY)
         clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
         gray_clahe = clahe.apply(gray)
         gray_res = cv2.resize(gray_clahe, None, fx=1.5, fy=1.5, interpolation=cv2.INTER_CUBIC)
-        text = safe_image_to_string(gray_res, lang=os.getenv("OCR_LANGUAGES", "hin+eng"), config="--psm 6")
+        text = safe_image_to_string(gray_res, lang="hin", config="--psm 6")
 
     # 1. Dedicated high-accuracy EPIC extraction (single-line, 3x scale, padded, multi-pass)
     focused_epic, epic_ok = ocr_epic(card, reference="")
@@ -1325,18 +1327,18 @@ def _process_single_card(args):
             rec["voterId"] = cand
             rec["epicConfidence"] = 75
 
-    # 3. Fast House: only run focused ocr_house if missing or empty
-    if not rec.get("houseNumber") or str(rec.get("houseNumber")).strip() in ("", "-", "0"):
-        focused_house = ocr_house(card, card_full_text=text)
-        if focused_house:
-            rec["houseNumber"] = focused_house
+    # 3. Dedicated House: prioritize focused_house (Otsu threshold digits) over full-text
+    focused_house = ocr_house(card, card_full_text=text)
+    if focused_house:
+        rec["houseNumber"] = focused_house
 
-    # 4. Fast Age: only run focused ocr_age if missing or out of valid voter range
+    # 4. Dedicated Age: prioritize focused_age from Age bounding box
+    focused_age = ocr_age(card, card_full_text=text)
     r_age = rec.get("age")
-    if r_age is None or not (18 <= r_age <= 120):
-        focused_age = ocr_age(card, card_full_text=text)
-        if focused_age:
-            rec["age"] = focused_age
+    if focused_age and 18 <= focused_age <= 120:
+        rec["age"] = focused_age
+    elif r_age and 18 <= r_age <= 120:
+        rec["age"] = r_age
 
     # 5. Dedicated Serial: top-left box
     focused_serial, serial_disagreement = ocr_serial(card, card_full_text=text)
@@ -1389,17 +1391,19 @@ def process_card_image(card_path):
         b_gray = cv2.cvtColor(body_crop, cv2.COLOR_BGR2GRAY)
         b_res = cv2.resize(b_gray, None, fx=1.8, fy=1.8, interpolation=cv2.INTER_CUBIC)
         b_clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8)).apply(b_res)
-        text = safe_image_to_string(b_clahe, lang=os.getenv("OCR_LANGUAGES", "hin+eng"), config="--psm 6")
+        text = safe_image_to_string(b_clahe, lang="hin", config="--psm 6")
     else:
         gray = cv2.cvtColor(card, cv2.COLOR_BGR2GRAY)
         clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
-        text = safe_image_to_string(cv2.resize(clahe.apply(gray), None, fx=1.5, fy=1.5, interpolation=cv2.INTER_CUBIC), lang=os.getenv("OCR_LANGUAGES", "hin+eng"), config="--psm 6")
+        text = safe_image_to_string(cv2.resize(clahe.apply(gray), None, fx=1.5, fy=1.5, interpolation=cv2.INTER_CUBIC), lang="hin", config="--psm 6")
     focused_house = ocr_house(card, card_full_text=text)
     focused_age = ocr_age(card, card_full_text=text)
     focused_serial, serial_disagreement = ocr_serial(card, card_full_text=text)
     focused_epic, epic_ok = ocr_epic(card, reference="")
 
     record = parse_card(text, focused_epic, "", 1, 0, focused_house=focused_house, card_path=str(card_path))
+    if focused_house:
+        record["houseNumber"] = focused_house
 
     parsed_name = record.get("name") or ""
     parsed_guardian = record.get("guardianName") or ""
@@ -1416,12 +1420,10 @@ def process_card_image(card_path):
             record["identityOcrDisagreement"] = True
 
     r_age = record.get("age")
-    if r_age is None or r_age == "":
-        if focused_age:
-            record["age"] = focused_age
-    elif focused_age and focused_age != r_age:
-        if (r_age % 10 == 7 and focused_age % 10 == 1 and r_age // 10 == focused_age // 10):
-            record["age"] = focused_age
+    if focused_age and 18 <= focused_age <= 120:
+        record["age"] = focused_age
+    elif r_age and 18 <= r_age <= 120:
+        record["age"] = r_age
     record["voterSerial"] = focused_serial
     record["voterSerialConfidence"] = 95 if focused_serial else 0
     if serial_disagreement or not focused_serial:
@@ -2301,6 +2303,27 @@ def parse_header_numbers(text):
     }
 
 
+def reconcile_card_epics(records):
+    """Normalize old-format EPIC constituency codes (e.g. RJ/20/161/ -> RJ/20/151/) by document consensus."""
+    prefix_counts = {}
+    for r in records:
+        v_id = str(r.get("voterId") or "").strip()
+        m = re.match(r"^(RJ/\d+/)\d+/", v_id)
+        if m:
+            full_m = re.match(r"^(RJ/\d+/\d+/)", v_id)
+            if full_m:
+                pfx = full_m.group(1)
+                prefix_counts[pfx] = prefix_counts.get(pfx, 0) + 1
+    if prefix_counts:
+        dominant_prefix, count = max(prefix_counts.items(), key=lambda x: x[1])
+        base_prefix = dominant_prefix[: dominant_prefix.rindex("/")].rsplit("/", 1)[0] + "/"
+        for r in records:
+            v_id = str(r.get("voterId") or "").strip()
+            if v_id.startswith(base_prefix) and not v_id.startswith(dominant_prefix):
+                fixed_id = re.sub(r"^" + re.escape(base_prefix) + r"\d+/", dominant_prefix, v_id)
+                r["voterId"] = fixed_id
+
+
 def main():
     payload = json.loads(sys.stdin.read())
     if payload.get("mode") == "single_card":
@@ -2517,6 +2540,8 @@ def main():
 
     # Preserve printed card serials. Sequence information is validation-only.
     preserve_card_serials(records, payload.get("globalStartSerial"))
+    # Document-level EPIC constituency code normalization
+    reconcile_card_epics(records)
     # Re-run validation after serial integrity checks so a sequence mismatch is
     # persisted as needs_review instead of being silently accepted.
     for record in records:
