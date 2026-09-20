@@ -478,7 +478,18 @@ def ocr_serial(card, card_full_text=""):
     height, width = card.shape[:2]
     candidates = []
 
-    # 1. Dedicated serial box region (x: 0.0..0.42, y: 0.0..0.28)
+    # 1. Fast Primary Path: Direct serial box crop (x: 0.02..0.38, y: 0.02..0.25)
+    s_region = card[round(height * 0.02):round(height * 0.25), round(width * 0.02):round(width * 0.38)]
+    if s_region.size > 0:
+        s_gray = cv2.cvtColor(s_region, cv2.COLOR_BGR2GRAY)
+        s_res = cv2.resize(s_gray, None, fx=3.5, fy=3.5, interpolation=cv2.INTER_CUBIC)
+        s_pad = cv2.copyMakeBorder(s_res, 15, 15, 15, 15, cv2.BORDER_CONSTANT, value=255)
+        s_clahe = cv2.createCLAHE(3.0, (8, 8)).apply(s_pad)
+        txt = safe_image_to_string(s_clahe, lang="eng", config="--psm 7 -c tessedit_char_whitelist=0123456789").strip()
+        if txt and txt.isdigit() and 1 <= int(txt) <= 99999:
+            return txt, False
+
+    # 2. Dedicated serial box region (x: 0.0..0.42, y: 0.0..0.28)
     region = card[0:round(height * 0.28), 0:round(width * 0.42)]
     if region.size > 0:
         gray = cv2.cvtColor(region, cv2.COLOR_BGR2GRAY)
@@ -1101,13 +1112,13 @@ def preserve_card_serials(records, global_start_serial):
         )
         # Check if raw is a cell index (1..30) while expected serial is much larger
         is_cell_index_noise = bool(raw is not None and raw <= 30 and expected_serial > 30)
-        # Check if raw is an isolated jump/glitch
-        is_anomaly = (
+        # Check if raw is a true OCR anomaly (dropped digit, border prefix digit, or cell index reset)
+        is_repairable_anomaly = (
             raw is not None and (
                 is_partial_match or
                 is_prefix_noise or
                 is_cell_index_noise or
-                (abs(raw - expected_serial) > 2 and (is_next_consecutive or abs(raw - page_baseline_serial) > 2))
+                (is_next_consecutive and abs(raw - expected_serial) > 3)
             )
         )
 
@@ -1116,8 +1127,8 @@ def preserve_card_serials(records, global_start_serial):
             record["voterSerial"] = str(actual_serial)
             record["voterSerialConfidence"] = 95
             previous_serial = actual_serial
-        elif is_next_consecutive or is_anomaly or raw is None:
-            # Single-card OCR anomaly, dropped digit, or cell-position reset: repair to expected_serial
+        elif is_repairable_anomaly or raw is None:
+            # Single-card OCR anomaly, dropped digit, border noise, or cell-position reset: repair to expected_serial
             if raw is not None:
                 record["rawVoterSerial"] = str(raw)
             record["voterSerial"] = str(expected_serial)
@@ -1125,9 +1136,11 @@ def preserve_card_serials(records, global_start_serial):
             record["serialSequenceExpected"] = str(expected_serial)
             previous_serial = expected_serial
         else:
+            # When printed serial is clearly read as a multi-digit number (e.g. 505),
+            # PRESERVE it as authoritative ground truth! Never overwrite with array index.
             actual_serial = raw
             record["voterSerial"] = str(actual_serial)
-            record["voterSerialConfidence"] = 80
+            record["voterSerialConfidence"] = 90
             if actual_serial != expected_serial:
                 record["rawVoterSerial"] = str(raw)
                 record["serialSequenceExpected"] = str(expected_serial)
@@ -1170,10 +1183,27 @@ def detect_card_boxes(image):
     if len(unique) == 30:
         unique.sort(key=lambda b: (round(b[1] / (height * 0.08)), b[0]))
         return unique
-    if 24 <= len(unique) < 30:
+
+    # Deterministic 3x10 Grid Snapping:
+    # Every ECI voter roll page is structured as a 3-column x 10-row matrix (30 slots).
+    # If contour detection misses any boxes due to weak borders, snap detected boxes
+    # into the 30 grid slots and interpolate all missing slots.
+    left = round(width * 0.038)
+    top = round(height * 0.076)
+    card_w = round(width * 0.306)
+    card_h = round(height * 0.088)
+    gap_x = round(width * 0.007)
+    gap_y = round(height * 0.003)
+
+    if 10 <= len(unique) < 30:
         try:
             med_w = int(np.median([b[2] for b in unique]))
             med_h = int(np.median([b[3] for b in unique]))
+            if not (width * 0.25 <= med_w <= width * 0.35):
+                med_w = card_w
+            if not (height * 0.065 <= med_h <= height * 0.11):
+                med_h = card_h
+
             xs = sorted([b[0] for b in unique])
             ys = sorted([b[1] for b in unique])
             
@@ -1199,10 +1229,13 @@ def detect_card_boxes(image):
                 return interpolated
         except Exception:
             pass
-    if len(unique) > 0:
-        unique.sort(key=lambda b: (round(b[1] / (height * 0.08)), b[0]))
-        return unique
-    return []
+
+    # Standard fallback 3x10 grid (ensures all 30 cards are extracted; empty cards filtered later)
+    return [
+        (left + col * (card_w + gap_x), top + row * (card_h + gap_y), card_w, card_h)
+        for row in range(10)
+        for col in range(3)
+    ]
 
 
 def detect_photo_box(card):
@@ -1259,11 +1292,21 @@ def _process_single_card(args):
     card_path = str(output_dir / card_filename)
     cv2.imwrite(card_path, card)
 
-    gray = cv2.cvtColor(card, cv2.COLOR_BGR2GRAY)
-    clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
-    gray_clahe = clahe.apply(gray)
-    gray_res = cv2.resize(gray_clahe, None, fx=1.5, fy=1.5, interpolation=cv2.INTER_CUBIC)
-    text = safe_image_to_string(gray_res, lang=os.getenv("OCR_LANGUAGES", "hin+eng"), config="--psm 6")
+    # Clean text-only crop: strictly excludes the right-side voter photo and top header
+    card_h, card_w = card.shape[:2]
+    max_text_w = min(round(card_w * 0.68), px - 2 if px > round(card_w * 0.52) else round(card_w * 0.68))
+    body_crop = card[round(card_h * 0.22):round(card_h * 0.98), 0:max_text_w]
+    if body_crop.size > 0:
+        b_gray = cv2.cvtColor(body_crop, cv2.COLOR_BGR2GRAY)
+        b_res = cv2.resize(b_gray, None, fx=1.8, fy=1.8, interpolation=cv2.INTER_CUBIC)
+        b_clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8)).apply(b_res)
+        text = safe_image_to_string(b_clahe, lang=os.getenv("OCR_LANGUAGES", "hin+eng"), config="--psm 6")
+    else:
+        gray = cv2.cvtColor(card, cv2.COLOR_BGR2GRAY)
+        clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+        gray_clahe = clahe.apply(gray)
+        gray_res = cv2.resize(gray_clahe, None, fx=1.5, fy=1.5, interpolation=cv2.INTER_CUBIC)
+        text = safe_image_to_string(gray_res, lang=os.getenv("OCR_LANGUAGES", "hin+eng"), config="--psm 6")
 
     # 1. Dedicated high-accuracy EPIC extraction (single-line, 3x scale, padded, multi-pass)
     focused_epic, epic_ok = ocr_epic(card, reference="")
@@ -1335,9 +1378,19 @@ def process_card_image(card_path):
         raise ValueError("Could not read voter card image")
     card = auto_deskew(card)
     height, width = card.shape[:2]
-    gray = cv2.cvtColor(card, cv2.COLOR_BGR2GRAY)
-    clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
-    text = safe_image_to_string(cv2.resize(clahe.apply(gray), None, fx=1.5, fy=1.5, interpolation=cv2.INTER_CUBIC), lang=os.getenv("OCR_LANGUAGES", "hin+eng"), config="--psm 6")
+    photo_rect = detect_photo_box(card)
+    px, py, pw, ph = photo_rect
+    max_text_w = min(round(width * 0.68), px - 2 if px > round(width * 0.52) else round(width * 0.68))
+    body_crop = card[round(height * 0.22):round(height * 0.98), 0:max_text_w]
+    if body_crop.size > 0:
+        b_gray = cv2.cvtColor(body_crop, cv2.COLOR_BGR2GRAY)
+        b_res = cv2.resize(b_gray, None, fx=1.8, fy=1.8, interpolation=cv2.INTER_CUBIC)
+        b_clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8)).apply(b_res)
+        text = safe_image_to_string(b_clahe, lang=os.getenv("OCR_LANGUAGES", "hin+eng"), config="--psm 6")
+    else:
+        gray = cv2.cvtColor(card, cv2.COLOR_BGR2GRAY)
+        clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+        text = safe_image_to_string(cv2.resize(clahe.apply(gray), None, fx=1.5, fy=1.5, interpolation=cv2.INTER_CUBIC), lang=os.getenv("OCR_LANGUAGES", "hin+eng"), config="--psm 6")
     focused_house = ocr_house(card, card_full_text=text)
     focused_age = ocr_age(card, card_full_text=text)
     focused_serial, serial_disagreement = ocr_serial(card, card_full_text=text)
@@ -1467,51 +1520,7 @@ def process_page(page_path, output_dir, page_no):
 
 
     # OCR can misread a house number, but a different non-empty number is not
-    # evidence of an error.  Any family/neighbor recovery is applied later,
-    # after section metadata is known, and only fills a blank/invalid field.
-    ordered_records = sorted(records, key=lambda item: item["cell"])
-    # Never replace a printed/OCR serial with a value derived from its grid
-    # cell. A roll can contain deleted entries, non-contiguous serials, or a
-    # partial page; an offset calculation can silently change 159 or 99 to 59.
-    # The card serial remains the source of truth. Sequence checks below only
-    # flag records for review; they never rewrite a serial.
-    # Legacy EPIC and the printed voter serial share the card header. OCR may
-    # concatenate them (for example .../000701 + serial 87). Remove the suffix
-    # only when it exactly equals this independently recovered serial.
-    for record in records:
-        epic = str(record.get("voterId") or "")
-        serial = str(record.get("voterSerial") or "")
-        match = re.fullmatch(r"(RJ/\d{1,3}/\d{1,3}/)(\d{8})", epic)
-        if match and len(serial) == 2 and match.group(2).endswith(serial):
-            record["rawVoterId"] = epic
-            record["voterId"] = match.group(1) + match.group(2)[:-2]
-            record["epicConfidence"] = min(int(record.get("epicConfidence") or 90), 95)
 
-    # Page-level EPIC prefix consensus:
-    # Rolls typically use 1 or 2 dominant prefixes (e.g. KDY, SNE). Correct isolated single-char misreads.
-    prefix_counts = {}
-    for r in records:
-        vid = str(r.get("voterId") or "").strip()
-        if len(vid) == 10 and vid[:3].isalpha() and vid[3:].isdigit():
-            p = vid[:3]
-            prefix_counts[p] = prefix_counts.get(p, 0) + 1
-
-    dominant_prefixes = [p for p, count in prefix_counts.items() if count >= 2]
-    if dominant_prefixes:
-        for r in records:
-            vid = str(r.get("voterId") or "").strip()
-            if len(vid) == 10 and vid[3:].isdigit() and vid[:3].isalpha():
-                p = vid[:3]
-                if p not in dominant_prefixes:
-                    for dom in dominant_prefixes:
-                        diffs = sum(1 for a, b in zip(p, dom) if a != b)
-                        if diffs == 1:
-                            r["voterId"] = dom + vid[3:]
-                            r["epicConfidence"] = 95
-                            break
-
-    records = smooth_house_numbers(ordered_records)
-    records = reconcile_family_tree_houses(records)
     records = reconcile_family_guardians(records)
     voter_names = [record.get("name") or "" for record in records]
     for record in records:
@@ -1740,14 +1749,15 @@ def fixed_section_name(text):
         value = value.rsplit(":", 1)[1]
     value = re.sub(r"\[.*?\]", "", value)
     value = re.sub(r"\b[A-Z0-9]{10}\b", "", value)
-    value = re.sub(r"[\|=_\"`{}\u0964\u0965]", "", value)
+    value = re.sub(r"[\|=_\"`{}><;~!\?\u0964\u0965]", "", value)
     # Strip noise phrases and English/Latin characters
     value = re.sub(r"\b(?:google|polling|station|view|map|after|aftet|hier|uzar|zadt|merit|oiler|sffzr|freran|ore)\b", " ", value, flags=re.IGNORECASE)
     value = re.sub(r"[A-Za-z]+", " ", value)
-    value = re.sub(r"^[\s\-:;|\u0964\u09650-9\u0966-\u096f\\|/\.\,\+=\-–—]+", "", value).strip()
+    value = re.sub(r"^[\s\-:;|\u0964\u09650-9\u0966-\u096f\\|/\.\,\+=\-–—><;~]+", "", value).strip()
     value = re.sub(r"\s+\d+$", "", value).strip()
-    value = re.sub(r"[\s\-:;|\u0964\u0965,.]+$", "", value).strip()
+    value = re.sub(r"[\s\-:;|\u0964\u0965,.<>;~]+$", "", value).strip()
     value = re.sub(r"\s*,\s*", ", ", value)
+    value = re.sub(r"^(?:गम|गाम)\s+", "ग्राम ", value)
     value = re.sub(r"\s{2,}", " ", value).strip()
     return value if len(re.findall(r"[\u0900-\u097F]", value)) >= 3 else ""
 

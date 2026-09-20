@@ -2529,6 +2529,95 @@ exports.resetAllVoters = async (req, res, next) => {
   }
 };
 
+exports.restoreCorruptedVoters = async (req, res, next) => {
+  try {
+    const ElectoralMembership = require('../models/ElectoralMembership');
+    const { isValidEpic, normalizeEpic } = require('../utils/epic');
+    const { buildMemberSearchData } = require('../utils/memberSearch');
+    const { invalidateMemberData } = require('../utils/dataCache');
+
+    const allMembers = await Member.find({}).lean();
+    let restoredEpicCount = 0;
+    let restoredSerialCount = 0;
+    let cleanedSectionCount = 0;
+
+    for (const doc of allMembers) {
+      const updates = {};
+      let needsUpdate = false;
+
+      // 1. Restore pristine EPIC from ocrValues.suggested.voterId
+      const suggestedEpic = normalizeEpic(doc.ocrValues?.suggested?.voterId || '');
+      const currentEpic = normalizeEpic(doc.voterId || '');
+
+      if (suggestedEpic && isValidEpic(suggestedEpic) && suggestedEpic !== currentEpic) {
+        updates.voterId = suggestedEpic;
+        needsUpdate = true;
+        restoredEpicCount++;
+      }
+
+      // 2. Restore true Serial if sequence drift overwrote printed serial (e.g. 505 -> 500)
+      const rawSerial = String(doc.rawVoterSerial || doc.ocrValues?.raw?.rawVoterSerial || '').trim();
+      const currentSerial = String(doc.voterSerial || '').trim();
+      if (rawSerial && /^\d{1,5}$/.test(rawSerial) && rawSerial !== currentSerial && doc.serialOcrDisagreement) {
+        if (Math.abs(parseInt(rawSerial, 10) - parseInt(currentSerial, 10)) >= 3) {
+          updates.voterSerial = rawSerial;
+          updates.serialOcrDisagreement = false;
+          needsUpdate = true;
+          restoredSerialCount++;
+        }
+      }
+
+      // 3. Clean sectionName
+      const currentSection = String(doc.sectionName || '').trim();
+      if (currentSection) {
+        let cleanSection = currentSection
+          .replace(/^(?:गम|गाम)\s+/i, 'ग्राम ')
+          .replace(/[\|=_\"`{}><;~!\?\u0964\u0965]/g, '')
+          .replace(/\s{2,}/g, ' ')
+          .trim();
+        if (cleanSection !== currentSection && cleanSection.length >= 3) {
+          updates.sectionName = cleanSection;
+          needsUpdate = true;
+          cleanedSectionCount++;
+        }
+      }
+
+      if (needsUpdate) {
+        const updatedDoc = { ...doc, ...updates };
+        const searchData = buildMemberSearchData(updatedDoc);
+        await Member.updateOne(
+          { _id: doc._id },
+          { $set: { ...updates, ...searchData } }
+        );
+
+        if (updates.voterId || updates.voterSerial) {
+          await ElectoralMembership.updateMany(
+            { member: doc._id },
+            {
+              $set: {
+                ...(updates.voterId ? { voterId: updates.voterId } : {}),
+                ...(updates.voterSerial ? { voterSerial: updates.voterSerial } : {}),
+              },
+            }
+          );
+        }
+      }
+    }
+
+    try { invalidateMemberData(); } catch (_) {}
+
+    res.json({
+      success: true,
+      restoredEpicCount,
+      restoredSerialCount,
+      cleanedSectionCount,
+      message: `Restored ${restoredEpicCount} EPICs, ${restoredSerialCount} serials, and cleaned ${cleanedSectionCount} sections.`,
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
 
 
 

@@ -82,6 +82,22 @@ async function resolveCardImage(source, directory) {
         return target;
       }
     } catch (_) {}
+
+    // Fallback to direct HTTP/HTTPS download if S3 SDK fails or permissions restrict GetObject
+    try {
+      const response = await fetch(value, { signal: AbortSignal.timeout(10000) });
+      if (response.ok) {
+        const arrayBuffer = await response.arrayBuffer();
+        if (arrayBuffer && arrayBuffer.byteLength > 0) {
+          const contentType = response.headers.get('content-type') || '';
+          const target = path.join(directory, /png/i.test(contentType || value) ? 'card.png' : 'card.jpg');
+          fs.writeFileSync(target, Buffer.from(arrayBuffer));
+          return target;
+        }
+      }
+    } catch (fetchErr) {
+      console.warn(`Direct fetch fallback failed for card image (${value.slice(0, 50)}):`, fetchErr.message);
+    }
   }
   throw new Error(`Saved voter card image is unavailable locally (${value.slice(0, 50)}).`);
 }

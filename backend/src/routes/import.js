@@ -14,6 +14,7 @@ router.post('/members', auth, permission('canImportData'), c.trackUploadProgress
 router.post('/members/pdf', auth, permission('canImportData'), c.trackUploadProgress, upload.single('file'), c.importPdfMembers);
 router.post('/cleanup-duplicates', auth, permission('canImportData'), c.cleanupDuplicates);
 router.post('/reset-all-voters', auth, permission('canImportData'), c.resetAllVoters);
+router.post('/restore-voters', auth, permission('canImportData'), c.restoreCorruptedVoters);
 
 module.exports = router;
 

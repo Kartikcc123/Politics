@@ -1654,7 +1654,26 @@ const applyRecheckOcr = async (member, user, req) => {
   }
 
   const currentValues = member.ocrValues?.toObject?.() || member.ocrValues || {};
-  member.ocrValues = { raw: result.rawText ? { ...(currentValues.raw || {}), recheckRawText: result.rawText } : (currentValues.raw || {}), suggested: { ...(currentValues.suggested || {}), ...Object.fromEntries([...recheckFields, 'voterId'].filter((key) => result[key] !== undefined && result[key] !== null && String(result[key]).trim() !== '').map((key) => [key, result[key]])) }, verified: currentValues.verified || {}, status: result.validationPassed ? 'suggested' : (currentValues.status || 'raw'), verifiedBy: currentValues.verifiedBy, verifiedAt: currentValues.verifiedAt };
+  const pristineSuggestedEpic = currentValues.suggested?.voterId;
+  const recheckSuggestedEntries = Object.fromEntries(
+    [...recheckFields, 'voterId']
+      .filter((key) => {
+        if (key === 'voterId' && pristineSuggestedEpic && isValidEpic(pristineSuggestedEpic)) {
+          return false; // Preserve pristine original PDF EPIC in suggested values
+        }
+        return result[key] !== undefined && result[key] !== null && String(result[key]).trim() !== '';
+      })
+      .map((key) => [key, result[key]])
+  );
+
+  member.ocrValues = {
+    raw: result.rawText ? { ...(currentValues.raw || {}), recheckRawText: result.rawText } : (currentValues.raw || {}),
+    suggested: { ...(currentValues.suggested || {}), ...recheckSuggestedEntries },
+    verified: currentValues.verified || {},
+    status: result.validationPassed ? 'suggested' : (currentValues.status || 'raw'),
+    verifiedBy: currentValues.verifiedBy,
+    verifiedAt: currentValues.verifiedAt,
+  };
   member.ocrConfidence = result.confidence || 0;
   member.houseNumberConfidence = result.houseNumberConfidence || 0;
   member.ocrFieldConfidence = result.fieldConfidence || {};
@@ -1663,7 +1682,18 @@ const applyRecheckOcr = async (member, user, req) => {
   
   const rawEpic = String(result.voterId || '').toUpperCase().trim();
   const cleanEpic = normalizeEpic(rawEpic);
-  if (cleanEpic && isValidEpic(cleanEpic) && cleanEpic !== member.voterId) {
+  const currentEpic = normalizeEpic(member.voterId || '');
+  const hasValidCurrentEpic = Boolean(currentEpic && isValidEpic(currentEpic));
+
+  // Only update member.voterId if:
+  // 1. Current EPIC is missing or invalid, OR
+  // 2. Current EPIC was flagged for review/failure and new cleanEpic is valid
+  const shouldUpdateEpic = cleanEpic && isValidEpic(cleanEpic) && (
+    !hasValidCurrentEpic ||
+    (currentEpic !== cleanEpic && member.ocrReviewReasons?.includes('voter_id_invalid'))
+  );
+
+  if (shouldUpdateEpic && cleanEpic !== member.voterId) {
     const duplicate = await Member.findOne({ voterId: cleanEpic, _id: { $ne: member._id } });
     if (!duplicate) {
       member.voterId = cleanEpic;

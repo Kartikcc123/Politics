@@ -499,8 +499,14 @@ const lowMemoryOcrPdf = async (pdfPath, importFileName, pageRange = {}) => {
         inherited[field] = header[field];
       }
     }
-    const pdfPartMatch = importFileName.match(/-(?:HIN|ENG|RAJ|MAR|GUJ)-(\d{1,4})(?:\.pdf|_|$)/i);
-    const resolvedPartNumber = (pdfPartMatch ? pdfPartMatch[1] : null) || header.partNumber;
+    const pdfPartMatch = importFileName.match(/(?:-(?:HIN|ENG|RAJ|MAR|GUJ)-|(?:part|booth|भाग)[\s\-_]*)(\d{1,4})(?:\.pdf|_|$)/i);
+    let resolvedPartNumber = (pdfPartMatch ? pdfPartMatch[1] : null) || header.partNumber;
+    // Reject current year 2026 if it was misidentified as part number
+    if (resolvedPartNumber === '2026' && pdfPartMatch && pdfPartMatch[1] !== '2026') {
+      resolvedPartNumber = pdfPartMatch[1];
+    } else if (resolvedPartNumber === '2026' && !pdfPartMatch) {
+      resolvedPartNumber = '';
+    }
     if (resolvedPartNumber) {
       header.partNumber = resolvedPartNumber;
       inherited.partNumber = resolvedPartNumber;
