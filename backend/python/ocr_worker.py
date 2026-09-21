@@ -2686,6 +2686,9 @@ def main():
 
     header_text = "\n".join(headers[:3])
     doc_header = parse_header_numbers(header_text)
+    for k, v in master_context.items():
+        if v and (k not in doc_header or not doc_header[k]):
+            doc_header[k] = v
     for fixed_header in fixed_headers:
         for key, value in fixed_header.items():
             if value and (key not in doc_header or not doc_header[key] or key in ("assemblyNumber", "partNumber", "sectionNumber", "sectionName")):

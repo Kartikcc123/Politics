@@ -2688,6 +2688,9 @@ exports.importMembersJson = async (req, res, next) => {
         assemblyName: asmName || cleanValue(m.assemblyName),
         partNumber: partNum || cleanValue(m.partNumber),
         village: village || cleanValue(m.village),
+        contactType: 'electoral',
+        hasAssemblyMembership: true,
+        verificationStatus: 'verified',
         updatedBy: req.currentUser?._id,
       };
 
@@ -2722,6 +2725,14 @@ exports.importMembersJson = async (req, res, next) => {
       const result = await Member.bulkWrite(bulkOps, { ordered: false });
       importedCount = (result.upsertedCount || 0) + (result.modifiedCount || 0) + (result.matchedCount || 0);
     }
+
+    // Ensure all electoral members in DB have hasAssemblyMembership = true
+    try {
+      await Member.updateMany(
+        { partNumber: { $nin: ['', null] }, hasAssemblyMembership: { $ne: true } },
+        { $set: { hasAssemblyMembership: true, contactType: 'electoral' } }
+      );
+    } catch (_) {}
 
     try { invalidateMemberData(); } catch (_) {}
 

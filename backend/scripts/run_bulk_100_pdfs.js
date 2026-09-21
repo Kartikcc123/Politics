@@ -79,13 +79,19 @@ async function processSinglePdf(pdfPath, token, index, total, progressTracker) {
       return;
     }
 
+    // Fallback extraction from filename if OCR header missed them
+    const fnAsmMatch = fileName.match(/S\d+-(\d+)/i);
+    const fnPartMatch = fileName.match(/-(\d+)\.pdf$/i);
+    const effAsmNum = header.assemblyNumber || (fnAsmMatch ? fnAsmMatch[1] : '179');
+    const effPartNum = header.partNumber || (fnPartMatch ? fnPartMatch[1] : '');
+
     // Upload to Server
     console.log(`   📤 Uploading ${records.length} voters to database...`);
     const importPayload = {
       header: {
-        assemblyNumber: header.assemblyNumber || '',
-        assemblyName: header.assemblyName || '',
-        partNumber: header.partNumber || '',
+        assemblyNumber: effAsmNum,
+        assemblyName: header.assemblyName || 'सहाड़ा',
+        partNumber: effPartNum,
         village: header.village || '',
         postOffice: header.postOffice || '',
         policeStation: header.policeStation || '',
@@ -105,8 +111,9 @@ async function processSinglePdf(pdfPath, token, index, total, progressTracker) {
         gender: r.gender || '',
         sectionNumber: String(r.sectionNumber || '1'),
         sectionName: r.sectionName || docSectionMap[String(r.sectionNumber)] || '',
-        assemblyNumber: header.assemblyNumber || '',
-        partNumber: header.partNumber || ''
+        assemblyNumber: effAsmNum,
+        partNumber: effPartNum,
+        village: header.village || ''
       }))
     };
 
