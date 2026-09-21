@@ -1481,35 +1481,41 @@ def is_voter_page(image, page_no=None):
     """
     Determines whether a page image contains voter cards or is a non-voter page
     (Page 1 Cover, Page 2 Map, or trailing statistical summary / revision tables).
-    Returns False for non-voter pages to prevent unwanted cropping of fake cards.
+    Returns False for non-voter pages to prevent unwanted cropping of fake cards,
+    while correctly recognizing supplementary/addition voter pages (परिवर्धन सूची).
     """
     if image is None or getattr(image, "size", 0) == 0:
         return False
     if page_no is not None and int(page_no) in (1, 2):
         return False
-    boxes = detect_card_boxes(image)
-    if len(boxes) >= 6:
-        return True
 
     h, w = image.shape[:2]
-    sample = image[int(h * 0.15):int(h * 0.85), int(w * 0.05):int(w * 0.95)]
+    sample = image[int(h * 0.08):int(h * 0.92), int(w * 0.04):int(w * 0.96)]
     text = safe_image_to_string(sample, lang="hin+eng")
 
-    summary_patterns = [
-        r"I\s*\+\s*II\s*-\s*III",
-        r"E2\s*-\s*|S2\s*-\s*|R2\s*-\s*|Q2\s*-\s*",
-        r"मतदाताओं\s*की\s*संख्या",
+    # Count real voter card indicators
+    voter_fields = len(re.findall(r"(?:पिता|पति|माता)\s*का\s*नाम|गृह\s*संख्या|(?:उम्र|आयु)\s*[:：]|लिंग\s*[:：]", text))
+    has_epic = bool(re.search(r"[A-Z]{3}\s*[0-9]{7}", text))
+
+    # Reject purely statistical summary pages (tables of aggregate counts without individual voter records)
+    pure_summary_patterns = [
         r"सांख्यिकीय\s*सारांश",
-        r"संशोधनों\s*की\s*संख्या",
+        r"I\s*\+\s*II\s*-\s*III",
         r"शुद्ध\s*निर्वाचक",
-        r"घटक\s*सूची",
+        r"E2\s*-\s*|S2\s*-\s*|R2\s*-\s*|Q2\s*-\s*",
         r"नक्शा|मतदान\s*केन्द्र\s*का\s*भवन",
+        r"नामावली\s*का\s*प्रकार\s*\|\s*निर्वाचक\s*नामावली\s*की\s*पहचान",
+        r"मतदाताओं\s*की\s*संख्या\s*:\s*\n\s*नामावली",
     ]
-    if any(re.search(p, text, re.IGNORECASE) for p in summary_patterns):
+    is_pure_summary = any(re.search(p, text, re.IGNORECASE) for p in pure_summary_patterns)
+    if is_pure_summary and voter_fields < 2 and not has_epic:
         return False
 
-    voter_fields = len(re.findall(r"(?:पिता|पति|माता)\s*का\s*नाम|गृह\s*संख्या|(?:उम्र|आयु)\s*[:：]|लिंग\s*[:：]", text))
-    return voter_fields >= 3
+    boxes = detect_card_boxes(image)
+    if len(boxes) >= 1 and (voter_fields >= 1 or has_epic or len(boxes) >= 6):
+        return True
+
+    return voter_fields >= 2 or has_epic
 
 
 def process_page(page_path, output_dir, page_no):
