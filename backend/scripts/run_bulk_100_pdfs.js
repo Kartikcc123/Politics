@@ -67,7 +67,7 @@ async function processSinglePdf(pdfPath, token, index, total, progressTracker) {
 
     console.log('\n');
     const durationSec = ((Date.now() - startTime) / 1000).toFixed(1);
-    const records = result.voterRecords || [];
+    const records = result.records || result.voterRecords || [];
     const header = result.header || {};
     const docSectionMap = safeSectionMap(header.sectionMap || {});
 
@@ -183,38 +183,49 @@ class ProgressTracker {
 }
 
 async function main() {
-  const targetFolder = process.argv[2] ? path.resolve(process.argv[2]) : DEFAULT_FOLDER;
+  const targetPath = process.argv[2] ? path.resolve(process.argv[2]) : DEFAULT_FOLDER;
 
   console.log('========================================================================');
   console.log('⚡ HIGH-SPEED BULK VOTER PDF RUNNER (100+ PDFs BATCH ENGINE)');
-  console.log('Target Folder:', targetFolder);
+  console.log('Target Path  :', targetPath);
   console.log('Target Server:', `https://${TARGET_HOST}`);
   console.log('Concurrency  :', `${CONCURRENCY} PDFs in Parallel`);
   console.log('========================================================================\n');
 
-  if (!fs.existsSync(targetFolder)) {
-    console.log(`Directory does not exist. Creating folder: ${targetFolder}`);
-    fs.mkdirSync(targetFolder, { recursive: true });
-    console.log(`\n📁 Placed folder ready. Please put your 100 PDFs inside:\n   ${targetFolder}\nand run this script again!`);
-    process.exit(0);
+  if (!fs.existsSync(targetPath)) {
+    console.log(`Path does not exist: ${targetPath}`);
+    process.exit(1);
   }
 
-  // Find all PDFs
-  const allFiles = fs.readdirSync(targetFolder);
-  const pdfFiles = allFiles
-    .filter(f => f.toLowerCase().endsWith('.pdf'))
-    .map(f => path.join(targetFolder, f));
+  const stat = fs.statSync(targetPath);
+  let pdfFiles = [];
+  let trackingFolder = targetPath;
+
+  if (stat.isFile()) {
+    if (!targetPath.toLowerCase().endsWith('.pdf')) {
+      console.log(`❌ Selected file is not a PDF: ${targetPath}`);
+      process.exit(1);
+    }
+    pdfFiles = [targetPath];
+    trackingFolder = path.dirname(targetPath);
+  } else {
+    // Directory: Find all PDFs
+    const allFiles = fs.readdirSync(targetPath);
+    pdfFiles = allFiles
+      .filter(f => f.toLowerCase().endsWith('.pdf'))
+      .map(f => path.join(targetPath, f));
+  }
 
   if (pdfFiles.length === 0) {
-    console.log(`❌ No PDF files found in folder: ${targetFolder}`);
-    console.log(`Please copy your 100 voter list PDFs into this folder and run again.`);
+    console.log(`❌ No PDF files found in folder: ${targetPath}`);
+    console.log(`Please copy your voter list PDFs into this folder and run again.`);
     process.exit(0);
   }
 
-  console.log(`Found ${pdfFiles.length} PDF files in folder.`);
+  console.log(`Found ${pdfFiles.length} PDF file(s) to process.`);
 
   // Progress tracker
-  const tracker = new ProgressTracker(targetFolder);
+  const tracker = new ProgressTracker(trackingFolder);
   const pendingPdfs = pdfFiles.filter(p => !tracker.isCompleted(path.basename(p)));
   const alreadyDone = pdfFiles.length - pendingPdfs.length;
 
