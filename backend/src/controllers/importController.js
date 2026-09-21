@@ -33,6 +33,7 @@ const {
   pdfAreaHierarchyCache,
   invalidateMemberData,
 } = require('../utils/dataCache');
+const { buildMemberSearchData } = require('../utils/memberSearch');
 const importProgress = new Map();
 const progressWrites = new Map();
 
@@ -2629,35 +2630,41 @@ exports.importMembersJson = async (req, res, next) => {
       return res.status(400).json({ message: 'No voter members provided in JSON payload.' });
     }
 
-    const sample = members[0] || {};
-    const firstMember = {
-      assemblyNumber: cleanValue(header.assemblyNumber || sample.assemblyNumber),
-      assemblyName: cleanValue(header.assemblyName || sample.assemblyName),
-      partNumber: cleanValue(header.partNumber || sample.partNumber),
-      village: cleanValue(header.village || sample.village),
-      sectionNumber: cleanValue(sample.sectionNumber || '1'),
-      sectionName: cleanValue(sample.sectionName || ''),
+    const cleanValue = (v) => String(v === undefined || v === null ? '' : v).trim();
+    const cleanSectionName = (v) => String(v || '').replace(/^(?:गम|गाम)\s+/i, 'ग्राम ').replace(/[\|=_\"`{}><;~!\?\u0964\u0965]/g, '').trim();
+    const normalizeGender = (v) => {
+      const g = String(v || '').toLowerCase();
+      if (/fem|mahila|महिला|स्त्री|f/.test(g)) return 'female';
+      if (/oth|अन्य/.test(g)) return 'other';
+      return 'male';
     };
 
-    let ward = null;
+    const sample = members[0] || {};
+    const asmNum = cleanValue(header.assemblyNumber || sample.assemblyNumber);
+    const asmName = cleanValue(header.assemblyName || sample.assemblyName);
+    const partNum = cleanValue(header.partNumber || sample.partNumber);
+    const village = cleanValue(header.village || sample.village);
+
+    let area = null;
     let booth = null;
+    let ward = null;
 
     try {
-      const scope = await getOrCreateImportScope({
-        user: req.currentUser,
-        body: {
-          assemblyNumber: firstMember.assemblyNumber,
-          assemblyName: firstMember.assemblyName,
-          partNumber: firstMember.partNumber,
-          village: firstMember.village,
-        },
-        firstMember,
-      });
-      ward = scope.ward;
-      booth = scope.booth;
+      if (asmNum) {
+        area = await Area.findOne({ code: asmNum });
+        if (!area && asmName) {
+          area = await Area.findOne({ name: asmName });
+        }
+      }
+      if (partNum) {
+        const boothQuery = { number: Number(partNum) || partNum };
+        if (area?._id) boothQuery.area = area._id;
+        booth = await Booth.findOne(boothQuery);
+        if (booth?.ward) ward = booth.ward;
+      }
     } catch (_) {}
 
-    const docSectionMap = safeSectionMap(header.sectionMap || {});
+    const docSectionMap = header.sectionMap && typeof header.sectionMap === 'object' ? header.sectionMap : {};
     const bulkOps = [];
 
     for (const m of members) {
@@ -2677,17 +2684,18 @@ exports.importMembersJson = async (req, res, next) => {
         gender: normalizeGender(m.gender),
         sectionNumber: secNum,
         sectionName: secName,
-        assemblyNumber: cleanValue(header.assemblyNumber || m.assemblyNumber),
-        assemblyName: cleanValue(header.assemblyName || m.assemblyName),
-        partNumber: cleanValue(header.partNumber || m.partNumber),
-        village: cleanValue(header.village || m.village),
+        assemblyNumber: asmNum || cleanValue(m.assemblyNumber),
+        assemblyName: asmName || cleanValue(m.assemblyName),
+        partNumber: partNum || cleanValue(m.partNumber),
+        village: village || cleanValue(m.village),
         updatedBy: req.currentUser?._id,
       };
 
-      if (booth) memberDoc.booth = booth;
+      if (booth?._id) memberDoc.booth = booth._id;
       if (ward) memberDoc.ward = ward;
+      if (area?._id) memberDoc.area = area._id;
 
-      const searchData = buildMemberSearchData(memberDoc);
+      const searchData = typeof buildMemberSearchData === 'function' ? buildMemberSearchData(memberDoc) : {};
       const query = cleanEpic && isValidEpic(cleanEpic)
         ? { voterId: cleanEpic }
         : {
