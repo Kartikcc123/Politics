@@ -85,8 +85,54 @@ async function processSinglePdf(pdfPath, token, index, total, progressTracker) {
     const effAsmNum = header.assemblyNumber || (fnAsmMatch ? fnAsmMatch[1] : '179');
     const effPartNum = header.partNumber || (fnPartMatch ? fnPartMatch[1] : '');
 
+    function readImageBase64(...candidates) {
+      for (const c of candidates) {
+        if (!c || typeof c !== 'string') continue;
+        const cleanPath = c.replace(/^[/\\]?uploads[/\\]?/i, '');
+        const pathsToTry = [
+          c,
+          path.resolve(c),
+          path.join(process.cwd(), c),
+          path.join(process.cwd(), 'uploads', cleanPath),
+          path.join(__dirname, '..', 'uploads', cleanPath),
+        ];
+        for (const p of pathsToTry) {
+          try {
+            if (fs.existsSync(p) && fs.statSync(p).isFile() && fs.statSync(p).size > 0) {
+              return `data:image/jpeg;base64,${fs.readFileSync(p).toString('base64')}`;
+            }
+          } catch (_) {}
+        }
+      }
+      return '';
+    }
+
+    let attachedImages = 0;
+    const membersList = records.map(r => {
+      const cardB64 = readImageBase64(r.localCardImage, r.cardImage);
+      const photoB64 = readImageBase64(r.localPhoto, r.photo);
+      if (cardB64 || photoB64) attachedImages++;
+      return {
+        voterSerial: String(r.voterSerial || ''),
+        voterId: r.voterId || '',
+        name: r.name || '',
+        guardianName: r.guardianName || '',
+        relationType: r.relationType || '',
+        houseNumber: r.houseNumber || '',
+        age: r.age || null,
+        gender: r.gender || '',
+        sectionNumber: String(r.sectionNumber || '1'),
+        sectionName: r.sectionName || docSectionMap[String(r.sectionNumber)] || '',
+        assemblyNumber: effAsmNum,
+        partNumber: effPartNum,
+        village: header.village || '',
+        cardImage: cardB64,
+        photo: photoB64
+      };
+    });
+
     // Upload to Server
-    console.log(`   📤 Uploading ${records.length} voters to database...`);
+    console.log(`   📤 Uploading ${records.length} voters (${attachedImages} card images attached) to database...`);
     const importPayload = {
       header: {
         assemblyNumber: effAsmNum,
@@ -100,37 +146,7 @@ async function processSinglePdf(pdfPath, token, index, total, progressTracker) {
         pinCode: header.pinCode || '',
         sectionMap: docSectionMap
       },
-      members: records.map(r => {
-        let cardB64 = '';
-        if (r.cardImage && fs.existsSync(r.cardImage)) {
-          try {
-            cardB64 = `data:image/jpeg;base64,${fs.readFileSync(r.cardImage).toString('base64')}`;
-          } catch (_) {}
-        }
-        let photoB64 = '';
-        if (r.photo && fs.existsSync(r.photo)) {
-          try {
-            photoB64 = `data:image/jpeg;base64,${fs.readFileSync(r.photo).toString('base64')}`;
-          } catch (_) {}
-        }
-        return {
-          voterSerial: String(r.voterSerial || ''),
-          voterId: r.voterId || '',
-          name: r.name || '',
-          guardianName: r.guardianName || '',
-          relationType: r.relationType || '',
-          houseNumber: r.houseNumber || '',
-          age: r.age || null,
-          gender: r.gender || '',
-          sectionNumber: String(r.sectionNumber || '1'),
-          sectionName: r.sectionName || docSectionMap[String(r.sectionNumber)] || '',
-          assemblyNumber: effAsmNum,
-          partNumber: effPartNum,
-          village: header.village || '',
-          cardImage: cardB64,
-          photo: photoB64
-        };
-      })
+      members: membersList
     };
 
     const uploadRes = await apiRequest('/api/import/members/json', 'POST', JSON.stringify(importPayload), token);

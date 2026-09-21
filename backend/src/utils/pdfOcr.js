@@ -260,6 +260,8 @@ exports.ocrPdf = async (pdfPath, importFileName, pageRange = {}) => {
           words: [],
           voterRecords: records.map((record) => ({
             ...record,
+            localPhoto: record.photo || '',
+            localCardImage: record.cardImage || '',
             photo: uploadPublicPath('ocr', workId, path.basename(record.photo)),
             cardImage: record.cardImage ? uploadPublicPath('ocr', workId, path.basename(record.cardImage)) : '',
           })),
