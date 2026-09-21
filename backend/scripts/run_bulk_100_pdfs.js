@@ -107,6 +107,12 @@ async function processSinglePdf(pdfPath, token, index, total, progressTracker) {
             cardB64 = `data:image/jpeg;base64,${fs.readFileSync(r.cardImage).toString('base64')}`;
           } catch (_) {}
         }
+        let photoB64 = '';
+        if (r.photo && fs.existsSync(r.photo)) {
+          try {
+            photoB64 = `data:image/jpeg;base64,${fs.readFileSync(r.photo).toString('base64')}`;
+          } catch (_) {}
+        }
         return {
           voterSerial: String(r.voterSerial || ''),
           voterId: r.voterId || '',
@@ -121,7 +127,8 @@ async function processSinglePdf(pdfPath, token, index, total, progressTracker) {
           assemblyNumber: effAsmNum,
           partNumber: effPartNum,
           village: header.village || '',
-          cardImage: cardB64
+          cardImage: cardB64,
+          photo: photoB64
         };
       })
     };

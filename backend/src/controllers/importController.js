@@ -2719,6 +2719,28 @@ exports.importMembersJson = async (req, res, next) => {
         }
       }
 
+      // Save base64 photo if provided
+      if (m.photo && typeof m.photo === 'string') {
+        if (m.photo.startsWith('data:image')) {
+          try {
+            const root = path.resolve(uploadRoot());
+            const votersDir = path.join(root, 'voters');
+            if (!fs.existsSync(votersDir)) fs.mkdirSync(votersDir, { recursive: true });
+            const matches = m.photo.match(/^data:([A-Za-z-+\/]+);base64,(.+)$/);
+            if (matches && matches.length === 3) {
+              const ext = matches[1].includes('png') ? '.png' : '.jpg';
+              const buffer = Buffer.from(matches[2], 'base64');
+              const filename = `photo-${cleanEpic || 'voter'}-${Date.now()}-${crypto.randomBytes(3).toString('hex')}${ext}`;
+              const targetFile = path.join(votersDir, filename);
+              fs.writeFileSync(targetFile, buffer);
+              memberDoc.photo = uploadPublicPath('voters', filename);
+            }
+          } catch (_) {}
+        } else if (m.photo.startsWith('/uploads') || m.photo.startsWith('http')) {
+          memberDoc.photo = m.photo;
+        }
+      }
+
       if (booth?._id) memberDoc.booth = booth._id;
       if (ward) memberDoc.ward = ward;
       if (area?._id) memberDoc.area = area._id;
