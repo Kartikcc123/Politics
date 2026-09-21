@@ -271,6 +271,10 @@ const cleanSectionName = (value = '') => {
   text = text.replace(/\b(?:google|polling|station|view|map|after|aftet|hier|uzar|zadt|merit|oiler|sffzr|freran|ore)\b/gi, ' ');
   // Strip any remaining Latin / English letters/words (e.g. BHPATea, Village, etc.)
   text = text.replace(/[A-Za-z]+/g, ' ');
+  // Reject OCR noise with repetitive identical characters (e.g. चच्चच्चच or 555)
+  if (/(.)\1{3,}/.test(text)) return '';
+  if (/[\"\'\.\,\-]{3,}/.test(text)) return '';
+  if (/\b\d+\.\d+\.\s*\d+/.test(text)) return '';
   // Clean punctuation and non-Devanagari noise at start/end
   text = text.replace(/^[^\u0900-\u097F]+/, '').trim();
   text = text.replace(/\s+\d+$/, '').trim();
