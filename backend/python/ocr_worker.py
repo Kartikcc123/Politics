@@ -488,8 +488,8 @@ def ocr_serial(card, card_full_text=""):
     height, width = card.shape[:2]
     candidates = []
 
-    # 1. Fast Primary Path: Direct serial box crop (x: 0.02..0.38, y: 0.02..0.25)
-    s_region = card[round(height * 0.02):round(height * 0.25), round(width * 0.02):round(width * 0.38)]
+    # 1. Fast Primary Path: Direct serial box crop (x: 0.02..0.38, y: 0.01..0.20)
+    s_region = card[round(height * 0.01):round(height * 0.20), round(width * 0.02):round(width * 0.38)]
     if s_region.size > 0:
         s_gray = cv2.cvtColor(s_region, cv2.COLOR_BGR2GRAY)
         s_res = cv2.resize(s_gray, None, fx=3.5, fy=3.5, interpolation=cv2.INTER_CUBIC)
@@ -499,11 +499,11 @@ def ocr_serial(card, card_full_text=""):
             txt = safe_image_to_string(s_clahe, lang="eng", config=f"--psm {psm} -c tessedit_char_whitelist=0123456789").strip()
             if txt and txt.isdigit() and 1 <= int(txt) <= 99999:
                 candidates.append(txt)
-        if any(len(c) >= 2 for c in candidates):
-            return max(candidates, key=len), False
+        if len(candidates) >= 2 and candidates[0] == candidates[1]:
+            return candidates[0], False
 
-    # 2. Dedicated serial box region (x: 0.0..0.42, y: 0.0..0.28)
-    region = card[0:round(height * 0.28), 0:round(width * 0.42)]
+    # 2. Dedicated serial box region (x: 0.0..0.42, y: 0.0..0.22)
+    region = card[0:round(height * 0.22), 0:round(width * 0.42)]
     if region.size > 0:
         gray = cv2.cvtColor(region, cv2.COLOR_BGR2GRAY)
         thresh_inv = cv2.threshold(gray, 180, 255, cv2.THRESH_BINARY_INV)[1]
@@ -1077,19 +1077,30 @@ def preserve_card_serials(records, global_start_serial):
         s = str(rec.get("voterSerial") or "").translate(digit_translation).strip()
         raw_serials.append(int(s) if s.isdigit() and 1 <= int(s) <= 99999 else None)
     
-    start_serial = global_start_serial if isinstance(global_start_serial, int) and global_start_serial > 0 else None
-    if start_serial is None and records:
+    # 1. First, check if physical cards on the page have a consensus sequence
+    consensus_start = None
+    if records:
         implied_starts = [
             s - i for i, s in enumerate(raw_serials)
             if s is not None and (s - i) > 0
         ]
         if implied_starts:
             counts = Counter(implied_starts)
-            # Sort by frequency descending, then by value descending (prefer true sequence over stray 1)
             sorted_starts = sorted(counts.items(), key=lambda x: (x[1], x[0]), reverse=True)
-            start_serial = sorted_starts[0][0]
-        if start_serial is None:
-            start_serial = 1
+            top_start, top_count = sorted_starts[0]
+            min_agreed = 2 if len(records) <= 10 else 3
+            if top_count >= min_agreed or top_count >= len(records) * 0.20:
+                consensus_start = top_start
+
+    # 2. Prefer page physical card consensus; only fall back to global_start_serial if no card consensus exists
+    if consensus_start is not None:
+        start_serial = consensus_start
+    elif isinstance(global_start_serial, int) and global_start_serial > 0:
+        start_serial = global_start_serial
+    elif records and implied_starts:
+        start_serial = sorted_starts[0][0]
+    else:
+        start_serial = 1
 
     previous_serial = None
 
@@ -1182,14 +1193,8 @@ def detect_card_boxes(image):
     for box in sorted(boxes, key=lambda b: (b[1], b[0])):
         if not any(abs(box[0] - old[0]) < width * 0.10 and abs(box[1] - old[1]) < height * 0.03 for old in unique):
             unique.append(box)
-    if len(unique) == 30:
-        unique.sort(key=lambda b: (round(b[1] / (height * 0.08)), b[0]))
-        return unique
 
-    # Deterministic 3x10 Grid Snapping:
-    # Every ECI voter roll page is structured as a 3-column x 10-row matrix (30 slots).
-    # If contour detection misses any boxes due to weak borders, snap detected boxes
-    # into the 30 grid slots and interpolate all missing slots.
+    # Standard fallback parameters
     left = round(width * 0.038)
     top = round(height * 0.076)
     card_w = round(width * 0.306)
@@ -1197,7 +1202,7 @@ def detect_card_boxes(image):
     gap_x = round(width * 0.007)
     gap_y = round(height * 0.003)
 
-    if 10 <= len(unique) < 30:
+    if len(unique) >= 6:
         try:
             med_w = int(np.median([b[2] for b in unique]))
             med_h = int(np.median([b[3] for b in unique]))
@@ -1206,29 +1211,63 @@ def detect_card_boxes(image):
             if not (height * 0.065 <= med_h <= height * 0.11):
                 med_h = card_h
 
-            xs = sorted([b[0] for b in unique])
-            ys = sorted([b[1] for b in unique])
-            
-            col_x = [min(xs), round(width * 0.34), max(xs)]
-            cols_found = [[b[0] for b in unique if abs(b[0] - cx) < width * 0.10] for cx in col_x]
-            col_x = [int(np.median(cf)) if cf else col_x[i] for i, cf in enumerate(cols_found)]
-            
-            row_y = [int(min(ys) + i * (max(ys) - min(ys)) / 9.0) for i in range(10)]
-            rows_found = [[b[1] for b in unique if abs(b[1] - ry) < height * 0.035] for ry in row_y]
-            row_y = [int(np.median(rf)) if rf else row_y[i] for i, rf in enumerate(rows_found)]
+            # 1. Cluster detected boxes into rows
+            sorted_by_y = sorted(unique, key=lambda b: b[1])
+            row_clusters = []
+            for b in sorted_by_y:
+                matched_row = False
+                for cl in row_clusters:
+                    if abs(np.median([box[1] for box in cl]) - b[1]) < med_h * 0.4:
+                        cl.append(b)
+                        matched_row = True
+                        break
+                if not matched_row:
+                    row_clusters.append([b])
 
-            interpolated = []
+            row_clusters.sort(key=lambda cl: np.median([box[1] for box in cl]))
+            row_ys = [int(np.median([b[1] for b in cl])) for cl in row_clusters]
+
+            # 2. Determine actual row pitch from consecutive row differences
+            diffs = [row_ys[i+1] - row_ys[i] for i in range(len(row_ys)-1)]
+            valid_diffs = [d for d in diffs if med_h * 0.85 <= d <= med_h * 1.35]
+            row_pitch = int(np.median(valid_diffs)) if valid_diffs else int(round(med_h * 1.04))
+
+            # 3. Determine Row 0 Y
+            row0_y = row_ys[0]
+            if row0_y >= height * 0.12:
+                row0_y = row0_y - int(round((row0_y - round(height * 0.076)) / row_pitch)) * row_pitch
+
+            # 4. Determine 3 Column X positions
+            c0 = [b[0] for b in unique if b[0] < width * 0.25]
+            c1 = [b[0] for b in unique if width * 0.25 <= b[0] < width * 0.58]
+            c2 = [b[0] for b in unique if b[0] >= width * 0.58]
+            col_x = [
+                int(np.median(c0)) if c0 else round(width * 0.038),
+                int(np.median(c1)) if c1 else round(width * 0.352),
+                int(np.median(c2)) if c2 else round(width * 0.666)
+            ]
+
+            # 5. Assemble grid slots, validating missing slots against real content
+            final_boxes = []
             for r in range(10):
+                exp_y = row0_y + r * row_pitch
+                if exp_y + med_h > height - round(height * 0.015):
+                    continue
                 for c in range(3):
-                    expected_x = col_x[c]
-                    expected_y = row_y[r]
-                    match = next((b for b in unique if abs(b[0] - expected_x) < width * 0.10 and abs(b[1] - expected_y) < height * 0.035), None)
+                    exp_x = col_x[c]
+                    match = next((b for b in unique if abs(b[0] - exp_x) < width * 0.08 and abs(b[1] - exp_y) < med_h * 0.35), None)
                     if match:
-                        interpolated.append(match)
+                        final_boxes.append(match)
                     else:
-                        interpolated.append((expected_x, expected_y, med_w, med_h))
-            if len(interpolated) == 30:
-                return interpolated
+                        # Check if this slot contains actual card content or is blank paper
+                        slot_crop = gray[exp_y:min(height, exp_y + med_h), exp_x:min(width, exp_x + med_w)]
+                        if slot_crop.size > 0:
+                            edges = cv2.Canny(slot_crop, 50, 150)
+                            if np.count_nonzero(edges) > 2500:
+                                final_boxes.append((exp_x, exp_y, med_w, med_h))
+
+            if len(final_boxes) >= 6:
+                return final_boxes
         except Exception:
             pass
 
@@ -1507,15 +1546,21 @@ def process_page(page_path, output_dir, page_no):
         records = list(executor.map(_process_single_card, task_args))
 
     # Filter out completely empty card slots (blank paper regions on partial pages)
-    records = [
-        r for r in records
-        if (
-            (r.get("name") and len(re.findall(r"[\u0900-\u097F]", r.get("name") or "")) >= 2)
-            or (r.get("voterId") and valid_epic(r.get("voterId")))
-            or (r.get("guardianName") and len(re.findall(r"[\u0900-\u097F]", r.get("guardianName") or "")) >= 2)
-            or r.get("isDeleted")
-        )
-    ]
+    def _is_real_voter_card(r):
+        if r.get("isDeleted"):
+            return True
+        has_epic = bool(r.get("voterId") and valid_epic(r.get("voterId")))
+        has_valid_name = bool(r.get("name") and len(re.findall(r"[\u0900-\u097F]", r.get("name") or "")) >= 2 and not re.search(r"^[-\s\.\,]+$", r.get("name") or ""))
+        has_guardian = bool(r.get("guardianName") and len(re.findall(r"[\u0900-\u097F]", r.get("guardianName") or "")) >= 2)
+        has_age = bool(r.get("age") and 18 <= r.get("age") <= 120)
+        has_gender = bool(r.get("gender") in ("M", "F", "O", "पुरुष", "महिला", "अन्य"))
+        if has_epic:
+            return True
+        if has_valid_name and (has_guardian or has_age or has_gender):
+            return True
+        return False
+
+    records = [r for r in records if _is_real_voter_card(r)]
 
 
     # OCR can misread a house number, but a different non-empty number is not

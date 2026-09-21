@@ -435,10 +435,17 @@ const lowMemoryOcrPdf = async (pdfPath, importFileName, pageRange = {}) => {
       );
       const pageRecs = result.records || [];
       records.push(...pageRecs);
-      for (const rec of pageRecs) {
-        const s = Number(rec.voterSerial);
-        if (Number.isFinite(s) && s > lastTrackedSerial) {
-          lastTrackedSerial = s;
+      const validSerials = pageRecs
+        .map((r) => Number(r.voterSerial))
+        .filter((s) => Number.isFinite(s) && s > 0)
+        .sort((a, b) => a - b);
+      if (validSerials.length > 0) {
+        const baseline = lastTrackedSerial > 0 ? lastTrackedSerial : validSerials[0] - 1;
+        const plausible = validSerials.filter((s) => s > lastTrackedSerial && s <= baseline + 35);
+        if (plausible.length > 0) {
+          lastTrackedSerial = plausible[plausible.length - 1];
+        } else if (validSerials[validSerials.length - 1] - validSerials[0] <= 35) {
+          lastTrackedSerial = validSerials[validSerials.length - 1];
         }
       }
       if (headerTexts.length < 3 && result.headerText) headerTexts.push(result.headerText);
