@@ -2629,21 +2629,36 @@ exports.importMembersJson = async (req, res, next) => {
       return res.status(400).json({ message: 'No voter members provided in JSON payload.' });
     }
 
-    const firstMember = cleanImportData(normalize(members[0]));
-    const { ward, booth } = await getOrCreateImportScope({
-      user: req.currentUser,
-      body: {
-        assemblyNumber: header.assemblyNumber || members[0]?.assemblyNumber,
-        assemblyName: header.assemblyName || members[0]?.assemblyName,
-        partNumber: header.partNumber || members[0]?.partNumber,
-        village: header.village || members[0]?.village,
-      },
-      firstMember,
-    });
+    const sample = members[0] || {};
+    const firstMember = {
+      assemblyNumber: cleanValue(header.assemblyNumber || sample.assemblyNumber),
+      assemblyName: cleanValue(header.assemblyName || sample.assemblyName),
+      partNumber: cleanValue(header.partNumber || sample.partNumber),
+      village: cleanValue(header.village || sample.village),
+      sectionNumber: cleanValue(sample.sectionNumber || '1'),
+      sectionName: cleanValue(sample.sectionName || ''),
+    };
+
+    let ward = null;
+    let booth = null;
+
+    try {
+      const scope = await getOrCreateImportScope({
+        user: req.currentUser,
+        body: {
+          assemblyNumber: firstMember.assemblyNumber,
+          assemblyName: firstMember.assemblyName,
+          partNumber: firstMember.partNumber,
+          village: firstMember.village,
+        },
+        firstMember,
+      });
+      ward = scope.ward;
+      booth = scope.booth;
+    } catch (_) {}
 
     const docSectionMap = safeSectionMap(header.sectionMap || {});
     const bulkOps = [];
-    let importedCount = 0;
 
     for (const m of members) {
       if (!m.voterId && !m.name) continue;
@@ -2666,10 +2681,11 @@ exports.importMembersJson = async (req, res, next) => {
         assemblyName: cleanValue(header.assemblyName || m.assemblyName),
         partNumber: cleanValue(header.partNumber || m.partNumber),
         village: cleanValue(header.village || m.village),
-        booth: booth ? booth._id : undefined,
-        ward: ward ? ward._id : undefined,
         updatedBy: req.currentUser?._id,
       };
+
+      if (booth) memberDoc.booth = booth;
+      if (ward) memberDoc.ward = ward;
 
       const searchData = buildMemberSearchData(memberDoc);
       const query = cleanEpic && isValidEpic(cleanEpic)
@@ -2678,7 +2694,7 @@ exports.importMembersJson = async (req, res, next) => {
             name: memberDoc.name,
             guardianName: memberDoc.guardianName,
             houseNumber: memberDoc.houseNumber,
-            booth: memberDoc.booth,
+            partNumber: memberDoc.partNumber,
           };
 
       bulkOps.push({
@@ -2693,6 +2709,7 @@ exports.importMembersJson = async (req, res, next) => {
       });
     }
 
+    let importedCount = 0;
     if (bulkOps.length > 0) {
       const result = await Member.bulkWrite(bulkOps, { ordered: false });
       importedCount = (result.upsertedCount || 0) + (result.modifiedCount || 0) + (result.matchedCount || 0);
