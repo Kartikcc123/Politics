@@ -90,8 +90,8 @@ const corsOptions = {
 
 app.use(cors(corsOptions));
 app.options('*', cors(corsOptions));
-app.use(express.json({ limit: '10mb' }));
-app.use(express.urlencoded({ extended: true }));
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ limit: '50mb', extended: true }));
 app.use('/uploads', express.static(uploadRoot()));
 app.use('/party-logos', express.static(path.join(__dirname, 'src/public/party-logos')));
 app.get('/media/s3/*', require('./src/controllers/mediaController').getS3);

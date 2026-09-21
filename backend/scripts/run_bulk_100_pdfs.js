@@ -100,21 +100,30 @@ async function processSinglePdf(pdfPath, token, index, total, progressTracker) {
         pinCode: header.pinCode || '',
         sectionMap: docSectionMap
       },
-      members: records.map(r => ({
-        voterSerial: String(r.voterSerial || ''),
-        voterId: r.voterId || '',
-        name: r.name || '',
-        guardianName: r.guardianName || '',
-        relationType: r.relationType || '',
-        houseNumber: r.houseNumber || '',
-        age: r.age || null,
-        gender: r.gender || '',
-        sectionNumber: String(r.sectionNumber || '1'),
-        sectionName: r.sectionName || docSectionMap[String(r.sectionNumber)] || '',
-        assemblyNumber: effAsmNum,
-        partNumber: effPartNum,
-        village: header.village || ''
-      }))
+      members: records.map(r => {
+        let cardB64 = '';
+        if (r.cardImage && fs.existsSync(r.cardImage)) {
+          try {
+            cardB64 = `data:image/jpeg;base64,${fs.readFileSync(r.cardImage).toString('base64')}`;
+          } catch (_) {}
+        }
+        return {
+          voterSerial: String(r.voterSerial || ''),
+          voterId: r.voterId || '',
+          name: r.name || '',
+          guardianName: r.guardianName || '',
+          relationType: r.relationType || '',
+          houseNumber: r.houseNumber || '',
+          age: r.age || null,
+          gender: r.gender || '',
+          sectionNumber: String(r.sectionNumber || '1'),
+          sectionName: r.sectionName || docSectionMap[String(r.sectionNumber)] || '',
+          assemblyNumber: effAsmNum,
+          partNumber: effPartNum,
+          village: header.village || '',
+          cardImage: cardB64
+        };
+      })
     };
 
     const uploadRes = await apiRequest('/api/import/members/json', 'POST', JSON.stringify(importPayload), token);

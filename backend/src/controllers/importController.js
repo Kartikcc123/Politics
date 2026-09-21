@@ -19,7 +19,7 @@ const { ocrWardPdf } = require('../utils/wardPdfOcr');
 const { normalizeEpic, isValidEpic } = require('../utils/epic');
 const { convertKrutiDevToUnicode } = require('../utils/legacyHindi');
 const { isValidHindiText, isValidAssemblyHeader } = require('./areaController');
-const { uploadFilePath } = require('../utils/uploadPath');
+const { uploadFilePath, uploadPublicPath, uploadRoot } = require('../utils/uploadPath');
 const { persistLocalImage } = require('../utils/persistentMedia');
 const { findBestLocationMatch } = require('../utils/locationMerge');
 const { enqueuePdfImport } = require('../services/pdfImportQueue');
@@ -2693,6 +2693,31 @@ exports.importMembersJson = async (req, res, next) => {
         verificationStatus: 'verified',
         updatedBy: req.currentUser?._id,
       };
+
+      // Save base64 cardImage if provided
+      if (m.cardImage && typeof m.cardImage === 'string') {
+        if (m.cardImage.startsWith('data:image')) {
+          try {
+            const root = path.resolve(uploadRoot());
+            const votersDir = path.join(root, 'voters');
+            if (!fs.existsSync(votersDir)) fs.mkdirSync(votersDir, { recursive: true });
+            const matches = m.cardImage.match(/^data:([A-Za-z-+\/]+);base64,(.+)$/);
+            if (matches && matches.length === 3) {
+              const ext = matches[1].includes('png') ? '.png' : '.jpg';
+              const buffer = Buffer.from(matches[2], 'base64');
+              const filename = `card-${cleanEpic || 'voter'}-${Date.now()}-${crypto.randomBytes(3).toString('hex')}${ext}`;
+              const targetFile = path.join(votersDir, filename);
+              fs.writeFileSync(targetFile, buffer);
+              const publicUrl = uploadPublicPath('voters', filename);
+              memberDoc.cardImage = publicUrl;
+              memberDoc.ocrCardImage = publicUrl;
+            }
+          } catch (_) {}
+        } else if (m.cardImage.startsWith('/uploads') || m.cardImage.startsWith('http')) {
+          memberDoc.cardImage = m.cardImage;
+          memberDoc.ocrCardImage = m.cardImage;
+        }
+      }
 
       if (booth?._id) memberDoc.booth = booth._id;
       if (ward) memberDoc.ward = ward;
