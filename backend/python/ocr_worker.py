@@ -676,23 +676,23 @@ PREFIX_CORRECTIONS = {
     "KOW": "KDY", "KPY": "KDY", "KTY": "KDY", "KDT": "KDY",
     "QDY": "KDY", "ODY": "KDY", "RDY": "KDY", "KOO": "KDY",
     "SSN": "SNE", "SME": "SNE", "SN3": "SNE", "SHE": "SNE",
-    "5NE": "SNE", "SNE3": "SNE", "SNEI": "SNE", "SMF": "SNE"
+    "5NE": "SNE", "SNE3": "SNE", "SNEI": "SNE", "SMF": "SNE",
+    "ESN": "SNE", "SWE": "SNE", "SNE": "SNE", "KDY": "KDY"
 }
 
 DIGIT_MAP = str.maketrans({
     "O": "0", "Q": "0", "D": "0", "I": "1", "L": "1", "l": "1",
-    "Z": "2", "z": "2", "S": "5", "s": "5", "B": "8", "G": "6",
-    "T": "7", "A": "4", "E": "3"
+    "Z": "2", "z": "2"
 })
 
 
 def clean_epic(raw):
     if not raw:
         return ""
-    compact = re.sub(r"[^A-Za-z0-9/]", "", str(raw)).upper()
+    s_raw = str(raw).upper()
 
     # 1. Legacy format: RJ/xx/xxx/xxxxxx
-    m_leg = re.search(r"(RJ|[A-Z]{2,3})/([0-9O]{1,3})/([0-9O]{1,3})/([0-9O]{5,6})", compact)
+    m_leg = re.search(r"(RJ|[A-Z]{2,3})/([0-9O]{1,3})/([0-9O]{1,3})/([0-9O]{5,6})", s_raw)
     if m_leg:
         p1 = "RJ" if m_leg.group(1).startswith("R") else m_leg.group(1)
         return (
@@ -702,33 +702,37 @@ def clean_epic(raw):
             m_leg.group(4).replace("O", "0")
         )
 
-    # 2. Known 4-character prefix misreads followed by 7 digits (e.g. SSN31949700 -> SNE + 1949700)
-    for p4, repl in PREFIX_CORRECTIONS.items():
-        if len(p4) == 4:
-            m4 = re.search(re.escape(p4) + r"([0-9OQDILLZSBGTAE]{7})", compact)
-            if m4:
-                s = m4.group(1).translate(DIGIT_MAP)
-                if len(s) == 7 and s.isdigit():
-                    return repl + s
+    # 2. Priority 1: Exact 3 letters followed by 7 pure digits (e.g. SNE1956358 in 'a] SNE1956358 |')
+    m_exact = re.search(r"(?:^|[^A-Z0-9])([A-Z]{3})\s*([0-9]{7})(?:[^0-9]|$)", s_raw)
+    if m_exact:
+        p = m_exact.group(1)
+        digits = m_exact.group(2)
+        p = PREFIX_CORRECTIONS.get(p, p)
+        return p + digits
 
-    # 3. Known 3-character prefixes (KDY, SNE, KOV, etc.) followed by 7 digits anywhere
-    for p3, repl in PREFIX_CORRECTIONS.items():
-        if len(p3) == 3:
-            m3 = re.search(re.escape(p3) + r"([0-9OQDILLZSBGTAE]{7})", compact)
-            if m3:
-                s = m3.group(1).translate(DIGIT_MAP)
-                if len(s) == 7 and s.isdigit():
-                    return repl + s
+    # 3. Known prefix (SNE, KDY) followed by 7 digits with common OCR letter-digits (O, I, L, Z)
+    for p_cand, p_repl in PREFIX_CORRECTIONS.items():
+        m_pref = re.search(re.escape(p_cand) + r"\s*([0-9OQDILLZ]{7})", s_raw)
+        if m_pref:
+            digits = m_pref.group(1).translate(DIGIT_MAP)
+            if len(digits) == 7 and digits.isdigit():
+                return p_repl + digits
 
-    # 4. Standard 3 uppercase letters followed by 7 digits anywhere
-    m_std = re.search(r"([A-Z]{3})([0-9OQDILLZSBGTAE]{7})", compact)
+    # 4. Standard 3 letters followed by 7 digits with OCR letter-digits (O, I, L, Z)
+    m_std = re.search(r"(?:^|[^A-Z0-9])([A-Z]{3})\s*([0-9OQDILLZ]{7})(?:[^0-9]|$)", s_raw)
     if m_std:
         p = m_std.group(1)
-        if p in PREFIX_CORRECTIONS:
-            p = PREFIX_CORRECTIONS[p]
-        s = m_std.group(2).translate(DIGIT_MAP)
-        if re.fullmatch(r"[A-Z]{3}", p) and re.fullmatch(r"[0-9]{7}", s):
-            return p + s
+        p = PREFIX_CORRECTIONS.get(p, p)
+        digits = m_std.group(2).translate(DIGIT_MAP)
+        if len(p) == 3 and len(digits) == 7 and digits.isdigit():
+            return p + digits
+
+    # 5. Fallback: Search in compact non-whitespace string
+    compact = re.sub(r"[^A-Za-z0-9/]", "", s_raw)
+    m_comp = re.search(r"([A-Z]{3})([0-9]{7})", compact)
+    if m_comp:
+        p = PREFIX_CORRECTIONS.get(m_comp.group(1), m_comp.group(1))
+        return p + m_comp.group(2)
 
     return ""
 
@@ -1270,6 +1274,11 @@ def detect_card_boxes(image):
                 return final_boxes
         except Exception:
             pass
+
+    # For partial pages with 1..5 detected real cards (e.g. final main roll page with only 2 cards),
+    # return the exact detected physical card boxes directly.
+    if 1 <= len(unique) < 6:
+        return sorted(unique, key=lambda b: (b[1], b[0]))
 
     # Standard fallback 3x10 grid (ensures all 30 cards are extracted; empty cards filtered later)
     return [
