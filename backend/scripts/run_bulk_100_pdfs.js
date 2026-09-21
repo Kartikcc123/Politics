@@ -112,20 +112,23 @@ async function processSinglePdf(pdfPath, token, index, total, progressTracker) {
 
     const uploadRes = await apiRequest('/api/import/members/json', 'POST', JSON.stringify(importPayload), token);
     if (uploadRes.status === 200 || uploadRes.status === 201) {
-      console.log(`   🎉 Database Import Complete for ${fileName}!`);
+      console.log(`   🎉 Database Import Complete for ${fileName}! (Saved ${importPayload.members.length} voters in DB)`);
+      progressTracker.recordCompleted(fileName, records.length, durationSec);
     } else {
-      console.log(`   ⚠️ JSON batch status ${uploadRes.status}. Syncing individually...`);
+      console.log(`   ⚠️ JSON batch status ${uploadRes.status} (${uploadRes.body?.message || uploadRes.body?.error || 'error'}). Syncing individually...`);
       let synced = 0;
       for (const m of importPayload.members) {
         if (!m.voterId) continue;
         const res = await apiRequest('/api/members', 'POST', JSON.stringify(m), token);
         if (res.status === 200 || res.status === 201) synced++;
       }
-      console.log(`   ✅ Synced ${synced}/${importPayload.members.length} members directly.`);
+      if (synced > 0) {
+        console.log(`   ✅ Synced ${synced}/${importPayload.members.length} members directly.`);
+        progressTracker.recordCompleted(fileName, synced, durationSec);
+      } else {
+        throw new Error(`Upload to database failed (Server returned ${uploadRes.status}: ${uploadRes.body?.message || uploadRes.body?.error || 'Internal Error'}). Ensure VPS backend is updated!`);
+      }
     }
-
-    progressTracker.recordCompleted(fileName, records.length, durationSec);
-
   } catch (err) {
     console.error(`\n   ❌ ERROR processing ${fileName}:`, err.message);
     progressTracker.recordFailed(fileName, err.message);
@@ -225,12 +228,13 @@ async function main() {
   console.log(`Found ${pdfFiles.length} PDF file(s) to process.`);
 
   // Progress tracker
+  const isForce = process.argv.includes('--force') || process.argv.includes('-f');
   const tracker = new ProgressTracker(trackingFolder);
-  const pendingPdfs = pdfFiles.filter(p => !tracker.isCompleted(path.basename(p)));
-  const alreadyDone = pdfFiles.length - pendingPdfs.length;
+  const pendingPdfs = isForce ? pdfFiles : pdfFiles.filter(p => !tracker.isCompleted(path.basename(p)));
+  const alreadyDone = isForce ? 0 : (pdfFiles.length - pendingPdfs.length);
 
-  console.log(`Status: ${alreadyDone} already completed | ${pendingPdfs.length} remaining to process.`);
-  console.log(`Total Voters Imported so far: ${tracker.state.totalImportedVoters}`);
+  console.log(`Status: ${alreadyDone} already completed | ${pendingPdfs.length} remaining to process.${isForce ? ' (FORCE MODE)' : ''}`);
+  console.log(`Total Voters in Tracker: ${tracker.state.totalImportedVoters}`);
 
   if (pendingPdfs.length === 0) {
     console.log(`\n🎉 All ${pdfFiles.length} PDFs have already been successfully processed and imported!`);
