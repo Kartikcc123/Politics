@@ -2622,6 +2622,95 @@ exports.restoreCorruptedVoters = async (req, res, next) => {
   }
 };
 
+exports.importMembersJson = async (req, res, next) => {
+  try {
+    const { header = {}, members = [] } = req.body || {};
+    if (!members.length) {
+      return res.status(400).json({ message: 'No voter members provided in JSON payload.' });
+    }
+
+    const firstMember = cleanImportData(normalize(members[0]));
+    const { ward, booth } = await getOrCreateImportScope({
+      user: req.currentUser,
+      body: {
+        assemblyNumber: header.assemblyNumber || members[0]?.assemblyNumber,
+        assemblyName: header.assemblyName || members[0]?.assemblyName,
+        partNumber: header.partNumber || members[0]?.partNumber,
+        village: header.village || members[0]?.village,
+      },
+      firstMember,
+    });
+
+    const docSectionMap = safeSectionMap(header.sectionMap || {});
+    const bulkOps = [];
+    let importedCount = 0;
+
+    for (const m of members) {
+      if (!m.voterId && !m.name) continue;
+      const cleanEpic = normalizeEpic(m.voterId || '');
+      const secNum = cleanValue(m.sectionNumber || '1');
+      const secName = cleanSectionName(m.sectionName || docSectionMap[secNum] || '');
+
+      const memberDoc = {
+        name: cleanValue(m.name),
+        guardianName: cleanValue(m.guardianName),
+        relationType: m.relationType || (m.guardianName ? 'father' : ''),
+        houseNumber: cleanValue(m.houseNumber),
+        voterSerial: String(m.voterSerial || '').trim(),
+        voterId: cleanEpic,
+        age: Number(m.age) || undefined,
+        gender: normalizeGender(m.gender),
+        sectionNumber: secNum,
+        sectionName: secName,
+        assemblyNumber: cleanValue(header.assemblyNumber || m.assemblyNumber),
+        assemblyName: cleanValue(header.assemblyName || m.assemblyName),
+        partNumber: cleanValue(header.partNumber || m.partNumber),
+        village: cleanValue(header.village || m.village),
+        booth: booth ? booth._id : undefined,
+        ward: ward ? ward._id : undefined,
+        updatedBy: req.currentUser?._id,
+      };
+
+      const searchData = buildMemberSearchData(memberDoc);
+      const query = cleanEpic && isValidEpic(cleanEpic)
+        ? { voterId: cleanEpic }
+        : {
+            name: memberDoc.name,
+            guardianName: memberDoc.guardianName,
+            houseNumber: memberDoc.houseNumber,
+            booth: memberDoc.booth,
+          };
+
+      bulkOps.push({
+        updateOne: {
+          filter: query,
+          update: {
+            $set: { ...memberDoc, ...searchData },
+            $setOnInsert: { createdBy: req.currentUser?._id, createdAt: new Date() },
+          },
+          upsert: true,
+        },
+      });
+    }
+
+    if (bulkOps.length > 0) {
+      const result = await Member.bulkWrite(bulkOps, { ordered: false });
+      importedCount = (result.upsertedCount || 0) + (result.modifiedCount || 0) + (result.matchedCount || 0);
+    }
+
+    try { invalidateMemberData(); } catch (_) {}
+
+    return res.json({
+      success: true,
+      importedCount,
+      totalReceived: members.length,
+      message: `Successfully imported/upserted ${importedCount} voters.`,
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
 
 
 
