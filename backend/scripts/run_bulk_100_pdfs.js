@@ -109,7 +109,7 @@ async function processSinglePdf(pdfPath, token, index, total, progressTracker) {
             if (fs.existsSync(p) && fs.statSync(p).isFile() && fs.statSync(p).size > 0) {
               return `data:image/jpeg;base64,${fs.readFileSync(p).toString('base64')}`;
             }
-          } catch (_) {}
+          } catch (_) { }
         }
       }
       return '';
@@ -202,14 +202,14 @@ class ProgressTracker {
       try {
         const raw = fs.readFileSync(this.progressFilePath, 'utf8');
         this.state = JSON.parse(raw);
-      } catch (_) {}
+      } catch (_) { }
     }
   }
 
   save() {
     try {
       fs.writeFileSync(this.progressFilePath, JSON.stringify(this.state, null, 2), 'utf8');
-    } catch (_) {}
+    } catch (_) { }
   }
 
   isCompleted(fileName) {
