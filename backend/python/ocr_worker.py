@@ -1015,58 +1015,36 @@ def validate_record(record):
         for field, weight in weights.items()
     ))
     reasons = []
-    if not record.get("layoutDetected", True):
-        reasons.append("card_layout_not_confirmed")
     if field_confidence["name"] == 0:
         reasons.append("name_missing_or_invalid")
     elif suspicious_person_name(record.get("name")):
         field_confidence["name"] = min(field_confidence["name"], 60)
         reasons.append("name_ocr_noise")
-    elif record.get("rawName"):
-        reasons.append("name_ocr_cleanup_applied")
-    if record.get("identityOcrDisagreement"):
-        reasons.append("person_name_ocr_disagreement")
+
     if field_confidence["voterId"] == 0:
         reasons.append("voter_id_missing_or_invalid")
-    elif record.get("epicDisagreement"):
-        reasons.append("voter_id_ocr_disagreement")
-    if field_confidence["houseNumber"] == 0:
-        reasons.append("house_number_missing_or_invalid")
-    elif record.get("houseOcrDisagreement"):
-        field_confidence["houseNumber"] = min(field_confidence["houseNumber"], 60)
-        reasons.append("house_number_ocr_disagreement")
+
     if field_confidence["age"] == 0:
         reasons.append("age_missing_or_invalid")
-    elif record.get("ageOcrDisagreement"):
-        field_confidence["age"] = min(field_confidence["age"], 60)
-        reasons.append("age_ocr_disagreement")
+
     if field_confidence["gender"] == 0:
         reasons.append("gender_missing")
-    elif record.get("genderOcrDisagreement"):
-        field_confidence["gender"] = min(field_confidence["gender"], 60)
-        reasons.append("gender_ocr_disagreement")
-    if record.get("serialOcrDisagreement"):
-        reasons.append("serial_ocr_disagreement")
-    if record.get("guardianSpellingVariant"):
-        field_confidence["guardianName"] = min(field_confidence["guardianName"], 60)
-        reasons.append("guardian_spelling_variant_review")
-    if field_confidence["guardianName"] == 0:
+
+    if field_confidence["guardianName"] == 0 and not record.get("isDeleted"):
         reasons.append("guardian_missing_or_invalid")
-    elif suspicious_person_name(record.get("guardianName")):
-        field_confidence["guardianName"] = min(field_confidence["guardianName"], 60)
-        reasons.append("guardian_name_ocr_noise")
-    elif record.get("rawGuardianName"):
-        reasons.append("guardian_name_ocr_cleanup_applied")
+
     confidence = round(sum(
         field_confidence[field] * weight / 100
         for field, weight in weights.items()
     ))
-    if confidence < int(os.getenv("OCR_MIN_CONFIDENCE", "85")):
+    min_conf = int(os.getenv("OCR_MIN_CONFIDENCE", "75"))
+    if confidence < min_conf:
         reasons.append("low_confidence")
+
     record["fieldConfidence"] = field_confidence
     record["confidence"] = confidence
     record["reviewReasons"] = reasons
-    record["validationPassed"] = not reasons
+    record["validationPassed"] = not bool(reasons)
     record["needsReview"] = bool(reasons)
     return record
 
