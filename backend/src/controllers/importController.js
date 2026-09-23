@@ -2078,29 +2078,21 @@ const runPdfImport = async ({ file, body, currentUser }, uploadId) => {
         ])];
       }
       let existing = null;
-      if (item.voterId && !item.voterId.startsWith('REV-') && !item.voterId.startsWith('TMP-')) {
-        existing = await Member.findOne({ voterId: item.voterId });
+      const cleanSer = String(item.voterSerial || '').replace(/\D/g, '').trim();
+      
+      // 1. Primary: Match by booth and voterSerial within the current booth/part (Strict Slot Isolation)
+      if (booth && cleanSer) {
+        existing = await Member.findOne({ booth, voterSerial: cleanSer });
+      } else if (docPartNumber && cleanSer) {
+        existing = await Member.findOne({ partNumber: docPartNumber, voterSerial: cleanSer });
       }
-      if (!existing && booth && item.voterSerial) {
-        const cleanSer = String(item.voterSerial).replace(/\D/g, '').trim();
-        if (cleanSer) {
-          existing = await Member.findOne({ booth, voterSerial: cleanSer });
-        }
-      }
-      if (!existing && booth && item.name && String(item.name).trim().length >= 2) {
-        const cleanName = String(item.name).trim();
-        const nameRegex = new RegExp(`^${cleanName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i');
-        const query = { booth, name: nameRegex };
-        if (item.guardianName && String(item.guardianName).trim().length >= 2) {
-          const cleanG = String(item.guardianName).trim();
-          query.guardianName = new RegExp(`^${cleanG.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i');
-        }
-        existing = await Member.findOne(query);
-      }
-      if (!existing && item.photo && booth) {
-        const photoMatch = String(item.photo).match(/p\d+_c\d+/);
-        if (photoMatch) {
-          existing = await Member.findOne({ booth, photo: new RegExp(photoMatch[0]) });
+
+      // 2. Secondary: Match by voterId strictly scoped to the same booth/part
+      if (!existing && item.voterId && !item.voterId.startsWith('REV-') && !item.voterId.startsWith('TMP-') && isValidEpic(item.voterId)) {
+        if (booth) {
+          existing = await Member.findOne({ booth, voterId: item.voterId });
+        } else if (docPartNumber) {
+          existing = await Member.findOne({ partNumber: docPartNumber, voterId: item.voterId });
         }
       }
       if (existing) {
