@@ -79,11 +79,11 @@ async function processSinglePdf(pdfPath, token, index, total, progressTracker) {
       return;
     }
 
-    // Fallback extraction from filename if OCR header missed them
+    // Filename-based extraction is authoritative for electoral rolls
     const fnAsmMatch = fileName.match(/S\d+-(\d+)/i);
-    const fnPartMatch = fileName.match(/-(\d+)\.pdf$/i);
-    const effAsmNum = header.assemblyNumber || (fnAsmMatch ? fnAsmMatch[1] : '179');
-    const effPartNum = header.partNumber || (fnPartMatch ? fnPartMatch[1] : '');
+    const fnPartMatch = fileName.match(/-(?:HIN|ENG|RAJ|MAR|GUJ)-(\d{1,4})(?:\.pdf|_|$)/i) || fileName.match(/[-_](\d{1,4})\.pdf$/i) || fileName.match(/^(\d{1,4})\.pdf$/i);
+    const effAsmNum = fnAsmMatch ? fnAsmMatch[1] : (header.assemblyNumber || '179');
+    const effPartNum = fnPartMatch ? String(parseInt(fnPartMatch[1], 10)) : (header.partNumber || '');
 
     function readImageBase64(...candidates) {
       for (const c of candidates) {

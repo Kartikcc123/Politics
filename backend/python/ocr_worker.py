@@ -2043,10 +2043,21 @@ def normalize_section_locations(section_map, village):
                     (item for item in corrections if item["sectionNumber"] == number),
                     None,
                 )
-                if correction:
-                    correction["corrected"] = restored_value
-            corrected[number] = restored_value
-    return corrected, raw_map, corrections
+def extract_part_from_filename(filename_or_path):
+    if not filename_or_path:
+        return ""
+    name = Path(filename_or_path).name
+    m = re.search(r"-(?:HIN|ENG|RAJ|MAR|GUJ)-(\d{1,4})(?:\.pdf|_|$)", name, re.IGNORECASE)
+    if m:
+        return str(int(m.group(1)))
+    m2 = re.search(r"[-_](\d{1,4})\.pdf$", name, re.IGNORECASE)
+    if m2:
+        return str(int(m2.group(1)))
+    m3 = re.search(r"^(\d{1,4})\.pdf$", name, re.IGNORECASE)
+    if m3:
+        return str(int(m3.group(1)))
+    return ""
+
 
 def read_fixed_header(page_path, is_voter_page=True):
     image = cv2.imread(str(page_path))
@@ -2076,10 +2087,9 @@ def read_fixed_header(page_path, is_voter_page=True):
     )
     part_match = re.search(r"(?:भाग|part)\s*(?:संख्या|सं\.?|no\.?|number)?\s*[:：;\-]*\s*([0-9\u0966-\u096f]{1,4})", part_text_full, re.IGNORECASE)
     extracted_part = part_match.group(1).translate(str.maketrans("०१२३४५६७८९", "0123456789")) if part_match else fixed_header_number(part_digits, 4, prefer_tail=True)
-    if not extracted_part or len(extracted_part) <= 2:
-        fn_part_match = re.search(r"-(?:HIN|ENG|RAJ|MAR|GUJ)-(\d{1,4})(?:\.pdf|_|$)", str(page_path), re.IGNORECASE)
-        if fn_part_match:
-            extracted_part = fn_part_match.group(1)
+    fn_part_match = extract_part_from_filename(str(page_path))
+    if fn_part_match:
+        extracted_part = fn_part_match
 
     result = {
         "assemblyNumber": fixed_header_number(assembly_digits, 3, prefer_tail=True),
@@ -2459,6 +2469,22 @@ def main():
         for key in master_context_fields
         if master_header.get(key)
     }
+
+    # Filename-based Part Number Extraction (Authoritative Source)
+    fn_candidates = [
+        payload.get("pdfPath"),
+        payload.get("originalFileName"),
+        payload.get("fileName"),
+        payload.get("outputDir"),
+        str(pages[0]) if pages else ""
+    ]
+    fn_part_num = ""
+    for cand in fn_candidates:
+        fn_part_num = extract_part_from_filename(cand)
+        if fn_part_num:
+            break
+    if fn_part_num:
+        master_context["partNumber"] = fn_part_num
 
     doc_section_map = {}
     for ph in page_headers:
