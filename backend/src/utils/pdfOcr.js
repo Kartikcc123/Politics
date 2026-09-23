@@ -123,7 +123,7 @@ const runPythonWorker = (pages, outputDir, arg3, arg4, options = {}) => new Prom
           if (typeof onProgress === 'function') onProgress(event);
           continue;
         }
-      } catch (_) {}
+      } catch (_) { }
       stderr += `${line}\n`;
     }
   });
@@ -139,7 +139,7 @@ const runPythonWorker = (pages, outputDir, arg3, arg4, options = {}) => new Prom
           if (parsed.header && (parsed.records || parsed.members)) {
             return resolve(parsed);
           }
-        } catch (_) {}
+        } catch (_) { }
       }
       return resolve(JSON.parse(stdout));
     } catch (e) {
@@ -389,187 +389,185 @@ const lowMemoryOcrPdf = async (pdfPath, importFileName, pageRange = {}) => {
   let processedCards = 0;
   let lastTrackedSerial = 0;
 
-  const triggerRender = (pg) => {
-    const isMaster = pg === Number(process.env.OCR_MASTER_PAGE || 1);
-    const dpi = isMaster ? (process.env.OCR_MASTER_DPI || '300') : (process.env.OCR_DPI || '300');
-    return renderPage(pdfPath, workDir, pg, dpi);
-  };
+  const dpi = isMaster ? (process.env.OCR_MASTER_DPI || '250') : (process.env.OCR_DPI || '200');
+  return renderPage(pdfPath, workDir, pg, dpi);
+};
 
-  let nextRenderPromise = totalPages > 0 ? triggerRender(startPage) : null;
+let nextRenderPromise = totalPages > 0 ? triggerRender(startPage) : null;
 
-  for (let offset = 0; offset < totalPages; offset += 1) {
-    const pageNumber = startPage + offset;
-    let rendered;
-    try {
-      rendered = await nextRenderPromise;
-      const nextPageNumber = pageNumber + 1;
-      if (nextPageNumber <= endPage) {
-        nextRenderPromise = triggerRender(nextPageNumber);
-      } else {
-        nextRenderPromise = null;
+for (let offset = 0; offset < totalPages; offset += 1) {
+  const pageNumber = startPage + offset;
+  let rendered;
+  try {
+    rendered = await nextRenderPromise;
+    const nextPageNumber = pageNumber + 1;
+    if (nextPageNumber <= endPage) {
+      nextRenderPromise = triggerRender(nextPageNumber);
+    } else {
+      nextRenderPromise = null;
+    }
+    onProgress?.({
+      phase: 'ocr',
+      processedPages: offset,
+      totalPages,
+      processedCards,
+      totalCards,
+    });
+    const globalStartSerial = pageNumber >= 3
+      ? (lastTrackedSerial > 0 ? lastTrackedSerial + 1 : (pageNumber - 3) * 30 + 1)
+      : undefined;
+    const result = await runPythonWorker(
+      [rendered],
+      workDir,
+      [pageNumber],
+      (event) => {
+        if (event.type !== 'card_progress') return;
+        processedCards += 1;
+        onProgress?.({
+          phase: 'ocr',
+          processedPages: offset,
+          totalPages,
+          processedCards,
+          totalCards,
+        });
+      },
+      { globalStartSerial },
+    );
+    const pageRecs = result.records || [];
+    records.push(...pageRecs);
+    const validSerials = pageRecs
+      .map((r) => Number(r.voterSerial))
+      .filter((s) => Number.isFinite(s) && s > 0)
+      .sort((a, b) => a - b);
+    if (validSerials.length > 0) {
+      const baseline = lastTrackedSerial > 0 ? lastTrackedSerial : validSerials[0] - 1;
+      const plausible = validSerials.filter((s) => s > lastTrackedSerial && s <= baseline + 35);
+      if (plausible.length > 0) {
+        lastTrackedSerial = plausible[plausible.length - 1];
+      } else if (validSerials[validSerials.length - 1] - validSerials[0] <= 35) {
+        lastTrackedSerial = validSerials[validSerials.length - 1];
       }
-      onProgress?.({
-        phase: 'ocr',
-        processedPages: offset,
-        totalPages,
-        processedCards,
-        totalCards,
-      });
-      const globalStartSerial = pageNumber >= 3
-        ? (lastTrackedSerial > 0 ? lastTrackedSerial + 1 : (pageNumber - 3) * 30 + 1)
-        : undefined;
-      const result = await runPythonWorker(
-        [rendered],
-        workDir,
-        [pageNumber],
-        (event) => {
-          if (event.type !== 'card_progress') return;
-          processedCards += 1;
-          onProgress?.({
-            phase: 'ocr',
-            processedPages: offset,
-            totalPages,
-            processedCards,
-            totalCards,
-          });
-        },
-        { globalStartSerial },
-      );
-      const pageRecs = result.records || [];
-      records.push(...pageRecs);
-      const validSerials = pageRecs
-        .map((r) => Number(r.voterSerial))
-        .filter((s) => Number.isFinite(s) && s > 0)
-        .sort((a, b) => a - b);
-      if (validSerials.length > 0) {
-        const baseline = lastTrackedSerial > 0 ? lastTrackedSerial : validSerials[0] - 1;
-        const plausible = validSerials.filter((s) => s > lastTrackedSerial && s <= baseline + 35);
-        if (plausible.length > 0) {
-          lastTrackedSerial = plausible[plausible.length - 1];
-        } else if (validSerials[validSerials.length - 1] - validSerials[0] <= 35) {
-          lastTrackedSerial = validSerials[validSerials.length - 1];
-        }
+    }
+    if (headerTexts.length < 3 && result.headerText) headerTexts.push(result.headerText);
+    for (const [key, value] of Object.entries(result.header || {})) {
+      if (key === 'sectionMap' && value && typeof value === 'object') {
+        header.sectionMap = { ...value, ...(header.sectionMap || {}) };
+        continue;
       }
-      if (headerTexts.length < 3 && result.headerText) headerTexts.push(result.headerText);
-      for (const [key, value] of Object.entries(result.header || {})) {
-        if (key === 'sectionMap' && value && typeof value === 'object') {
-          header.sectionMap = { ...value, ...(header.sectionMap || {}) };
-          continue;
-        }
-        if (!header[key] && value) header[key] = value;
-      }
-      onProgress?.({
-        phase: 'ocr',
-        processedPages: offset + 1,
-        totalPages,
-        processedCards,
-        totalCards,
-      });
-    } catch (error) {
-      throw new Error(`OCR failed on PDF page ${pageNumber}: ${error.message}`);
-    } finally {
-      if (rendered) fs.rmSync(rendered, { force: true });
-      if (global.gc) global.gc();
+      if (!header[key] && value) header[key] = value;
+    }
+    onProgress?.({
+      phase: 'ocr',
+      processedPages: offset + 1,
+      totalPages,
+      processedCards,
+      totalCards,
+    });
+  } catch (error) {
+    throw new Error(`OCR failed on PDF page ${pageNumber}: ${error.message}`);
+  } finally {
+    if (rendered) fs.rmSync(rendered, { force: true });
+    if (global.gc) global.gc();
+  }
+}
+
+const masterContextFields = [
+  'assemblyNumber', 'assemblyName', 'partNumber', 'partName',
+  'postOffice', 'policeStation', 'tehsil', 'district',
+  'gramPanchayat', 'village', 'pinCode',
+];
+const cleanSecNameStr = (text = '') => {
+  if (!text) return '';
+  let s = String(text)
+    .replace(/\b(?:google|polling|station|view|map|after|aftet|hier|uzar|zadt|merit|oiler|sffzr|freran|ore)\b/gi, ' ')
+    .replace(/[A-Za-z]+/g, ' ')
+    .replace(/^[^\u0900-\u097F]+/, '')
+    .replace(/[\s\-_,:;|/\\+=–—\u0964\u0965]+$/, '')
+    .replace(/\s*,\s*/g, ', ')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+  return /[\u0900-\u097F]/.test(s) ? s : '';
+};
+
+const docSectionMap = {};
+if (header.sectionMap && typeof header.sectionMap === 'object') {
+  for (const [k, v] of Object.entries(header.sectionMap)) {
+    const cv = cleanSecNameStr(v);
+    if (k && cv) docSectionMap[String(k).trim()] = cv;
+  }
+}
+const defaultSecNum = docSectionMap['1'] ? '1' : (Object.keys(docSectionMap)[0] || '');
+
+let lastKnownSecNum = '';
+const inheritedRecords = records.map((record, index) => {
+  const inherited = { ...record };
+  for (const field of masterContextFields) {
+    if ((inherited[field] === undefined || inherited[field] === null || String(inherited[field]).trim() === '') && header[field]) {
+      inherited[field] = header[field];
     }
   }
-
-  const masterContextFields = [
-    'assemblyNumber', 'assemblyName', 'partNumber', 'partName',
-    'postOffice', 'policeStation', 'tehsil', 'district',
-    'gramPanchayat', 'village', 'pinCode',
-  ];
-  const cleanSecNameStr = (text = '') => {
-    if (!text) return '';
-    let s = String(text)
-      .replace(/\b(?:google|polling|station|view|map|after|aftet|hier|uzar|zadt|merit|oiler|sffzr|freran|ore)\b/gi, ' ')
-      .replace(/[A-Za-z]+/g, ' ')
-      .replace(/^[^\u0900-\u097F]+/, '')
-      .replace(/[\s\-_,:;|/\\+=–—\u0964\u0965]+$/, '')
-      .replace(/\s*,\s*/g, ', ')
-      .replace(/\s{2,}/g, ' ')
-      .trim();
-    return /[\u0900-\u097F]/.test(s) ? s : '';
-  };
-
-  const docSectionMap = {};
-  if (header.sectionMap && typeof header.sectionMap === 'object') {
-    for (const [k, v] of Object.entries(header.sectionMap)) {
-      const cv = cleanSecNameStr(v);
-      if (k && cv) docSectionMap[String(k).trim()] = cv;
+  const pdfPartMatch = importFileName.match(/(?:-(?:HIN|ENG|RAJ|MAR|GUJ)-|(?:part|booth|भाग)[\s\-_]*)(\d{1,4})(?:\.pdf|_|$)/i);
+  let resolvedPartNumber = (pdfPartMatch ? pdfPartMatch[1] : null) || header.partNumber;
+  // Reject current year 2026 if it was misidentified as part number
+  if (resolvedPartNumber === '2026' && pdfPartMatch && pdfPartMatch[1] !== '2026') {
+    resolvedPartNumber = pdfPartMatch[1];
+  } else if (resolvedPartNumber === '2026' && !pdfPartMatch) {
+    resolvedPartNumber = '';
+  }
+  if (resolvedPartNumber) {
+    header.partNumber = resolvedPartNumber;
+    inherited.partNumber = resolvedPartNumber;
+  }
+  if (header.assemblyNumber) inherited.assemblyNumber = header.assemblyNumber;
+  if (header.village && (!inherited.village || String(inherited.village).trim() === '')) {
+    inherited.village = header.village;
+  }
+  let secNum = String(inherited.sectionNumber || '').trim();
+  if (!secNum && inherited.sectionName && Object.keys(docSectionMap).length > 0) {
+    const matchEntry = Object.entries(docSectionMap).find(([k, v]) => v && (v.includes(inherited.sectionName) || inherited.sectionName.includes(v)));
+    if (matchEntry) secNum = matchEntry[0];
+  }
+  if (!secNum) {
+    if (lastKnownSecNum) {
+      secNum = lastKnownSecNum;
+    } else if (defaultSecNum) {
+      secNum = defaultSecNum;
     }
   }
-  const defaultSecNum = docSectionMap['1'] ? '1' : (Object.keys(docSectionMap)[0] || '');
+  if (secNum) {
+    inherited.sectionNumber = secNum;
+    if (docSectionMap[secNum]) {
+      inherited.sectionName = docSectionMap[secNum];
+    } else {
+      inherited.sectionName = cleanSecNameStr(inherited.sectionName);
+    }
+    if ((!inherited.village || String(inherited.village).trim() === '' || !/[\u0900-\u097F]/.test(inherited.village))) {
+      const cleanSecName = String(inherited.sectionName || '').replace(/^\d+[\s\-\:\.\,]+/, '').trim();
+      if (cleanSecName) inherited.village = cleanSecName;
+    }
+    lastKnownSecNum = secNum;
+  }
+  if (!inherited.voterSerial || String(inherited.voterSerial).trim() === '') {
+    inherited.voterSerial = String(index + 1);
+  }
+  return inherited;
+});
 
-  let lastKnownSecNum = '';
-  const inheritedRecords = records.map((record, index) => {
-    const inherited = { ...record };
-    for (const field of masterContextFields) {
-      if ((inherited[field] === undefined || inherited[field] === null || String(inherited[field]).trim() === '') && header[field]) {
-        inherited[field] = header[field];
-      }
-    }
-    const pdfPartMatch = importFileName.match(/(?:-(?:HIN|ENG|RAJ|MAR|GUJ)-|(?:part|booth|भाग)[\s\-_]*)(\d{1,4})(?:\.pdf|_|$)/i);
-    let resolvedPartNumber = (pdfPartMatch ? pdfPartMatch[1] : null) || header.partNumber;
-    // Reject current year 2026 if it was misidentified as part number
-    if (resolvedPartNumber === '2026' && pdfPartMatch && pdfPartMatch[1] !== '2026') {
-      resolvedPartNumber = pdfPartMatch[1];
-    } else if (resolvedPartNumber === '2026' && !pdfPartMatch) {
-      resolvedPartNumber = '';
-    }
-    if (resolvedPartNumber) {
-      header.partNumber = resolvedPartNumber;
-      inherited.partNumber = resolvedPartNumber;
-    }
-    if (header.assemblyNumber) inherited.assemblyNumber = header.assemblyNumber;
-    if (header.village && (!inherited.village || String(inherited.village).trim() === '')) {
-      inherited.village = header.village;
-    }
-    let secNum = String(inherited.sectionNumber || '').trim();
-    if (!secNum && inherited.sectionName && Object.keys(docSectionMap).length > 0) {
-      const matchEntry = Object.entries(docSectionMap).find(([k, v]) => v && (v.includes(inherited.sectionName) || inherited.sectionName.includes(v)));
-      if (matchEntry) secNum = matchEntry[0];
-    }
-    if (!secNum) {
-      if (lastKnownSecNum) {
-        secNum = lastKnownSecNum;
-      } else if (defaultSecNum) {
-        secNum = defaultSecNum;
-      }
-    }
-    if (secNum) {
-      inherited.sectionNumber = secNum;
-      if (docSectionMap[secNum]) {
-        inherited.sectionName = docSectionMap[secNum];
-      } else {
-        inherited.sectionName = cleanSecNameStr(inherited.sectionName);
-      }
-      if ((!inherited.village || String(inherited.village).trim() === '' || !/[\u0900-\u097F]/.test(inherited.village))) {
-        const cleanSecName = String(inherited.sectionName || '').replace(/^\d+[\s\-\:\.\,]+/, '').trim();
-        if (cleanSecName) inherited.village = cleanSecName;
-      }
-      lastKnownSecNum = secNum;
-    }
-    if (!inherited.voterSerial || String(inherited.voterSerial).trim() === '') {
-      inherited.voterSerial = String(index + 1);
-    }
-    return inherited;
-  });
-
-  const photos = inheritedRecords.flatMap((record) => [record.photo, record.cardImage]).filter(Boolean);
-  keepOnlyVoterPhotos(workDir, photos);
-  const headerText = headerTexts.join('\n');
-  return {
-    text: `${headerText}\n${inheritedRecords.map((record) => record.rawText || '').join('\n')}`,
-    words: [],
-    voterRecords: inheritedRecords.map((record) => ({
-      ...record,
-      photo: record.photo ? uploadPublicPath('ocr', workId, path.basename(record.photo)) : '',
-      cardImage: record.cardImage ? uploadPublicPath('ocr', workId, path.basename(record.cardImage)) : '',
-    })),
-    images: photos.map((photo) => uploadPublicPath('ocr', workId, path.basename(photo))),
-    header,
-    status: `Low-memory OCR processed ${totalPages} page(s) sequentially and accepted ${records.length} confidence-checked voter record(s).`,
-  };
+const photos = inheritedRecords.flatMap((record) => [record.photo, record.cardImage]).filter(Boolean);
+keepOnlyVoterPhotos(workDir, photos);
+const headerText = headerTexts.join('\n');
+return {
+  text: `${headerText}\n${inheritedRecords.map((record) => record.rawText || '').join('\n')}`,
+  words: [],
+  voterRecords: inheritedRecords.map((record) => ({
+    ...record,
+    photo: record.photo ? uploadPublicPath('ocr', workId, path.basename(record.photo)) : '',
+    cardImage: record.cardImage ? uploadPublicPath('ocr', workId, path.basename(record.cardImage)) : '',
+  })),
+  images: photos.map((photo) => uploadPublicPath('ocr', workId, path.basename(photo))),
+  header,
+  status: `Low-memory OCR processed ${totalPages} page(s) sequentially and accepted ${records.length} confidence-checked voter record(s).`,
+};
 };
 
 exports.ocrPdf = lowMemoryOcrPdf;
