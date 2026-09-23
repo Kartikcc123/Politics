@@ -501,7 +501,7 @@ const lowMemoryOcrPdf = async (pdfPath, importFileName, pageRange = {}) => {
   const defaultSecNum = docSectionMap['1'] ? '1' : (Object.keys(docSectionMap)[0] || '');
 
   let lastKnownSecNum = '';
-  const inheritedRecords = records.map((record) => {
+  const inheritedRecords = records.map((record, index) => {
     const inherited = { ...record };
     for (const field of masterContextFields) {
       if ((inherited[field] === undefined || inherited[field] === null || String(inherited[field]).trim() === '') && header[field]) {
@@ -550,9 +550,7 @@ const lowMemoryOcrPdf = async (pdfPath, importFileName, pageRange = {}) => {
       lastKnownSecNum = secNum;
     }
     if (!inherited.voterSerial || String(inherited.voterSerial).trim() === '') {
-      const pageIndex = Number(inherited.page) || 1;
-      const cellIndex = Number(inherited.cell) || 1;
-      inherited.voterSerial = String(pageIndex >= 3 ? (pageIndex - 3) * 30 + cellIndex : cellIndex);
+      inherited.voterSerial = String(index + 1);
     }
     return inherited;
   });

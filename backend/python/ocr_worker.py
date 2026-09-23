@@ -403,6 +403,15 @@ def ocr_house(card, card_full_text=None):
     # 2. Devanagari line extraction & suffix detection:
     if eng_candidates:
         primary_eng = eng_candidates[0]
+        # If full-text OCR extracted a longer, complete house number (e.g. '52' vs single-digit '2'), prefer c_full!
+        if c_full and any(ch.isdigit() for ch in c_full):
+            c_full_digits = "".join(re.findall(r"\d", c_full))
+            eng_digits = "".join(re.findall(r"\d", primary_eng))
+            if len(c_full_digits) > len(eng_digits) and (c_full_digits.endswith(eng_digits) or c_full_digits.startswith(eng_digits)):
+                primary_eng = c_full
+        elif not primary_eng and c_full:
+            primary_eng = c_full
+
         # Fast single pass for Devanagari suffix (e.g. 'क', 'ख')
         gray_res = cv2.resize(gray, None, fx=1.8, fy=1.8, interpolation=cv2.INTER_CUBIC)
         clahe_img = cv2.createCLAHE(2.5, (8, 8)).apply(gray_res)
@@ -1469,7 +1478,8 @@ def is_voter_page(image, page_no=None):
     Determines whether a page image contains voter cards or is a non-voter page
     (Page 1 Cover, Page 2 Map, or trailing statistical summary / revision tables).
     Returns False for non-voter pages to prevent unwanted cropping of fake cards,
-    while correctly recognizing supplementary/addition voter pages (परिवर्धन सूची).
+    while correctly recognizing supplementary/addition voter pages (परिवर्धन सूची)
+    and partial voter pages with only 1..5 voter cards.
     """
     if image is None or getattr(image, "size", 0) == 0:
         return False
@@ -1477,14 +1487,11 @@ def is_voter_page(image, page_no=None):
         return False
 
     h, w = image.shape[:2]
-    sample = image[int(h * 0.08):int(h * 0.92), int(w * 0.04):int(w * 0.96)]
-    text = safe_image_to_string(sample, lang="hin+eng")
 
-    # Count real voter card indicators
-    voter_fields = len(re.findall(r"(?:पिता|पति|माता)\s*का\s*नाम|गृह\s*संख्या|(?:उम्र|आयु)\s*[:：]|लिंग\s*[:：]", text))
-    has_epic = bool(re.search(r"[A-Z]{3}\s*[0-9]{7}", text))
+    # 1. Quick check for statistical summary markers on top portion of page
+    sample_top = image[int(h * 0.05):int(h * 0.40), int(w * 0.03):int(w * 0.97)]
+    text_top = safe_image_to_string(sample_top, lang="hin+eng")
 
-    # Reject purely statistical summary pages (tables of aggregate counts without individual voter records)
     pure_summary_patterns = [
         r"सांख्यिकीय\s*सारांश",
         r"I\s*\+\s*II\s*-\s*III",
@@ -1494,15 +1501,28 @@ def is_voter_page(image, page_no=None):
         r"नामावली\s*का\s*प्रकार\s*\|\s*निर्वाचक\s*नामावली\s*की\s*पहचान",
         r"मतदाताओं\s*की\s*संख्या\s*:\s*\n\s*नामावली",
     ]
-    is_pure_summary = any(re.search(p, text, re.IGNORECASE) for p in pure_summary_patterns)
-    if is_pure_summary and voter_fields < 2 and not has_epic:
+    is_pure_summary = any(re.search(p, text_top, re.IGNORECASE) for p in pure_summary_patterns)
+    if is_pure_summary:
         return False
 
-    boxes = detect_card_boxes(image)
-    if len(boxes) >= 1 and (voter_fields >= 1 or has_epic or len(boxes) >= 6):
+    # 2. Check for voter fields in top section (handles partial pages like Page 13 with only 1 row of cards)
+    voter_fields_top = len(re.findall(r"(?:पिता|पति|माता)\s*का\s*नाम|गृह\s*संख्या|(?:उम्र|आयु)\s*[:：]|लिंग\s*[:：]|निर्वा[चव]क\s*का\s*नाम", text_top))
+    has_epic_top = bool(re.search(r"[A-Z]{3}\s*[0-9]{7}|RJ/\d+/\d+/", text_top))
+    if voter_fields_top >= 1 or has_epic_top:
         return True
 
-    return voter_fields >= 2 or has_epic
+    # 3. Check for detected card boxes
+    boxes = detect_card_boxes(image)
+    if boxes and len(boxes) >= 1:
+        return True
+
+    # 4. Fallback: scan full page
+    sample_full = image[int(h * 0.08):int(h * 0.92), int(w * 0.04):int(w * 0.96)]
+    text_full = safe_image_to_string(sample_full, lang="hin+eng")
+    voter_fields_full = len(re.findall(r"(?:पिता|पति|माता)\s*का\s*नाम|गृह\s*संख्या|(?:उम्र|आयु)\s*[:：]|लिंग\s*[:：]|निर्वा[चव]क\s*का\s*नाम", text_full))
+    has_epic_full = bool(re.search(r"[A-Z]{3}\s*[0-9]{7}|RJ/\d+/\d+/", text_full))
+
+    return voter_fields_full >= 1 or has_epic_full
 
 
 def process_page(page_path, output_dir, page_no):
@@ -1796,8 +1816,12 @@ def fixed_section_name(text):
     value = re.sub(r"\s*,\s*", ", ", value)
     value = re.sub(r"^(?:गम|गाम)\s+", "ग्राम ", value)
     value = re.sub(r"बला[डढ]यों", "बलाइयों", value)
-    value = re.sub(r"\bमो\b", "मोहल्ला", value)
-    value = re.sub(r"\bमौ\b", "मौहल्ला", value)
+    # Normalize accidental repeated syllables (e.g. मोहल्लाल्लाल्ला -> मोहल्ला)
+    value = re.sub(r"मोहल्ला(?:हल्ला|ल्ला)+", "मोहल्ला", value)
+    value = re.sub(r"मौहल्ला(?:हल्ला|ल्ला)+", "मौहल्ला", value)
+    value = re.sub(r"मोहल्ला\s*हल्ला", "मोहल्ला", value)
+    value = re.sub(r"(?<![\u0900-\u097F])मो[\.०]?(?!\s*[\u0900-\u097F]*हल्ला)\s+", "मोहल्ला ", value)
+    value = re.sub(r"(?<![\u0900-\u097F])मौ[\.०]?(?!\s*[\u0900-\u097F]*हल्ला)\s+", "मौहल्ला ", value)
     value = re.sub(r"\s{2,}", " ", value).strip()
     return value if len(re.findall(r"[\u0900-\u097F]", value)) >= 3 else ""
 
