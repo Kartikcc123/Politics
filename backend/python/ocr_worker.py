@@ -1817,6 +1817,9 @@ def fixed_section_name(text):
     value = re.sub(r"[\s\-:;|\u0964\u0965,.<>;~]+$", "", value).strip()
     value = re.sub(r"\s*,\s*", ", ", value)
     value = re.sub(r"^(?:गम|गाम)\s+", "ग्राम ", value)
+    value = re.sub(r"बला[डढ]यों", "बलाइयों", value)
+    value = re.sub(r"\bमो\b", "मोहल्ला", value)
+    value = re.sub(r"\bमौ\b", "मौहल्ला", value)
     value = re.sub(r"\s{2,}", " ", value).strip()
     return value if len(re.findall(r"[\u0900-\u097F]", value)) >= 3 else ""
 
@@ -1960,6 +1963,9 @@ def fixed_master_section_map(image):
     for k in list(sections.keys()):
         if k.isdigit() and (int(k) > 40 or int(k) < 1):
             sections.pop(k, None)
+
+    for k in list(sections.keys()):
+        sections[k] = fixed_section_name(sections[k])
 
     return sections
 
@@ -2529,36 +2535,43 @@ def main():
 
         # Scan raw page header text for any section number or section name from page_sec_map
         if page_sec_map:
-            page_hdr_clean = clean(headers[index] + " " + str(raw_header.get("rawSectionHeader") or ""))
-            village_name = master_context.get("village") or ""
+            raw_sec_hdr = str(raw_header.get("rawSectionHeader") or "").strip()
+            page_hdr_clean = clean(raw_sec_hdr + " " + headers[index])
 
-            # 1. Check for explicit section number in page header text
+            # 1. Check for explicit section number in page header text (NEVER match part/भाग)
             if not hdr_sec_num:
-                sec_match = re.search(r"(?:अनुभाग|अिुभाग|section|भाग)\s*(?:की\s*संख्या\s*व\s*नाम|संख्या|सं\.?)?\s*[:：;\-]?\s*([0-9\u0966-\u096f]{1,2})\b", page_hdr_clean, re.IGNORECASE)
+                sec_match = re.search(r"(?:अनुभाग|अिुभाग|अनुमाग|section|\bsec\b)\s*(?:की\s*संख्या\s*व\s*नाम|संख्या|सं\.?)?\s*[:：;\-]?\s*([0-9\u0966-\u096f]{1,2})\b", page_hdr_clean, re.IGNORECASE)
                 if sec_match:
                     cand_num = sec_match.group(1).translate(str.maketrans("०१२३४५६७८९", "0123456789"))
                     if cand_num in page_sec_map:
                         hdr_sec_num = cand_num
                         hdr_sec_name = page_sec_map[cand_num]
 
-            # 2. Check keyword matching against section names in page_sec_map
+            # 2. Check prefix / substring / keyword matching against section names
             if not hdr_sec_num:
                 for s_num, s_name in page_sec_map.items():
+                    s_clean = clean(s_name)
+                    s_pfx = s_clean.split(",")[0].strip()
+                    if (s_clean and s_clean in page_hdr_clean) or (s_pfx and len(s_pfx) >= 6 and s_pfx in page_hdr_clean):
+                        hdr_sec_num = s_num
+                        hdr_sec_name = s_name
+                        break
                     keywords = [w for w in re.findall(r"[\u0900-\u097F]{3,}", s_name) if w not in ("की", "का", "के", "बस्ती", "मोहल्ला", "रावला", "छातोल", "ग्राम", "वार्ड", "संख्या")]
                     if any(kw in page_hdr_clean for kw in keywords):
                         hdr_sec_num = s_num
                         hdr_sec_name = s_name
                         break
 
-            # 3. Fuzzy matching against section names
+            # 3. Fuzzy matching against clean section line text
             if not hdr_sec_num:
                 best_s_num, best_score = None, 0.0
+                match_target = fixed_section_name(raw_sec_hdr) or page_hdr_clean
                 for s_num, s_name in page_sec_map.items():
-                    score = SequenceMatcher(None, s_name, page_hdr_clean).ratio()
+                    score = SequenceMatcher(None, s_name, match_target).ratio()
                     if score > best_score:
                         best_score = score
                         best_s_num = s_num
-                if best_s_num and best_score >= 0.40:
+                if best_s_num and best_score >= 0.35:
                     hdr_sec_num = best_s_num
                     hdr_sec_name = page_sec_map[best_s_num]
 
@@ -2596,20 +2609,12 @@ def main():
 
         for record in result:
             merged = {**page_header, **{key: value for key, value in record.items() if value not in (None, "")}}
-            sec_num = str(record.get("sectionNumber") or hdr_sec_num or last_known_section_num or merged.get("sectionNumber") or "").strip()
-            if not sec_num or (sec_num.isdigit() and int(sec_num) > 50) or (page_sec_map and sec_num not in page_sec_map and sec_num != last_known_section_num):
-                sec_num = last_known_section_num or (list(page_sec_map.keys())[0] if len(page_sec_map) >= 1 else "")
-
-            if sec_num:
-                merged["sectionNumber"] = sec_num
-                if page_sec_map.get(sec_num):
-                    merged["sectionName"] = page_sec_map[sec_num]
-                elif last_known_section_name and sec_num == last_known_section_num:
-                    merged["sectionName"] = last_known_section_name
-            else:
-                merged["sectionNumber"] = "1"
-                if page_sec_map.get("1"):
-                    merged["sectionName"] = page_sec_map["1"]
+            sec_num = hdr_sec_num or last_known_section_num or (list(page_sec_map.keys())[0] if len(page_sec_map) >= 1 else "1")
+            merged["sectionNumber"] = sec_num
+            if page_sec_map.get(sec_num):
+                merged["sectionName"] = page_sec_map[sec_num]
+            elif last_known_section_name:
+                merged["sectionName"] = last_known_section_name
             records.append(merged)
 
     # Preserve printed card serials. Sequence information is validation-only.
