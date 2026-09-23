@@ -1871,89 +1871,97 @@ def fixed_location_name(text):
 def fixed_master_section_map(image):
     """Read the numbered section table cleanly from Page 1 without mixing in the location column."""
     height, width = image.shape[:2]
-    # Crop strictly the left section column (X: 2% to 44%, Y: 28% to 55%) to avoid right administrative column bleed
-    region = image[round(height * 0.28):round(height * 0.55), round(width * 0.02):round(width * 0.44)]
+    # Crop strictly the left section column (X: 2.5% to 38.5%, Y: 28% to 52%) to avoid right administrative column bleed
+    region = image[round(height * 0.28):round(height * 0.52), round(width * 0.025):round(width * 0.385)]
     if region.size == 0:
         return {}
     gray = cv2.cvtColor(region, cv2.COLOR_BGR2GRAY)
-    res = cv2.resize(gray, None, fx=2.0, fy=2.0, interpolation=cv2.INTER_CUBIC)
+    res = cv2.resize(gray, None, fx=2.5, fy=2.5, interpolation=cv2.INTER_CUBIC)
     clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8)).apply(res)
-    variants = [
-        clahe,
-        cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)[1],
-    ]
+    
+    ocr_lang = "hin" if "hin" in os.getenv("OCR_LANGUAGES", "hin+eng") else os.getenv("OCR_LANGUAGES", "hin+eng")
+    raw_text = safe_image_to_string(clahe, lang=ocr_lang, config="--psm 6")
+    if not raw_text.strip():
+        raw_text = safe_image_to_string(clahe, lang="hin+eng", config="--psm 6")
+
+    digit_trans = str.maketrans("०१२३४५६७८९", "0123456789")
+    lines = [l.strip() for l in raw_text.splitlines() if l.strip()]
+
+    in_section = False
     sections = {}
-    digit_translation = str.maketrans("\u0966\u0967\u0968\u0969\u096a\u096b\u096c\u096d\u096e\u096f", "0123456789")
-    right_col_patterns = [
-        r"\s*(?:शहर\s*/\s*मुख्य\s*ग्राम|मुख्य\s*ग्राम|पोस्ट\s*ऑफिस|डाक\s*घर|पुलिस\s*थाना|थाना|तहसील|जिला|पिन\s*कोड|वार्ड|Ward|क्ल|बा|घो|पु|तह|जि|पि)\b.*$",
-    ]
+    expected_idx = 1
+    stop_words = ["3. मतदान", "मतदान केन्द्र", "मतदान केंद्र", "भवन :", "स्थान :", "3."]
 
-    for variant in variants:
-        for psm in (4, 6):
-            text = safe_image_to_string(variant, lang=os.getenv("OCR_LANGUAGES", "hin+eng"), config=f"--psm {psm}")
-            lines = [l.strip() for l in text.splitlines() if l.strip()]
-            in_sec = False
-            sec_idx = 1
-            for l in lines:
-                if any(k in l for k in ["अनुभागों की संख्या", "संख्या और नाम", "संख्या व नाम", "विवरण :"]):
-                    in_sec = True
-                    continue
-                if not in_sec:
-                    continue
-                if any(k in l for k in ["3. मतदान", "मतदान केन्द्र", "मतदान केंद्र", "स्थान :", "भवन :"]):
-                    break
+    for line in lines:
+        if any(k in line for k in ["अनुभागों की संख्या", "संख्या और नाम", "संख्या व नाम"]):
+            in_section = True
+            continue
+        if not in_section:
+            if "विवरण" in line:
+                in_section = True
+            continue
+        if any(k in line for k in stop_words):
+            break
 
-                clean_l = clean(l).translate(digit_translation)
-                for pat in right_col_patterns:
-                    clean_l = re.sub(pat, "", clean_l, flags=re.IGNORECASE).strip()
+        clean_l = line.translate(digit_trans)
+        clean_l = re.sub(r"[^0-9\u0900-\u097F\s\(\)\,\.\-]", "", clean_l).strip(" :,;|")
 
-                m = re.match(r"^(?:([0-9]{1,2})|[\-\!\?\|\)\(\[\]iIl\u0965\u0964])\s*[\-\–\:\.\)]?\s*(.+)$", clean_l)
-                if m:
-                    num_str = m.group(1)
-                    name_str = m.group(2).strip(" -,:;|\t")
-                    num = int(num_str) if num_str else sec_idx
-                    sec_idx = num + 1
-                else:
-                    name_str = clean_l.strip(" -,:;|\t")
-                    num = sec_idx
-                    sec_idx += 1
+        if len(re.findall(r"[\u0900-\u097F]", clean_l)) < 3:
+            continue
+        if re.search(r"(?:भाग में आने वाले|अनुभागों की|संख्या और नाम|विवरण)", clean_l):
+            continue
 
-                name_str = re.sub(r"^[0-9\u0966-\u096f\-\!\?\|\)\(\[\]\:\;\.\,\s]+", "", name_str).strip(" -,:;|")
-                name_str = re.sub(r"^(?:गम|गाम)\s+", "ग्राम ", name_str)
-                name_str = re.sub(r"[\|=_\"`{}><;~!\?]", "", name_str)
-                name_str = re.sub(r"\s{2,}", " ", name_str).strip()
+        m = re.match(r"^(?:[\|\!\?iIl\u0965\u0964\-]*)?([0-9]{1,2})\s*[\-\–\:\.\)]\s*(.+)$", clean_l)
+        if m:
+            read_num = int(m.group(1))
+            name_part = m.group(2).strip()
+            if read_num == expected_idx or (read_num == expected_idx + 1 and expected_idx > 1):
+                actual_num = read_num
+                expected_idx = actual_num + 1
+            elif expected_idx == 1 and read_num in (4, 7, 0):
+                actual_num = 1
+                expected_idx = 2
+            elif expected_idx == 10 and read_num == 0:
+                actual_num = 10
+                expected_idx = 11
+            else:
+                actual_num = expected_idx
+                expected_idx += 1
+        else:
+            name_part = re.sub(r"^[0-9\-\.\:\s\(\)\|\!\?iIl\u0965\u0964]+", "", clean_l).strip()
+            actual_num = expected_idx
+            expected_idx += 1
 
-                if len(re.findall(r"[\u0900-\u097F]", name_str)) >= 3 and not re.search(r"(?:विवरण|प्रकाशन|पुनरीक्षण|मतदाता|संख्या)", name_str):
-                    s_key = str(num)
-                    if s_key not in sections or len(name_str) > len(sections[s_key]):
-                        sections[s_key] = name_str
+        name_part = re.sub(r"^[0-9\u0966-\u096f\-\.\:\s\(\)\|\!\?iIl\u0965\u0964]+", "", name_part).strip(" -,:;|")
+        name_part = re.sub(r"\s{2,}", " ", name_part).strip()
 
-    result = sections
+        if len(re.findall(r"[\u0900-\u097F]", name_part)) >= 3:
+            sections[str(actual_num)] = name_part
 
     # Section rows normally repeat the same village after the comma. Use the
     # majority spelling to restore a dropped anusvara/chandrabindu in one row.
     suffix_counts = {}
-    for name in result.values():
-        if ',' in name:
-            suffix = clean(name.rsplit(',', 1)[1]).strip()
-            if suffix:
+    for name in sections.values():
+        if "," in name:
+            suffix = clean(name.rsplit(",", 1)[1]).strip()
+            if len(suffix) >= 2:
                 suffix_counts[suffix] = suffix_counts.get(suffix, 0) + 1
     if suffix_counts:
         dominant = max(suffix_counts.items(), key=lambda item: item[1])[0]
-        dominant_key = re.sub(r'[ंँ]', '', dominant)
-        for number, name in list(result.items()):
-            if ',' not in name:
+        dominant_key = re.sub(r"[ंँ]", "", dominant)
+        for number, name in list(sections.items()):
+            if "," not in name:
                 continue
-            prefix, suffix = name.rsplit(',', 1)
-            if re.sub(r'[ंँ]', '', clean(suffix).strip()) == dominant_key:
-                result[number] = prefix.rstrip() + ',' + dominant
+            prefix, suffix = name.rsplit(",", 1)
+            if re.sub(r"[ंँ]", "", clean(suffix).strip()) == dominant_key or SequenceMatcher(None, clean(suffix).strip(), dominant).ratio() > 0.6:
+                sections[number] = prefix.rstrip() + "," + dominant
 
     # Filter out spurious isolated section numbers that were misread
-    for k in list(result.keys()):
+    for k in list(sections.keys()):
         if k.isdigit() and (int(k) > 40 or int(k) < 1):
-            result.pop(k, None)
+            sections.pop(k, None)
 
-    return result
+    return sections
 
 def normalize_section_locations(section_map, village):
     """Correct only OCR-like section suffixes using document-local evidence."""
@@ -2103,12 +2111,20 @@ def read_fixed_header(page_path, is_voter_page=True):
         if pin_code:
             result["pinCode"] = pin_code
     if is_voter_page:
+        ocr_lang = "hin" if "hin" in os.getenv("OCR_LANGUAGES", "hin+eng") else os.getenv("OCR_LANGUAGES", "hin+eng")
         section_text = ocr_fixed_region(
             image,
             (0.01, 0.015, 0.68, 0.045),
-            lang=os.getenv("OCR_LANGUAGES", "hin+eng"),
+            lang=ocr_lang,
             psm=6,
         )
+        if not section_text.strip():
+            section_text = ocr_fixed_region(
+                image,
+                (0.01, 0.015, 0.68, 0.045),
+                lang="hin+eng",
+                psm=6,
+            )
         sec_num_match = re.search(
             r"(?:अनुभाग|अिुभाग|अनुमाग|section|\bsec\b)[^\d\n]{0,45}?(?:संख्या|सं\.?|क्रमांक|नं\.?)?\s*[:：;\-]?\s*([0-9\u0966-\u096f]{1,2})\b",
             section_text,
