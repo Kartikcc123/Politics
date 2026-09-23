@@ -139,8 +139,8 @@ async function processSinglePdf(pdfPath, token, index, total, progressTracker) {
       };
     });
 
-    // Upload to Server in chunks of 40 voters to ensure payload safety with images
-    const CHUNK_SIZE = 40;
+    // Upload to Server in safe chunks of 10 voters to eliminate HTTP 413 Payload Too Large
+    const CHUNK_SIZE = 10;
     let totalImported = 0;
     console.log(`   📤 Uploading ${membersList.length} voters (${attachedImages} images attached) to database in chunks of ${CHUNK_SIZE}...`);
 
