@@ -119,39 +119,90 @@ async function main() {
       pinCode: header.pinCode || '',
       sectionMap: docSectionMap
     },
-    members: records.map(r => ({
-      voterSerial: String(r.voterSerial || ''),
-      voterId: r.voterId || '',
-      name: r.name || '',
-      guardianName: r.guardianName || '',
-      relationType: r.relationType || '',
-      houseNumber: r.houseNumber || '',
-      age: r.age || null,
-      gender: r.gender || '',
-      sectionNumber: String(r.sectionNumber || '1'),
-      sectionName: r.sectionName || docSectionMap[String(r.sectionNumber)] || '',
-      assemblyNumber: header.assemblyNumber || '',
-      partNumber: header.partNumber || ''
-    }))
-  };
+    function readImageBase64(...candidates) {
+      for (const c of candidates) {
+        if (!c || typeof c !== 'string') continue;
+        const cleanPath = c.replace(/^[/\\]?uploads[/\\]?/i, '');
+        const pathsToTry = [
+          c,
+          path.resolve(c),
+          path.join(process.cwd(), c),
+          path.join(process.cwd(), 'uploads', cleanPath),
+          path.join(__dirname, '..', 'uploads', cleanPath),
+        ];
+        for (const p of pathsToTry) {
+          try {
+            if (fs.existsSync(p) && fs.statSync(p).isFile() && fs.statSync(p).size > 0) {
+              return `data:image/jpeg;base64,${fs.readFileSync(p).toString('base64')}`;
+            }
+          } catch (_) {}
+        }
+      }
+      return '';
+    }
 
-  const uploadRes = await apiRequest('/api/import/members/json', 'POST', JSON.stringify(importPayload), token);
-  
-  if (uploadRes.status === 200 || uploadRes.status === 201) {
-    console.log('   ✅ Live Database Import Successful!');
-    if (uploadRes.body?.importedCount !== undefined) {
-      console.log(`   Imported Count: ${uploadRes.body.importedCount}`);
+    let attachedImages = 0;
+    const membersList = records.map(r => {
+      const cardB64 = readImageBase64(r.localCardImage, r.cardImage);
+      const photoB64 = readImageBase64(r.localPhoto, r.photo);
+      if (cardB64 || photoB64) attachedImages++;
+      return {
+        voterSerial: String(r.voterSerial || ''),
+        voterId: r.voterId || '',
+        name: r.name || '',
+        guardianName: r.guardianName || '',
+        relationType: r.relationType || '',
+        houseNumber: r.houseNumber || '',
+        age: r.age || null,
+        gender: r.gender || '',
+        sectionNumber: String(r.sectionNumber || '1'),
+        sectionName: r.sectionName || docSectionMap[String(r.sectionNumber)] || '',
+        assemblyNumber: header.assemblyNumber || '',
+        partNumber: header.partNumber || '',
+        village: header.village || '',
+        cardImage: cardB64,
+        photo: photoB64
+      };
+    });
+
+    const CHUNK_SIZE = 40;
+    let totalImported = 0;
+    console.log(`   📤 Uploading ${membersList.length} voters (${attachedImages} images attached) to database in chunks of ${CHUNK_SIZE}...`);
+
+    for (let cIdx = 0; cIdx < membersList.length; cIdx += CHUNK_SIZE) {
+      const chunk = membersList.slice(cIdx, cIdx + CHUNK_SIZE);
+      const importPayload = {
+        header: {
+          assemblyNumber: header.assemblyNumber || '',
+          assemblyName: header.assemblyName || '',
+          partNumber: header.partNumber || '',
+          village: header.village || '',
+          postOffice: header.postOffice || '',
+          policeStation: header.policeStation || '',
+          tehsil: header.tehsil || '',
+          district: header.district || '',
+          pinCode: header.pinCode || '',
+          sectionMap: docSectionMap
+        },
+        members: chunk
+      };
+
+      const uploadRes = await apiRequest('/api/import/members/json', 'POST', JSON.stringify(importPayload), token);
+      if (uploadRes.status === 200 || uploadRes.status === 201) {
+        totalImported += chunk.length;
+        process.stdout.write(`\r   ✅ Chunk ${Math.floor(cIdx / CHUNK_SIZE) + 1}/${Math.ceil(membersList.length / CHUNK_SIZE)} saved (${totalImported}/${membersList.length} voters)...`);
+      } else {
+        console.warn(`\n   ⚠️ Chunk ${Math.floor(cIdx / CHUNK_SIZE) + 1} status ${uploadRes.status} (${uploadRes.body?.message || uploadRes.body?.error || 'error'}). Retrying individual members...`);
+        let synced = 0;
+        for (const m of chunk) {
+          if (!m.voterId && !m.name) continue;
+          const res = await apiRequest('/api/import/members/json', 'POST', JSON.stringify({ header: importPayload.header, members: [m] }), token);
+          if (res.status === 200 || res.status === 201) synced++;
+        }
+        totalImported += synced;
+      }
     }
-  } else {
-    console.log(`   Attempting direct Member upsert pass (HTTP ${uploadRes.status})...`);
-    let synced = 0;
-    for (const m of importPayload.members) {
-      if (!m.voterId) continue;
-      const res = await apiRequest('/api/members', 'POST', JSON.stringify(m), token);
-      if (res.status === 200 || res.status === 201) synced++;
-    }
-    console.log(`   ✅ Synced ${synced}/${importPayload.members.length} members directly to Live DB.`);
-  }
+    console.log(`\n   ✅ Total ${totalImported} voters saved to Live DB.`);
 
   // 4. Print Summary Table
   console.log(`\n========================================================================`);

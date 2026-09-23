@@ -262,10 +262,10 @@ exports.ocrPdf = async (pdfPath, importFileName, pageRange = {}) => {
             ...record,
             localPhoto: record.photo || '',
             localCardImage: record.cardImage || '',
-            photo: uploadPublicPath('ocr', workId, path.basename(record.photo)),
+            photo: record.photo ? uploadPublicPath('ocr', workId, path.basename(record.photo)) : '',
             cardImage: record.cardImage ? uploadPublicPath('ocr', workId, path.basename(record.cardImage)) : '',
           })),
-          images: records.map((record) => uploadPublicPath('ocr', workId, path.basename(record.photo))),
+          images: records.map((record) => (record.photo ? uploadPublicPath('ocr', workId, path.basename(record.photo)) : '')).filter(Boolean),
           header: pythonResult.header || {},
           status: `Python OCR processed ${pages.length} page(s), detected page header and accepted ${records.length} confidence-checked voter record(s).`,
         };

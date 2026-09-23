@@ -2043,6 +2043,10 @@ def normalize_section_locations(section_map, village):
                     (item for item in corrections if item["sectionNumber"] == number),
                     None,
                 )
+                if correction:
+                    correction["corrected"] = restored_value
+            corrected[number] = restored_value
+    return corrected, raw_map, corrections
 def extract_part_from_filename(filename_or_path):
     if not filename_or_path:
         return ""

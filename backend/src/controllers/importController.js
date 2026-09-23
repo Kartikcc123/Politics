@@ -2708,7 +2708,7 @@ exports.importMembersJson = async (req, res, next) => {
               const filename = `card-${cleanEpic || 'voter'}-${Date.now()}-${crypto.randomBytes(3).toString('hex')}${ext}`;
               const targetFile = path.join(votersDir, filename);
               fs.writeFileSync(targetFile, buffer);
-              const publicUrl = uploadPublicPath('voters', filename);
+              const publicUrl = await persistLocalImage(targetFile, req.currentUser?._id, false);
               memberDoc.cardImage = publicUrl;
               memberDoc.ocrCardImage = publicUrl;
             }
@@ -2733,7 +2733,7 @@ exports.importMembersJson = async (req, res, next) => {
               const filename = `photo-${cleanEpic || 'voter'}-${Date.now()}-${crypto.randomBytes(3).toString('hex')}${ext}`;
               const targetFile = path.join(votersDir, filename);
               fs.writeFileSync(targetFile, buffer);
-              memberDoc.photo = uploadPublicPath('voters', filename);
+              memberDoc.photo = await persistLocalImage(targetFile, req.currentUser?._id, false);
             }
           } catch (_) {}
         } else if (m.photo.startsWith('/uploads') || m.photo.startsWith('http')) {

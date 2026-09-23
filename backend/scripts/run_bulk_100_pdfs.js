@@ -131,43 +131,47 @@ async function processSinglePdf(pdfPath, token, index, total, progressTracker) {
       };
     });
 
-    // Upload to Server
-    console.log(`   📤 Uploading ${records.length} voters (${attachedImages} card images attached) to database...`);
-    const importPayload = {
-      header: {
-        assemblyNumber: effAsmNum,
-        assemblyName: header.assemblyName || 'सहाड़ा',
-        partNumber: effPartNum,
-        village: header.village || '',
-        postOffice: header.postOffice || '',
-        policeStation: header.policeStation || '',
-        tehsil: header.tehsil || '',
-        district: header.district || '',
-        pinCode: header.pinCode || '',
-        sectionMap: docSectionMap
-      },
-      members: membersList
-    };
+    // Upload to Server in chunks of 40 voters to ensure payload safety with images
+    const CHUNK_SIZE = 40;
+    let totalImported = 0;
+    console.log(`   📤 Uploading ${membersList.length} voters (${attachedImages} images attached) to database in chunks of ${CHUNK_SIZE}...`);
 
-    const uploadRes = await apiRequest('/api/import/members/json', 'POST', JSON.stringify(importPayload), token);
-    if (uploadRes.status === 200 || uploadRes.status === 201) {
-      console.log(`   🎉 Database Import Complete for ${fileName}! (Saved ${importPayload.members.length} voters in DB)`);
-      progressTracker.recordCompleted(fileName, records.length, durationSec);
-    } else {
-      console.log(`   ⚠️ JSON batch status ${uploadRes.status} (${uploadRes.body?.message || uploadRes.body?.error || 'error'}). Syncing individually...`);
-      let synced = 0;
-      for (const m of importPayload.members) {
-        if (!m.voterId) continue;
-        const res = await apiRequest('/api/members', 'POST', JSON.stringify(m), token);
-        if (res.status === 200 || res.status === 201) synced++;
-      }
-      if (synced > 0) {
-        console.log(`   ✅ Synced ${synced}/${importPayload.members.length} members directly.`);
-        progressTracker.recordCompleted(fileName, synced, durationSec);
+    for (let cIdx = 0; cIdx < membersList.length; cIdx += CHUNK_SIZE) {
+      const chunk = membersList.slice(cIdx, cIdx + CHUNK_SIZE);
+      const importPayload = {
+        header: {
+          assemblyNumber: effAsmNum,
+          assemblyName: header.assemblyName || 'सहाड़ा',
+          partNumber: effPartNum,
+          village: header.village || '',
+          postOffice: header.postOffice || '',
+          policeStation: header.policeStation || '',
+          tehsil: header.tehsil || '',
+          district: header.district || '',
+          pinCode: header.pinCode || '',
+          sectionMap: docSectionMap
+        },
+        members: chunk
+      };
+
+      const uploadRes = await apiRequest('/api/import/members/json', 'POST', JSON.stringify(importPayload), token);
+      if (uploadRes.status === 200 || uploadRes.status === 201) {
+        totalImported += chunk.length;
+        process.stdout.write(`\r   ✅ Chunk ${Math.floor(cIdx / CHUNK_SIZE) + 1}/${Math.ceil(membersList.length / CHUNK_SIZE)} saved (${totalImported}/${membersList.length} voters)...`);
       } else {
-        throw new Error(`Upload to database failed (Server returned ${uploadRes.status}: ${uploadRes.body?.message || uploadRes.body?.error || 'Internal Error'}). Ensure VPS backend is updated!`);
+        console.warn(`\n   ⚠️ Chunk ${Math.floor(cIdx / CHUNK_SIZE) + 1} status ${uploadRes.status} (${uploadRes.body?.message || uploadRes.body?.error || 'error'}). Retrying individual members...`);
+        let synced = 0;
+        for (const m of chunk) {
+          if (!m.voterId && !m.name) continue;
+          const res = await apiRequest('/api/import/members/json', 'POST', JSON.stringify({ header: importPayload.header, members: [m] }), token);
+          if (res.status === 200 || res.status === 201) synced++;
+        }
+        totalImported += synced;
       }
     }
+
+    console.log(`\n   🎉 Database Import Complete for ${fileName}! (Saved ${totalImported} voters in DB)`);
+    progressTracker.recordCompleted(fileName, totalImported, durationSec);
   } catch (err) {
     console.error(`\n   ❌ ERROR processing ${fileName}:`, err.message);
     progressTracker.recordFailed(fileName, err.message);
