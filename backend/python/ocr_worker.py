@@ -752,37 +752,48 @@ def epic_from(text):
 
 def ocr_epic(card, reference=""):
     height, width = card.shape[:2]
-    # Precise ROI: strictly top-right area above voter photo
-    crop = card[0:round(height * 0.26), round(width * 0.48):width]
+    # Precise ROI: top-right area above voter photo (widen to 0.38 to capture full legacy RJ/.. EPIC strings)
+    crop = card[0:round(height * 0.28), round(width * 0.38):width]
     if crop.size == 0:
         return "", False
 
     gray = cv2.cvtColor(crop, cv2.COLOR_BGR2GRAY)
-    res = cv2.resize(gray, None, fx=3.0, fy=3.0, interpolation=cv2.INTER_CUBIC)
+    res = cv2.resize(gray, None, fx=3.2, fy=3.2, interpolation=cv2.INTER_CUBIC)
     pad = cv2.copyMakeBorder(res, 15, 15, 15, 15, cv2.BORDER_CONSTANT, value=255)
 
     whitelist_cfg = "-c tessedit_char_whitelist=ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789/"
     cfg7 = f"--psm 7 {whitelist_cfg}"
+    cfg8 = f"--psm 8 {whitelist_cfg}"
     cfg6 = f"--psm 6 {whitelist_cfg}"
 
     cands = []
-    # 1. Raw padded with PSM 7 & 6
-    for cfg in (cfg7, cfg6):
+    # 1. Raw padded with PSM 7, 8, 6
+    for cfg in (cfg7, cfg8, cfg6):
         c = clean_epic(safe_image_to_string(pad, lang="eng", config=cfg))
         if c and valid_epic(c):
             cands.append(c)
 
-    # 2. CLAHE with PSM 7 & 6
-    clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8)).apply(pad)
-    for cfg in (cfg7, cfg6):
+    # 2. CLAHE with PSM 7, 8, 6
+    clahe = cv2.createCLAHE(clipLimit=2.5, tileGridSize=(8, 8)).apply(pad)
+    for cfg in (cfg7, cfg8, cfg6):
         c = clean_epic(safe_image_to_string(clahe, lang="eng", config=cfg))
         if c and valid_epic(c):
             cands.append(c)
 
-    # 3. Otsu threshold with PSM 7 & 6
+    # 3. Otsu threshold + Morphological Close to connect broken ink loops (e.g. 8 vs 6, 0 vs 6)
     _, otsu = cv2.threshold(pad, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-    for cfg in (cfg7, cfg6):
-        c = clean_epic(safe_image_to_string(otsu, lang="eng", config=cfg))
+    kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (2, 2))
+    otsu_closed = cv2.morphologyEx(otsu, cv2.MORPH_CLOSE, kernel)
+    for v in (otsu, otsu_closed):
+        for cfg in (cfg7, cfg8, cfg6):
+            c = clean_epic(safe_image_to_string(v, lang="eng", config=cfg))
+            if c and valid_epic(c):
+                cands.append(c)
+
+    # 4. Adaptive Gaussian Threshold
+    adapt = cv2.adaptiveThreshold(pad, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 21, 11)
+    for cfg in (cfg7, cfg8):
+        c = clean_epic(safe_image_to_string(adapt, lang="eng", config=cfg))
         if c and valid_epic(c):
             cands.append(c)
 
@@ -792,7 +803,7 @@ def ocr_epic(card, reference=""):
         return winner, True
 
     # Wider crop fallback if card header was slightly displaced
-    wider = card[0:round(height * 0.30), round(width * 0.42):width]
+    wider = card[0:round(height * 0.32), round(width * 0.32):width]
     if wider.size > 0:
         w_gray = cv2.cvtColor(wider, cv2.COLOR_BGR2GRAY)
         w_res = cv2.resize(w_gray, None, fx=2.5, fy=2.5, interpolation=cv2.INTER_CUBIC)
