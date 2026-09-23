@@ -1869,80 +1869,66 @@ def fixed_location_name(text):
 
 
 def fixed_master_section_map(image):
-    """Read the numbered section table without mixing in the location column."""
+    """Read the numbered section table cleanly from Page 1 without mixing in the location column."""
     height, width = image.shape[:2]
-    # Widen y (0.12 to 0.70) and x (0.0 to 0.80) to capture section 1 at top through all section rows
-    region = image[round(height * 0.12):round(height * 0.70), 0:round(width * 0.80)]
+    # Crop strictly the left section column (X: 2% to 44%, Y: 28% to 55%) to avoid right administrative column bleed
+    region = image[round(height * 0.28):round(height * 0.55), round(width * 0.02):round(width * 0.44)]
     if region.size == 0:
         return {}
     gray = cv2.cvtColor(region, cv2.COLOR_BGR2GRAY)
-    gray = cv2.resize(gray, None, fx=1.8, fy=1.8, interpolation=cv2.INTER_CUBIC)
+    res = cv2.resize(gray, None, fx=2.0, fy=2.0, interpolation=cv2.INTER_CUBIC)
+    clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8)).apply(res)
     variants = [
-        cv2.createCLAHE(3.0, (8, 8)).apply(gray),
+        clahe,
         cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)[1],
-        cv2.adaptiveThreshold(gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 11, 2),
     ]
-    candidate_votes = {}
+    sections = {}
     digit_translation = str.maketrans("\u0966\u0967\u0968\u0969\u096a\u096b\u096c\u096d\u096e\u096f", "0123456789")
+    right_col_patterns = [
+        r"\s*(?:शहर\s*/\s*मुख्य\s*ग्राम|मुख्य\s*ग्राम|पोस्ट\s*ऑफिस|डाक\s*घर|पुलिस\s*थाना|थाना|तहसील|जिला|पिन\s*कोड|वार्ड|Ward|क्ल|बा|घो|पु|तह|जि|पि)\b.*$",
+    ]
+
     for variant in variants:
-        for psm in (6, 4, 11):
+        for psm in (4, 6):
             text = safe_image_to_string(variant, lang=os.getenv("OCR_LANGUAGES", "hin+eng"), config=f"--psm {psm}")
-            rows = []
-            for raw_line in text.splitlines():
-                line = clean(raw_line).translate(digit_translation).strip()
-                match = re.match(
-                    r"^(?:([1-9][0-9]{0,2})|[|Il\u0965\u0964])(?:\s*[-\u2013\u2014.:)]\s*|\s+)(.+)$",
-                    line,
-                )
-                if not match:
+            lines = [l.strip() for l in text.splitlines() if l.strip()]
+            in_sec = False
+            sec_idx = 1
+            for l in lines:
+                if any(k in l for k in ["अनुभागों की संख्या", "संख्या और नाम", "संख्या व नाम", "विवरण :"]):
+                    in_sec = True
                     continue
-                number = match.group(1) or ""
-                raw_name_text = match.group(2) or ""
-                # Strip noise words and English/Latin characters
-                clean_name_text = re.sub(r"^[^\u0900-\u097F]+", "", raw_name_text)
-                clean_name_text = re.sub(r"\b(?:google|polling|station|view|map|after|aftet|hier|uzar|zadt|merit|oiler|sffzr|freran|ore)\b", " ", clean_name_text, flags=re.IGNORECASE)
-                clean_name_text = re.sub(r"[A-Za-z]+", " ", clean_name_text)
-                clean_name_text = re.sub(r"^[^\u0900-\u097F]+", "", clean_name_text)
-                name = clean(clean_name_text).strip(" -,:;|\u0964=")
-                if re.search(r"\u092d\u093e\u0917\s*\u0935\s*\u092e\u0924\u0926\u093e\u0928|\u092e\u0924\u0926\u093e\u0928\s*\u0915\u0947\u0902\u0926\u094d\u0930|\u0935\u093f\u0935\u0930\u0923|\u092a\u0941\u0928\u0930\u0940\u0915\u094d\u0937\u0923|\u0905\u0928\u0941\u092d\u093e\u0917\u094b\u0902\s*\u0915\u0940\s*\u0938\u0902\u0916\u094d\u092f\u093e", name):
+                if not in_sec:
                     continue
-                name = re.split(
-                    r"\s+(?:\u092e\u0941\u0916\u094d\u092f\s+(?:\u0936\u0939\u0930|\u0917\u094d\u0930\u093e\u092e)|\u0935\u093e\u0930\u094d\u0921|\u092a\u094b\u0938\u094d\u091f\s*(?:\u0911\u092b\u093f\u0938|\u0906\u092b\u093f\u0938)|\u092a\u0941\u0932\u093f\u0938\s*\u0925\u093e\u0928\u093e|\u0924\u0939\u0938\u0940\u0932|\u091c\u093f\u0932\u093e|\u092a\u093f\u0928\s*\u0915\u094b\u0921)\b",
-                    name, maxsplit=1,
-                )[0].strip(" -,:;|\u0964=")
-                name = re.sub(r"^(?:=parad|=पाराद|पाराद|\bपारद\b|=)\s*", "", name)
-                name = re.sub(r"\s*,\s*", ", ", name)
-                # Recover a missing boundary before a stable electoral-roll domain word.
-                name = re.sub(r"(?<=[\u0900-\u097F])(\u0935\u093f\u0926\u094d\u092f\u093e\u0932\u092f)\b", r" \1", name)
-                if len(re.findall(r"[\u0900-\u097F]", name)) >= 3:
-                    rows.append([number, name])
-            for number, name in rows:
-                if not number:
-                    continue
-                votes = candidate_votes.setdefault(number, {})
-                votes[name] = votes.get(name, 0) + 1
+                if any(k in l for k in ["3. मतदान", "मतदान केन्द्र", "मतदान केंद्र", "स्थान :", "भवन :"]):
+                    break
 
-    def candidate_quality(value):
-        devanagari = len(re.findall(r"[\u0900-\u097F]", value))
-        latin = len(re.findall(r"[A-Za-z]", value))
-        noise = len(re.findall(r"[^A-Za-z0-9\u0900-\u097F\s,.-]", value))
-        invalid_virama = len(re.findall(r"\u094d[\u093e-\u094c\u0962\u0963]", value))
-        valid_conjunct = len(re.findall(r"\u094d[\u0915-\u0939]", value))
-        return devanagari * 3 - latin * 5 - noise * 50 - invalid_virama * 30 + valid_conjunct * 5
+                clean_l = clean(l).translate(digit_translation)
+                for pat in right_col_patterns:
+                    clean_l = re.sub(pat, "", clean_l, flags=re.IGNORECASE).strip()
 
-    result = {
-        number: max(votes.items(), key=lambda item: (item[1], candidate_quality(item[0])))[0]
-        for number, votes in candidate_votes.items()
-    }
-    # Remove duplicated-number OCR (for example 9 read as 90 or 3 read as 33) when the same
-    # printed row was also read with its shorter, valid number.
-    for number, name in list(result.items()):
-        if len(number) > 1:
-            prefix = number[:-1]
-            suffix = number[-1:]
-            clean_name = clean(name)
-            if (prefix in result and clean(result[prefix]) == clean_name) or (suffix in result and clean(result[suffix]) == clean_name):
-                result.pop(number, None)
+                m = re.match(r"^(?:([0-9]{1,2})|[\-\!\?\|\)\(\[\]iIl\u0965\u0964])\s*[\-\–\:\.\)]?\s*(.+)$", clean_l)
+                if m:
+                    num_str = m.group(1)
+                    name_str = m.group(2).strip(" -,:;|\t")
+                    num = int(num_str) if num_str else sec_idx
+                    sec_idx = num + 1
+                else:
+                    name_str = clean_l.strip(" -,:;|\t")
+                    num = sec_idx
+                    sec_idx += 1
+
+                name_str = re.sub(r"^[0-9\u0966-\u096f\-\!\?\|\)\(\[\]\:\;\.\,\s]+", "", name_str).strip(" -,:;|")
+                name_str = re.sub(r"^(?:गम|गाम)\s+", "ग्राम ", name_str)
+                name_str = re.sub(r"[\|=_\"`{}><;~!\?]", "", name_str)
+                name_str = re.sub(r"\s{2,}", " ", name_str).strip()
+
+                if len(re.findall(r"[\u0900-\u097F]", name_str)) >= 3 and not re.search(r"(?:विवरण|प्रकाशन|पुनरीक्षण|मतदाता|संख्या)", name_str):
+                    s_key = str(num)
+                    if s_key not in sections or len(name_str) > len(sections[s_key]):
+                        sections[s_key] = name_str
+
+    result = sections
 
     # Section rows normally repeat the same village after the comma. Use the
     # majority spelling to restore a dropped anusvara/chandrabindu in one row.
@@ -2119,7 +2105,7 @@ def read_fixed_header(page_path, is_voter_page=True):
     if is_voter_page:
         section_text = ocr_fixed_region(
             image,
-            (0.0, 0.005, 0.85, 0.038),
+            (0.01, 0.015, 0.68, 0.045),
             lang=os.getenv("OCR_LANGUAGES", "hin+eng"),
             psm=6,
         )
@@ -2135,6 +2121,7 @@ def read_fixed_header(page_path, is_voter_page=True):
         section_name = fixed_section_name(section_text)
         if section_name:
             result["sectionName"] = section_name
+        result["rawSectionHeader"] = section_text
     return {key: value for key, value in result.items() if value}
 
 
@@ -2525,22 +2512,39 @@ def main():
             hdr_sec_num = ""
 
         # Scan raw page header text for any section number or section name from page_sec_map
-        if not hdr_sec_num and page_sec_map:
-            page_hdr_clean = clean(headers[index])
+        if page_sec_map:
+            page_hdr_clean = clean(headers[index] + " " + str(raw_header.get("rawSectionHeader") or ""))
             village_name = master_context.get("village") or ""
-            for s_num, s_name in page_sec_map.items():
-                pattern = r"(?:अनुभाग|अिुभाग|section|भाग)\s*(?:की\s*संख्या\s*व\s*नाम|संख्या|सं\.?)?\s*[:：;\-]?\s*" + re.escape(s_num) + r"\b"
-                if re.search(pattern, page_hdr_clean, re.IGNORECASE) or (s_name and len(s_name) >= 8 and s_name in page_hdr_clean and s_name != village_name):
-                    hdr_sec_num = s_num
-                    hdr_sec_name = s_name
-                    break
 
-        if not hdr_sec_num and hdr_sec_name and page_sec_map:
-            for s_num, s_name in page_sec_map.items():
-                if s_name and (s_name in hdr_sec_name or hdr_sec_name in s_name or SequenceMatcher(None, s_name, hdr_sec_name).ratio() > 0.5):
-                    hdr_sec_num = s_num
-                    hdr_sec_name = s_name
-                    break
+            # 1. Check for explicit section number in page header text
+            if not hdr_sec_num:
+                sec_match = re.search(r"(?:अनुभाग|अिुभाग|section|भाग)\s*(?:की\s*संख्या\s*व\s*नाम|संख्या|सं\.?)?\s*[:：;\-]?\s*([0-9\u0966-\u096f]{1,2})\b", page_hdr_clean, re.IGNORECASE)
+                if sec_match:
+                    cand_num = sec_match.group(1).translate(str.maketrans("०१२३४५६७८९", "0123456789"))
+                    if cand_num in page_sec_map:
+                        hdr_sec_num = cand_num
+                        hdr_sec_name = page_sec_map[cand_num]
+
+            # 2. Check keyword matching against section names in page_sec_map
+            if not hdr_sec_num:
+                for s_num, s_name in page_sec_map.items():
+                    keywords = [w for w in re.findall(r"[\u0900-\u097F]{3,}", s_name) if w not in ("की", "का", "के", "बस्ती", "मोहल्ला", "रावला", "छातोल", "ग्राम", "वार्ड", "संख्या")]
+                    if any(kw in page_hdr_clean for kw in keywords):
+                        hdr_sec_num = s_num
+                        hdr_sec_name = s_name
+                        break
+
+            # 3. Fuzzy matching against section names
+            if not hdr_sec_num:
+                best_s_num, best_score = None, 0.0
+                for s_num, s_name in page_sec_map.items():
+                    score = SequenceMatcher(None, s_name, page_hdr_clean).ratio()
+                    if score > best_score:
+                        best_score = score
+                        best_s_num = s_num
+                if best_s_num and best_score >= 0.40:
+                    hdr_sec_num = best_s_num
+                    hdr_sec_name = page_sec_map[best_s_num]
 
         # Fallback for voter page when header OCR is missing/noisy:
         if not hdr_sec_num:
