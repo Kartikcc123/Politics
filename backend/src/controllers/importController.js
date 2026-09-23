@@ -386,12 +386,13 @@ const pdfVillageHintFromName = (fileName = '') => {
 
 const pdfPartNumberHintFromName = (fileName = '') => {
   const base = path.basename(String(fileName), path.extname(String(fileName)));
-  const match = base.match(/(?:part|booth|ward|ps|partno|_|-|\b)(\d{1,4})$/i)
+  const match = base.match(/-(?:HIN|ENG|RAJ|MAR|GUJ)-(\d{1,4})(?:\.pdf|_|$)/i)
+    || base.match(/(?:part|booth|ward|ps|partno|_|-|\b)(\d{1,4})$/i)
     || base.match(/(?:part|booth|ps|partno)\s*[:_#-]?\s*(\d{1,4})\b/i)
     || base.match(/(?<!\d)(\d{1,4})$/);
   if (match && match[1]) {
     const num = parseInt(match[1], 10);
-    if (num >= 1 && num <= 9999) {
+    if (num >= 1 && num <= 9999 && num !== 2026) {
       return String(num);
     }
   }
@@ -1933,7 +1934,18 @@ const runPdfImport = async ({ file, body, currentUser }, uploadId) => {
     applyPdfVillageHint(firstMemberWithHeader, pdfVillageHint);
 
     const pdfPartHint = pdfPartNumberHintFromName(file.originalname || file.filename);
-    const docPartNumber = detectedHeader.partNumber || parsed.ocr?.header?.partNumber || firstMemberWithHeader.partNumber || pdfPartHint || '';
+    let resolvedPart = (pdfPartHint && pdfPartHint !== '2026') ? pdfPartHint : '';
+    if (!resolvedPart) {
+      const candidates = [parsed.ocr?.header?.partNumber, detectedHeader.partNumber, firstMemberWithHeader.partNumber];
+      for (const c of candidates) {
+        const cStr = String(c || '').trim();
+        if (cStr && cStr !== '2026' && /^\d{1,4}$/.test(cStr) && parseInt(cStr, 10) > 0) {
+          resolvedPart = String(parseInt(cStr, 10));
+          break;
+        }
+      }
+    }
+    const docPartNumber = resolvedPart || '';
     if (docPartNumber) {
       detectedHeader.partNumber = docPartNumber;
       firstMemberWithHeader.partNumber = docPartNumber;
@@ -2641,8 +2653,18 @@ exports.importMembersJson = async (req, res, next) => {
 
     const sample = members[0] || {};
     const asmNum = cleanValue(header.assemblyNumber || sample.assemblyNumber);
-    const asmName = cleanValue(header.assemblyName || sample.assemblyName);
-    const partNum = cleanValue(header.partNumber || sample.partNumber);
+    let partNum = cleanValue(header.partNumber || sample.partNumber);
+    if (partNum === '2026') {
+      const candidates = [sample.partNumber, header.partNumber];
+      partNum = '';
+      for (const c of candidates) {
+        const cStr = String(c || '').trim();
+        if (cStr && cStr !== '2026' && /^\d{1,4}$/.test(cStr)) {
+          partNum = cStr;
+          break;
+        }
+      }
+    }
     const village = cleanValue(header.village || sample.village);
 
     let area = null;
