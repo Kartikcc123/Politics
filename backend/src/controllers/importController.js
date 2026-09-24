@@ -2645,6 +2645,7 @@ exports.importMembersJson = async (req, res, next) => {
 
     const sample = members[0] || {};
     const asmNum = cleanValue(header.assemblyNumber || sample.assemblyNumber);
+    const asmName = cleanValue(header.assemblyName || sample.assemblyName);
     let partNum = cleanValue(header.partNumber || sample.partNumber);
     if (partNum === '2026') {
       const candidates = [sample.partNumber, header.partNumber];
