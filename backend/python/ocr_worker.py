@@ -1265,7 +1265,8 @@ def detect_card_boxes(image):
                         slot_crop = gray[exp_y:min(height, exp_y + med_h), exp_x:min(width, exp_x + med_w)]
                         if slot_crop.size > 0:
                             edges = cv2.Canny(slot_crop, 50, 150)
-                            if np.count_nonzero(edges) > 2500:
+                            min_edges = max(300, int(med_w * med_h * 0.005))
+                            if np.count_nonzero(edges) > min_edges or np.std(slot_crop) > 12.0:
                                 final_boxes.append((exp_x, exp_y, med_w, med_h))
 
             if len(final_boxes) >= 6:
@@ -1574,13 +1575,17 @@ def process_page(page_path, output_dir, page_no):
         if r.get("isDeleted"):
             return True
         has_epic = bool(r.get("voterId") and valid_epic(r.get("voterId")))
+        has_serial = bool(r.get("voterSerial") and str(r.get("voterSerial")).isdigit() and int(r.get("voterSerial")) > 0)
         has_valid_name = bool(r.get("name") and len(re.findall(r"[\u0900-\u097F]", r.get("name") or "")) >= 2 and not re.search(r"^[-\s\.\,]+$", r.get("name") or ""))
         has_guardian = bool(r.get("guardianName") and len(re.findall(r"[\u0900-\u097F]", r.get("guardianName") or "")) >= 2)
         has_age = bool(r.get("age") and 18 <= r.get("age") <= 120)
-        has_gender = bool(r.get("gender") in ("M", "F", "O", "पुरुष", "महिला", "अन्य"))
-        if has_epic:
+        has_house = bool(r.get("houseNumber") and str(r.get("houseNumber")).strip())
+        has_gender = bool(r.get("gender") in ("M", "F", "O", "male", "female", "other", "पुरुष", "महिला", "अन्य"))
+        if has_epic or has_serial:
             return True
-        if has_valid_name and (has_guardian or has_age or has_gender):
+        if has_valid_name and (has_guardian or has_age or has_gender or has_house):
+            return True
+        if (has_guardian or has_age) and has_gender:
             return True
         return False
 
