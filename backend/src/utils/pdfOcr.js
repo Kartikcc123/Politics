@@ -482,8 +482,11 @@ const lowMemoryOcrPdf = async (pdfPath, importFileName, pageRange = {}) => {
     if (!text) return '';
     let s = String(text)
       .replace(/\b(?:google|polling|station|view|map|after|aftet|hier|uzar|zadt|merit|oiler|sffzr|freran|ore)\b/gi, ' ')
+      .split(/[\-\—\–]\s*[^\u0900-\u097F\s\da-zA-Z]{2,}/)[0]
+      .split(/\/{2,}/)[0]
       .replace(/[A-Za-z]+/g, ' ')
       .replace(/^[^\u0900-\u097F]+/, '')
+      .replace(/[\|=_\"`{}><;~!\?\u0964\u0965\[\]\/\\#$@\^&*+=]+/g, ' ')
       .replace(/[\s\-_,:;|/\\+=–—\u0964\u0965]+$/, '')
       .replace(/\s*,\s*/g, ', ')
       .replace(/\s{2,}/g, ' ')

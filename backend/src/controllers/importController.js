@@ -2635,7 +2635,16 @@ exports.importMembersJson = async (req, res, next) => {
     }
 
     const cleanValue = (v) => String(v === undefined || v === null ? '' : v).trim();
-    const cleanSectionName = (v) => String(v || '').replace(/^(?:गम|गाम)\s+/i, 'ग्राम ').replace(/[\|=_\"`{}><;~!\?\u0964\u0965]/g, '').trim();
+    const cleanSectionName = (v) => {
+      let s = String(v || '')
+        .replace(/^(?:गम|गाम)\s+/i, 'ग्राम ')
+        .split(/[\-\—\–]\s*[^\u0900-\u097F\s\da-zA-Z]{2,}/)[0]
+        .split(/\/{2,}/)[0]
+        .replace(/[\|=_\"`{}><;~!\?\u0964\u0965\[\]\/\\#$@\^&*+=]/g, ' ')
+        .replace(/\s{2,}/g, ' ')
+        .trim();
+      return s;
+    };
     const normalizeGender = (v) => {
       const g = String(v || '').toLowerCase();
       if (/fem|mahila|महिला|स्त्री|f/.test(g)) return 'female';
