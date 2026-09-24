@@ -2340,11 +2340,28 @@ def parse_header_numbers(text):
                 break
 
     village = labeled_value([
+        r"मुख्य\s*(?:शहर|मुख्य\s*ग्राम|ग्राम|गाँव|कस्बा|नगर)?(?:\s*/\s*मुख्य\s*ग्राम)?",
+        r"शहर\s*/\s*ग्राम",
+        r"मुख्य\s*ग्राम",
         r"\u0917\u094d\u0930\u093e\u092e\s*(?:\u0915\u093e\s*)?(?:\u0928\u093e\u092e|name)",
         r"\u0917\u093e\u0901\u0935\s*(?:\u0915\u093e\s*)?(?:\u0928\u093e\u092e|name)?",
         r"\u0917\u093e\u0902\u0935\s*(?:\u0915\u093e\s*)?(?:\u0928\u093e\u092e|name)?",
         r"village\s*(?:name)?",
     ])
+    # Extract village from section names suffix (e.g. 'तेली मगरी, कोशीथल' -> 'कोशीथल')
+    if not village and section_map:
+        suffixes = []
+        for s_val in section_map.values():
+            parts = [p.strip() for p in str(s_val).split(',') if p.strip()]
+            if len(parts) >= 2:
+                clean_suf = re.sub(r"^[0-9\u0966-\u096f\s\-_]+", "", parts[-1]).strip()
+                if clean_suf:
+                    suffixes.append(clean_suf)
+        if suffixes:
+            most_common = Counter(suffixes).most_common(1)[0][0]
+            if len(re.findall(r"[\u0900-\u097F]", most_common)) >= 2:
+                village = most_common
+
     # A numbered section description is not a village, even when its text ends
     # with the village name. The master matcher can safely use sectionName.
     if re.match(r"^[0-9\u0966-\u096f]+\s*[-.:)]", village) or re.search(

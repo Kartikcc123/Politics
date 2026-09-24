@@ -503,6 +503,22 @@ const lowMemoryOcrPdf = async (pdfPath, importFileName, pageRange = {}) => {
   }
   const defaultSecNum = docSectionMap['1'] ? '1' : (Object.keys(docSectionMap)[0] || '');
 
+  let masterVillage = String(header.village || '').trim();
+  if (!masterVillage && Object.keys(docSectionMap).length > 0) {
+    const suffixes = [];
+    for (const sVal of Object.values(docSectionMap)) {
+      const parts = String(sVal).split(',').map(p => p.trim()).filter(Boolean);
+      if (parts.length >= 2) {
+        const suf = parts[parts.length - 1].replace(/^[0-9\s\-_]+/, '').trim();
+        if (suf && /[\u0900-\u097F]/.test(suf)) suffixes.push(suf);
+      }
+    }
+    if (suffixes.length > 0) {
+      masterVillage = suffixes[0];
+      header.village = masterVillage;
+    }
+  }
+
   let lastKnownSecNum = '';
   const inheritedRecords = records.map((record, index) => {
     const inherited = { ...record };
@@ -524,7 +540,9 @@ const lowMemoryOcrPdf = async (pdfPath, importFileName, pageRange = {}) => {
       inherited.partNumber = resolvedPartNumber;
     }
     if (header.assemblyNumber) inherited.assemblyNumber = header.assemblyNumber;
-    if (header.village && (!inherited.village || String(inherited.village).trim() === '')) {
+    if (masterVillage) {
+      inherited.village = masterVillage;
+    } else if (header.village) {
       inherited.village = header.village;
     }
     let secNum = String(inherited.sectionNumber || '').trim();
@@ -545,10 +563,6 @@ const lowMemoryOcrPdf = async (pdfPath, importFileName, pageRange = {}) => {
         inherited.sectionName = docSectionMap[secNum];
       } else {
         inherited.sectionName = cleanSecNameStr(inherited.sectionName);
-      }
-      if ((!inherited.village || String(inherited.village).trim() === '' || !/[\u0900-\u097F]/.test(inherited.village))) {
-        const cleanSecName = String(inherited.sectionName || '').replace(/^\d+[\s\-\:\.\,]+/, '').trim();
-        if (cleanSecName) inherited.village = cleanSecName;
       }
       lastKnownSecNum = secNum;
     }
