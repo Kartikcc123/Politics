@@ -7,12 +7,12 @@ const { safeSectionMap } = require('../src/controllers/importController');
 
 // High-performance environment defaults
 process.env.OCR_DPI = process.env.OCR_DPI || '200';
-process.env.OCR_CELL_CONCURRENCY = process.env.OCR_CELL_CONCURRENCY || '8';
+process.env.OCR_CELL_CONCURRENCY = process.env.OCR_CELL_CONCURRENCY || '6';
 
 // Configuration
 const DEFAULT_FOLDER = path.resolve(__dirname, '../uploads/bulk_pdfs');
 const TARGET_HOST = process.env.TARGET_HOST || 'politics.mathxmedia.tech';
-const CONCURRENCY = parseInt(process.env.BULK_CONCURRENCY || '4', 10);
+const CONCURRENCY = parseInt(process.env.BULK_CONCURRENCY || '1', 10);
 
 const httpsAgent = new https.Agent({ keepAlive: true, maxSockets: 25 });
 const httpAgent = new http.Agent({ keepAlive: true, maxSockets: 25 });
