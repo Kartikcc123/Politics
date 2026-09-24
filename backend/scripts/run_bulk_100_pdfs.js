@@ -263,11 +263,24 @@ async function main() {
     pdfFiles = [targetPath];
     trackingFolder = path.dirname(targetPath);
   } else {
-    // Directory: Find all PDFs
-    const allFiles = fs.readdirSync(targetPath);
-    pdfFiles = allFiles
-      .filter(f => f.toLowerCase().endsWith('.pdf'))
-      .map(f => path.join(targetPath, f));
+    // Directory: Find all PDFs recursively
+    function findPdfsRecursively(dir) {
+      let results = [];
+      try {
+        const list = fs.readdirSync(dir);
+        for (const file of list) {
+          const fullPath = path.join(dir, file);
+          const fStat = fs.statSync(fullPath);
+          if (fStat.isDirectory()) {
+            results = results.concat(findPdfsRecursively(fullPath));
+          } else if (file.toLowerCase().endsWith('.pdf')) {
+            results.push(fullPath);
+          }
+        }
+      } catch (_) {}
+      return results;
+    }
+    pdfFiles = findPdfsRecursively(targetPath);
   }
 
   if (pdfFiles.length === 0) {
