@@ -2340,14 +2340,29 @@ def parse_header_numbers(text):
                 break
 
     village = labeled_value([
-        r"मुख्य\s*(?:शहर|मुख्य\s*ग्राम|ग्राम|गाँव|कस्बा|नगर)?(?:\s*/\s*मुख्य\s*ग्राम)?",
-        r"शहर\s*/\s*ग्राम",
+        r"मुख्य\s*शहर\s*/\s*मुख्य\s*ग्राम",
+        r"मुख्य\s*ग्राम\s*/\s*मुख्य\s*शहर",
+        r"मुख्य\s*शहर",
         r"मुख्य\s*ग्राम",
+        r"शहर\s*/\s*ग्राम",
         r"\u0917\u094d\u0930\u093e\u092e\s*(?:\u0915\u093e\s*)?(?:\u0928\u093e\u092e|name)",
-        r"\u0917\u093e\u0901\u0935\s*(?:\u0915\u093e\s*)?(?:\u0928\u093e\u092e|name)?",
-        r"\u0917\u093e\u0902\u0935\s*(?:\u0915\u093e\s*)?(?:\u0928\u093e\u092e|name)?",
-        r"village\s*(?:name)?",
+        r"\u0917\u093e\u0901\u0935\s*(?:\u0915\u093e\s*)?(?:\u0928\u093e\u092e|name)",
+        r"\u0917\u093e\u0902\u0935\s*(?:\u0915\u093e\s*)?(?:\u0928\u093e\u092e|name)",
+        r"village\s*name",
     ])
+
+    # Invalidate if village is noisy / caught 'वार्ड' / numbers
+    if village and (re.match(r"^(?:वार्ड|ward|संख्या|सं\b|[0-9\u0966-\u096f])", village, re.IGNORECASE) or len(re.findall(r"[\u0900-\u097F]", village)) < 2):
+        village = ""
+
+    # Extract village from Polling Station heading (e.g. '112 - कोशीथल')
+    if not village:
+        ps_match = re.search(r"(?:मतदान\s*के[न्ं]द्र[^\n:：;]{0,50}[:：;\-]?\s*[0-9\u0966-\u096f]{1,4}\s*[-–:]\s*)([^\n,]+)", normalized)
+        if ps_match:
+            cand_v = clean(ps_match.group(1)).strip(" -,:;|\t")
+            if cand_v and len(re.findall(r"[\u0900-\u097F]", cand_v)) >= 2 and not re.search(r"(?:वार्ड|संख्या|भवन|विद्यालय|कक्ष)", cand_v):
+                village = cand_v
+
     # Extract village from section names suffix (e.g. 'तेली मगरी, कोशीथल' -> 'कोशीथल')
     if not village and section_map:
         suffixes = []
@@ -2355,12 +2370,16 @@ def parse_header_numbers(text):
             parts = [p.strip() for p in str(s_val).split(',') if p.strip()]
             if len(parts) >= 2:
                 clean_suf = re.sub(r"^[0-9\u0966-\u096f\s\-_]+", "", parts[-1]).strip()
-                if clean_suf:
+                if clean_suf and len(re.findall(r"[\u0900-\u097F]", clean_suf)) >= 2:
                     suffixes.append(clean_suf)
         if suffixes:
             most_common = Counter(suffixes).most_common(1)[0][0]
-            if len(re.findall(r"[\u0900-\u097F]", most_common)) >= 2:
+            if len(re.findall(r"[\u0900-\u097F]", most_common)) >= 2 and not re.search(r"(?:वार्ड|संख्या|भवन)", most_common):
                 village = most_common
+
+    if village:
+        village = re.sub(r"\s+(?:जी|का|की|के)$", "", village).strip()
+        village = re.sub(r"\b(?:कोशीधल|कोशिथल)\b", "कोशीथल", village)
 
     # A numbered section description is not a village, even when its text ends
     # with the village name. The master matcher can safely use sectionName.
@@ -2399,7 +2418,12 @@ def parse_header_numbers(text):
         "assemblyNumber": normalize_assembly_number(assembly.group(1)) if assembly else "",
         "assemblyName": raw_assembly_name,
         "partNumber": normalize_digits(part.group(1)) if (part and part.group(1)) else "",
-        "partName": labeled_value([r"\u092d\u093e\u0917\s*(?:\u0915\u093e\s*)?(?:\u0928\u093e\u092e|\u0935\u093f\u0935\u0930\u0923)", r"part\s*(?:name|description)"]),
+        "partName": labeled_value([
+            r"मतदान\s*स्थल\s*(?:का\s*नाम)?",
+            r"मतदान\s*के[न्ं]द्र\s*(?:की\s*संख्या\s*व\s*नाम|का\s*नाम)?",
+            r"\u092d\u093e\u0917\s*(?:\u0915\u093e\s*)?(?:\u0928\u093e\u092e|\u0935\u093f\u0935\u0930\u0923)",
+            r"part\s*(?:name|description)"
+        ]),
         "wardNumber": ward_number,
         "sectionNumber": section_number,
         "sectionName": section_name,
