@@ -2718,6 +2718,8 @@ exports.importMembersJson = async (req, res, next) => {
         updatedBy: req.currentUser?._id,
       };
 
+      const safeEpicPrefix = String(cleanEpic || m.voterSerial || 'voter').replace(/[^a-zA-Z0-9_-]/g, '_');
+
       // Save base64 cardImage if provided
       if (m.cardImage && typeof m.cardImage === 'string') {
         if (m.cardImage.startsWith('data:image')) {
@@ -2729,7 +2731,7 @@ exports.importMembersJson = async (req, res, next) => {
             if (matches && matches.length === 3) {
               const ext = matches[1].includes('png') ? '.png' : '.jpg';
               const buffer = Buffer.from(matches[2], 'base64');
-              const filename = `card-${cleanEpic || 'voter'}-${Date.now()}-${crypto.randomBytes(3).toString('hex')}${ext}`;
+              const filename = `card-${safeEpicPrefix}-${Date.now()}-${crypto.randomBytes(3).toString('hex')}${ext}`;
               const targetFile = path.join(votersDir, filename);
               fs.writeFileSync(targetFile, buffer);
               const publicUrl = await persistLocalImage(targetFile, req.currentUser?._id, false);
@@ -2754,7 +2756,7 @@ exports.importMembersJson = async (req, res, next) => {
             if (matches && matches.length === 3) {
               const ext = matches[1].includes('png') ? '.png' : '.jpg';
               const buffer = Buffer.from(matches[2], 'base64');
-              const filename = `photo-${cleanEpic || 'voter'}-${Date.now()}-${crypto.randomBytes(3).toString('hex')}${ext}`;
+              const filename = `photo-${safeEpicPrefix}-${Date.now()}-${crypto.randomBytes(3).toString('hex')}${ext}`;
               const targetFile = path.join(votersDir, filename);
               fs.writeFileSync(targetFile, buffer);
               memberDoc.photo = await persistLocalImage(targetFile, req.currentUser?._id, false);
