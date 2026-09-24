@@ -2,7 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const { spawn } = require('child_process');
 const { uploadFilePath } = require('./uploadPath');
-const { commandFromEnv, friendlyMissingBinaryError, subprocessEnv } = require('./ocrRuntime');
+const { commandFromEnv, friendlyMissingBinaryError, subprocessEnv, pythonCommand } = require('./ocrRuntime');
 
 const run = (command, args) => new Promise((resolve, reject) => {
   const child = spawn(command, args, { windowsHide: true, env: subprocessEnv() });
@@ -52,8 +52,6 @@ const epicHints = (text) => {
   values.sort((a, b) => Number(a.serial) - Number(b.serial));
   return values;
 };
-
-const { commandFromEnv, subprocessEnv, pythonCommand } = require('./ocrRuntime');
 
 const runWorker = (payload, onProgress) => new Promise((resolve, reject) => {
   const child = spawn(pythonCommand(), [path.join(__dirname, '../../python/ward_ocr_worker.py')], {
