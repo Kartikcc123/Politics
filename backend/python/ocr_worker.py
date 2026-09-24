@@ -1344,7 +1344,7 @@ def _process_single_card(args):
     # Clean text-only crop: strictly excludes the right-side voter photo and top header
     card_h, card_w = card.shape[:2]
     max_text_w = min(round(card_w * 0.68), px - 2 if px > round(card_w * 0.52) else round(card_w * 0.68))
-    body_crop = card[round(card_h * 0.22):round(card_h * 0.98), 0:max_text_w]
+    body_crop = card[round(card_h * 0.14):round(card_h * 0.98), 0:max_text_w]
     if body_crop.size > 0:
         b_gray = cv2.cvtColor(body_crop, cv2.COLOR_BGR2GRAY)
         b_res = cv2.resize(b_gray, None, fx=1.8, fy=1.8, interpolation=cv2.INTER_CUBIC)
@@ -1400,7 +1400,7 @@ def _process_single_card(args):
     name_devanagari = len(re.findall(r"[\u0900-\u097F]", parsed_name))
     guardian_devanagari = len(re.findall(r"[\u0900-\u097F]", parsed_guardian))
 
-    if name_devanagari < 3 or guardian_devanagari < 2 or suspicious_person_name(parsed_name):
+    if not parsed_name or name_devanagari < 2 or not parsed_guardian or guardian_devanagari < 2 or suspicious_person_name(parsed_name):
         identity_suggestion, identity_disagreement = ocr_identity(card)
         if identity_suggestion.get("name"):
             rec["name"] = identity_suggestion["name"]
