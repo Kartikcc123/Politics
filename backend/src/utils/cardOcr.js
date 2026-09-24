@@ -6,11 +6,11 @@ const mongoose = require('mongoose');
 const MediaAsset = require('../models/MediaAsset');
 const { resolveUploadPublicPath } = require('./uploadPath');
 const { getFromS3 } = require('./s3');
-const { commandFromEnv, subprocessEnv } = require('./ocrRuntime');
+const { commandFromEnv, subprocessEnv, pythonCommand } = require('./ocrRuntime');
 
 const runWorker = (cardPath) => new Promise((resolve, reject) => {
   let settled = false;
-  const child = spawn(process.env.PYTHON_PATH || 'python', [path.join(__dirname, '../../python/ocr_worker.py')], {
+  const child = spawn(pythonCommand(), [path.join(__dirname, '../../python/ocr_worker.py')], {
     windowsHide: true,
     env: { ...subprocessEnv(), TESSERACT_PATH: commandFromEnv('TESSERACT_PATH', 'tesseract'), PYTHONIOENCODING: 'utf-8' }
   });

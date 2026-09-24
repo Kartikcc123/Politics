@@ -4,6 +4,7 @@ const { spawn } = require('child_process');
 const { uploadFilePath, uploadPublicPath } = require('./uploadPath');
 const {
   commandFromEnv,
+  pythonCommand,
   friendlyMissingBinaryError,
   subprocessEnv,
 } = require('./ocrRuntime');
@@ -98,7 +99,7 @@ const runPythonWorker = (pages, outputDir, arg3, arg4, options = {}) => new Prom
   const pageNumbers = Array.isArray(arg3) ? arg3 : (Array.isArray(arg4) ? arg4 : []);
   const onProgress = typeof arg3 === 'function' ? arg3 : (typeof arg4 === 'function' ? arg4 : null);
   const globalStartSerial = options.globalStartSerial || (typeof arg3 === 'object' && !Array.isArray(arg3) ? arg3.globalStartSerial : undefined);
-  const python = process.env.PYTHON_PATH || 'python';
+  const python = pythonCommand();
   const script = path.join(__dirname, '../../python/ocr_worker.py');
   const child = spawn(python, [script], {
     windowsHide: true,

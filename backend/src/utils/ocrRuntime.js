@@ -30,6 +30,11 @@ const configureTessdataPrefix = () => {
   return process.env.TESSDATA_PREFIX;
 };
 
+const pythonCommand = () => {
+  if (process.env.PYTHON_PATH) return process.env.PYTHON_PATH;
+  return isWindows ? 'python' : 'python3';
+};
+
 const commandFromEnv = (envName, fallback) => {
   const configured = process.env[envName];
   if (!configured) return fallback;
@@ -108,6 +113,7 @@ const checkOcrRuntime = async () => {
 
 module.exports = {
   commandFromEnv,
+  pythonCommand,
   friendlyMissingBinaryError,
   subprocessEnv,
   runCommand,

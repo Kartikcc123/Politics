@@ -53,8 +53,10 @@ const epicHints = (text) => {
   return values;
 };
 
+const { commandFromEnv, subprocessEnv, pythonCommand } = require('./ocrRuntime');
+
 const runWorker = (payload, onProgress) => new Promise((resolve, reject) => {
-  const child = spawn(process.env.PYTHON_PATH || 'python', [path.join(__dirname, '../../python/ward_ocr_worker.py')], {
+  const child = spawn(pythonCommand(), [path.join(__dirname, '../../python/ward_ocr_worker.py')], {
     windowsHide: true,
     env: {
       ...subprocessEnv(),
