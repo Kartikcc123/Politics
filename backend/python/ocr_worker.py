@@ -1104,63 +1104,23 @@ def preserve_card_serials(records, global_start_serial):
     else:
         start_serial = 1
 
-    previous_serial = None
-
     for index, record in enumerate(records):
         raw = raw_serials[index]
-        page_baseline_serial = start_serial + index
-        expected_serial = (previous_serial + 1) if (previous_serial is not None and abs(previous_serial + 1 - page_baseline_serial) <= 2) else page_baseline_serial
-        next_raw = raw_serials[index + 1] if index + 1 < len(records) else None
+        grid_expected = start_serial + index
 
-        is_exact = (raw is not None and raw == expected_serial)
-        is_next_consecutive = (next_raw is not None and next_raw == expected_serial + 1)
-        # Check if raw has leading box border noise (e.g. '7172' for '172', or '9551' for '551')
-        is_prefix_noise = bool(raw is not None and len(str(raw)) > len(str(expected_serial)) and str(raw).endswith(str(expected_serial)))
-        # Check if raw has dropped digits (e.g. '61' for '561', '62' for '562', or '8' for '80')
-        is_partial_match = bool(
-            raw is not None and
-            len(str(raw)) < len(str(expected_serial)) and
-            (str(expected_serial).endswith(str(raw)) or str(expected_serial).startswith(str(raw)))
-        )
-        # Check if raw is a cell index (1..30) while expected serial is much larger
-        is_cell_index_noise = bool(raw is not None and raw <= 30 and expected_serial > 30)
-        # Check if raw jumps backwards behind previous_serial (e.g. read 8 after 24)
-        is_backward_jump = bool(raw is not None and previous_serial is not None and raw <= previous_serial)
-        # Check if raw is a true OCR anomaly (backward jump, dropped digit, border prefix digit, or cell index reset)
-        is_repairable_anomaly = (
-            raw is not None and (
-                is_backward_jump or
-                is_partial_match or
-                is_prefix_noise or
-                is_cell_index_noise or
-                (is_next_consecutive and abs(raw - expected_serial) > 3)
-            )
-        )
-
-        if is_exact:
-            actual_serial = raw
-            record["voterSerial"] = str(actual_serial)
-            record["voterSerialConfidence"] = 95
-            previous_serial = actual_serial
-        elif is_repairable_anomaly or raw is None:
-            # Single-card OCR anomaly, dropped digit, border noise, or cell-position reset: repair to expected_serial
+        if raw is not None and raw == grid_expected:
+            # Exact match between OCR and expected grid position
+            record["voterSerial"] = str(grid_expected)
+            record["voterSerialConfidence"] = 98
+        else:
+            # When OCR is noisy, dropped digit, border noise, or single misread (e.g. read 4 for 3, or 77 for 17),
+            # strictly anchor to grid_expected so the subsequent serials NEVER shift!
             if raw is not None:
                 record["rawVoterSerial"] = str(raw)
-            record["voterSerial"] = str(expected_serial)
-            record["voterSerialConfidence"] = 90 if is_partial_match else 85
-            record["serialSequenceExpected"] = str(expected_serial)
-            previous_serial = expected_serial
-        else:
-            # When printed serial is clearly read as a multi-digit number (e.g. 505),
-            # PRESERVE it as authoritative ground truth! Never overwrite with array index.
-            actual_serial = raw
-            record["voterSerial"] = str(actual_serial)
-            record["voterSerialConfidence"] = 90
-            if actual_serial != expected_serial:
-                record["rawVoterSerial"] = str(raw)
-                record["serialSequenceExpected"] = str(expected_serial)
                 record["serialOcrDisagreement"] = True
-            previous_serial = actual_serial
+            record["voterSerial"] = str(grid_expected)
+            record["voterSerialConfidence"] = 90
+            record["serialSequenceExpected"] = str(grid_expected)
 
 
 def detect_card_boxes(image):
