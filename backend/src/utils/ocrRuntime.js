@@ -30,6 +30,45 @@ const configureTessdataPrefix = () => {
   return process.env.TESSDATA_PREFIX;
 };
 
+const findWindowsBinary = (binaryName) => {
+  const exeName = binaryName.endsWith('.exe') ? binaryName : `${binaryName}.exe`;
+  const homedir = require('os').homedir();
+  const searchRoots = [
+    'C:\\poppler\\Library\\bin',
+    'C:\\poppler\\bin',
+    'C:\\Program Files\\poppler\\Library\\bin',
+    'C:\\Program Files\\poppler\\bin',
+    'C:\\Program Files (x86)\\poppler\\Library\\bin',
+    'C:\\Program Files\\Tesseract-OCR',
+    'C:\\Program Files (x86)\\Tesseract-OCR',
+    path.join(homedir, 'AppData\\Local\\Programs\\Tesseract-OCR'),
+    path.join(homedir, 'AppData\\Local\\Programs\\poppler\\bin'),
+    path.join(homedir, 'AppData\\Local\\Programs\\poppler\\Library\\bin'),
+    path.join(homedir, 'scoop\\shims'),
+    'C:\\ProgramData\\chocolatey\\bin',
+    'C:\\tools\\poppler\\Library\\bin',
+    'C:\\tools\\poppler\\bin',
+  ];
+
+  try {
+    const cDrive = fs.readdirSync('C:\\');
+    for (const entry of cDrive) {
+      if (/^(poppler|Release)/i.test(entry)) {
+        searchRoots.push(path.join('C:\\', entry, 'Library\\bin'));
+        searchRoots.push(path.join('C:\\', entry, 'bin'));
+      }
+    }
+  } catch (_) {}
+
+  for (const root of searchRoots) {
+    try {
+      const candidate = path.join(root, exeName);
+      if (fs.existsSync(candidate)) return candidate;
+    } catch (_) {}
+  }
+  return binaryName;
+};
+
 const pythonCommand = () => {
   if (process.env.PYTHON_PATH) return process.env.PYTHON_PATH;
   return isWindows ? 'python' : 'python3';
@@ -37,9 +76,13 @@ const pythonCommand = () => {
 
 const commandFromEnv = (envName, fallback) => {
   const configured = process.env[envName];
-  if (!configured) return fallback;
-  if (!isWindows && isWindowsExecutablePath(configured)) return fallback;
-  return configured;
+  if (configured && (fs.existsSync(configured) || !isWindowsExecutablePath(configured))) {
+    return configured;
+  }
+  if (isWindows) {
+    return findWindowsBinary(fallback);
+  }
+  return fallback;
 };
 
 const subprocessEnv = () => {
