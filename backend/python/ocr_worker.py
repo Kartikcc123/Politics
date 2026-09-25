@@ -780,20 +780,36 @@ def ocr_epic(card, reference=""):
         if c and valid_epic(c):
             cands.append(c)
 
-    # 3. Otsu threshold + Morphological Close to connect broken ink loops (e.g. 8 vs 6, 0 vs 6)
+    # 3. Unsharp Masking (enhances digit boundary definition and prevents 5 vs 8 confusion)
+    gaussian = cv2.GaussianBlur(pad, (0, 0), 2.0)
+    unsharp = cv2.addWeighted(pad, 1.8, gaussian, -0.8, 0)
+    for cfg in (cfg7, cfg8, cfg6):
+        c = clean_epic(safe_image_to_string(unsharp, lang="eng", config=cfg))
+        if c and valid_epic(c):
+            cands.append(c)
+
+    # 4. Otsu Threshold + Morphological Open (disconnects spurious loop bridges in digit 5)
     _, otsu = cv2.threshold(pad, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-    kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (2, 2))
-    otsu_closed = cv2.morphologyEx(otsu, cv2.MORPH_CLOSE, kernel)
-    for v in (otsu, otsu_closed):
-        for cfg in (cfg7, cfg8, cfg6):
+    k_open = cv2.getStructuringElement(cv2.MORPH_RECT, (2, 2))
+    otsu_opened = cv2.morphologyEx(otsu, cv2.MORPH_OPEN, k_open)
+    for v in (otsu, otsu_opened):
+        for cfg in (cfg7, cfg8):
             c = clean_epic(safe_image_to_string(v, lang="eng", config=cfg))
             if c and valid_epic(c):
                 cands.append(c)
 
-    # 4. Adaptive Gaussian Threshold
+    # 5. Adaptive Gaussian Threshold
     adapt = cv2.adaptiveThreshold(pad, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 21, 11)
     for cfg in (cfg7, cfg8):
         c = clean_epic(safe_image_to_string(adapt, lang="eng", config=cfg))
+        if c and valid_epic(c):
+            cands.append(c)
+
+    # 6. Lanczos interpolation pass
+    lanc = cv2.resize(gray, None, fx=3.5, fy=3.5, interpolation=cv2.INTER_LANCZOS4)
+    lanc_pad = cv2.copyMakeBorder(lanc, 15, 15, 15, 15, cv2.BORDER_CONSTANT, value=255)
+    for cfg in (cfg7, cfg8):
+        c = clean_epic(safe_image_to_string(lanc_pad, lang="eng", config=cfg))
         if c and valid_epic(c):
             cands.append(c)
 
