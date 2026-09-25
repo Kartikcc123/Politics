@@ -36,7 +36,7 @@ const FollowUpSchema = new mongoose.Schema({
   completedAt: Date,
 }, { timestamps: true });
 const MemberSchema = new mongoose.Schema({
-  contactType: { type: String, enum: ['voter', 'personal'], default: 'voter', index: true },
+  contactType: { type: String, enum: ['voter', 'personal', 'electoral'], default: 'voter', index: true },
   photo: String,
   qrCode: String,
   name: { type: String, required: true, trim: true },
@@ -126,7 +126,6 @@ const MemberSchema = new mongoose.Schema({
   voterSerial: String,
   voterId: {
     type: String,
-    required() { return this.contactType !== 'personal' && !this.hasMunicipalMembership; },
     uppercase: true,
     trim: true,
   },
@@ -145,7 +144,6 @@ const MemberSchema = new mongoose.Schema({
   booth: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Booth',
-    required() { return this.contactType !== 'personal' && !this.hasMunicipalMembership; },
   },
   family: [FamilyMemberSchema],
   occupation: String,
