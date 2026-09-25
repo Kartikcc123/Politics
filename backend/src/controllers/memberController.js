@@ -124,14 +124,20 @@ const attachBoothWard = async (data, user) => {
   if (user.role === 'ward_head') {
     data.ward = user.assignedWard?._id || user.assignedWard;
   }
+  if (!data.booth && data.partNumber) {
+    try {
+      const foundBooth = await Booth.findOne({ number: String(data.partNumber).trim() });
+      if (foundBooth) {
+        data.booth = foundBooth._id;
+        if (foundBooth.ward) data.ward = foundBooth.ward;
+      }
+    } catch (_) {}
+  }
   if (data.booth) {
     const booth = await Booth.findById(data.booth).select('ward');
-    if (!booth) {
-      const err = new Error('Valid booth is required');
-      err.status = 400;
-      throw err;
+    if (booth && booth.ward) {
+      data.ward = booth.ward;
     }
-    data.ward = booth.ward;
   }
   return data;
 };
@@ -152,16 +158,13 @@ exports.create = async (req, res, next) => {
       }
       if (!String(data.voterId || '').trim()) delete data.voterId;
     } else {
-      data.voterId = requireValidEpic(data.voterId);
+      if (data.voterId) {
+        data.voterId = requireValidEpic(data.voterId);
+      }
     }
 
     if (req.file) data.photo = await persistLocalImage(req.file.path, req.currentUser._id, true);
     await attachBoothWard(data, req.currentUser);
-    if (!isPersonalContact(data) && !data.booth) {
-      const err = new Error('Booth is required for voter contacts.');
-      err.status = 400;
-      throw err;
-    }
     if (data.booth) assertBoothAccess(req.currentUser, data.booth);
     if (data.ward) assertWardAccess(req.currentUser, data.ward);
     data.createdBy = req.currentUser._id;
