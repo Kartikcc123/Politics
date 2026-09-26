@@ -228,6 +228,14 @@ class ProgressTracker {
       try {
         const raw = fs.readFileSync(this.progressFilePath, 'utf8');
         this.state = JSON.parse(raw);
+        // Auto-prune any PDF that saved 0 or failed to save voters so it automatically re-runs
+        if (this.state.completed) {
+          for (const [fn, info] of Object.entries(this.state.completed)) {
+            if (!info || !info.count || info.count < 50) {
+              delete this.state.completed[fn];
+            }
+          }
+        }
       } catch (_) { }
     }
   }
@@ -239,10 +247,15 @@ class ProgressTracker {
   }
 
   isCompleted(fileName) {
-    return Boolean(this.state.completed[fileName]);
+    const entry = this.state.completed[fileName];
+    return Boolean(entry && entry.count && entry.count >= 50);
   }
 
   recordCompleted(fileName, count, durationSec) {
+    if (!count || count < 50) {
+      console.warn(`   ⚠️ ${fileName} only saved ${count || 0} voters. Not marking completed.`);
+      return;
+    }
     this.state.completed[fileName] = {
       count,
       durationSec,
