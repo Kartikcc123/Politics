@@ -1,5 +1,6 @@
 const fs = require('fs');
 const path = require('path');
+require('dotenv').config({ path: path.resolve(__dirname, '../.env') });
 const https = require('https');
 const http = require('http');
 const { ocrPdf } = require('../src/utils/pdfOcr');
@@ -7,12 +8,21 @@ const { safeSectionMap } = require('../src/controllers/importController');
 
 // High-performance environment defaults
 process.env.OCR_DPI = process.env.OCR_DPI || '200';
-process.env.OCR_CELL_CONCURRENCY = process.env.OCR_CELL_CONCURRENCY || '6';
+process.env.OCR_CELL_CONCURRENCY = process.env.OCR_CELL_CONCURRENCY || '8';
 
 // Configuration
 const DEFAULT_FOLDER = path.resolve(__dirname, '../uploads/bulk_pdfs');
 const TARGET_HOST = process.env.TARGET_HOST || 'politics.mathxmedia.tech';
-const CONCURRENCY = parseInt(process.env.BULK_CONCURRENCY || '1', 10);
+
+const getConcurrency = () => {
+  const idx = process.argv.findIndex(a => a === '--concurrency' || a === '-c');
+  if (idx !== -1 && process.argv[idx + 1]) {
+    const val = parseInt(process.argv[idx + 1], 10);
+    if (!isNaN(val) && val > 0) return val;
+  }
+  return parseInt(process.env.BULK_CONCURRENCY || '3', 10);
+};
+const CONCURRENCY = getConcurrency();
 
 const httpsAgent = new https.Agent({ keepAlive: true, maxSockets: 25 });
 const httpAgent = new http.Agent({ keepAlive: true, maxSockets: 25 });
@@ -68,7 +78,11 @@ async function processSinglePdf(pdfPath, token, index, total, progressTracker) {
         if (progress.phase === 'ocr' && progress.processedPages !== lastLoggedPage) {
           lastLoggedPage = progress.processedPages;
           const pct = Math.round((progress.processedPages / progress.totalPages) * 100) || 0;
-          process.stdout.write(`\r   [${fileName}] Page ${progress.processedPages}/${progress.totalPages} (${pct}%) | ${progress.processedCards || 0} cards`);
+          if (CONCURRENCY === 1) {
+            process.stdout.write(`\r   [${fileName}] Page ${progress.processedPages}/${progress.totalPages} (${pct}%) | ${progress.processedCards || 0} cards`);
+          } else if (progress.processedPages % 5 === 0 || progress.processedPages === progress.totalPages) {
+            console.log(`   [PDF ${index + 1}/${total}] [${fileName}] Page ${progress.processedPages}/${progress.totalPages} (${pct}%) | ${progress.processedCards || 0} cards`);
+          }
         }
       }
     });
@@ -139,8 +153,8 @@ async function processSinglePdf(pdfPath, token, index, total, progressTracker) {
       };
     });
 
-    // Upload to Server in safe chunks of 10 voters to eliminate HTTP 413 Payload Too Large
-    const CHUNK_SIZE = 10;
+    // Upload to Server in safe chunks of 15 voters
+    const CHUNK_SIZE = 15;
     let totalImported = 0;
     console.log(`   📤 Uploading ${membersList.length} voters (${attachedImages} images attached) to database in chunks of ${CHUNK_SIZE}...`);
 
@@ -162,7 +176,14 @@ async function processSinglePdf(pdfPath, token, index, total, progressTracker) {
         members: chunk
       };
 
-      const uploadRes = await apiRequest('/api/import/members/json', 'POST', JSON.stringify(importPayload), token);
+      let uploadRes = await apiRequest('/api/import/members/json', 'POST', JSON.stringify(importPayload), token);
+      let attempts = 0;
+      while ((uploadRes.status === 502 || uploadRes.status === 503 || uploadRes.status === 504) && attempts < 4) {
+        attempts++;
+        await new Promise(r => setTimeout(r, 1500));
+        uploadRes = await apiRequest('/api/import/members/json', 'POST', JSON.stringify(importPayload), token);
+      }
+
       if (uploadRes.status === 200 || uploadRes.status === 201) {
         totalImported += chunk.length;
         process.stdout.write(`\r   ✅ Chunk ${Math.floor(cIdx / CHUNK_SIZE) + 1}/${Math.ceil(membersList.length / CHUNK_SIZE)} saved (${totalImported}/${membersList.length} voters)...`);
@@ -171,7 +192,11 @@ async function processSinglePdf(pdfPath, token, index, total, progressTracker) {
         let synced = 0;
         for (const m of chunk) {
           if (!m.voterId && !m.name) continue;
-          const res = await apiRequest('/api/import/members/json', 'POST', JSON.stringify({ header: importPayload.header, members: [m] }), token);
+          let res = await apiRequest('/api/import/members/json', 'POST', JSON.stringify({ header: importPayload.header, members: [m] }), token);
+          if (res.status === 502 || res.status === 503 || res.status === 504) {
+            await new Promise(r => setTimeout(r, 1000));
+            res = await apiRequest('/api/import/members/json', 'POST', JSON.stringify({ header: importPayload.header, members: [m] }), token);
+          }
           if (res.status === 200 || res.status === 201) synced++;
         }
         totalImported += synced;
@@ -180,6 +205,7 @@ async function processSinglePdf(pdfPath, token, index, total, progressTracker) {
 
     console.log(`\n   🎉 Database Import Complete for ${fileName}! (Saved ${totalImported} voters in DB)`);
     progressTracker.recordCompleted(fileName, totalImported, durationSec);
+    // Note: Family rebuild is executed once after all bulk PDFs finish for maximum speed and zero server load.
   } catch (err) {
     console.error(`\n   ❌ ERROR processing ${fileName}:`, err.message);
     progressTracker.recordFailed(fileName, err.message);
@@ -237,7 +263,13 @@ class ProgressTracker {
 }
 
 async function main() {
-  const targetPath = process.argv[2] ? path.resolve(process.argv[2]) : DEFAULT_FOLDER;
+  const nonFlagArgs = process.argv.slice(2).filter((arg, i, arr) => {
+    if (arg === '--concurrency' || arg === '-c' || arg === '--force' || arg === '-f') return false;
+    const prev = arr[i - 1];
+    if (prev === '--concurrency' || prev === '-c') return false;
+    return true;
+  });
+  const targetPath = nonFlagArgs[0] ? path.resolve(nonFlagArgs[0]) : DEFAULT_FOLDER;
 
   console.log('========================================================================');
   console.log('⚡ HIGH-SPEED BULK VOTER PDF RUNNER (100+ PDFs BATCH ENGINE)');

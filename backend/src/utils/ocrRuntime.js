@@ -3,13 +3,40 @@ const { spawn } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 
+// Auto-load backend .env if not already loaded by caller
+try {
+  require('dotenv').config({ path: path.resolve(__dirname, '../../.env') });
+} catch (_) {}
+
 const isWindows = process.platform === 'win32';
 const isWindowsExecutablePath = (value = '') => /^[a-z]:\\/i.test(String(value));
+
+const defaultWindowsCandidates = {
+  PDFINFO_PATH: [
+    'C:\\poppler\\Library\\bin\\pdfinfo.exe',
+    'C:\\poppler\\poppler-24.08.0\\Library\\bin\\pdfinfo.exe',
+  ],
+  PDFTOPPM_PATH: [
+    'C:\\poppler\\Library\\bin\\pdftoppm.exe',
+    'C:\\poppler\\poppler-24.08.0\\Library\\bin\\pdftoppm.exe',
+  ],
+  PDFIMAGES_PATH: [
+    'C:\\poppler\\Library\\bin\\pdfimages.exe',
+    'C:\\poppler\\poppler-24.08.0\\Library\\bin\\pdfimages.exe',
+  ],
+  TESSERACT_PATH: [
+    'C:\\poppler\\tesseract\\tesseract.exe',
+    'C:\\Program Files\\Tesseract-OCR\\tesseract.exe',
+    path.join(process.env.LOCALAPPDATA || '', 'Programs\\Tesseract-OCR\\tesseract.exe'),
+  ],
+};
 
 const getBundledTessdataPath = () => {
   const candidates = [
     path.resolve(__dirname, '../../tessdata'),
     path.resolve(__dirname, '../../.ocr-tessdata'),
+    'C:\\poppler\\tesseract\\tessdata',
+    path.join(process.env.LOCALAPPDATA || '', 'Programs\\Tesseract-OCR\\tessdata'),
   ];
   for (const candidate of candidates) {
     if (fs.existsSync(path.join(candidate, 'hin.traineddata'))) {
@@ -30,57 +57,39 @@ const configureTessdataPrefix = () => {
   return process.env.TESSDATA_PREFIX;
 };
 
-const findWindowsBinary = (binaryName) => {
-  const exeName = binaryName.endsWith('.exe') ? binaryName : `${binaryName}.exe`;
-  const homedir = require('os').homedir();
-  const searchRoots = [
-    'C:\\poppler\\Library\\bin',
-    'C:\\poppler\\bin',
-    'C:\\Program Files\\poppler\\Library\\bin',
-    'C:\\Program Files\\poppler\\bin',
-    'C:\\Program Files (x86)\\poppler\\Library\\bin',
-    'C:\\Program Files\\Tesseract-OCR',
-    'C:\\Program Files (x86)\\Tesseract-OCR',
-    path.join(homedir, 'AppData\\Local\\Programs\\Tesseract-OCR'),
-    path.join(homedir, 'AppData\\Local\\Programs\\poppler\\bin'),
-    path.join(homedir, 'AppData\\Local\\Programs\\poppler\\Library\\bin'),
-    path.join(homedir, 'scoop\\shims'),
-    'C:\\ProgramData\\chocolatey\\bin',
-    'C:\\tools\\poppler\\Library\\bin',
-    'C:\\tools\\poppler\\bin',
-  ];
-
-  try {
-    const cDrive = fs.readdirSync('C:\\');
-    for (const entry of cDrive) {
-      if (/^(poppler|Release)/i.test(entry)) {
-        searchRoots.push(path.join('C:\\', entry, 'Library\\bin'));
-        searchRoots.push(path.join('C:\\', entry, 'bin'));
-      }
+const resolveWindowsPython = () => {
+  const candidates = [
+    process.env.PYTHON_PATH,
+    'C:\\Users\\DELL\\AppData\\Local\\Programs\\Python\\Python311\\python.exe',
+    path.join(process.env.LOCALAPPDATA || '', 'Programs\\Python\\Python311\\python.exe'),
+    path.join(process.env.LOCALAPPDATA || '', 'Programs\\Python\\Python310\\python.exe'),
+    path.join(process.env.LOCALAPPDATA || '', 'Programs\\Python\\Python312\\python.exe'),
+    'C:\\Python311\\python.exe',
+    'C:\\Program Files\\Python311\\python.exe',
+  ].filter(Boolean);
+  for (const c of candidates) {
+    if (isWindowsExecutablePath(c) && fs.existsSync(c)) {
+      return c;
     }
-  } catch (_) {}
-
-  for (const root of searchRoots) {
-    try {
-      const candidate = path.join(root, exeName);
-      if (fs.existsSync(candidate)) return candidate;
-    } catch (_) {}
   }
-  return binaryName;
+  return process.env.PYTHON_PATH || 'python';
 };
 
 const pythonCommand = () => {
-  if (process.env.PYTHON_PATH) return process.env.PYTHON_PATH;
-  return isWindows ? 'python' : 'python3';
+  if (isWindows) return resolveWindowsPython();
+  return process.env.PYTHON_PATH || 'python3';
 };
 
 const commandFromEnv = (envName, fallback) => {
   const configured = process.env[envName];
-  if (configured && (fs.existsSync(configured) || !isWindowsExecutablePath(configured))) {
+  if (configured) {
+    if (!isWindows && isWindowsExecutablePath(configured)) return fallback;
     return configured;
   }
-  if (isWindows) {
-    return findWindowsBinary(fallback);
+  if (isWindows && defaultWindowsCandidates[envName]) {
+    for (const candidate of defaultWindowsCandidates[envName]) {
+      if (fs.existsSync(candidate)) return candidate;
+    }
   }
   return fallback;
 };
@@ -88,6 +97,24 @@ const commandFromEnv = (envName, fallback) => {
 const subprocessEnv = () => {
   configureTessdataPrefix();
   const env = { ...process.env };
+  if (isWindows) {
+    const existingPath = env.Path || env.PATH || '';
+    const pyExe = resolveWindowsPython();
+    const pyDir = isWindowsExecutablePath(pyExe) ? path.dirname(pyExe) : '';
+    const extraDirs = [
+      'C:\\poppler\\Library\\bin',
+      'C:\\poppler\\tesseract',
+      pyDir,
+      pyDir ? path.join(pyDir, 'Scripts') : '',
+      path.join(process.env.LOCALAPPDATA || '', 'Programs\\Tesseract-OCR'),
+    ].filter((dir) => dir && fs.existsSync(dir));
+    if (extraDirs.length) {
+      const extra = extraDirs.join(path.delimiter);
+      const combined = `${extra}${path.delimiter}${existingPath}`;
+      env.Path = combined;
+      env.PATH = combined;
+    }
+  }
   // Keep each OCR subprocess within a predictable native-memory budget.
   for (const name of ['OMP_NUM_THREADS', 'OPENBLAS_NUM_THREADS', 'MKL_NUM_THREADS', 'NUMEXPR_NUM_THREADS', 'VECLIB_MAXIMUM_THREADS']) {
     env[name] = String(process.env.OCR_NATIVE_THREADS || 1);

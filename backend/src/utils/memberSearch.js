@@ -235,10 +235,9 @@ const buildMemberSearchData = (member) => {
 
   return {
     searchVersion: SEARCH_VERSION,
-    searchText: normalizedValues.join(' '),
-    searchKeys: [...keys].slice(0, 600),
-    searchExact: [...exact].slice(0, 200),
-    ...fieldSearchData(member),
+    searchText: normalizedValues.slice(0, 5).join(' '),
+    searchKeys: [],
+    searchExact: [],
   };
 };
 

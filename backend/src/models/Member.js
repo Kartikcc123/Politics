@@ -252,7 +252,6 @@ MemberSchema.pre('validate', function updateSearchData(next) {
 
 MemberSchema.index({ mobile: 1 });
 MemberSchema.index({ voterId: 1 }, { unique: true, partialFilterExpression: { voterId: { $type: 'string' } } });
-MemberSchema.index({ address: 'text', name: 'text', surname: 'text', location: 'text', sectionName: 'text', assemblyName: 'text', voterId: 'text', guardianName: 'text' });
 MemberSchema.index({ booth: 1, voterSerial: 1 });
 MemberSchema.index({ booth: 1, name: 1, guardianName: 1 });
 MemberSchema.index({ ward: 1, booth: 1 });
@@ -260,15 +259,6 @@ MemberSchema.index({ booth: 1, supportLevel: 1 });
 MemberSchema.index({ assemblyNumber: 1, partNumber: 1, sectionName: 1 });
 MemberSchema.index({ hasAssemblyMembership: 1, hasMunicipalMembership: 1, municipalWardNumbers: 1 });
 MemberSchema.index({ area: 1, organizationPost: 1, caste: 1 });
-MemberSchema.index({ searchKeys: 1 });
-MemberSchema.index({ searchExact: 1 });
-MemberSchema.index({ searchNameKeys: 1 });
-MemberSchema.index({ searchGuardianKeys: 1 });
-MemberSchema.index({ searchEpicKeys: 1 });
-MemberSchema.index({ searchHouseKeys: 1 });
-MemberSchema.index({ searchMobileKeys: 1 });
-MemberSchema.index({ searchVillageKeys: 1 });
-MemberSchema.index({ searchPinKeys: 1 });
 
 module.exports = mongoose.model('Member', MemberSchema);
 
