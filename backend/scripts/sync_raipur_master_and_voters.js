@@ -106,43 +106,98 @@ async function syncRaipurMasterAndVoters() {
     }
   }
 
-  console.log('3️⃣ Standardizing Village & Panchayat names and linking Areas across all 197k+ voters...');
-  const cursor = Member.find({}).select('_id village gramPanchayat sectionName sectionNumber partNumber area').lean().cursor();
+  // 2c. PASS 1: Build Booth (partNumber) -> Majority Village consensus mapping
+  console.log('3️⃣ PASS 1: Scanning Booth (भाग) & Polling Station locations for 100% coverage...');
+  const partToVillageCounts = new Map(); // partNumber -> { village: count }
+
+  const scanCursor = Member.find({}).select('partNumber village sectionName partName location address postOffice').lean().cursor();
+
+  for await (const m of scanCursor) {
+    const pNum = String(m.partNumber || '').trim();
+    if (!pNum) continue;
+
+    const fullText = [m.village, m.sectionName, m.partName, m.location, m.address, m.postOffice]
+      .filter(Boolean)
+      .join(' ');
+
+    let foundVillage = '';
+    for (const [wrong, right] of Object.entries(spellingCorrections)) {
+      if (fullText.includes(wrong)) {
+        foundVillage = right;
+        break;
+      }
+    }
+
+    if (!foundVillage) {
+      for (const [vClean, vName] of canonicalVillageMap.entries()) {
+        if (vClean.length >= 3 && fullText.includes(vClean)) {
+          foundVillage = vName;
+          break;
+        }
+      }
+    }
+
+    if (foundVillage) {
+      if (!partToVillageCounts.has(pNum)) partToVillageCounts.set(pNum, new Map());
+      const counts = partToVillageCounts.get(pNum);
+      counts.set(foundVillage, (counts.get(foundVillage) || 0) + 1);
+    }
+  }
+
+  // Determine winning village for each booth / partNumber
+  const partToDominantVillage = new Map();
+  for (const [pNum, counts] of partToVillageCounts.entries()) {
+    let topVillage = '';
+    let topCount = 0;
+    for (const [vName, cnt] of counts.entries()) {
+      if (cnt > topCount) {
+        topCount = cnt;
+        topVillage = vName;
+      }
+    }
+    if (topVillage) partToDominantVillage.set(pNum, topVillage);
+  }
+
+  console.log(`   📍 Booth-to-Village consensus established for ${partToDominantVillage.size} polling parts.`);
+
+  // 2d. PASS 2: Standardize & Update all 197k+ voters
+  console.log('\n4️⃣ PASS 2: Updating Village, Panchayat & Area links for all 197k+ voters...');
+  const cursor = Member.find({}).select('_id village gramPanchayat sectionName sectionNumber partNumber partName location address postOffice area').lean().cursor();
 
   let bulk = [];
   let updated = 0;
   let batchCount = 0;
 
   for await (const m of cursor) {
-    let rawVillage = String(m.village || '').trim();
-    let rawSection = String(m.sectionName || '').trim();
+    const rawVillage = String(m.village || '').trim();
+    const rawSection = String(m.sectionName || '').trim();
+    const pNum = String(m.partNumber || '').trim();
+    const fullText = [m.village, m.sectionName, m.partName, m.location, m.address, m.postOffice].filter(Boolean).join(' ');
+
     let standardizedVillage = '';
     let standardizedPanchayat = '';
 
-    // If village is blank, try extracting from sectionName
-    let textToMatch = rawVillage || rawSection;
-
-    // Check direct corrections
+    // Check direct corrections on text
     for (const [wrong, right] of Object.entries(spellingCorrections)) {
-      if (textToMatch.includes(wrong) || textToMatch === wrong) {
+      if (fullText.includes(wrong)) {
         standardizedVillage = right;
         break;
       }
     }
 
-    if (!standardizedVillage && textToMatch) {
-      const cleanKey = textToMatch.replace(/[^\u0900-\u097F]/g, '');
-      standardizedVillage = canonicalVillageMap.get(cleanKey) || canonicalVillageMap.get(textToMatch.toLowerCase()) || '';
-    }
-
-    // Check if sectionName contains any canonical village
-    if (!standardizedVillage && rawSection) {
+    // Check canonical matches on clean text
+    if (!standardizedVillage) {
       for (const [vClean, vName] of canonicalVillageMap.entries()) {
-        if (vClean.length >= 3 && rawSection.includes(vClean)) {
+        if (vClean.length >= 3 && fullText.includes(vClean)) {
           standardizedVillage = vName;
           break;
         }
       }
+    }
+
+    // Fallback: If voter's anubhag has no village name (e.g. "मुख्य बस्ती"), use Booth's dominant village!
+    if (!standardizedVillage && pNum && partToDominantVillage.has(pNum)) {
+      standardizedVillage = partToDominantVillage.get(pNum);
     }
 
     if (standardizedVillage) {
@@ -168,6 +223,15 @@ async function syncRaipurMasterAndVoters() {
         }
       });
     }
+
+    if (bulk.length >= 3000) {
+      await Member.bulkWrite(bulk, { ordered: false });
+      updated += bulk.length;
+      batchCount++;
+      console.log(`   ⚡ Standardized & Area-Linked ${updated.toLocaleString()} voter records...`);
+      bulk = [];
+    }
+  }
 
     if (bulk.length >= 3000) {
       await Member.bulkWrite(bulk, { ordered: false });
