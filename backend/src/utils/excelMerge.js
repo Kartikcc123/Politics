@@ -7,31 +7,32 @@ const normalizeHeader = (value) => String(value ?? '')
   .trim();
 
 const headerAliases = {
-  name: ['name', 'full name', 'voter name', 'elector name', 'naam', 'नाम', 'मतदाता नाम', 'मतदाता का नाम', 'namehindi', 'name hindi'],
+  name: ['namehindi', 'name hindi', 'नाम', 'मतदाता नाम', 'मतदाता का नाम', 'name', 'full name', 'voter name', 'elector name', 'naam'],
   surname: ['surname', 'last name', 'उपनाम'],
   guardianName: [
+    'partentnamehin', 'partentnamehindi', 'parentnamehin', 'parentnamehindi', 'parent name hindi',
+    'पिता', 'पिता का नाम', 'पति का नाम', 'पिता पति का नाम', 'अभिभावक का नाम',
     'guardian name', 'father name', "father's name", 'father husband name', 'father or husband name',
-    'pita name', 'pita', 'father', 'पिता', 'पिता का नाम', 'पति का नाम', 'पिता पति का नाम', 'अभिभावक का नाम',
-    'parentname', 'partentnamehindi', 'partentname', 'parent name', 'parent name hindi', 'parentnamehindi'
+    'pita name', 'pita', 'father', 'parentname', 'partentname', 'parent name'
   ],
-  relationType: ['relation type', 'rln type', 'relationship', 'संबंध', 'सम्बन्ध', 'relation', 'rel'],
+  relationType: ['relatio', 'relation type', 'rln type', 'relationship', 'संबंध', 'सम्बन्ध', 'relation', 'rel'],
   mobile: [
-    'mobile', 'mobile no', 'mobile number', 'mobilef', 'mobile f', 'mob', 'mob no', 'mob.no', 'mobile_no', 'phone',
-    'phone no', 'phone number', 'मोबाइल', 'मोबाइल नंबर', 'फोन', 'फोन नंबर', 'mobileno', 'contact', 'contact no', 'contact number'
+    'mobileno', 'mobile', 'mobile no', 'mobile number', 'mobilef', 'mobile f', 'mob', 'mob no', 'mob.no', 'mobile_no', 'phone',
+    'phone no', 'phone number', 'मोबाइल', 'मोबाइल नंबर', 'फोन', 'फोन नंबर', 'contact', 'contact no', 'contact number'
   ],
   altMobile: ['alternate mobile', 'alternative mobile', 'alt mobile', 'alternate phone', 'दूसरा मोबाइल', 'वैकल्पिक मोबाइल'],
   voterId: [
-    'voter id', 'epic', 'epic no', 'epic number', 'epicno', 'epic_no', 'voterid', 'voter_id',
+    'epicno', 'epic no', 'voter id', 'epic', 'epic number', 'epic_no', 'voterid', 'voter_id',
     'मतदाता id', 'मतदाता आईडी', 'मतदाता पहचान पत्र', 'पहचान पत्र संख्या', 'epicno.'
   ],
   voterSerial: [
-    'serial', 'serial no', 'serial number', 'sl no in part', 'क्रमांक', 'मतदाता क्रमांक', 'क्र', 'क्र.', 'क्रं', 'क्रं.',
-    'क', 'क.', 'मतदाता क्र.', 'मतदाता क्रं.', 'सरियल', 'सीरियल', 'sno', 's no', 'sno.', 'sn', 'sn.', 'sn ..', 'sr no', 'srno'
+    'sn', 'sno', 'serial', 'serial no', 'serial number', 'sl no in part', 'क्रमांक', 'मतदाता क्रमांक', 'क्र', 'क्र.', 'क्रं', 'क्रं.',
+    'क', 'क.', 'मतदाता क्र.', 'मतदाता क्रं.', 'सरियल', 'सीरियल', 's no', 'sno.', 'sn.', 'sn ..', 'sr no', 'srno'
   ],
-  houseNumber: ['house number', 'house no', 'house', 'मकान संख्या', 'घर संख्या', 'गृह संख्या', 'makan no', 'makan no.', 'makan', 'makan_no', 'house_no'],
+  houseNumber: ['makan no', 'makan no.', 'house number', 'house no', 'house', 'मकान संख्या', 'घर संख्या', 'गृह संख्या', 'makan', 'makan_no', 'house_no'],
   address: ['address', 'full address', 'पता', 'पूरा पता'],
-  gender: ['gender', 'sex', 'लिंग', 'gend'],
-  age: ['age', 'उम्र', 'आयु', 'ag'],
+  gender: ['gend', 'gender', 'sex', 'लिंग'],
+  age: ['ag', 'age', 'उम्र', 'आयु'],
   occupation: ['occupation', 'profession', 'work', 'व्यवसाय', 'पेशा'],
   education: ['education', 'qualification', 'शिक्षा', 'योग्यता'],
   caste: ['caste', 'cast', 'जाति', 'जात'],
@@ -41,10 +42,10 @@ const headerAliases = {
   supportLevel: ['support level', 'support', 'समर्थन स्तर', 'समर्थन', 'samarthak', 'समर्थक'],
   assemblyNumber: ['assembly number', 'assembly no', 'ac no', 'विधानसभा संख्या'],
   assemblyName: ['assembly name', 'assembly', 'vidhansabha', 'विधानसभा', 'विधानसभा नाम'],
-  partNumber: ['part number', 'part no', 'भाग संख्या', 'भाग नं', 'partno', 'part_no'],
+  partNumber: ['partn', 'part number', 'part no', 'भाग संख्या', 'भाग नं', 'partno', 'part_no'],
   sectionNumber: ['section number', 'section no', 'अनुभाग संख्या', 'अनुभाग नं', 'sectionno', 'section_no'],
   sectionName: ['section name', 'section', 'अनुभाग नाम', 'मोहल्ला', 'मोहल्ला नाम', 'sectionn', 'mohalla'],
-  village: ['village', 'villege', 'gram', 'गांव', 'गाँव', 'ग्राम', 'gaon'],
+  village: ['villeg', 'village', 'villege', 'gram', 'गांव', 'गाँव', 'ग्राम', 'gaon'],
   gramPanchayat: ['gram panchayat', 'panchayat', 'ग्राम पंचायत', 'पंचायत'],
   tehsil: ['tehsil', 'block', 'तहसील', 'ब्लॉक'],
   pinCode: ['pin code', 'pincode', 'pin', 'postal code', 'पिन कोड', 'पिन'],
@@ -67,8 +68,17 @@ const canonicalizeExcelRow = (row = {}) => {
       result[header] = value;
       continue;
     }
-    if (result[field] === undefined || result[field] === null || String(result[field]).trim() === '') {
+    const valStr = String(value || '').trim();
+    const existingVal = String(result[field] || '').trim();
+
+    // If existing value is empty, set it
+    if (!existingVal) {
       result[field] = value;
+    } else if (/[\u0900-\u097F]/.test(valStr) && !/[\u0900-\u097F]/.test(existingVal)) {
+      // HINDI TEXT ALWAYS OVERRIDES ENGLISH TEXT!
+      result[field] = value;
+    } else if (normalizeHeader(header).includes('hin') || normalizeHeader(header).includes('हिंदी') || normalizeHeader(header).includes('hindi')) {
+      if (valStr) result[field] = value;
     }
   }
   return result;

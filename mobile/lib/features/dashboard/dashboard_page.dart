@@ -11,6 +11,7 @@ import '../families/family_page.dart';
 import '../reports/configurable_print_page.dart';
 import '../uploads/upload_page.dart';
 import '../voters/voter_management_page.dart';
+import '../../widgets/hierarchical_location_navigator.dart';
 
 class DashboardPage extends StatelessWidget {
   const DashboardPage({super.key, required this.onNavigate});
@@ -99,6 +100,7 @@ class DashboardPage extends StatelessWidget {
                     review > 0 ? rose : green,
                     review > 0 ? 'डेटा जाँचें' : 'सब ठीक है'),
               ]),
+              const HierarchicalLocationNavigator(),
               const _SectionHeading(
                   title: 'जरूरी काम',
                   subtitle: 'रोज़ इस्तेमाल होने वाले मुख्य विकल्प'),
@@ -295,7 +297,9 @@ class _PhoneDashboard extends StatelessWidget {
                   ),
                 ]),
           ),
-          const SizedBox(height: 22),
+          const SizedBox(height: 14),
+          const HierarchicalLocationNavigator(),
+          const SizedBox(height: 14),
           Row(children: [
             const Expanded(
               child: Text('हाल की गतिविधियाँ',

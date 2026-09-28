@@ -1,4 +1,4 @@
-﻿const mongoose = require('mongoose');
+const mongoose = require('mongoose');
 
 const FamilySchema = new mongoose.Schema({
   familyHead: { type: mongoose.Schema.Types.ObjectId, ref: 'Member' },
@@ -6,6 +6,8 @@ const FamilySchema = new mongoose.Schema({
   houseNumber: { type: String, trim: true },
   sectionNumber: { type: String, trim: true },
   sectionName: { type: String, trim: true },
+  partNumber: { type: String, trim: true },
+  village: { type: String, trim: true },
   address: String,
   ward: { type: mongoose.Schema.Types.ObjectId, ref: 'Ward' },
   booth: { type: mongoose.Schema.Types.ObjectId, ref: 'Booth' },

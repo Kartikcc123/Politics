@@ -28,11 +28,19 @@ class VoterManagementPage extends StatefulWidget {
     this.initialAreaId,
     this.initialAreaName,
     this.initialProfileCompletionStatus,
+    this.initialVillage,
+    this.initialGramPanchayat,
+    this.initialPartNumber,
+    this.initialTehsil,
   });
 
   final String? initialAreaId;
   final String? initialAreaName;
   final String? initialProfileCompletionStatus;
+  final String? initialVillage;
+  final String? initialGramPanchayat;
+  final String? initialPartNumber;
+  final String? initialTehsil;
 
   @override
   State<VoterManagementPage> createState() => _VoterManagementPageState();
@@ -114,6 +122,18 @@ class _VoterManagementPageState extends State<VoterManagementPage> {
       }
     });
     profileCompletionStatus = widget.initialProfileCompletionStatus ?? '';
+    if (widget.initialVillage != null && widget.initialVillage!.isNotEmpty) {
+      village.text = widget.initialVillage!;
+    }
+    if (widget.initialGramPanchayat != null && widget.initialGramPanchayat!.isNotEmpty) {
+      gramPanchayat.text = widget.initialGramPanchayat!;
+    }
+    if (widget.initialPartNumber != null && widget.initialPartNumber!.isNotEmpty) {
+      boothNumber.text = widget.initialPartNumber!;
+    }
+    if (widget.initialTehsil != null && widget.initialTehsil!.isNotEmpty) {
+      tehsil.text = widget.initialTehsil!;
+    }
     dashboardFuture = api.get('/api/reports/dashboard');
     refreshVoters();
   }
@@ -6092,6 +6112,7 @@ class _VoterRow extends StatelessWidget {
             : 'EPIC: $epic';
     final guardian = '${member['guardianName'] ?? ''}'.trim();
     final mobile = '${member['mobile'] ?? ''}'.trim();
+    final caste = '${member['caste'] ?? ''}'.trim();
     final house = '${member['houseNumber'] ?? '-'}';
     final place = [
       '${member['village'] ?? ''}'.trim(),
@@ -6196,6 +6217,8 @@ class _VoterRow extends StatelessWidget {
                         const SizedBox(height: 6),
                         Wrap(spacing: 6, runSpacing: 6, children: [
                           _InfoPill(Icons.home_rounded, 'घर $house'),
+                          if (caste.isNotEmpty)
+                            _InfoPill(Icons.groups_2_rounded, caste),
                           if (api.user?['role'] == 'admin' &&
                               member['verificationStatus'] == 'needs_review')
                             const _InfoPill(Icons.fact_check_outlined,
@@ -6363,8 +6386,8 @@ class _VoterCardImageSection extends StatelessWidget {
   Widget build(BuildContext context) {
     final source = voter['sourceDocument'];
     final path = (source is Map
-            ? '${source['ocrCardImage'] ?? ''}'
-            : '${voter['ocrCardImage'] ?? ''}')
+            ? '${source['ocrCardImage'] ?? source['cardImage'] ?? ''}'
+            : '${voter['ocrCardImage'] ?? voter['cardImage'] ?? ''}')
         .trim();
     if (path.isEmpty) return const SizedBox.shrink();
     final url = voterPhotoUrl(path);

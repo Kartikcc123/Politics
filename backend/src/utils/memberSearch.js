@@ -178,66 +178,32 @@ const deletionKeys = (
 };
 
 const fieldSearchData = (member) => ({
-  searchNameKeys: [...new Set([
-    ...deletionKeys([member?.name, member?.surname].filter(Boolean).join(' '), { phoneticPrefixes: true }),
-    ...deletionKeys(member?.name, { phoneticPrefixes: true }),
-    ...deletionKeys(member?.surname, { phoneticPrefixes: true }),
-  ])],
-  searchGuardianKeys: deletionKeys(member?.guardianName, { phoneticPrefixes: true }),
-  searchEpicKeys: deletionKeys(canonicalEpic(member?.voterId), { includePhonetic: false }),
-  searchHouseKeys: [...new Set([
-    normalizeSearchValue(member?.houseNumber),
-    ...deletionKeys(member?.houseNumber),
-  ].filter(Boolean))],
-  searchMobileKeys: [...new Set([
-    ...deletionKeys(member?.mobile, { digitsOnly: true }),
-    ...deletionKeys(member?.altMobile, { digitsOnly: true }),
-  ])],
-  searchVillageKeys: deletionKeys(member?.village),
-  searchPinKeys: deletionKeys(member?.pinCode, { digitsOnly: true, includePhonetic: false }),
+  searchNameKeys: [normalizeSearchValue(member?.name), normalizeSearchValue(member?.surname)].filter(Boolean),
+  searchGuardianKeys: [normalizeSearchValue(member?.guardianName)].filter(Boolean),
+  searchEpicKeys: [canonicalEpic(member?.voterId)].filter(Boolean),
+  searchHouseKeys: [normalizeSearchValue(member?.houseNumber)].filter(Boolean),
+  searchMobileKeys: [compactDigits(member?.mobile), compactDigits(member?.altMobile)].filter(Boolean),
+  searchVillageKeys: [normalizeSearchValue(member?.village)].filter(Boolean),
+  searchPinKeys: [compactDigits(member?.pinCode)].filter(Boolean),
 });
 
 const buildMemberSearchData = (member) => {
   const values = sourceValues(member);
   const normalizedValues = values.map(normalizeSearchValue).filter(Boolean);
-  const keys = new Set();
-  for (const value of normalizedValues) {
-    value.split(' ').forEach((token) => {
-      addPrefixes(keys, token);
-      addLoosePrefixes(keys, token);
-    });
-  }
-  [member?.name, member?.surname, member?.guardianName].forEach((value) => {
-    addPersonSubstrings(keys, value);
-    deletionKeys(value).forEach((key) => keys.add(key));
-  });
-  deletionKeys([member?.name, member?.surname].filter(Boolean).join(' '))
-    .forEach((key) => keys.add(key));
-
-  for (const field of ['mobile', 'altMobile']) {
-    const digits = compactDigits(member?.[field]);
-    if (!digits) continue;
-    addPrefixes(keys, digits);
-    for (let length = 4; length <= digits.length; length += 1) {
-      keys.add(digits.slice(-length));
-    }
-  }
-
-  const epic = canonicalEpic(member?.voterId);
-  if (epic) addPrefixes(keys, epic.toLowerCase());
-
   const exact = new Set(normalizedValues);
   for (const field of ['mobile', 'altMobile']) {
     const digits = compactDigits(member?.[field]);
     if (digits) exact.add(digits);
   }
+  const epic = canonicalEpic(member?.voterId);
   if (epic) exact.add(epic.toLowerCase());
 
   return {
     searchVersion: SEARCH_VERSION,
-    searchText: normalizedValues.slice(0, 5).join(' '),
-    searchKeys: [],
-    searchExact: [],
+    searchText: normalizedValues.join(' '),
+    searchKeys: [...exact].slice(0, 30),
+    searchExact: [...exact].slice(0, 20),
+    ...fieldSearchData(member),
   };
 };
 

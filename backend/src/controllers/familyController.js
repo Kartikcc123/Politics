@@ -21,21 +21,26 @@ const familyGroupingKey = (member) => {
   const section = String(member.sectionNumber || member.sectionName || 'no-section')
     .trim()
     .toLowerCase();
-  return `${member.booth || ''}:${section}:${houseNumber}`;
+  const part = String(member.partNumber || member.booth || '').trim();
+  const village = String(member.village || '').trim().toLowerCase();
+  return `${village}:${part}:${section}:${houseNumber}`;
 };
 
 exports.list = async (req, res, next) => {
   try {
-    const { q, booth, ward, houseNumber, sectionName } = req.query;
+    const { q, booth, ward, houseNumber, sectionName, partNumber, village } = req.query;
     const filter = familyScope(req.currentUser, {});
     if (q) filter.$or = [
       { headName: new RegExp(q, 'i') },
       { houseNumber: new RegExp(q, 'i') },
       { sectionName: new RegExp(q, 'i') },
+      { village: new RegExp(q, 'i') },
       { address: new RegExp(q, 'i') },
     ];
     if (houseNumber) filter.houseNumber = new RegExp(houseNumber, 'i');
     if (sectionName) filter.sectionName = new RegExp(sectionName, 'i');
+    if (partNumber) filter.partNumber = String(partNumber).trim();
+    if (village) filter.village = new RegExp(village, 'i');
     if (req.currentUser.role === 'admin') {
       if (booth) filter.booth = booth;
       if (ward) filter.ward = ward;
@@ -158,6 +163,8 @@ exports.rebuildFromMembers = async (req, res, next) => {
         houseNumber: normalizeHouseNumber(head.houseNumber),
         sectionNumber: String(head.sectionNumber || '').trim(),
         sectionName: String(head.sectionName || '').trim(),
+        partNumber: String(head.partNumber || '').trim(),
+        village: String(head.village || '').trim(),
         address: head.address,
         ward: head.ward,
         booth: head.booth,
@@ -167,12 +174,18 @@ exports.rebuildFromMembers = async (req, res, next) => {
       });
     }
 
-    const session = await Family.startSession();
-    await session.withTransaction(async () => {
-      await Family.deleteMany(familyFilter, { session });
-      if (generated.length) await Family.insertMany(generated, { session });
-    });
-    await session.endSession();
+    try {
+      const session = await Family.startSession();
+      await session.withTransaction(async () => {
+        await Family.deleteMany(familyFilter, { session });
+        if (generated.length) await Family.insertMany(generated, { session });
+      });
+      await session.endSession();
+    } catch (_) {
+      // Fallback for standalone MongoDB instances without replica sets
+      await Family.deleteMany(familyFilter);
+      if (generated.length) await Family.insertMany(generated, { ordered: false });
+    }
 
     invalidateMemberData();
     res.json({

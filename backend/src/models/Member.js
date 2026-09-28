@@ -38,6 +38,9 @@ const FollowUpSchema = new mongoose.Schema({
 const MemberSchema = new mongoose.Schema({
   contactType: { type: String, enum: ['voter', 'personal', 'electoral'], default: 'voter', index: true },
   photo: String,
+  photoUrl: String,
+  cardImage: String,
+  ocrCardImage: String,
   qrCode: String,
   name: { type: String, required: true, trim: true },
   surname: { type: String, trim: true },
