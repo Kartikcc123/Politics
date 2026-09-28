@@ -1,10 +1,17 @@
 require('dotenv').config();
+const path = require('path');
+const fs = require('fs');
 const mongoose = require('mongoose');
-const raipurMaster = require('../src/config/raipurLocationMaster');
-const Area = require('../src/models/Area');
-const Member = require('../src/models/Member');
-const User = require('../src/models/User');
-const { saveMasterData } = require('../src/controllers/areaController');
+
+const srcDir = fs.existsSync(path.join(__dirname, 'src')) 
+  ? path.join(__dirname, 'src') 
+  : path.join(__dirname, '../src');
+
+const raipurMaster = require(path.join(srcDir, 'config/raipurLocationMaster'));
+const Area = require(path.join(srcDir, 'models/Area'));
+const Member = require(path.join(srcDir, 'models/Member'));
+const User = require(path.join(srcDir, 'models/User'));
+const { saveMasterData } = require(path.join(srcDir, 'controllers/areaController'));
 
 async function syncRaipurMasterAndVoters() {
   const mongoUri = process.env.MONGO_URI;
