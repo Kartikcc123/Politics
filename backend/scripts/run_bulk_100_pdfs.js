@@ -12,7 +12,9 @@ process.env.OCR_CELL_CONCURRENCY = process.env.OCR_CELL_CONCURRENCY || '8';
 
 // Configuration
 const DEFAULT_FOLDER = path.resolve(__dirname, '../uploads/bulk_pdfs');
-const TARGET_HOST = process.env.TARGET_HOST || 'politics.mathxmedia.tech';
+const TARGET_HOST = process.env.TARGET_HOST || '187.127.173.42';
+const TARGET_PORT = process.env.TARGET_PORT ? parseInt(process.env.TARGET_PORT, 10) : (TARGET_HOST.includes('mathxmedia.tech') ? 443 : 5003);
+const IS_HTTPS = TARGET_PORT === 443;
 
 const getConcurrency = () => {
   const idx = process.argv.findIndex(a => a === '--concurrency' || a === '-c');
@@ -29,8 +31,7 @@ const httpAgent = new http.Agent({ keepAlive: true, maxSockets: 25 });
 
 function apiRequest(urlPath, method = 'GET', bodyData = null, token = '') {
   return new Promise((resolve, reject) => {
-    const isHttps = TARGET_HOST !== 'localhost' && !TARGET_HOST.startsWith('127.0.0.1');
-    const client = isHttps ? https : http;
+    const client = IS_HTTPS ? https : http;
     const headers = {};
     if (token) headers['Authorization'] = 'Bearer ' + token;
     if (bodyData) {
@@ -40,11 +41,11 @@ function apiRequest(urlPath, method = 'GET', bodyData = null, token = '') {
 
     const req = client.request({
       hostname: TARGET_HOST,
-      port: isHttps ? 443 : 5000,
+      port: TARGET_PORT,
       path: urlPath,
       method: method,
       headers: headers,
-      agent: isHttps ? httpsAgent : httpAgent
+      agent: IS_HTTPS ? httpsAgent : httpAgent
     }, (res) => {
       let buf = '';
       res.on('data', d => buf += d);
@@ -290,7 +291,7 @@ async function main() {
   console.log('========================================================================');
   console.log('⚡ HIGH-SPEED BULK VOTER PDF RUNNER (100+ PDFs BATCH ENGINE)');
   console.log('Target Path  :', targetPath);
-  console.log('Target Server:', `https://${TARGET_HOST}`);
+  console.log('Target Server:', `${IS_HTTPS ? 'https://' : 'http://'}${TARGET_HOST}:${TARGET_PORT}`);
   console.log('Concurrency  :', `${CONCURRENCY} PDFs in Parallel`);
   console.log('========================================================================\n');
 
@@ -354,7 +355,7 @@ async function main() {
   }
 
   // 1. Admin Login
-  console.log(`\nLogging in as Admin to https://${TARGET_HOST}...`);
+  console.log(`\nLogging in as Admin to ${IS_HTTPS ? 'https://' : 'http://'}${TARGET_HOST}:${TARGET_PORT}...`);
   const loginRes = await apiRequest('/api/auth/login', 'POST', JSON.stringify({
     email: process.env.ADMIN_EMAIL || 'admin@example.com',
     password: process.env.ADMIN_PASSWORD || 'AdminPass123'
