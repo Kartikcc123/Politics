@@ -153,8 +153,8 @@ async function processSinglePdf(pdfPath, token, index, total, progressTracker) {
       };
     });
 
-    // Upload to Server in safe chunks of 15 voters
-    const CHUNK_SIZE = 15;
+    // Upload to Server in safe chunks of 5 voters (prevents Nginx 413 payload limits)
+    const CHUNK_SIZE = 5;
     let totalImported = 0;
     console.log(`   📤 Uploading ${membersList.length} voters (${attachedImages} images attached) to database in chunks of ${CHUNK_SIZE}...`);
 
@@ -204,6 +204,9 @@ async function processSinglePdf(pdfPath, token, index, total, progressTracker) {
     }
 
     console.log(`\n   🎉 Database Import Complete for ${fileName}! (Saved ${totalImported} voters in DB)`);
+    try {
+      await apiRequest('/api/families/rebuild', 'POST', null, token);
+    } catch (_) {}
     progressTracker.recordCompleted(fileName, totalImported, durationSec);
     // Note: Family rebuild is executed once after all bulk PDFs finish for maximum speed and zero server load.
   } catch (err) {

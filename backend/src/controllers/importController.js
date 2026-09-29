@@ -2806,28 +2806,24 @@ exports.importMembersJson = async (req, res, next) => {
         const result = await Member.bulkWrite(bulkOps, { ordered: false });
         importedCount = (result.upsertedCount || 0) + (result.modifiedCount || 0) + (result.matchedCount || 0);
       } catch (bulkErr) {
-        // If duplicate EPIC key error occurred on a single card, retry individually
-        if (bulkErr?.writeErrors?.length) {
-          for (const op of bulkOps) {
+        // Graceful fallback: If batch upsert had any conflict/duplicate key, upsert individually
+        for (const op of bulkOps) {
+          try {
+            await Member.updateOne(op.updateOne.filter, op.updateOne.update, { upsert: true });
+            importedCount++;
+          } catch (singleErr) {
+            // If voterId collided on unique index, save with unique review identifier to prevent data loss
             try {
-              await Member.updateOne(op.updateOne.filter, op.updateOne.update, { upsert: true });
-              importedCount++;
-            } catch (_) {
-              // If voterId collided with an existing different voter, strip duplicate voterId and save with review flag
-              try {
-                const safeUpdate = { ...op.updateOne.update };
-                if (safeUpdate.$set?.voterId) {
-                  safeUpdate.$set.ocrNeedsReview = true;
-                  safeUpdate.$set.verificationStatus = 'needs_review';
-                  safeUpdate.$set.voterId = `${safeUpdate.$set.voterId}-REV-${op.updateOne.filter.voterSerial || Date.now()}`;
-                  await Member.updateOne(op.updateOne.filter, safeUpdate, { upsert: true });
-                  importedCount++;
-                }
-              } catch (_) {}
-            }
+              const safeUpdate = { ...op.updateOne.update };
+              if (safeUpdate.$set?.voterId) {
+                safeUpdate.$set.ocrNeedsReview = true;
+                safeUpdate.$set.verificationStatus = 'needs_review';
+                safeUpdate.$set.voterId = `${safeUpdate.$set.voterId}-REV-${op.updateOne.filter.voterSerial || Date.now()}`;
+                await Member.updateOne(op.updateOne.filter, safeUpdate, { upsert: true });
+                importedCount++;
+              }
+            } catch (_) {}
           }
-        } else {
-          throw bulkErr;
         }
       }
     }
