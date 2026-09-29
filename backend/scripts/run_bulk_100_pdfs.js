@@ -45,7 +45,8 @@ function apiRequest(urlPath, method = 'GET', bodyData = null, token = '') {
       path: urlPath,
       method: method,
       headers: headers,
-      agent: IS_HTTPS ? httpsAgent : httpAgent
+      agent: IS_HTTPS ? httpsAgent : httpAgent,
+      timeout: 60000
     }, (res) => {
       let buf = '';
       res.on('data', d => buf += d);
@@ -58,10 +59,34 @@ function apiRequest(urlPath, method = 'GET', bodyData = null, token = '') {
       });
     });
 
+    req.on('timeout', () => { req.destroy(new Error('ETIMEDOUT')); });
     req.on('error', reject);
     if (bodyData) req.write(bodyData);
     req.end();
   });
+}
+
+async function safeApiRequest(urlPath, method = 'GET', bodyData = null, token = '', maxRetries = 8) {
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      const res = await apiRequest(urlPath, method, bodyData, token);
+      if (res.status === 502 || res.status === 503 || res.status === 504) {
+        if (attempt < maxRetries) {
+          await new Promise(r => setTimeout(r, 1000 * attempt));
+          continue;
+        }
+      }
+      return res;
+    } catch (err) {
+      if (attempt < maxRetries) {
+        process.stdout.write(`\n   ⚠️ Network reconnecting (attempt ${attempt}/${maxRetries}: ${err.message})...`);
+        await new Promise(r => setTimeout(r, 1500 * attempt));
+        continue;
+      }
+      return { status: 500, error: err.message };
+    }
+  }
+  return { status: 500, error: 'Max retries exceeded' };
 }
 
 async function processSinglePdf(pdfPath, token, index, total, progressTracker) {
@@ -72,21 +97,39 @@ async function processSinglePdf(pdfPath, token, index, total, progressTracker) {
 
   const startTime = Date.now();
   let lastLoggedPage = -1;
+  const cachePath = `${pdfPath}.ocr.json`;
 
   try {
-    const result = await ocrPdf(pdfPath, fileName, {
-      onProgress: (progress) => {
-        if (progress.phase === 'ocr' && progress.processedPages !== lastLoggedPage) {
-          lastLoggedPage = progress.processedPages;
-          const pct = Math.round((progress.processedPages / progress.totalPages) * 100) || 0;
-          if (CONCURRENCY === 1) {
-            process.stdout.write(`\r   [${fileName}] Page ${progress.processedPages}/${progress.totalPages} (${pct}%) | ${progress.processedCards || 0} cards`);
-          } else if (progress.processedPages % 5 === 0 || progress.processedPages === progress.totalPages) {
-            console.log(`   [PDF ${index + 1}/${total}] [${fileName}] Page ${progress.processedPages}/${progress.totalPages} (${pct}%) | ${progress.processedCards || 0} cards`);
+    let result = null;
+    if (fs.existsSync(cachePath)) {
+      try {
+        const raw = fs.readFileSync(cachePath, 'utf8');
+        result = JSON.parse(raw);
+        console.log(`   ⚡ Loaded OCR from disk cache (${(result.records || result.voterRecords || []).length} voters)`);
+      } catch (cacheErr) {
+        console.warn(`   ⚠️ Cache unreadable, re-running OCR:`, cacheErr.message);
+      }
+    }
+
+    if (!result) {
+      result = await ocrPdf(pdfPath, fileName, {
+        onProgress: (progress) => {
+          if (progress.phase === 'ocr' && progress.processedPages !== lastLoggedPage) {
+            lastLoggedPage = progress.processedPages;
+            const pct = Math.round((progress.processedPages / progress.totalPages) * 100) || 0;
+            if (CONCURRENCY === 1) {
+              process.stdout.write(`\r   [${fileName}] Page ${progress.processedPages}/${progress.totalPages} (${pct}%) | ${progress.processedCards || 0} cards`);
+            } else if (progress.processedPages % 5 === 0 || progress.processedPages === progress.totalPages) {
+              console.log(`   [PDF ${index + 1}/${total}] [${fileName}] Page ${progress.processedPages}/${progress.totalPages} (${pct}%) | ${progress.processedCards || 0} cards`);
+            }
           }
         }
-      }
-    });
+      });
+      // Save cache immediately to prevent 17-minute re-OCR if network drops during upload
+      try {
+        fs.writeFileSync(cachePath, JSON.stringify(result), 'utf8');
+      } catch (_) {}
+    }
 
     console.log('\n');
     const durationSec = ((Date.now() - startTime) / 1000).toFixed(1);
@@ -177,27 +220,17 @@ async function processSinglePdf(pdfPath, token, index, total, progressTracker) {
         members: chunk
       };
 
-      let uploadRes = await apiRequest('/api/import/members/json', 'POST', JSON.stringify(importPayload), token);
-      let attempts = 0;
-      while ((uploadRes.status === 502 || uploadRes.status === 503 || uploadRes.status === 504) && attempts < 4) {
-        attempts++;
-        await new Promise(r => setTimeout(r, 1500));
-        uploadRes = await apiRequest('/api/import/members/json', 'POST', JSON.stringify(importPayload), token);
-      }
+      let uploadRes = await safeApiRequest('/api/import/members/json', 'POST', JSON.stringify(importPayload), token, 8);
 
       if (uploadRes.status === 200 || uploadRes.status === 201) {
         totalImported += chunk.length;
         process.stdout.write(`\r   ✅ Chunk ${Math.floor(cIdx / CHUNK_SIZE) + 1}/${Math.ceil(membersList.length / CHUNK_SIZE)} saved (${totalImported}/${membersList.length} voters)...`);
       } else {
-        console.warn(`\n   ⚠️ Chunk ${Math.floor(cIdx / CHUNK_SIZE) + 1} status ${uploadRes.status} (${uploadRes.body?.message || uploadRes.body?.error || 'error'}). Retrying individual members...`);
+        console.warn(`\n   ⚠️ Chunk ${Math.floor(cIdx / CHUNK_SIZE) + 1} status ${uploadRes.status} (${uploadRes.body?.message || uploadRes.body?.error || uploadRes.error || 'error'}). Retrying individual members...`);
         let synced = 0;
         for (const m of chunk) {
           if (!m.voterId && !m.name) continue;
-          let res = await apiRequest('/api/import/members/json', 'POST', JSON.stringify({ header: importPayload.header, members: [m] }), token);
-          if (res.status === 502 || res.status === 503 || res.status === 504) {
-            await new Promise(r => setTimeout(r, 1000));
-            res = await apiRequest('/api/import/members/json', 'POST', JSON.stringify({ header: importPayload.header, members: [m] }), token);
-          }
+          let res = await safeApiRequest('/api/import/members/json', 'POST', JSON.stringify({ header: importPayload.header, members: [m] }), token, 5);
           if (res.status === 200 || res.status === 201) synced++;
         }
         totalImported += synced;
@@ -206,8 +239,12 @@ async function processSinglePdf(pdfPath, token, index, total, progressTracker) {
 
     console.log(`\n   🎉 Database Import Complete for ${fileName}! (Saved ${totalImported} voters in DB)`);
     try {
-      await apiRequest('/api/families/rebuild', 'POST', null, token);
+      await safeApiRequest('/api/families/rebuild', 'POST', null, token, 2);
     } catch (_) {}
+    // Clean up cache file after successful import
+    if (fs.existsSync(cachePath)) {
+      try { fs.unlinkSync(cachePath); } catch (_) {}
+    }
     progressTracker.recordCompleted(fileName, totalImported, durationSec);
     // Note: Family rebuild is executed once after all bulk PDFs finish for maximum speed and zero server load.
   } catch (err) {
