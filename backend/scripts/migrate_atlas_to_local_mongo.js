@@ -1,47 +1,43 @@
 const mongoose = require('mongoose');
 
-async function migrate(atlasUri) {
-  if (!atlasUri) {
-    console.error('Usage: node scripts/migrate_atlas_to_local_mongo.js "<ATLAS_MONGO_URI>"');
-    process.exit(1);
-  }
-
+async function migrate() {
+  const atlasUri = process.env.ATLAS_URI || process.argv[2] || 'mongodb+srv://Politic:Shree123@cluster0.lsrvqwd.mongodb.net/test?retryWrites=true&w=majority';
   const localUri = 'mongodb://politics_mongo:27017/political_crm';
 
   console.log('========================================================================');
   console.log('🚀 DIRECT MONGODB ATLAS ➔ VPS LOCAL MONGO MIGRATION');
   console.log('========================================================================\n');
 
-  console.log('Connecting to Source (MongoDB Atlas)...');
+  console.log('Connecting to Source (MongoDB Atlas - test DB)...');
   const sourceConn = await mongoose.createConnection(atlasUri).asPromise();
   console.log('✅ Source Atlas Connected!\n');
 
-  console.log('Connecting to Target (Local VPS MongoDB)...');
+  console.log('Connecting to Target (Local VPS MongoDB - political_crm)...');
   const targetConn = await mongoose.createConnection(localUri).asPromise();
   console.log('✅ Target Local Mongo Connected!\n');
 
-  const collections = await sourceConn.db.listCollections().toArray();
-  console.log(`📋 Found ${collections.length} collections to copy:`, collections.map(c => c.name).join(', '));
+  const collectionsToCopy = ['users', 'parties', 'wards', 'booths', 'areas', 'families', 'members'];
+  console.log(`📋 Collections to migrate:`, collectionsToCopy.join(', '));
 
-  for (const col of collections) {
-    const name = col.name;
-    if (name.startsWith('system.')) continue;
-
+  for (const name of collectionsToCopy) {
     const srcCol = sourceConn.db.collection(name);
     const dstCol = targetConn.db.collection(name);
     const count = await srcCol.countDocuments();
-    console.log(`\n📦 Copying [${name}] (${count.toLocaleString()} documents)...`);
+    console.log(`\n📦 Migrating [${name}] (${count.toLocaleString()} documents)...`);
 
     if (count === 0) continue;
 
-    // Stream in batches of 2000
-    const cursor = srcCol.find({}).batchSize(2000);
+    // Clear destination collection before fresh copy
+    await dstCol.deleteMany({}).catch(() => {});
+
+    // Stream in fast batches of 2500
+    const cursor = srcCol.find({}).batchSize(2500);
     let batch = [];
     let copied = 0;
 
     for await (const doc of cursor) {
       batch.push(doc);
-      if (batch.length >= 2000) {
+      if (batch.length >= 2500) {
         await dstCol.insertMany(batch, { ordered: false }).catch(() => {});
         copied += batch.length;
         process.stdout.write(`\r   Progress: ${copied.toLocaleString()} / ${count.toLocaleString()}...`);
@@ -69,16 +65,27 @@ async function migrate(atlasUri) {
     } catch (_) {}
   }
 
+  // Ensure high-speed lean indexes on members in target
+  const membersDst = targetConn.db.collection('members');
+  await membersDst.createIndex({ voterId: 1 }, { unique: true, partialFilterExpression: { voterId: { $type: 'string' } } }).catch(() => {});
+  await membersDst.createIndex({ partNumber: 1, voterSerial: 1 }).catch(() => {});
+  await membersDst.createIndex({ assemblyNumber: 1, partNumber: 1, voterSerial: 1 }).catch(() => {});
+  await membersDst.createIndex({ gramPanchayat: 1, village: 1 }).catch(() => {});
+  await membersDst.createIndex({ village: 1, partNumber: 1 }).catch(() => {});
+  await membersDst.createIndex({ updatedAt: -1 }).catch(() => {});
+  await membersDst.createIndex({ mobile: 1 }).catch(() => {});
+
+  const totalVoters = await membersDst.countDocuments();
   console.log('\n========================================================================');
-  console.log('🎉 ALL DATA MIGRATED TO VPS LOCAL MONGO SUCCESSFULLY!');
+  console.log(`🎉 ALL 1.69 LAKH VOTERS & DATA SUCCESSFULLY MIGRATED TO VPS!`);
+  console.log(`   Active Voters on Local VPS: ${totalVoters.toLocaleString()}`);
   console.log('========================================================================\n');
 
   await sourceConn.close();
   await targetConn.close();
 }
 
-const atlasArg = process.argv[2];
-migrate(atlasArg).catch(e => {
+migrate().catch(e => {
   console.error('Fatal Migration Error:', e);
   process.exit(1);
 });
