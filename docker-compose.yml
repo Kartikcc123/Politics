@@ -1,10 +1,21 @@
 services:
+  mongo:
+    image: mongo:7
+    container_name: politics_mongo
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+
   backend:
     build:
       context: .
       dockerfile: backend/Dockerfile
     container_name: politics_backend
     restart: unless-stopped
+    depends_on:
+      - mongo
     ports:
       - "5003:5000"
     env_file:
@@ -21,3 +32,6 @@ services:
       - OCR_DPI=250
       - PYTHONUNBUFFERED=1
       - OMP_THREAD_LIMIT=1
+
+volumes:
+  mongo_data:
