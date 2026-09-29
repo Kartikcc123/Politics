@@ -23,7 +23,8 @@ class _HierarchicalLocationNavigatorState
   List<Map<String, dynamic>> _treeData = [];
   bool _loading = true;
 
-  final String _selectedSamiti = 'रायपुर';
+  String _selectedSamiti = 'रायपुर';
+  final List<String> _samitiList = ['रायपुर', 'सहाड़ा', 'सुवाणा', 'गंगापुर'];
   Map<String, dynamic>? _selectedPanchayat;
   Map<String, dynamic>? _selectedVillage;
   String? _selectedPart;
@@ -175,6 +176,50 @@ class _HierarchicalLocationNavigatorState
             ],
           ),
           const SizedBox(height: 14),
+
+          // Samiti / Body Selector Bar
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: _samitiList.map((sName) {
+                final isSelected = _selectedSamiti == sName;
+                return Padding(
+                  padding: const EdgeInsets.only(right: 8),
+                  child: FilterChip(
+                    avatar: Icon(
+                      sName == 'गंगापुर'
+                          ? Icons.apartment_rounded
+                          : Icons.account_balance_rounded,
+                      size: 14,
+                      color: isSelected ? Colors.white : blue,
+                    ),
+                    label: Text(sName == 'गंगापुर'
+                        ? 'नगरपालिका: $sName'
+                        : 'समिति: $sName'),
+                    selected: isSelected,
+                    selectedColor: blue,
+                    backgroundColor: const Color(0xfff1f5f9),
+                    labelStyle: TextStyle(
+                      color: isSelected ? Colors.white : navy,
+                      fontWeight: FontWeight.w800,
+                      fontSize: 12,
+                    ),
+                    onSelected: (val) {
+                      if (val) {
+                        setState(() {
+                          _selectedSamiti = sName;
+                          _selectedPanchayat = null;
+                          _selectedVillage = null;
+                          _selectedPart = null;
+                        });
+                      }
+                    },
+                  ),
+                );
+              }).toList(),
+            ),
+          ),
+          const SizedBox(height: 10),
 
           // Breadcrumbs Bar
           SingleChildScrollView(
