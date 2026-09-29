@@ -72,10 +72,10 @@ async function syncAllMasterAndVoters() {
     for (const [gpName, gpData] of Object.entries(samitiData.panchayats)) {
       panchayatToSamiti.set(gpName, samitiName);
       
-      let gpArea = await Area.findOne({ type: 'gramPanchayat', name: gpName, parent: samitiArea._id });
+      let gpArea = await Area.findOne({ type: 'gram_panchayat', name: gpName, parent: samitiArea._id });
       if (!gpArea) {
         gpArea = await Area.create({
-          type: 'gramPanchayat',
+          type: 'gram_panchayat',
           name: gpName,
           parent: samitiArea._id,
           assemblyNumber: constituencyMaster.assemblyNumber,
