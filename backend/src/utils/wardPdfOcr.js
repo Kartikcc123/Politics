@@ -141,8 +141,16 @@ exports.ocrWardPdf = async (pdfPath, importFileName, { onProgress } = {}) => {
   if (assemblyHint) result.header.assemblyNumber = assemblyHint[1];
   if (wardPartHint) {
     result.header.wardNumber ||= wardPartHint[1];
-    result.header.partNumber = wardPartHint[2];
+  const fileNameClean = path.basename(importFileName);
+  const fileWardMatch = fileNameClean.match(/(?:ward|वार्ड)[_\s-]*(\d{1,4})/i) || fileNameClean.match(/[_\s-](\d{1,3})\.pdf$/i);
+  if (fileWardMatch && !result.header.wardNumber) {
+    result.header.wardNumber = fileWardMatch[1];
   }
+  const filePanchayatMatch = fileNameClean.match(/(भींटा|सरेवड़ी|छातोल|कोट|खाखरमाला|मोखुन्दा|मासिंगपुरा|झाड़ोल|देवरिया|गलवा|चारोट|खेमाणा|पालरां|पीथाकाखेड़ा|बोराणा|कलालखेड़ी|सुरास|बागोलिया|थाला|सगरेव|रायपुर|गल्यावड़ी|नान्दशा|पानोतिया|नाथड़ियास|नाहरी|नारायणखेड़ा|बकाण|आशाहोली|बोरियापुरा|आमली)/i);
+  if (filePanchayatMatch && !result.header.gramPanchayat) {
+    result.header.gramPanchayat = filePanchayatMatch[1];
+  }
+
   const yearHint = embeddedCover.match(/\b(20\d{2})\b/);
   if (yearHint) result.header.year = Number(yearHint[1]);
   // Do not expose clearly garbled Latin OCR as a Hindi assembly name. The
