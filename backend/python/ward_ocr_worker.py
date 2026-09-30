@@ -65,12 +65,38 @@ def parse_header(text):
         r"नगर(?:निगम|परिषद|पालिका)\s*(?:का\s*)?नाम",
     ])
     municipality = re.split(r"\s*(?:विधानसभा|वार्ड|भाग)\b", municipality, maxsplit=1)[0]
+    
+    gram_panchayat = field(normalized, [
+        r"ग्राम\s*पंचायत",
+        r"ग्रामपंचायत",
+        r"पचायत",
+    ])
+    gram_panchayat = re.split(r"\s*(?:वार्ड|भाग|विधानसभा)\b", gram_panchayat, maxsplit=1)[0]
+    
+    samiti = field(normalized, [
+        r"पंचायत\s*समिति\s*(?:का\s*)?नाम",
+        r"पचायत\s*समिति",
+        r"तहसील",
+    ])
+    samiti = re.split(r"\s*(?:पं|जिला|वार्ड)\b", samiti, maxsplit=1)[0]
+    
+    village = field(normalized, [
+        r"मुख्य\s*गांव",
+        r"मुख्य\s*ग्राम",
+        r"गाँव",
+        r"ग्राम",
+    ])
+    village = re.split(r"\s*(?:तहसील|जिला|वार्ड)\b", village, maxsplit=1)[0]
+    
     assembly = re.search(r"विधानसभा[^\n:]{0,80}[:：-]*\s*(\d{1,3})\s*[-–]\s*([^\n]+)", normalized)
-    ward = re.search(r"वार्ड\s*(?:संख्या|नं\.?|नम्बर)?\s*[:：]?\s*(\d{1,4})", normalized)
+    ward = re.search(r"वार्ड\s*(?:क्रमांक|संख्या|नं\.?|नम्बर)?\s*[:：]?\s*(\d{1,4})", normalized)
     part = re.search(r"भाग\s*(?:संख्या|नं\.?|नम्बर)?\s*[:：]?\s*(\d{1,4})", normalized)
-    station = field(normalized, [r"मतदान\s*केन्द्र(?:\s*की\s*संख्या\s*एवं\s*पता)?"])
+    station = field(normalized, [r"मतदान\s*केन्द्र(?:\s*की\s*संख्या\s*एवं\s*पता)?", r"मतदान\s*बूथ\s*(?:की\s*संख्या\s*एवं\s*पता)?"])
     return {
         "municipality": municipality,
+        "gramPanchayat": gram_panchayat,
+        "tehsil": samiti,
+        "village": village,
         "assemblyNumber": assembly.group(1) if assembly else "",
         "assemblyName": clean(assembly.group(2)).strip(" -,:;|।") if assembly else "",
         "wardNumber": ward.group(1) if ward else "",
