@@ -34,6 +34,7 @@ const {
   invalidateMemberData,
 } = require('../utils/dataCache');
 const { buildMemberSearchData } = require('../utils/memberSearch');
+const { getMasterLocationForBooth } = require('../config/boothToVillageMaster');
 const importProgress = new Map();
 const progressWrites = new Map();
 
@@ -2697,6 +2698,11 @@ exports.importMembersJson = async (req, res, next) => {
       const secNum = cleanValue(m.sectionNumber || '1');
       const secName = cleanSectionName(m.sectionName || docSectionMap[secNum] || '');
 
+      const effectivePart = partNum || cleanValue(m.partNumber);
+      const masterLoc = getMasterLocationForBooth(effectivePart);
+      const finalVillage = masterLoc?.village || village || cleanValue(m.village);
+      const finalGP = masterLoc?.gramPanchayat || cleanValue(header.gramPanchayat || sample.gramPanchayat || m.gramPanchayat);
+
       const memberDoc = {
         name: cleanValue(m.name),
         guardianName: cleanValue(m.guardianName),
@@ -2710,8 +2716,9 @@ exports.importMembersJson = async (req, res, next) => {
         sectionName: secName,
         assemblyNumber: asmNum || cleanValue(m.assemblyNumber),
         assemblyName: asmName || cleanValue(m.assemblyName),
-        partNumber: partNum || cleanValue(m.partNumber),
-        village: village || cleanValue(m.village),
+        partNumber: effectivePart,
+        village: finalVillage,
+        gramPanchayat: finalGP,
         contactType: 'electoral',
         hasAssemblyMembership: true,
         verificationStatus: 'verified',

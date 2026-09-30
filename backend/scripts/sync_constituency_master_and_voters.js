@@ -8,6 +8,7 @@ const srcDir = fs.existsSync(path.join(__dirname, 'src'))
   : path.join(__dirname, '../src');
 
 const constituencyMaster = require(path.join(srcDir, 'config/constituencyMaster'));
+const { getMasterLocationForBooth } = require(path.join(srcDir, 'config/boothToVillageMaster'));
 const Area = require(path.join(srcDir, 'models/Area'));
 const Member = require(path.join(srcDir, 'models/Member'));
 const User = require(path.join(srcDir, 'models/User'));
@@ -221,13 +222,15 @@ async function syncAllMasterAndVoters() {
 
   for await (const doc of cursor) {
     totalProcessed++;
-    let canonVillage = findCanonicalVillage(doc.village) || 
+    const masterLoc = doc.partNumber ? getMasterLocationForBooth(doc.partNumber) : null;
+    let canonVillage = masterLoc?.village ||
+                       findCanonicalVillage(doc.village) || 
                        findCanonicalVillage(doc.sectionName) || 
                        (doc.partNumber ? partDominantVillage.get(doc.partNumber) : null);
 
     if (!canonVillage && doc.village) canonVillage = doc.village.trim();
 
-    const canonGP = canonVillage ? (villageToPanchayat.get(canonVillage) || doc.gramPanchayat || '') : (doc.gramPanchayat || '');
+    const canonGP = masterLoc?.gramPanchayat || (canonVillage ? (villageToPanchayat.get(canonVillage) || doc.gramPanchayat || '') : (doc.gramPanchayat || ''));
     const canonSamiti = canonGP ? (panchayatToSamiti.get(canonGP) || doc.tehsil || '') : (doc.tehsil || '');
     const linkedAreaId = canonVillage && areaLookupByVillage.has(canonVillage) 
       ? areaLookupByVillage.get(canonVillage) 
