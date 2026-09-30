@@ -2,10 +2,8 @@ import 'package:flutter/material.dart';
 
 import '../core/api_client.dart';
 import '../core/theme.dart';
-import '../features/dashboard/dashboard_page.dart';
-import '../features/families/family_page.dart';
+import '../features/areas/samiti_hierarchy_page.dart';
 import '../features/more/more_page.dart';
-import '../features/reports/reports_page.dart';
 import '../features/voters/voter_management_page.dart';
 import '../features/auth/login_page.dart';
 import 'app_layout.dart';
@@ -61,38 +59,16 @@ class _AppShellState extends State<AppShell> {
   }
 
   List<NavItem> get items {
-    if (widget.role == 'booth') {
-      return [
-        NavItem(
-            'संपर्क',
-            Icons.people_alt_rounded,
-            VoterManagementPage(
-                key: ValueKey('booth-contacts-$refreshVersion'))),
-      ];
-    }
     return [
       NavItem(
-        'होम',
-        Icons.home_outlined,
-        DashboardPage(
-          key: ValueKey('dashboard-$refreshVersion'),
-          onNavigate: select,
-        ),
+        'क्षेत्र व गाँव',
+        Icons.holiday_village_outlined,
+        SamitiHierarchyPage(key: ValueKey('samiti-hierarchy-$refreshVersion')),
       ),
       NavItem(
-        'मतदाता',
+        'सभी मतदाता',
         Icons.groups_outlined,
         VoterManagementPage(key: ValueKey('voters-$refreshVersion')),
-      ),
-      NavItem(
-        'परिवार',
-        Icons.family_restroom,
-        FamilyPage(key: ValueKey('families-$refreshVersion')),
-      ),
-      NavItem(
-        'रिपोर्ट',
-        Icons.bar_chart_outlined,
-        ReportsPage(key: ValueKey('reports-$refreshVersion')),
       ),
       NavItem(
         'अधिक',
