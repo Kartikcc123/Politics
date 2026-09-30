@@ -14,6 +14,7 @@ class CongressBoothApp extends StatelessWidget {
       debugShowCheckedModeBanner: false,
       title: 'कांग्रेस बूथ प्रबंधन',
       theme: buildAppTheme(),
+      themeMode: ThemeMode.light,
       home: ValueListenableBuilder<int>(
         valueListenable: api.authVersion,
         builder: (context, version, _) => AuthGate(
