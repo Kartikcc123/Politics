@@ -40,6 +40,30 @@ const maskMemberMobile = (member, user) => {
 
 const searchRegex = (value) => new RegExp(String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
 const escapeRegex = (value) => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+const hindiFlexibleRegex = (value) => {
+  if (!value) return undefined;
+  const clean = String(value).trim();
+  let pattern = '';
+  for (let i = 0; i < clean.length; i++) {
+    const char = clean[i];
+    if (/[ँं़]/.test(char)) continue;
+    if (char === 'ड' || char === 'ड़') {
+      pattern += '[डड़][ँं़]?';
+    } else if (char === 'ढ' || char === 'ढ़') {
+      pattern += '[ढढ़][ँं़]?';
+    } else if (char === 'न' || char === 'ण') {
+      pattern += '[नण][ँं़]?';
+    } else if (char === 'श' || char === 'ष' || char === 'स') {
+      pattern += '[शषस][ँं़]?';
+    } else if (char === 'ब' || char === 'व') {
+      pattern += '[बव][ँं़]?';
+    } else {
+      pattern += escapeRegex(char) + '[ँं़]?';
+    }
+  }
+  return new RegExp(pattern, 'i');
+};
 const normalizeMonthDayDate = (value) => {
   const raw = String(value ?? '').trim();
   if (!raw) return undefined;
@@ -234,16 +258,16 @@ exports.list = async (req, res, next) => {
     if (gender) filter.gender = gender;
     if (ward) filter.ward = ward;
     if (area) filter.area = area;
-    if (location) filter.location = searchRegex(location);
-    if (village) filter.village = searchRegex(village);
+    if (location) filter.location = hindiFlexibleRegex(location);
+    if (village) filter.village = hindiFlexibleRegex(village);
     if (pinCode) {
       const normalizedPin = String(pinCode).replace(/\D/g, '');
       if (normalizedPin) filter.pinCode = new RegExp('^' + escapeRegex(normalizedPin) + '$', 'i');
     }
-    if (gramPanchayat) filter.gramPanchayat = searchRegex(gramPanchayat);
-    if (tehsil) filter.tehsil = searchRegex(tehsil);
-    if (municipality) filter.municipality = searchRegex(municipality);
-    if (caste) filter.caste = searchRegex(caste);
+    if (gramPanchayat) filter.gramPanchayat = hindiFlexibleRegex(gramPanchayat);
+    if (tehsil) filter.tehsil = hindiFlexibleRegex(tehsil);
+    if (municipality) filter.municipality = hindiFlexibleRegex(municipality);
+    if (caste) filter.caste = hindiFlexibleRegex(caste);
     if (organizationPost) filter.organizationPost = searchRegex(organizationPost);
     if (occupation) filter.occupation = searchRegex(occupation);
     if (contactType === 'personal') filter.contactType = 'personal';
