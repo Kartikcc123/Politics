@@ -265,7 +265,18 @@ exports.list = async (req, res, next) => {
         filter.labels = String(req.query.group).trim();
       }
     }
-    if (gender) filter.gender = gender;
+    const addOrClause = (conditions) => {
+      if (!conditions || !conditions.length) return;
+      if (filter.$or) {
+        filter.$and = [...(filter.$and || []), { $or: filter.$or }, { $or: conditions }];
+        delete filter.$or;
+      } else if (filter.$and) {
+        filter.$and.push({ $or: conditions });
+      } else {
+        filter.$or = conditions;
+      }
+    };
+
     if (ward || req.query.municipalWard || req.query.municipalWardNumber) {
       const rawWard = String(ward || req.query.municipalWard || req.query.municipalWardNumber || '').replace(/\D/g, '').trim();
       if (rawWard) {
@@ -273,25 +284,22 @@ exports.list = async (req, res, next) => {
         const wardConditions = [
           { ward: rawWard },
           { ward: wardRegex },
+          { wardNumber: rawWard },
+          { wardNumber: wardRegex },
           { municipalWardNumbers: rawWard },
           { municipalWardNumbers: wardRegex }
         ];
-        if (filter.$or) {
-          filter.$and = [{ $or: filter.$or }, { $or: wardConditions }];
-          delete filter.$or;
-        } else {
-          filter.$or = wardConditions;
-        }
+        addOrClause(wardConditions);
       }
     }
     if (area) filter.area = area;
     if (village) {
       const vRegex = hindiFlexibleRegex(village);
-      filter.$or = [
+      addOrClause([
         { village: vRegex },
         { sectionName: vRegex },
         { location: vRegex }
-      ];
+      ]);
     }
     if (pinCode) {
       const normalizedPin = String(pinCode).replace(/\D/g, '');
