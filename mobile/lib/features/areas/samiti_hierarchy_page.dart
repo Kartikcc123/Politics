@@ -996,8 +996,9 @@ class _SamitiHierarchyPageState extends State<SamitiHierarchyPage> {
                             padding: const EdgeInsets.only(right: 10),
                             child: ChoiceChip(
                               showCheckmark: false,
-                              avatar: Icon(icon, color: isSelected ? Colors.white : color, size: 18),
-                              label: Text('${e.key} ($gpCount GP, $wardCount वार्ड)'),
+                              label: Text(e.key.contains('गंगापुर')
+                                  ? '${e.key} ($gpCount वार्ड)'
+                                  : '${e.key} ($gpCount GP, ${e.value['villageCount']} गाँव)'),
                               selected: isSelected,
                               selectedColor: color,
                               backgroundColor: Colors.white,

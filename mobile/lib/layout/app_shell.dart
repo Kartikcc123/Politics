@@ -121,28 +121,6 @@ class _AppShellState extends State<AppShell> {
           ]),
         ),
       ]),
-      floatingActionButton: wide ||
-              (widget.role == 'booth' &&
-                  api.user?['permissions']?['canCreateVoters'] == false)
-          ? null
-          : FloatingActionButton(
-              tooltip: 'नया मतदाता जोड़ें',
-              backgroundColor: blue,
-              foregroundColor: Colors.white,
-              shape: const CircleBorder(),
-              onPressed: () => showDialog(
-                context: context,
-                builder: (_) => VoterForm(
-                  onSaved: () {
-                    api.notifyDataChanged();
-                    select(1);
-                  },
-                ),
-              ),
-              child: const Icon(Icons.add_rounded, size: 32),
-            ),
-      floatingActionButtonLocation:
-          wide ? null : FloatingActionButtonLocation.centerDocked,
       bottomNavigationBar: wide || widget.role == 'booth'
           ? null
           : _PhoneBottomBar(selected: selected, onSelect: select),
@@ -157,43 +135,43 @@ class _PhoneBottomBar extends StatelessWidget {
   final ValueChanged<int> onSelect;
 
   @override
-  Widget build(BuildContext context) => BottomAppBar(
-        height: 72,
-        padding: EdgeInsets.zero,
-        color: Colors.white,
-        elevation: 12,
-        shadowColor: const Color(0x26071b4b),
-        shape: const CircularNotchedRectangle(),
-        notchMargin: 9,
+  Widget build(BuildContext context) => Container(
+        height: 64,
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          border: Border(top: BorderSide(color: border, width: 1)),
+          boxShadow: [
+            BoxShadow(
+              color: Color(0x0D071B4B),
+              blurRadius: 10,
+              offset: Offset(0, -2),
+            ),
+          ],
+        ),
         child: SafeArea(
           top: false,
-          child: Row(children: [
-            _PhoneNavButton(
-              label: 'होम',
-              icon: Icons.home_rounded,
-              selected: selected == 0,
-              onTap: () => onSelect(0),
-            ),
-            _PhoneNavButton(
-              label: 'संपर्क',
-              icon: Icons.people_alt_rounded,
-              selected: selected == 1,
-              onTap: () => onSelect(1),
-            ),
-            const SizedBox(width: 68),
-            _PhoneNavButton(
-              label: 'रिपोर्ट',
-              icon: Icons.bar_chart_rounded,
-              selected: selected == 3,
-              onTap: () => onSelect(3),
-            ),
-            _PhoneNavButton(
-              label: 'अधिक',
-              icon: Icons.menu_rounded,
-              selected: selected == 4,
-              onTap: () => onSelect(4),
-            ),
-          ]),
+          child: Row(
+            children: [
+              _PhoneNavButton(
+                label: 'क्षेत्र व गाँव',
+                icon: selected == 0 ? Icons.holiday_village_rounded : Icons.holiday_village_outlined,
+                selected: selected == 0,
+                onTap: () => onSelect(0),
+              ),
+              _PhoneNavButton(
+                label: 'सभी मतदाता',
+                icon: selected == 1 ? Icons.groups_rounded : Icons.groups_outlined,
+                selected: selected == 1,
+                onTap: () => onSelect(1),
+              ),
+              _PhoneNavButton(
+                label: 'अधिक',
+                icon: selected == 2 ? Icons.grid_view_rounded : Icons.grid_view_outlined,
+                selected: selected == 2,
+                onTap: () => onSelect(2),
+              ),
+            ],
+          ),
         ),
       );
 }
@@ -215,15 +193,21 @@ class _PhoneNavButton extends StatelessWidget {
   Widget build(BuildContext context) => Expanded(
         child: InkWell(
           onTap: onTap,
-          child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-            Icon(icon, color: selected ? blue : muted, size: 23),
-            const SizedBox(height: 3),
-            Text(label,
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(icon, color: selected ? blue : muted, size: 24),
+              const SizedBox(height: 3),
+              Text(
+                label,
                 style: TextStyle(
-                    color: selected ? blue : muted,
-                    fontSize: 10,
-                    fontWeight: selected ? FontWeight.w900 : FontWeight.w700)),
-          ]),
+                  color: selected ? blue : muted,
+                  fontSize: 11,
+                  fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
         ),
       );
 }
