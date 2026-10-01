@@ -865,8 +865,8 @@ class _SamitiHierarchyPageState extends State<SamitiHierarchyPage> {
           ),
           body: VoterManagementPage(
             initialVillage: village,
-            initialGramPanchayat: gramPanchayat,
-            initialTehsil: tehsil,
+            initialGramPanchayat: village != null ? null : gramPanchayat,
+            initialTehsil: (village != null || gramPanchayat != null) ? null : tehsil,
           ),
         ),
       ),
