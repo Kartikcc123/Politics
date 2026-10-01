@@ -7,7 +7,7 @@ async function auditVoterMatchStats() {
   await mongoose.connect(MONGO_URI);
   console.log('MongoDB Connected.\n');
 
-  const panchayats = ['सागरेव', 'सुरास', 'थला', 'पीथाकाखेड़ा'];
+  const panchayats = ['रायपुर', 'सागरेव', 'सुरास', 'थला', 'पीथाकाखेड़ा'];
 
   console.log('========================================================================================');
   console.log('                 विधानसभा (ASSEMBLY) vs वार्ड (MUNICIPAL/WARD) मिलान रिपोर्ट            ');
@@ -16,21 +16,18 @@ async function auditVoterMatchStats() {
   for (const gp of panchayats) {
     const gpRegex = new RegExp(gp, 'i');
 
-    // 2. Voters present in BOTH Assembly and Ward
     const matchedBoth = await Member.countDocuments({
       gramPanchayat: gpRegex,
       hasAssemblyMembership: true,
       hasMunicipalMembership: true
     });
 
-    // 3. ONLY in Assembly
     const assemblyOnly = await Member.countDocuments({
       gramPanchayat: gpRegex,
       hasAssemblyMembership: true,
       hasMunicipalMembership: { $ne: true }
     });
 
-    // 4. ONLY in Ward
     const wardOnly = await Member.countDocuments({
       gramPanchayat: gpRegex,
       hasMunicipalMembership: true,
@@ -41,7 +38,7 @@ async function auditVoterMatchStats() {
     const totalAssemblyVoters = matchedBoth + assemblyOnly;
     const matchPercent = totalWardVoters > 0 ? ((matchedBoth / totalWardVoters) * 100).toFixed(1) : '0';
 
-    console.log(`📌 ग्राम पंचायत: ${gp.toUpperCase()}`);
+    console.log(`📌 नगर / ग्राम पंचायत: ${gp.toUpperCase()}`);
     console.log(`   ├─ कुल विधानसभा मतदाता (Assembly Roll): ${totalAssemblyVoters}`);
     console.log(`   ├─ कुल वार्ड मतदाता (Ward Roll):         ${totalWardVoters}`);
     console.log(`   ├─ 🟢 दोनों में मौजूद (Matched in Both):   ${matchedBoth} (${matchPercent}% वार्ड मिलान)`);
@@ -49,7 +46,6 @@ async function auditVoterMatchStats() {
     console.log(`   └─ 🔵 सिर्फ वार्ड में (Only Ward/New):    ${wardOnly}\n`);
   }
 
-  // Grand Total for all Ward-imported Panchayats combined
   const grandMatchedBoth = await Member.countDocuments({
     hasAssemblyMembership: true,
     hasMunicipalMembership: true
