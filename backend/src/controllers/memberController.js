@@ -1879,3 +1879,51 @@ exports.assignPartToVillage = async (req, res, next) => {
   } catch (error) { next(error); }
 };
 
+exports.enrichBatch = async (req, res, next) => {
+  try {
+    const { batch } = req.body;
+    if (!Array.isArray(batch) || batch.length === 0) {
+      return res.status(400).json({ message: 'Batch array is required' });
+    }
+
+    const bulkOps = [];
+    for (const item of batch) {
+      const epic = normalizeEpic(item.voterId);
+      if (!epic || !isValidEpic(epic)) continue;
+
+      const $set = {};
+      if (item.caste) {
+        $set.caste = item.caste;
+      }
+      if (item.mobile && item.mobile !== '0' && item.mobile.length >= 10) {
+        $set.mobile = item.mobile;
+      }
+
+      if (Object.keys($set).length > 0) {
+        $set.updatedBy = req.currentUser._id;
+        bulkOps.push({
+          updateOne: {
+            filter: { voterId: epic },
+            update: { $set }
+          }
+        });
+      }
+    }
+
+    if (bulkOps.length > 0) {
+      const result = await Member.bulkWrite(bulkOps, { ordered: false });
+      invalidateMemberData();
+      return res.json({
+        success: true,
+        matchedCount: result.matchedCount,
+        modifiedCount: result.modifiedCount
+      });
+    }
+
+    return res.json({ success: true, matchedCount: 0, modifiedCount: 0 });
+  } catch (err) {
+    next(err);
+  }
+};
+
+
