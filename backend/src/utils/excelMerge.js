@@ -65,7 +65,9 @@ const canonicalizeExcelRow = (row = {}) => {
   for (const [header, value] of Object.entries(row)) {
     const field = aliasToField.get(normalizeHeader(header));
     if (!field) {
-      result[header] = value;
+      if (!/^__EMPTY/i.test(header) && !/TOTAL\s*VOTERS/i.test(header)) {
+        result[header] = value;
+      }
       continue;
     }
     const valStr = String(value || '').trim();
@@ -88,13 +90,22 @@ const isBlank = (value) => value === undefined
   || value === null
   || (Array.isArray(value) ? value.length === 0 : String(value).trim() === '');
 
+const cleanMobileNumber = (value) => {
+  const digits = String(value || '').replace(/\D/g, '');
+  if (digits.length === 10 && /^[6-9]/.test(digits)) return digits;
+  if (digits.length === 11 && digits.startsWith('0') && /^[6-9]/.test(digits.slice(1))) return digits.slice(1);
+  if (digits.length === 12 && digits.startsWith('91') && /^[6-9]/.test(digits.slice(2))) return digits.slice(2);
+  return '';
+};
+
 const ignoredMergeFields = new Set([
   '_id', 'voterId', 'photo', 'qrCode', 'createdAt', 'updatedAt', 'createdBy',
   'updatedBy', 'sourceDocument', 'area', 'booth', 'ward', 'extraDetails',
   'ocrValues', 'ocrFieldConfidence', 'locationResolution', 'verificationStatus',
+  'voterSerial', 'serialNumber', 'kramank', // Official electoral serial must never be overwritten by Excel
 ]);
 const ocrFields = new Set([
-  'name', 'guardianName', 'houseNumber', 'age', 'gender', 'voterSerial',
+  'name', 'guardianName', 'houseNumber', 'age', 'gender',
   'assemblyNumber', 'assemblyName', 'partNumber', 'sectionNumber', 'sectionName',
   'tehsil', 'gramPanchayat', 'village', 'pinCode', 'address', 'location',
 ]);
@@ -105,6 +116,8 @@ const locationFields = new Set([
 
 const valuesEqual = (left, right) => String(left ?? '').normalize('NFKC').trim().toLocaleLowerCase('hi-IN')
   === String(right ?? '').normalize('NFKC').trim().toLocaleLowerCase('hi-IN');
+
+const hasHindiCharacters = (str) => /[\u0900-\u097F]/.test(String(str || ''));
 
 const canCorrectOcrField = (existing, field, threshold) => {
   const verified = existing.ocrValues?.verified || {};
@@ -128,12 +141,32 @@ const buildSafeExcelMerge = (existing, incoming, { confidenceThreshold = 75, cas
   const conflicts = [];
   const isCastePresent = !isBlank(incoming?.caste);
 
-  for (const [field, incomingValue] of Object.entries(incoming || {})) {
+  for (let [field, incomingValue] of Object.entries(incoming || {})) {
     if (ignoredMergeFields.has(field) || isBlank(incomingValue)) continue;
     
-    // If incoming has caste, prioritize updating caste safely while preserving other existing core fields
-    if (isCastePresent && field !== 'caste' && field !== 'subCaste') {
-      const currentValue = existing?.[field];
+    // Clean mobile number - ignore 0, 00, or invalid phone numbers
+    if (field === 'mobile' || field === 'altMobile') {
+      const validMobile = cleanMobileNumber(incomingValue);
+      if (!validMobile) continue;
+      incomingValue = validMobile;
+    }
+
+    // Clean caste text
+    if (field === 'caste' || field === 'subCaste') {
+      const cleanCaste = String(incomingValue || '').trim();
+      if (!cleanCaste || cleanCaste === '0' || cleanCaste === '-') continue;
+      incomingValue = cleanCaste;
+    }
+
+    const currentValue = existing?.[field];
+
+    // STRICT PROTECTION: If existing field has Hindi text and incoming has NO Hindi text, NEVER overwrite with English!
+    if (hasHindiCharacters(currentValue) && !hasHindiCharacters(incomingValue)) {
+      continue;
+    }
+
+    // If incoming has caste, prioritize updating caste/mobile safely while preserving other existing core fields
+    if (isCastePresent && field !== 'caste' && field !== 'subCaste' && field !== 'mobile' && field !== 'altMobile') {
       if (isBlank(currentValue)) {
         updates[field] = incomingValue;
         filled.push(field);
@@ -141,14 +174,13 @@ const buildSafeExcelMerge = (existing, incoming, { confidenceThreshold = 75, cas
       continue;
     }
 
-    const currentValue = existing?.[field];
     if (isBlank(currentValue)) {
       updates[field] = incomingValue;
       filled.push(field);
       continue;
     }
     if (valuesEqual(currentValue, incomingValue)) continue;
-    if (field === 'caste' || field === 'subCaste') {
+    if (field === 'caste' || field === 'subCaste' || field === 'mobile' || field === 'altMobile') {
       updates[field] = incomingValue;
       filled.push(field);
       continue;
