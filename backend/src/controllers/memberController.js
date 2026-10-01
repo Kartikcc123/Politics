@@ -266,7 +266,24 @@ exports.list = async (req, res, next) => {
       }
     }
     if (gender) filter.gender = gender;
-    if (ward) filter.ward = ward;
+    if (ward || req.query.municipalWard || req.query.municipalWardNumber) {
+      const rawWard = String(ward || req.query.municipalWard || req.query.municipalWardNumber || '').replace(/\D/g, '').trim();
+      if (rawWard) {
+        const wardRegex = new RegExp(`^(वार्ड\\s*)?0*${rawWard}$`, 'i');
+        const wardConditions = [
+          { ward: rawWard },
+          { ward: wardRegex },
+          { municipalWardNumbers: rawWard },
+          { municipalWardNumbers: wardRegex }
+        ];
+        if (filter.$or) {
+          filter.$and = [{ $or: filter.$or }, { $or: wardConditions }];
+          delete filter.$or;
+        } else {
+          filter.$or = wardConditions;
+        }
+      }
+    }
     if (area) filter.area = area;
     if (village) {
       const vRegex = hindiFlexibleRegex(village);

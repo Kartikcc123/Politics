@@ -143,13 +143,83 @@ exports.ocrWardPdf = async (pdfPath, importFileName, { onProgress } = {}) => {
     result.header.partNumber = wardPartHint[2];
   }
   const fileNameClean = path.basename(importFileName);
-  const fileWardMatch = fileNameClean.match(/(?:ward|वार्ड)[_\s-]*(\d{1,4})/i) || fileNameClean.match(/[_\s-](\d{1,3})\.pdf$/i);
-  if (fileWardMatch && !result.header.wardNumber) {
-    result.header.wardNumber = fileWardMatch[1];
+  
+  // Extract Ward Number from filenames like "PEETHA KA KHERA-Ward No-001.pdf" or "Ward-1.pdf"
+  const fileWardMatch = fileNameClean.match(/(?:ward(?:\s*no)?|वार्ड)[_\s-]*0*(\d{1,4})/i) || fileNameClean.match(/[_\s-]0*(\d{1,3})\.pdf$/i);
+  if (fileWardMatch) {
+    result.header.wardNumber = String(parseInt(fileWardMatch[1], 10));
   }
-  const filePanchayatMatch = fileNameClean.match(/(भींटा|सरेवड़ी|छातोल|कोट|खाखरमाला|मोखुन्दा|मासिंगपुरा|झाड़ोल|देवरिया|गलवा|चारोट|खेमाणा|पालरां|पीथाकाखेड़ा|बोराणा|कलालखेड़ी|सुरास|बागोलिया|थाला|सगरेव|रायपुर|गल्यावड़ी|नान्दशा|पानोतिया|नाथड़ियास|नाहरी|नारायणखेड़ा|बकाण|आशाहोली|बोरियापुरा|आमली)/i);
-  if (filePanchayatMatch && !result.header.gramPanchayat) {
-    result.header.gramPanchayat = filePanchayatMatch[1];
+
+  // English & Hindi transliteration dictionary for the 29 Panchayats
+  const gpMap = {
+    'peetha ka khera': 'पीथाकाखेड़ा',
+    'pitha ka kheda': 'पीथाकाखेड़ा',
+    'pithakakheda': 'पीथाकाखेड़ा',
+    'peethakakhera': 'पीथाकाखेड़ा',
+    'bheeta': 'भींटा',
+    'bhinta': 'भींटा',
+    'sarawadi': 'सरेवड़ी',
+    'sarewadi': 'सरेवड़ी',
+    'sarewdi': 'सरेवड़ी',
+    'kalalkheri': 'कलालखेड़ी',
+    'kalal khedi': 'कलालखेड़ी',
+    'kalalkhedi': 'कलालखेड़ी',
+    'khemana': 'खेमाणा',
+    'charot': 'चारोट',
+    'galyawadi': 'गल्यावड़ी',
+    'galyavadi': 'गल्यावड़ी',
+    'khakharmala': 'खाखरमाला',
+    'galwa': 'गलवा',
+    'mokhunda': 'मोखुन्दा',
+    'masingpura': 'मासिंगपुरा',
+    'jhadol': 'झाड़ोल',
+    'zhadol': 'झाड़ोल',
+    'nahari': 'नाहरी',
+    'panotiya': 'पनोतिया',
+    'panotia': 'पनोतिया',
+    'nathadiyas': 'नाथड़ियास',
+    'nathariyas': 'नाथड़ियास',
+    'thala': 'थला',
+    'suras': 'सुरास',
+    'suwaras': 'सुरास',
+    'bagoliya': 'बागोलिया',
+    'bagolia': 'बागोलिया',
+    'palran': 'पालरां',
+    'palra': 'पालरां',
+    'borana': 'बोराणा',
+    'ashaholi': 'आशाहोली',
+    'bakan': 'बकाण',
+    'nandsha': 'नान्दशा जागीर',
+    'nandsha jagir': 'नान्दशा जागीर',
+    'boriyapura': 'बोरियापुरा',
+    'boriapura': 'बोरियापुरा',
+    'sagrev': 'सगरेव',
+    'sagrew': 'सगरेव',
+    'narayankhera': 'नारायणखेड़ा',
+    'narayankheda': 'नारायणखेड़ा',
+    'devriya': 'देवरिया',
+    'dewariya': 'देवरिया',
+    'kot': 'कोट',
+    'bagar': 'बागड़',
+    'bagad': 'बागड़',
+    'raipur': 'रायपुर',
+    'amli': 'आमली',
+    'aamli': 'आमली'
+  };
+
+  const fnLower = fileNameClean.toLowerCase();
+  for (const [eng, hin] of Object.entries(gpMap)) {
+    if (fnLower.includes(eng)) {
+      result.header.gramPanchayat = hin;
+      break;
+    }
+  }
+
+  if (!result.header.gramPanchayat) {
+    const filePanchayatMatch = fileNameClean.match(/(भींटा|सरेवड़ी|छातोल|कोट|खाखरमाला|मोखुन्दा|मासिंगपुरा|झाड़ोल|देवरिया|गलवा|चारोट|खेमाणा|पालरां|पीथाकाखेड़ा|बोराणा|कलालखेड़ी|सुरास|बागोलिया|थाला|सगरेव|रायपुर|गल्यावड़ी|नान्दशा|पानोतिया|नाथड़ियास|नाहरी|नारायणखेड़ा|बकाण|आशाहोली|बोरियापुरा|आमली)/i);
+    if (filePanchayatMatch) {
+      result.header.gramPanchayat = filePanchayatMatch[1];
+    }
   }
 
   const yearHint = embeddedCover.match(/\b(20\d{2})\b/);

@@ -32,6 +32,7 @@ class VoterManagementPage extends StatefulWidget {
     this.initialGramPanchayat,
     this.initialPartNumber,
     this.initialTehsil,
+    this.initialWard,
   });
 
   final String? initialAreaId;
@@ -41,6 +42,7 @@ class VoterManagementPage extends StatefulWidget {
   final String? initialGramPanchayat;
   final String? initialPartNumber;
   final String? initialTehsil;
+  final String? initialWard;
 
   @override
   State<VoterManagementPage> createState() => _VoterManagementPageState();
@@ -133,6 +135,9 @@ class _VoterManagementPageState extends State<VoterManagementPage> {
     }
     if (widget.initialTehsil != null && widget.initialTehsil!.isNotEmpty) {
       tehsil.text = widget.initialTehsil!;
+    }
+    if (widget.initialWard != null && widget.initialWard!.isNotEmpty) {
+      municipalWardNumber.text = widget.initialWard!;
     }
     dashboardFuture = api.get('/api/reports/dashboard');
     refreshVoters();
