@@ -7,7 +7,7 @@ async function auditVoterMatchStats() {
   await mongoose.connect(MONGO_URI);
   console.log('MongoDB Connected.\n');
 
-  const panchayats = ['पालरा', 'रायपुर', 'सागरेव', 'सुरास', 'थला', 'पीथाकाखेड़ा'];
+  const panchayats = ['पानोतिया', 'पालरा', 'रायपुर', 'सागरेव', 'सुरास', 'थला', 'पीथाकाखेड़ा'];
 
   console.log('========================================================================================');
   console.log('                 विधानसभा (ASSEMBLY) vs वार्ड (MUNICIPAL/WARD) मिलान रिपोर्ट            ');
