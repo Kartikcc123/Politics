@@ -258,8 +258,14 @@ exports.list = async (req, res, next) => {
     if (gender) filter.gender = gender;
     if (ward) filter.ward = ward;
     if (area) filter.area = area;
-    if (location) filter.location = hindiFlexibleRegex(location);
-    if (village) filter.village = hindiFlexibleRegex(village);
+    if (village) {
+      const vRegex = hindiFlexibleRegex(village);
+      filter.$or = [
+        { village: vRegex },
+        { sectionName: vRegex },
+        { location: vRegex }
+      ];
+    }
     if (pinCode) {
       const normalizedPin = String(pinCode).replace(/\D/g, '');
       if (normalizedPin) filter.pinCode = new RegExp('^' + escapeRegex(normalizedPin) + '$', 'i');
