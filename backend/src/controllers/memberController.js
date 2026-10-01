@@ -43,23 +43,33 @@ const escapeRegex = (value) => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$
 
 const hindiFlexibleRegex = (value) => {
   if (!value) return undefined;
-  const clean = String(value).trim();
+  const clean = String(value).trim().normalize('NFC');
   let pattern = '';
   for (let i = 0; i < clean.length; i++) {
     const char = clean[i];
     if (/[ँं़]/.test(char)) continue;
-    if (char === 'ड' || char === 'ड़') {
-      pattern += '[डड़][ँं़]?';
-    } else if (char === 'ढ' || char === 'ढ़') {
-      pattern += '[ढढ़][ँं़]?';
-    } else if (char === 'न' || char === 'ण') {
+    if (/[डड़ड़]/.test(char)) {
+      pattern += '[डड़ड़][ँं़]?';
+    } else if (/[ढढ़ढ़]/.test(char)) {
+      pattern += '[ढढ़ढ़][ँं़]?';
+    } else if (/[नण]/.test(char)) {
       pattern += '[नण][ँं़]?';
-    } else if (char === 'श' || char === 'ष' || char === 'स') {
+    } else if (/[शषस]/.test(char)) {
       pattern += '[शषस][ँं़]?';
-    } else if (char === 'ब' || char === 'व') {
+    } else if (/[बव]/.test(char)) {
       pattern += '[बव][ँं़]?';
+    } else if (/[इईिी]/.test(char)) {
+      pattern += '[इईिी]?[ँं़]?';
+    } else if (/[उऊुू]/.test(char)) {
+      pattern += '[उऊुू]?[ँं़]?';
+    } else if (/[एऐेै]/.test(char)) {
+      pattern += '[एऐेै]?[ँं़]?';
+    } else if (/[दधथ]/.test(char)) {
+      pattern += '[दधथ][ँं़]?';
+    } else if (char === ' ') {
+      pattern += '\\s*';
     } else {
-      pattern += escapeRegex(char) + '[ँं़]?';
+      pattern += char.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '[ँं़]?';
     }
   }
   return new RegExp(pattern, 'i');
