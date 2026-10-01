@@ -1780,30 +1780,12 @@ const runWardPdfImport = async ({ file, body, currentUser }, uploadId) => {
 
       let member = null;
       if (hasValidEpic) {
-        // 1. Strict scoped search within same Gram Panchayat / Village / Booths first
+        // Strict scoped search ONLY within the same Gram Panchayat / Village / Booths
         if (localLocationFilters.length > 0) {
           member = await Member.findOne({
             voterId: epic,
             $or: localLocationFilters,
           });
-        }
-        
-        // 2. If not matched locally, check globally with protection against cross-village corruption
-        if (!member) {
-          const globalCandidate = await Member.findOne({ voterId: epic });
-          if (globalCandidate) {
-            const candidateGp = String(globalCandidate.gramPanchayat || '').trim();
-            const cleanCandidateGp = candidateGp.replace(/[^\u0900-\u097F\w]/g, '');
-            const cleanTargetGp = gpScope.replace(/[^\u0900-\u097F\w]/g, '');
-            
-            // If the candidate belongs to an explicitly different Gram Panchayat,
-            // DO NOT merge into it to protect the other village's data integrity!
-            const isDifferentGp = cleanCandidateGp && cleanTargetGp && !cleanCandidateGp.includes(cleanTargetGp) && !cleanTargetGp.includes(cleanCandidateGp);
-            
-            if (!isDifferentGp) {
-              member = globalCandidate;
-            }
-          }
         }
       } else if (previousMembership) {
         member = await Member.findById(previousMembership.member);
@@ -1813,6 +1795,10 @@ const runWardPdfImport = async ({ file, body, currentUser }, uploadId) => {
         member.hasAssemblyMembership = matchedAssembly;
         member.hasMunicipalMembership = true;
         member.municipality = header.municipality;
+        member.ward = header.wardNumber || member.ward;
+        member.wardNumber = header.wardNumber || member.wardNumber;
+        if (header.gramPanchayat && !member.gramPanchayat) member.gramPanchayat = header.gramPanchayat;
+        if (header.village && !member.village) member.village = header.village;
         member.municipalWardNumbers = [...new Set([...(member.municipalWardNumbers || []), header.wardNumber])];
         // Assembly is the primary voter profile. Ward OCR may only enrich a
         // municipal-only record; it must never overwrite Assembly fields.
@@ -1852,6 +1838,11 @@ const runWardPdfImport = async ({ file, body, currentUser }, uploadId) => {
           guardianName: item.guardianName || '', relationType: item.relationType || '',
           houseNumber: item.houseNumber || '', age: item.age, estimatedDob: estimateDobFromAge(item.age),
           gender: item.gender || '', photo: item.photo || '', municipality: header.municipality,
+          gramPanchayat: header.gramPanchayat || header.municipality || '',
+          village: header.village || header.gramPanchayat || header.municipality || '',
+          ward: header.wardNumber || '',
+          wardNumber: header.wardNumber || '',
+          voterSerial: item.voterSerial || '',
           hasAssemblyMembership: false, hasMunicipalMembership: true,
           municipalWardNumbers: [header.wardNumber],
           verificationStatus: item.ocrNeedsReview || !hasValidEpic ? 'needs_review' : 'pending',
