@@ -397,9 +397,29 @@ def process_page(page_path, page_no, epic_hints, photo_output_dir=None):
         if card.size == 0:
             continue
         text = card_text_from_page_data(page_data, left, top, right, bottom)
+        card_h, card_w = card.shape[:2]
+        top_strip = card[:max(1, int(card_h * 0.32)), :]
         epic_text = ""
+        top_serial = ""
+        top_epic = ""
+        if top_strip.size > 0:
+            try:
+                gray_strip = cv2.cvtColor(top_strip, cv2.COLOR_BGR2GRAY)
+                gray_strip = cv2.resize(gray_strip, None, fx=2.0, fy=2.0, interpolation=cv2.INTER_CUBIC)
+                gray_strip = cv2.threshold(gray_strip, 0, 255, cv2.THRESH_BINARY | cv2.THRESH_OTSU)[1]
+                strip_raw = pytesseract.image_to_string(
+                    gray_strip, lang="eng", config="--psm 6 -c tessedit_char_whitelist=ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789/O "
+                )
+                epic_text = strip_raw
+                top_epic = normalize_epic(strip_raw)
+                ser_m = re.search(r"\b(\d{1,4})\b", digits(strip_raw))
+                if ser_m:
+                    top_serial = ser_m.group(1)
+            except Exception:
+                pass
+
         serial_match = re.search(r"(?:^|\n)\s*[\[|(_-]*\s*(\d{1,4})\b", digits(text))
-        serial = serial_match.group(1) if serial_match else ""
+        serial = top_serial or (serial_match.group(1) if serial_match else "")
         hint_item = {}
         if isinstance(epic_hints, list):
             row_index = min(range(len(row_tops)), key=lambda index: abs(row_tops[index] - name_top)) if row_tops else 0
@@ -411,7 +431,7 @@ def process_page(page_path, page_no, epic_hints, photo_output_dir=None):
             if not hint_item:
                 hint_index = geometric_index + (hint_position_offset or 0)
                 hint_item = epic_hints[hint_index] if 0 <= hint_index < len(epic_hints) else {}
-        hint = hint_item.get("epic", "") if isinstance(hint_item, dict) else ""
+        hint = top_epic or (hint_item.get("epic", "") if isinstance(hint_item, dict) else "")
         record = parse_card(text, epic_text, hint, page_no, anchor_index)
         if not record or not record.get("age") or not record.get("houseNumber") or not record.get("guardianName"):
             gray = cv2.cvtColor(card, cv2.COLOR_BGR2GRAY)

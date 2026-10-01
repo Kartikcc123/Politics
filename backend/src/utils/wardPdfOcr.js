@@ -74,7 +74,7 @@ const runWorker = (payload, onProgress) => new Promise((resolve, reject) => {
       try {
         const event = JSON.parse(line);
         if (event.type === 'progress') { onProgress?.(event); continue; }
-      } catch (_) {}
+      } catch (_) { }
       stderr += `${line}\n`;
     }
   });
@@ -137,10 +137,11 @@ exports.ocrWardPdf = async (pdfPath, importFileName, { onProgress } = {}) => {
 
   const assemblyHint = embeddedCover.match(/(?:^|\s)(1\d{2})\s*-/m);
   const wardPartHint = embeddedCover.match(/:\s*(\d{1,3})\s+[^:\n]{1,120}:\s*(\d{1,3})\s*$/m);
-  result.header ||= {};
   if (assemblyHint) result.header.assemblyNumber = assemblyHint[1];
   if (wardPartHint) {
     result.header.wardNumber ||= wardPartHint[1];
+    result.header.partNumber = wardPartHint[2];
+  }
   const fileNameClean = path.basename(importFileName);
   const fileWardMatch = fileNameClean.match(/(?:ward|वार्ड)[_\s-]*(\d{1,4})/i) || fileNameClean.match(/[_\s-](\d{1,3})\.pdf$/i);
   if (fileWardMatch && !result.header.wardNumber) {
@@ -153,76 +154,74 @@ exports.ocrWardPdf = async (pdfPath, importFileName, { onProgress } = {}) => {
 
   const yearHint = embeddedCover.match(/\b(20\d{2})\b/);
   if (yearHint) result.header.year = Number(yearHint[1]);
-  // Do not expose clearly garbled Latin OCR as a Hindi assembly name. The
-  // assembly number remains authoritative and master data may resolve its name.
   if (result.header.assemblyName && !/[\u0900-\u097F]/.test(result.header.assemblyName)) {
     result.header.assemblyName = '';
   }
-  const voterRecords = (result.records || []).filter((record) => (
-    record.voterId
-    || (record.voterSerial && record.age && (record.houseNumber || record.guardianName))
-  ));
-  const deletedEpics = new Set(
-    voterRecords.filter((record) => record.sourceAction === 'delete').map((record) => record.voterId),
-  );
-  const uniqueRecords = new Map();
-  for (const record of voterRecords) {
-    if (record.sourceAction === 'delete') continue;
-    const key = record.voterId || `blank:${record.pageNumber}:${record.voterSerial}:${record.cell}`;
-    uniqueRecords.set(key, record);
-  }
-  result.records = [...uniqueRecords.values()].filter(
-    (record) => !record.voterId || !deletedEpics.has(record.voterId),
-  );
-  const expectedEpicHints = new Map();
-  for (const page of pageNumbers) {
-    for (const hint of hints[String(page)] || []) {
-      if (!hint.epic) continue;
-      if (hint.action === 'delete') expectedEpicHints.delete(hint.epic);
-      else expectedEpicHints.set(hint.epic, hint);
+    const voterRecords = (result.records || []).filter((record) => (
+      record.voterId
+      || (record.voterSerial && record.age && (record.houseNumber || record.guardianName))
+    ));
+    const deletedEpics = new Set(
+      voterRecords.filter((record) => record.sourceAction === 'delete').map((record) => record.voterId),
+    );
+    const uniqueRecords = new Map();
+    for (const record of voterRecords) {
+      if (record.sourceAction === 'delete') continue;
+      const key = record.voterId || `blank:${record.pageNumber}:${record.voterSerial}:${record.cell}`;
+      uniqueRecords.set(key, record);
     }
-  }
-  const detectedEpics = new Set(result.records.map((record) => record.voterId).filter(Boolean));
-  for (const [epic, hint] of expectedEpicHints) {
-    if (detectedEpics.has(epic)) continue;
-    result.records.push({
-      voterSerial: hint.serial || '', voterId: epic, name: '', guardianName: '', relationType: '',
-      houseNumber: '', age: null, gender: '', pageNumber: null, cell: null, photo: '', rawText: '',
-      ocrNeedsReview: true, ocrReviewReasons: ['ward_card_ocr_missing'], sourceAction: 'review',
-    });
-  }
-  const summaryMatches = [...embeddedPages.join('\n').matchAll(/\(I\+II-III\)[^\r\n]*?(\d+)\s*$/gm)];
-  const expectedVoterCount = Number(summaryMatches.at(-1)?.[1] || 0);
-  if (expectedVoterCount > result.records.length) {
-    const missing = expectedVoterCount - result.records.length;
-    for (let index = 1; index <= missing; index += 1) {
+    result.records = [...uniqueRecords.values()].filter(
+      (record) => !record.voterId || !deletedEpics.has(record.voterId),
+    );
+    const expectedEpicHints = new Map();
+    for (const page of pageNumbers) {
+      for (const hint of hints[String(page)] || []) {
+        if (!hint.epic) continue;
+        if (hint.action === 'delete') expectedEpicHints.delete(hint.epic);
+        else expectedEpicHints.set(hint.epic, hint);
+      }
+    }
+    const detectedEpics = new Set(result.records.map((record) => record.voterId).filter(Boolean));
+    for (const [epic, hint] of expectedEpicHints) {
+      if (detectedEpics.has(epic)) continue;
       result.records.push({
-        voterSerial: '', voterId: '', name: '', guardianName: '', relationType: '',
-        houseNumber: '', age: null, gender: '', pageNumber: null, cell: null, photo: '',
-        rawText: '', ocrNeedsReview: true,
-        ocrReviewReasons: ['ward_record_not_detected'], sourceAction: 'review',
+        voterSerial: hint.serial || '', voterId: epic, name: '', guardianName: '', relationType: '',
+        houseNumber: '', age: null, gender: '', pageNumber: null, cell: null, photo: '', rawText: '',
+        ocrNeedsReview: true, ocrReviewReasons: ['ward_card_ocr_missing'], sourceAction: 'review',
       });
     }
-  }
-  if (expectedVoterCount) result.header.expectedVoterCount = expectedVoterCount;
-  for (const record of result.records) {
-    record.municipality = result.header.municipality || record.municipality || '';
-    record.assemblyNumber = result.header.assemblyNumber || record.assemblyNumber || '';
-    record.assemblyName = result.header.assemblyName || '';
-    record.wardNumber = result.header.wardNumber || record.wardNumber || '';
-    record.partNumber = result.header.partNumber || record.partNumber || '';
-  }
-  // Clean up temporary rendered page PNGs, but preserve cropped voter photo files
-  for (const pageFile of pages) {
-    if (fs.existsSync(pageFile)) {
-      try { fs.unlinkSync(pageFile); } catch (_) {}
+    const summaryMatches = [...embeddedPages.join('\n').matchAll(/\(I\+II-III\)[^\r\n]*?(\d+)\s*$/gm)];
+    const expectedVoterCount = Number(summaryMatches.at(-1)?.[1] || 0);
+    if (expectedVoterCount > result.records.length) {
+      const missing = expectedVoterCount - result.records.length;
+      for (let index = 1; index <= missing; index += 1) {
+        result.records.push({
+          voterSerial: '', voterId: '', name: '', guardianName: '', relationType: '',
+          houseNumber: '', age: null, gender: '', pageNumber: null, cell: null, photo: '',
+          rawText: '', ocrNeedsReview: true,
+          ocrReviewReasons: ['ward_record_not_detected'], sourceAction: 'review',
+        });
+      }
     }
-  }
-  return {
-    ...result,
-    type: 'municipal',
-    status: `Ward OCR processed ${totalPages} page(s) and detected ${result.records?.length || 0} voter card(s).`,
+    if (expectedVoterCount) result.header.expectedVoterCount = expectedVoterCount;
+    for (const record of result.records) {
+      record.municipality = result.header.municipality || record.municipality || '';
+      record.assemblyNumber = result.header.assemblyNumber || record.assemblyNumber || '';
+      record.assemblyName = result.header.assemblyName || '';
+      record.wardNumber = result.header.wardNumber || record.wardNumber || '';
+      record.partNumber = result.header.partNumber || record.partNumber || '';
+    }
+    // Clean up temporary rendered page PNGs, but preserve cropped voter photo files
+    for (const pageFile of pages) {
+      if (fs.existsSync(pageFile)) {
+        try { fs.unlinkSync(pageFile); } catch (_) { }
+      }
+    }
+    return {
+      ...result,
+      type: 'municipal',
+      status: `Ward OCR processed ${totalPages} page(s) and detected ${result.records?.length || 0} voter card(s).`,
+    };
   };
-};
 
-exports._epicHints = epicHints;
+  exports._epicHints = epicHints;

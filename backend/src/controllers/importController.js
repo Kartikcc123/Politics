@@ -34,7 +34,7 @@ const {
   invalidateMemberData,
 } = require('../utils/dataCache');
 const { buildMemberSearchData } = require('../utils/memberSearch');
-const { getMasterLocationForBooth } = require('../config/boothToVillageMaster');
+const { getMasterLocationForBooth, getBoothsAndVillagesForGramPanchayat } = require('../config/boothToVillageMaster');
 const importProgress = new Map();
 const progressWrites = new Map();
 
@@ -1714,6 +1714,27 @@ const runWardPdfImport = async ({ file, body, currentUser }, uploadId) => {
     let processed = 0;
     const importedIds = [];
     const skipped = [];
+
+    const gpScope = header.gramPanchayat || header.municipality || '';
+    const villageScope = header.village || '';
+    const { booths: gpBooths, villages: gpVillages } = getBoothsAndVillagesForGramPanchayat(gpScope);
+    
+    // Construct local matching query filters
+    const localLocationFilters = [];
+    if (gpScope) {
+      const cleanGpRegex = new RegExp(gpScope.replace(/[^\u0900-\u097F\w]/g, ''), 'i');
+      localLocationFilters.push({ gramPanchayat: cleanGpRegex });
+      localLocationFilters.push({ municipality: cleanGpRegex });
+    }
+    if (villageScope) {
+      const cleanVillageRegex = new RegExp(villageScope.replace(/[^\u0900-\u097F\w]/g, ''), 'i');
+      localLocationFilters.push({ village: cleanVillageRegex });
+    }
+    if (gpBooths.length > 0) {
+      localLocationFilters.push({ booth: { $in: gpBooths } });
+      localLocationFilters.push({ partNumber: { $in: gpBooths } });
+    }
+
     for (const item of records) {
       const rawEpic = cleanValue(item.voterId);
       const epic = normalizeEpic(rawEpic);
@@ -1756,9 +1777,37 @@ const runWardPdfImport = async ({ file, body, currentUser }, uploadId) => {
         electoralList: electoralList._id,
         sourceRecordKey,
       }).lean();
-      let member = hasValidEpic
-        ? await Member.findOne({ voterId: epic })
-        : previousMembership ? await Member.findById(previousMembership.member) : null;
+
+      let member = null;
+      if (hasValidEpic) {
+        // 1. Strict scoped search within same Gram Panchayat / Village / Booths first
+        if (localLocationFilters.length > 0) {
+          member = await Member.findOne({
+            voterId: epic,
+            $or: localLocationFilters,
+          });
+        }
+        
+        // 2. If not matched locally, check globally with protection against cross-village corruption
+        if (!member) {
+          const globalCandidate = await Member.findOne({ voterId: epic });
+          if (globalCandidate) {
+            const candidateGp = String(globalCandidate.gramPanchayat || '').trim();
+            const cleanCandidateGp = candidateGp.replace(/[^\u0900-\u097F\w]/g, '');
+            const cleanTargetGp = gpScope.replace(/[^\u0900-\u097F\w]/g, '');
+            
+            // If the candidate belongs to an explicitly different Gram Panchayat,
+            // DO NOT merge into it to protect the other village's data integrity!
+            const isDifferentGp = cleanCandidateGp && cleanTargetGp && !cleanCandidateGp.includes(cleanTargetGp) && !cleanTargetGp.includes(cleanCandidateGp);
+            
+            if (!isDifferentGp) {
+              member = globalCandidate;
+            }
+          }
+        }
+      } else if (previousMembership) {
+        member = await Member.findById(previousMembership.member);
+      }
       const matchedAssembly = Boolean(member && (member.hasAssemblyMembership || member.assemblyNumber || member.partNumber));
       if (member) {
         member.hasAssemblyMembership = matchedAssembly;

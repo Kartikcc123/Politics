@@ -115,7 +115,24 @@ function getMasterLocationForBooth(partNumber) {
   return null;
 }
 
+function getBoothsAndVillagesForGramPanchayat(gpName) {
+  if (!gpName) return { booths: [], villages: [] };
+  const cleanGp = String(gpName).replace(/[^\u0900-\u097F\w]/g, '').toLowerCase();
+  const booths = [];
+  const villages = new Set();
+  for (const [boothNum, data] of Object.entries(boothToVillageMap)) {
+    const mapGp = String(data.gramPanchayat || '').replace(/[^\u0900-\u097F\w]/g, '').toLowerCase();
+    if (mapGp.includes(cleanGp) || cleanGp.includes(mapGp)) {
+      booths.push(String(boothNum));
+      if (data.village) villages.add(data.village);
+      if (data.gramPanchayat) villages.add(data.gramPanchayat);
+    }
+  }
+  return { booths, villages: Array.from(villages) };
+}
+
 module.exports = {
   boothToVillageMap,
-  getMasterLocationForBooth
+  getMasterLocationForBooth,
+  getBoothsAndVillagesForGramPanchayat,
 };
