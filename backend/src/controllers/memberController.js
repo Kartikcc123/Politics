@@ -44,35 +44,35 @@ const escapeRegex = (value) => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$
 const hindiFlexibleRegex = (value) => {
   if (!value) return undefined;
   const clean = String(value).trim().normalize('NFC');
-  let pattern = '';
+  const tokens = [];
   for (let i = 0; i < clean.length; i++) {
     const char = clean[i];
     if (/[ँं़]/.test(char)) continue;
     if (/[डड़ड़]/.test(char)) {
-      pattern += '[डड़ड़][ँं़]?';
+      tokens.push('[डड़ड़][ँं़]?');
     } else if (/[ढढ़ढ़]/.test(char)) {
-      pattern += '[ढढ़ढ़][ँं़]?';
+      tokens.push('[ढढ़ढ़][ँं़]?');
     } else if (/[नण]/.test(char)) {
-      pattern += '[नण][ँं़]?';
+      tokens.push('[नण][ँं़]?');
     } else if (/[शषस]/.test(char)) {
-      pattern += '[शषस][ँं़]?';
+      tokens.push('[शषस][ँं़]?');
     } else if (/[बव]/.test(char)) {
-      pattern += '[बव][ँं़]?';
+      tokens.push('[बव][ँं़]?');
     } else if (/[इईिी]/.test(char)) {
-      pattern += '[इईिी]?[ँं़]?';
+      tokens.push('[इईिी]?[ँं़]?');
     } else if (/[उऊुू]/.test(char)) {
-      pattern += '[उऊुू]?[ँं़]?';
+      tokens.push('[उऊुू]?[ँं़]?');
     } else if (/[एऐेै]/.test(char)) {
-      pattern += '[एऐेै]?[ँं़]?';
+      tokens.push('[एऐेै]?[ँं़]?');
     } else if (/[दधथ]/.test(char)) {
-      pattern += '[दधथ][ँं़]?';
+      tokens.push('[दधथ][ँं़]?');
     } else if (char === ' ') {
-      pattern += '\\s*';
+      // space handled between tokens
     } else {
-      pattern += char.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '[ँं़]?';
+      tokens.push(char.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '[ँं़]?');
     }
   }
-  return new RegExp(pattern, 'i');
+  return new RegExp(tokens.join('\\s*'), 'i');
 };
 const normalizeMonthDayDate = (value) => {
   const raw = String(value ?? '').trim();
@@ -297,6 +297,7 @@ exports.list = async (req, res, next) => {
       const vRegex = hindiFlexibleRegex(village);
       addOrClause([
         { village: vRegex },
+        { gramPanchayat: vRegex },
         { sectionName: vRegex },
         { location: vRegex }
       ]);
@@ -305,7 +306,15 @@ exports.list = async (req, res, next) => {
       const normalizedPin = String(pinCode).replace(/\D/g, '');
       if (normalizedPin) filter.pinCode = new RegExp('^' + escapeRegex(normalizedPin) + '$', 'i');
     }
-    if (gramPanchayat) filter.gramPanchayat = hindiFlexibleRegex(gramPanchayat);
+    if (gramPanchayat) {
+      const gpRegex = hindiFlexibleRegex(gramPanchayat);
+      addOrClause([
+        { gramPanchayat: gpRegex },
+        { village: gpRegex },
+        { sectionName: gpRegex },
+        { location: gpRegex }
+      ]);
+    }
     if (tehsil) filter.tehsil = hindiFlexibleRegex(tehsil);
     if (municipality) filter.municipality = hindiFlexibleRegex(municipality);
     if (caste) filter.caste = hindiFlexibleRegex(caste);
