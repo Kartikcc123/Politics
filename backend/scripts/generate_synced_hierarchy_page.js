@@ -1,4 +1,92 @@
-import 'package:flutter/material.dart';
+const fs = require('fs');
+const path = require('path');
+const { boothToVillageMap } = require('../src/config/boothToVillageMaster');
+const hierarchy = require('../src/config/constituencyHierarchyAll.json');
+
+// Build Raipur from boothToVillageMap (Official 103 Booths verified)
+const raipurGp = {};
+for (const [part, info] of Object.entries(boothToVillageMap)) {
+  const gp = info.gramPanchayat;
+  const v = info.village;
+  if (!raipurGp[gp]) {
+    raipurGp[gp] = {
+      wards: 11,
+      pop: 3500,
+      villages: {}
+    };
+  }
+  if (!raipurGp[gp].villages[v]) {
+    raipurGp[gp].villages[v] = [];
+  }
+  raipurGp[gp].villages[v].push(`भाग ${part}`);
+}
+
+const raipurDartPanchayats = {};
+for (const [gp, data] of Object.entries(raipurGp)) {
+  const vList = [];
+  for (const [vName, parts] of Object.entries(data.villages)) {
+    vList.push({
+      name: vName,
+      parts: parts.join(', '),
+      pop: 1000
+    });
+  }
+  raipurDartPanchayats[gp] = {
+    wards: data.wards,
+    pop: data.pop,
+    villages: vList
+  };
+}
+
+console.log('Raipur GP count:', Object.keys(raipurDartPanchayats).length);
+
+// Also convert Sahara and Suwana from hierarchy
+function convertSamiti(samitiName) {
+  const raw = hierarchy[samitiName] || {};
+  const res = {};
+  for (const [gp, data] of Object.entries(raw)) {
+    const vList = (data.villages || []).map(v => ({
+      name: v.name,
+      parts: '',
+      pop: v.pop || 0
+    }));
+    res[gp] = {
+      wards: data.wards || 9,
+      pop: data.pop || 3000,
+      villages: vList
+    };
+  }
+  return res;
+}
+
+const saharaDart = convertSamiti('सहाडा');
+const suwanaDart = convertSamiti('सुवाणा');
+
+console.log('Sahara GP count:', Object.keys(saharaDart).length);
+console.log('Suwana GP count:', Object.keys(suwanaDart).length);
+
+function toDartMap(obj, indent = 8) {
+  const spaces = ' '.repeat(indent);
+  const entries = Object.entries(obj).map(([k, v]) => {
+    let valStr = '';
+    if (Array.isArray(v)) {
+      const items = v.map(item => {
+        return `{'name': '${item.name}', 'parts': '${item.parts}', 'pop': ${item.pop}}`;
+      }).join(`,\n${spaces}      `);
+      valStr = `[\n${spaces}      ${items}\n${spaces}    ]`;
+    } else if (typeof v === 'object' && v !== null) {
+      valStr = toDartMap(v, indent + 2);
+    } else if (typeof v === 'string') {
+      valStr = `'${v}'`;
+    } else {
+      valStr = `${v}`;
+    }
+    return `${spaces}'${k}': ${valStr}`;
+  });
+  return `{\n${entries.join(',\n')}\n${' '.repeat(indent - 2)}}`;
+}
+
+const fullDartCode = `import 'package:flutter/material.dart';
 
 import '../../core/theme.dart';
 import '../voters/voter_management_page.dart';
@@ -20,465 +108,23 @@ class _SamitiHierarchyPageState extends State<SamitiHierarchyPage> {
     'रायपुर': {
       'icon': Icons.account_balance_rounded,
       'color': Color(0xff1457f5),
-      'gpCount': 32,
-      'villageCount': 64,
-      'panchayats': {
-        'भींटा': {
-          'wards': 11,
-          'pop': 3500,
-          'villages': [
-                {'name': 'भींटा', 'parts': 'भाग 1, भाग 2', 'pop': 1000},
-                {'name': 'धोरिया खेड़ा', 'parts': 'भाग 3', 'pop': 1000},
-                {'name': 'भटेवर', 'parts': 'भाग 4', 'pop': 1000}
-              ]
-        },
-        'सरेवड़ी': {
-          'wards': 11,
-          'pop': 3500,
-          'villages': [
-                {'name': 'सरेवड़ी', 'parts': 'भाग 5, भाग 6', 'pop': 1000},
-                {'name': 'लड़की', 'parts': 'भाग 7', 'pop': 1000},
-                {'name': 'रामा', 'parts': 'भाग 8', 'pop': 1000},
-                {'name': 'जलामाली', 'parts': 'भाग 9', 'pop': 1000}
-              ]
-        },
-        'छातोल': {
-          'wards': 11,
-          'pop': 3500,
-          'villages': [
-                {'name': 'छातोल', 'parts': 'भाग 10', 'pop': 1000},
-                {'name': 'मियाला', 'parts': 'भाग 11', 'pop': 1000}
-              ]
-        },
-        'बागड़': {
-          'wards': 11,
-          'pop': 3500,
-          'villages': [
-                {'name': 'बागड़', 'parts': 'भाग 12', 'pop': 1000},
-                {'name': 'सिरोड़ी', 'parts': 'भाग 13', 'pop': 1000}
-              ]
-        },
-        'कोट': {
-          'wards': 11,
-          'pop': 3500,
-          'villages': [
-                {'name': 'कोट', 'parts': 'भाग 14, भाग 15', 'pop': 1000},
-                {'name': 'टूणगाच', 'parts': 'भाग 16, भाग 17', 'pop': 1000}
-              ]
-        },
-        'खाखरमाला': {
-          'wards': 11,
-          'pop': 3500,
-          'villages': [
-                {'name': 'खाखरमाला', 'parts': 'भाग 18', 'pop': 1000},
-                {'name': 'आसूणा', 'parts': 'भाग 19', 'pop': 1000}
-              ]
-        },
-        'मोखुन्दा': {
-          'wards': 11,
-          'pop': 3500,
-          'villages': [
-                {'name': 'मोखुन्दा', 'parts': 'भाग 20, भाग 21', 'pop': 1000}
-              ]
-        },
-        'मासिंगपुरा': {
-          'wards': 11,
-          'pop': 3500,
-          'villages': [
-                {'name': 'मासिंगपुरा', 'parts': 'भाग 22', 'pop': 1000},
-                {'name': 'मांडका खेड़ा', 'parts': 'भाग 23', 'pop': 1000},
-                {'name': 'डूंगरी', 'parts': 'भाग 24', 'pop': 1000}
-              ]
-        },
-        'झाड़ोल': {
-          'wards': 11,
-          'pop': 3500,
-          'villages': [
-                {'name': 'झाड़ोल', 'parts': 'भाग 25, भाग 26, भाग 27', 'pop': 1000},
-                {'name': 'टोकरा', 'parts': 'भाग 28', 'pop': 1000},
-                {'name': 'सिंहपुरा', 'parts': 'भाग 29', 'pop': 1000}
-              ]
-        },
-        'देवरिया': {
-          'wards': 11,
-          'pop': 3500,
-          'villages': [
-                {'name': 'देवरिया', 'parts': 'भाग 30, भाग 31, भाग 32', 'pop': 1000}
-              ]
-        },
-        'गलवा': {
-          'wards': 11,
-          'pop': 3500,
-          'villages': [
-                {'name': 'गलवा', 'parts': 'भाग 33, भाग 34', 'pop': 1000}
-              ]
-        },
-        'चारोट': {
-          'wards': 11,
-          'pop': 3500,
-          'villages': [
-                {'name': 'चारोट', 'parts': 'भाग 35, भाग 36', 'pop': 1000}
-              ]
-        },
-        'खेमाणा': {
-          'wards': 11,
-          'pop': 3500,
-          'villages': [
-                {'name': 'खेमाणा', 'parts': 'भाग 37, भाग 38', 'pop': 1000}
-              ]
-        },
-        'पालरां': {
-          'wards': 11,
-          'pop': 3500,
-          'villages': [
-                {'name': 'पालरां', 'parts': 'भाग 39, भाग 40', 'pop': 1000},
-                {'name': 'मेरिया खेड़ा', 'parts': 'भाग 41', 'pop': 1000}
-              ]
-        },
-        'पीथा का खेड़ा': {
-          'wards': 11,
-          'pop': 3500,
-          'villages': [
-                {'name': 'पीथा का खेड़ा', 'parts': 'भाग 42', 'pop': 1000},
-                {'name': 'मांडोल', 'parts': 'भाग 43', 'pop': 1000}
-              ]
-        },
-        'बोराणा': {
-          'wards': 11,
-          'pop': 3500,
-          'villages': [
-                {'name': 'बोराणा', 'parts': 'भाग 44, भाग 45, भाग 46, भाग 47', 'pop': 1000}
-              ]
-        },
-        'कलालखेड़ी': {
-          'wards': 11,
-          'pop': 3500,
-          'villages': [
-                {'name': 'धूल खेड़ा', 'parts': 'भाग 48, भाग 49', 'pop': 1000},
-                {'name': 'कलालखेड़ी', 'parts': 'भाग 50, भाग 51', 'pop': 1000},
-                {'name': 'बरी', 'parts': 'भाग 52', 'pop': 1000}
-              ]
-        },
-        'सुरास': {
-          'wards': 11,
-          'pop': 3500,
-          'villages': [
-                {'name': 'सुरास', 'parts': 'भाग 53, भाग 54', 'pop': 1000},
-                {'name': 'पाबियों का खेड़ा', 'parts': 'भाग 55', 'pop': 1000}
-              ]
-        },
-        'बागोलिया': {
-          'wards': 11,
-          'pop': 3500,
-          'villages': [
-                {'name': 'बागोलिया', 'parts': 'भाग 56, भाग 57', 'pop': 1000}
-              ]
-        },
-        'थाला': {
-          'wards': 11,
-          'pop': 3500,
-          'villages': [
-                {'name': 'थाला', 'parts': 'भाग 58', 'pop': 1000},
-                {'name': 'गाडरी खेड़ा', 'parts': 'भाग 59', 'pop': 1000},
-                {'name': 'चीतरपुरा', 'parts': 'भाग 60, भाग 61', 'pop': 1000}
-              ]
-        },
-        'सगरेव': {
-          'wards': 11,
-          'pop': 3500,
-          'villages': [
-                {'name': 'सगरेव', 'parts': 'भाग 62, भाग 63', 'pop': 1000}
-              ]
-        },
-        'रायपुर': {
-          'wards': 11,
-          'pop': 3500,
-          'villages': [
-                {'name': 'रायपुर', 'parts': 'भाग 64, भाग 65, भाग 66, भाग 67, भाग 68, भाग 69', 'pop': 1000}
-              ]
-        },
-        'गल्यावड़ी': {
-          'wards': 11,
-          'pop': 3500,
-          'villages': [
-                {'name': 'केमरिया', 'parts': 'भाग 70, भाग 71', 'pop': 1000},
-                {'name': 'गल्यावड़ी', 'parts': 'भाग 72, भाग 73', 'pop': 1000}
-              ]
-        },
-        'नान्दशा जागीर': {
-          'wards': 11,
-          'pop': 3500,
-          'villages': [
-                {'name': 'नान्दशा जागीर', 'parts': 'भाग 74', 'pop': 1000}
-              ]
-        },
-        'पानोतिया': {
-          'wards': 11,
-          'pop': 3500,
-          'villages': [
-                {'name': 'पानोतिया', 'parts': 'भाग 75, भाग 76, भाग 82', 'pop': 1000},
-                {'name': 'खूटिया', 'parts': 'भाग 77, भाग 78', 'pop': 1000}
-              ]
-        },
-        'नाथड़ियास': {
-          'wards': 11,
-          'pop': 3500,
-          'villages': [
-                {'name': 'मोखमपुरा', 'parts': 'भाग 79', 'pop': 1000},
-                {'name': 'नाथड़ियास', 'parts': 'भाग 80', 'pop': 1000},
-                {'name': 'आसपुर', 'parts': 'भाग 81', 'pop': 1000}
-              ]
-        },
-        'नाहरी': {
-          'wards': 11,
-          'pop': 3500,
-          'villages': [
-                {'name': 'जोगरास', 'parts': 'भाग 83, भाग 84', 'pop': 1000},
-                {'name': 'नाहरी', 'parts': 'भाग 85', 'pop': 1000},
-                {'name': 'फतेहपुरा', 'parts': 'भाग 86, भाग 87', 'pop': 1000}
-              ]
-        },
-        'नारायणखेड़ा': {
-          'wards': 11,
-          'pop': 3500,
-          'villages': [
-                {'name': 'नारायणखेड़ा', 'parts': 'भाग 88', 'pop': 1000},
-                {'name': 'बाड़िया कलां', 'parts': 'भाग 89', 'pop': 1000}
-              ]
-        },
-        'बकाण': {
-          'wards': 11,
-          'pop': 3500,
-          'villages': [
-                {'name': 'बाड़िया खुर्द', 'parts': 'भाग 90', 'pop': 1000}
-              ]
-        },
-        'आशाहोली': {
-          'wards': 11,
-          'pop': 3500,
-          'villages': [
-                {'name': 'लखाहाली', 'parts': 'भाग 91', 'pop': 1000},
-                {'name': 'रामरास', 'parts': 'भाग 92', 'pop': 1000},
-                {'name': 'आशाहोली', 'parts': 'भाग 93, भाग 94', 'pop': 1000},
-                {'name': 'लेली तोलास', 'parts': 'भाग 95', 'pop': 1000}
-              ]
-        },
-        'बोरियापुरा': {
-          'wards': 11,
-          'pop': 3500,
-          'villages': [
-                {'name': 'देवाड़ा', 'parts': 'भाग 96', 'pop': 1000},
-                {'name': 'नरियापुरा', 'parts': 'भाग 97, भाग 98', 'pop': 1000},
-                {'name': 'उड़सीपुरा', 'parts': 'भाग 99, भाग 100', 'pop': 1000}
-              ]
-        },
-        'आमली': {
-          'wards': 11,
-          'pop': 3500,
-          'villages': [
-                {'name': 'आमली', 'parts': 'भाग 101, भाग 102, भाग 103', 'pop': 1000}
-              ]
-        }
-      }
+      'gpCount': ${Object.keys(raipurDartPanchayats).length},
+      'villageCount': ${Object.values(raipurDartPanchayats).reduce((acc, gp) => acc + gp.villages.length, 0)},
+      'panchayats': ${toDartMap(raipurDartPanchayats, 8)}
     },
     'सहाड़ा': {
       'icon': Icons.location_city_rounded,
       'color': Color(0xff059669),
-      'gpCount': 0,
-      'villageCount': 0,
-      'panchayats': {
-
-      }
+      'gpCount': ${Object.keys(saharaDart).length},
+      'villageCount': ${Object.values(saharaDart).reduce((acc, gp) => acc + gp.villages.length, 0)},
+      'panchayats': ${toDartMap(saharaDart, 8)}
     },
     'सुवाणा': {
       'icon': Icons.nature_people_rounded,
       'color': Color(0xff7c3aed),
-      'gpCount': 19,
-      'villageCount': 68,
-      'panchayats': {
-        'बीलिया कलां': {
-          'wards': 9,
-          'pop': 3000,
-          'villages': [
-                {'name': 'बीलिया कलां', 'parts': '', 'pop': 0},
-                {'name': 'नारायणपुरा', 'parts': '', 'pop': 0}
-              ]
-        },
-        'दरीबा': {
-          'wards': 9,
-          'pop': 3000,
-          'villages': [
-                {'name': 'दरीबा', 'parts': '', 'pop': 0},
-                {'name': 'सालमपुरा', 'parts': '', 'pop': 0}
-              ]
-        },
-        'कोटडी': {
-          'wards': 9,
-          'pop': 3000,
-          'villages': [
-                {'name': 'कोटडी', 'parts': '', 'pop': 0},
-                {'name': 'समोडी', 'parts': '', 'pop': 0},
-                {'name': 'कीरतपुरा', 'parts': '', 'pop': 0},
-                {'name': 'ईरास', 'parts': '', 'pop': 0}
-              ]
-        },
-        'गुन्दली': {
-          'wards': 9,
-          'pop': 3000,
-          'villages': [
-                {'name': 'गुन्दली', 'parts': '', 'pop': 0},
-                {'name': 'दादीया', 'parts': '', 'pop': 0}
-              ]
-        },
-        'ओझाघर': {
-          'wards': 9,
-          'pop': 3000,
-          'villages': [
-                {'name': 'ओझाघर', 'parts': '', 'pop': 0},
-                {'name': 'रायडा', 'parts': '', 'pop': 0},
-                {'name': 'रघुनाथपुरा', 'parts': '', 'pop': 0},
-                {'name': 'राजपुरा', 'parts': '', 'pop': 0},
-                {'name': 'लापलियाखेडा', 'parts': '', 'pop': 0},
-                {'name': 'टीलाखेडा', 'parts': '', 'pop': 0}
-              ]
-        },
-        'सांगवा': {
-          'wards': 9,
-          'pop': 3000,
-          'villages': [
-                {'name': 'सांगवा', 'parts': '', 'pop': 0},
-                {'name': 'तिलोली', 'parts': '', 'pop': 0},
-                {'name': 'एकलिंगपुरा', 'parts': '', 'pop': 0},
-                {'name': 'आबाखेडी', 'parts': '', 'pop': 0},
-                {'name': 'छापरी', 'parts': '', 'pop': 0}
-              ]
-        },
-        'रामपुरिया': {
-          'wards': 9,
-          'pop': 3000,
-          'villages': [
-                {'name': 'रामपुरिया', 'parts': '', 'pop': 0},
-                {'name': 'बांसडा', 'parts': '', 'pop': 0},
-                {'name': 'सुन्दरपुरा', 'parts': '', 'pop': 0}
-              ]
-        },
-        'कोचरिया': {
-          'wards': 9,
-          'pop': 3000,
-          'villages': [
-                {'name': 'मण्डपिया', 'parts': '', 'pop': 0},
-                {'name': 'कोचरिया', 'parts': '', 'pop': 0},
-                {'name': 'रूपपुरा', 'parts': '', 'pop': 0},
-                {'name': 'मुजरास', 'parts': '', 'pop': 0}
-              ]
-        },
-        'कारोईकलां': {
-          'wards': 9,
-          'pop': 3000,
-          'villages': [
-                {'name': 'कारोईकलां', 'parts': '', 'pop': 0},
-                {'name': 'रतनपुरा', 'parts': '', 'pop': 0},
-                {'name': 'कल्याणपुरा', 'parts': '', 'pop': 0},
-                {'name': 'कारोईखुर्द', 'parts': '', 'pop': 0}
-              ]
-        },
-        'मोमी': {
-          'wards': 9,
-          'pop': 3000,
-          'villages': [
-                {'name': 'जागदरी', 'parts': '', 'pop': 0},
-                {'name': 'पाबूनगर', 'parts': '', 'pop': 0},
-                {'name': 'मोमी', 'parts': '', 'pop': 0},
-                {'name': 'चावण्डरी', 'parts': '', 'pop': 0}
-              ]
-        },
-        'सेथुरिया': {
-          'wards': 9,
-          'pop': 3000,
-          'villages': [
-                {'name': 'चेनपुरा', 'parts': '', 'pop': 0},
-                {'name': 'सैथुरिया', 'parts': '', 'pop': 0},
-                {'name': 'केसरपुरा', 'parts': '', 'pop': 0},
-                {'name': 'दांता', 'parts': '', 'pop': 0}
-              ]
-        },
-        'सोपुरा': {
-          'wards': 9,
-          'pop': 3000,
-          'villages': [
-                {'name': 'गोवलिया', 'parts': '', 'pop': 0},
-                {'name': 'कानपुरा', 'parts': '', 'pop': 0},
-                {'name': 'सोपुरा', 'parts': '', 'pop': 0},
-                {'name': 'तगडीया', 'parts': '', 'pop': 0},
-                {'name': 'कैलाशपुरी', 'parts': '', 'pop': 0}
-              ]
-        },
-        'गुरलां': {
-          'wards': 9,
-          'pop': 3000,
-          'villages': [
-                {'name': 'गुरला', 'parts': '', 'pop': 0},
-                {'name': 'पार्वतीपुरा', 'parts': '', 'pop': 0}
-              ]
-        },
-        'भोपालगढ': {
-          'wards': 9,
-          'pop': 3000,
-          'villages': [
-                {'name': 'भोपालगढ', 'parts': '', 'pop': 0},
-                {'name': 'ढोलीखेडा', 'parts': '', 'pop': 0},
-                {'name': 'नौगांवा', 'parts': '', 'pop': 0}
-              ]
-        },
-        'दूडिया': {
-          'wards': 9,
-          'pop': 3000,
-          'villages': [
-                {'name': 'दुडिया', 'parts': '', 'pop': 0},
-                {'name': 'खेत हजारिया', 'parts': '', 'pop': 0},
-                {'name': 'जवासिया', 'parts': '', 'pop': 0},
-                {'name': 'सायला', 'parts': '', 'pop': 0}
-              ]
-        },
-        'आमली पुरावतन': {
-          'wards': 9,
-          'pop': 3000,
-          'villages': [
-                {'name': 'शिवपुरा', 'parts': '', 'pop': 0},
-                {'name': 'आमली पुरावतन', 'parts': '', 'pop': 0},
-                {'name': 'छाछेडी', 'parts': '', 'pop': 0}
-              ]
-        },
-        'ओज्याडा': {
-          'wards': 9,
-          'pop': 3000,
-          'villages': [
-                {'name': 'सगतपुरिया', 'parts': '', 'pop': 0},
-                {'name': 'ओज्याडा', 'parts': '', 'pop': 0}
-              ]
-        },
-        'बरडोद': {
-          'wards': 9,
-          'pop': 3000,
-          'villages': [
-                {'name': 'मोहनपुरा', 'parts': '', 'pop': 0},
-                {'name': 'बरडोद', 'parts': '', 'pop': 0},
-                {'name': 'कान्याखेडी', 'parts': '', 'pop': 0},
-                {'name': 'तख्तपुरा', 'parts': '', 'pop': 0}
-              ]
-        },
-        'खैराबाद': {
-          'wards': 9,
-          'pop': 3000,
-          'villages': [
-                {'name': 'खैराबाद', 'parts': '', 'pop': 0},
-                {'name': 'थला का खेडा', 'parts': '', 'pop': 0},
-                {'name': 'भैसाकुण्डल', 'parts': '', 'pop': 0},
-                {'name': 'देवली', 'parts': '', 'pop': 0},
-                {'name': 'राजोला', 'parts': '', 'pop': 0}
-              ]
-        }
-      }
+      'gpCount': ${Object.keys(suwanaDart).length},
+      'villageCount': ${Object.values(suwanaDart).reduce((acc, gp) => acc + gp.villages.length, 0)},
+      'panchayats': ${toDartMap(suwanaDart, 8)}
     },
     'गंगापुर (नगरपालिका)': {
       'icon': Icons.apartment_rounded,
@@ -570,13 +216,13 @@ class _SamitiHierarchyPageState extends State<SamitiHierarchyPage> {
         filteredPanchayats[gpName] = villages;
       } else {
         final q = query.toLowerCase().trim();
-        final cleanQ = q.replaceAll(RegExp(r'[^\u0900-\u097F\da-zA-Z]'), '');
-        final matchGp = gpName.toLowerCase().contains(q) || gpName.replaceAll(RegExp(r'[^\u0900-\u097F\da-zA-Z]'), '').contains(cleanQ);
+        final cleanQ = q.replaceAll(RegExp(r'[^\\u0900-\\u097F\\da-zA-Z]'), '');
+        final matchGp = gpName.toLowerCase().contains(q) || gpName.replaceAll(RegExp(r'[^\\u0900-\\u097F\\da-zA-Z]'), '').contains(cleanQ);
 
         final matchedVillages = villages.where((v) {
           final vName = (v['name'] ?? '').toString().toLowerCase();
           final parts = (v['parts'] ?? '').toString().toLowerCase();
-          final cleanV = vName.replaceAll(RegExp(r'[^\u0900-\u097F\da-zA-Z]'), '');
+          final cleanV = vName.replaceAll(RegExp(r'[^\\u0900-\\u097F\\da-zA-Z]'), '');
           return vName.contains(q) || parts.contains(q) || cleanV.contains(cleanQ);
         }).toList();
 
@@ -676,8 +322,8 @@ class _SamitiHierarchyPageState extends State<SamitiHierarchyPage> {
                               showCheckmark: false,
                               avatar: Icon(icon, color: isSelected ? Colors.white : color, size: 18),
                               label: Text(e.key.contains('गंगापुर')
-                                  ? '${e.key} ($gpCount वार्ड)'
-                                  : '${e.key} ($gpCount GP, ${e.value['villageCount']} गाँव)'),
+                                  ? '\${e.key} (\$gpCount वार्ड)'
+                                  : '\${e.key} (\$gpCount GP, \${e.value['villageCount']} गाँव)'),
                               selected: isSelected,
                               selectedColor: color,
                               backgroundColor: Colors.white,
@@ -764,7 +410,7 @@ class _SamitiHierarchyPageState extends State<SamitiHierarchyPage> {
                             child: Theme(
                               data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
                               child: ExpansionTile(
-                                key: Key('$selectedSamiti-$gpName'),
+                                key: Key('\$selectedSamiti-\$gpName'),
                                 initiallyExpanded: isExpanded,
                                 leading: Container(
                                   width: 42,
@@ -784,7 +430,7 @@ class _SamitiHierarchyPageState extends State<SamitiHierarchyPage> {
                                   ),
                                 ),
                                 title: Text(
-                                  'ग्राम पंचायत: $gpName',
+                                  'ग्राम पंचायत: \$gpName',
                                   style: const TextStyle(
                                     fontWeight: FontWeight.w800,
                                     fontSize: 15,
@@ -792,7 +438,7 @@ class _SamitiHierarchyPageState extends State<SamitiHierarchyPage> {
                                   ),
                                 ),
                                 subtitle: Text(
-                                  '${villages.length} राजस्व गाँव • ${villages.map((v) => v['parts'] ?? '').where((p) => p.isNotEmpty).join(' | ')}',
+                                  '\${villages.length} राजस्व गाँव • \${villages.map((v) => v['parts'] ?? '').where((p) => p.isNotEmpty).join(' | ')}',
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
                                   style: const TextStyle(fontSize: 12, color: muted),
@@ -819,7 +465,7 @@ class _SamitiHierarchyPageState extends State<SamitiHierarchyPage> {
                                                 const Icon(Icons.people_alt_rounded, size: 16, color: blue),
                                                 const SizedBox(width: 8),
                                                 Text(
-                                                  'पूरी $gpName पंचायत के मतदाता देखें',
+                                                  'पूरी \$gpName पंचायत के मतदाता देखें',
                                                   style: const TextStyle(
                                                     color: blue,
                                                     fontSize: 12,
@@ -876,3 +522,7 @@ class _SamitiHierarchyPageState extends State<SamitiHierarchyPage> {
     );
   }
 }
+`;
+
+fs.writeFileSync(path.resolve(__dirname, '../../mobile/lib/features/areas/samiti_hierarchy_page.dart'), fullDartCode);
+console.log('✅ Generated 100% synchronized samiti_hierarchy_page.dart!');
