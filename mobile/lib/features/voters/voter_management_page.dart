@@ -84,7 +84,7 @@ class _VoterManagementPageState extends State<VoterManagementPage> {
   String support = '';
   String partyPreferenceFilter = '';
   String contactTypeFilter = '';
-  String rollType = 'assembly';
+  String rollType = 'all';
   String matchStatus = '';
   String queryMode = '';
   String nameLetter = '';
@@ -138,6 +138,7 @@ class _VoterManagementPageState extends State<VoterManagementPage> {
     }
     if (widget.initialWard != null && widget.initialWard!.isNotEmpty) {
       municipalWardNumber.text = widget.initialWard!;
+      rollType = 'all';
     }
     dashboardFuture = api.get('/api/reports/dashboard');
     refreshVoters();
@@ -1633,6 +1634,226 @@ class _VoterManagementPageState extends State<VoterManagementPage> {
     );
   }
 
+  Future<void> _bulkParty() async {
+    if (selectedIds.isEmpty) return;
+    final selected = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('${selectedIds.length} मतदाताओं की पार्टी अपडेट करें'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.back_hand, color: Color(0xff1A73E8)),
+              title: const Text('✋ Congress'),
+              onTap: () => Navigator.pop(ctx, 'congress'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.spa, color: Color(0xffff9933)),
+              title: const Text('🪷 BJP'),
+              onTap: () => Navigator.pop(ctx, 'bjp'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.cancel_outlined, color: Colors.grey),
+              title: const Text('❌ NOTA'),
+              onTap: () => Navigator.pop(ctx, 'nota'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.people_outline, color: Colors.teal),
+              title: const Text('◆ अन्य पार्टी (Other)'),
+              onTap: () => Navigator.pop(ctx, 'other'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.help_outline, color: Colors.purple),
+              title: const Text('❓ पार्टी तय नहीं (Undecided)'),
+              onTap: () => Navigator.pop(ctx, 'undecided'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (selected == null || !mounted) return;
+    try {
+      final res = await api.post('/api/members/bulk-party', {
+        'memberIds': selectedIds.toList(),
+        'partyPreference': selected,
+      });
+      selectedIds.clear();
+      refreshVoters();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(res['message'] ?? 'पार्टी प्राथमिकता सफलतापूर्वक अपडेट की गई।'),
+          backgroundColor: Colors.green,
+        ));
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('त्रुटि: $e'),
+          backgroundColor: Colors.red,
+        ));
+      }
+    }
+  }
+
+  Future<void> _bulkGroup() async {
+    if (selectedIds.isEmpty) return;
+    try {
+      final List groups = await api.getGroups();
+      if (!mounted) return;
+      final selectedGroupId = await showDialog<String>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: Text('${selectedIds.length} मतदाताओं को ग्रुप में जोड़ें'),
+          content: SizedBox(
+            width: 360,
+            child: ListView(
+              shrinkWrap: true,
+              children: [
+                if (groups.isEmpty)
+                  const Padding(
+                    padding: EdgeInsets.all(12),
+                    child: Text('कोई कस्टम ग्रुप नहीं बना है। नीचे नया ग्रुप बनाएं।'),
+                  ),
+                for (final g in groups)
+                  ListTile(
+                    leading: const Icon(Icons.label, color: Color(0xff1A73E8)),
+                    title: Text('${g['name']}'),
+                    subtitle: Text('${g['memberCount'] ?? 0} सदस्य'),
+                    onTap: () => Navigator.pop(ctx, '${g['_id']}'),
+                  ),
+                const Divider(),
+                ListTile(
+                  leading: const Icon(Icons.add_circle_outline, color: Colors.green),
+                  title: const Text('+ नया ग्रुप बनाएं'),
+                  onTap: () async {
+                    Navigator.pop(ctx);
+                    final ctrl = TextEditingController();
+                    final ok = await showDialog<bool>(
+                      context: context,
+                      builder: (c) => AlertDialog(
+                        title: const Text('नया ग्रुप बनाएं'),
+                        content: TextField(
+                          controller: ctrl,
+                          autofocus: true,
+                          decoration: const InputDecoration(
+                            labelText: 'ग्रुप का नाम',
+                            hintText: 'उदा. मुख्य समर्थक, वार्ड कार्यकर्ता',
+                          ),
+                        ),
+                        actions: [
+                          TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('रद्द करें')),
+                          FilledButton(onPressed: () => Navigator.pop(c, true), child: const Text('बनाएं')),
+                        ],
+                      ),
+                    );
+                    if (ok == true && ctrl.text.trim().isNotEmpty) {
+                      await api.createGroup(ctrl.text.trim());
+                      if (mounted) _bulkGroup();
+                    }
+                  },
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+      if (selectedGroupId == null || !mounted) return;
+      final res = await api.post('/api/members/groups/bulk-assign', {
+        'memberIds': selectedIds.toList(),
+        'groupId': selectedGroupId,
+        'action': 'add',
+      });
+      selectedIds.clear();
+      refreshVoters();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(res['message'] ?? 'ग्रुप में सफलतापूर्वक जोड़ा गया।'),
+          backgroundColor: Colors.green,
+        ));
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('त्रुटि: $e'),
+          backgroundColor: Colors.red,
+        ));
+      }
+    }
+  }
+
+  Future<void> _bulkAnubhag() async {
+    if (selectedIds.isEmpty) return;
+    final anubhagCtrl = TextEditingController();
+    final anubhagNoCtrl = TextEditingController();
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('${selectedIds.length} मतदाताओं का अनुभाग अपडेट करें'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: anubhagCtrl,
+              decoration: InputDecoration(
+                labelText: 'नया अनुभाग नाम (Section Name)',
+                hintText: 'उदा. मुख्य बस्ती / खारोल मोहल्ला',
+                suffixIcon: IconButton(
+                  icon: const Icon(Icons.list_alt_rounded),
+                  tooltip: 'सुझावों में से चुनें',
+                  onPressed: () async {
+                    final opt = await pickFilterOption('sectionName', 'अनुभाग चुनें', {});
+                    if (opt != null) anubhagCtrl.text = opt.label;
+                  },
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: anubhagNoCtrl,
+              keyboardType: TextInputType.number,
+              decoration: const InputDecoration(
+                labelText: 'अनुभाग क्रमांक (वैकल्पिक)',
+                hintText: 'उदा. 1 या 2',
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('रद्द करें')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('अपडेट करें')),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+    if (anubhagCtrl.text.trim().isEmpty && anubhagNoCtrl.text.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('कृपया अनुभाग नाम दर्ज करें।')));
+      return;
+    }
+    try {
+      final res = await api.post('/api/members/bulk-anubhag', {
+        'memberIds': selectedIds.toList(),
+        if (anubhagCtrl.text.trim().isNotEmpty) 'sectionName': anubhagCtrl.text.trim(),
+        if (anubhagNoCtrl.text.trim().isNotEmpty) 'sectionNumber': anubhagNoCtrl.text.trim(),
+      });
+      selectedIds.clear();
+      refreshVoters();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(res['message'] ?? 'अनुभाग सफलतापूर्वक अपडेट किया गया।'),
+          backgroundColor: Colors.green,
+        ));
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('त्रुटि: $e'),
+          backgroundColor: Colors.red,
+        ));
+      }
+    }
+  }
+
   Widget buildPhoneBookMobile(BuildContext context) => RefreshIndicator(
         onRefresh: () async {
           setState(refreshVoters);
@@ -1924,6 +2145,9 @@ class _VoterManagementPageState extends State<VoterManagementPage> {
                         }
                       }),
                       onDeleteSelected: deleteSelectedContacts,
+                      onBulkParty: _bulkParty,
+                      onBulkGroup: _bulkGroup,
+                      onBulkAnubhag: _bulkAnubhag,
                       onClearSelection: () => setState(selectedIds.clear),
                       onChanged: () => setState(refreshVoters),
                       onPageChanged: (page) => setState(() {
@@ -2496,33 +2720,33 @@ class _RollFilterStrip extends StatelessWidget {
               child: Row(children: [
                 ChoiceChip(
                     visualDensity: VisualDensity.compact,
-                    label: const Text('विधानसभा'),
-                    selected: rollType == 'assembly' && matchStatus.isEmpty,
-                    onSelected: (_) => onChanged('assembly', '')),
+                    label: const Text('सभी'),
+                    selected: (rollType == 'all' || rollType.isEmpty) && matchStatus.isEmpty,
+                    onSelected: (_) => onChanged('all', '')),
                 const SizedBox(width: 6),
                 ChoiceChip(
                     visualDensity: VisualDensity.compact,
-                    label: const Text('Ward'),
-                    selected: rollType == 'municipal' && matchStatus.isEmpty,
+                    label: const Text('कुल वार्ड सूची'),
+                    selected: (rollType == 'municipal' || rollType == 'ward') && matchStatus.isEmpty,
                     onSelected: (_) => onChanged('municipal', '')),
                 const SizedBox(width: 6),
                 ChoiceChip(
                     visualDensity: VisualDensity.compact,
-                    label: const Text('दोनों'),
+                    label: const Text('दोनों में (Matched)'),
                     selected: matchStatus == 'both',
                     onSelected: (_) => onChanged('all', 'both')),
+                const SizedBox(width: 6),
+                ChoiceChip(
+                    visualDensity: VisualDensity.compact,
+                    label: const Text('केवल वार्ड (नए)'),
+                    selected: matchStatus == 'municipal_only' || matchStatus == 'ward_only',
+                    onSelected: (_) => onChanged('all', 'municipal_only')),
                 const SizedBox(width: 6),
                 ChoiceChip(
                     visualDensity: VisualDensity.compact,
                     label: const Text('केवल विधानसभा'),
                     selected: matchStatus == 'assembly_only',
                     onSelected: (_) => onChanged('all', 'assembly_only')),
-                const SizedBox(width: 6),
-                ChoiceChip(
-                    visualDensity: VisualDensity.compact,
-                    label: const Text('केवल Ward'),
-                    selected: matchStatus == 'municipal_only',
-                    onSelected: (_) => onChanged('all', 'municipal_only')),
                 const SizedBox(width: 8),
                 SizedBox(
                     width: 102,
@@ -3543,6 +3767,9 @@ class _PhoneContactList extends StatelessWidget {
     required this.onSelectionChanged,
     required this.onSelectPage,
     required this.onDeleteSelected,
+    required this.onBulkParty,
+    required this.onBulkGroup,
+    required this.onBulkAnubhag,
     required this.onClearSelection,
     required this.onChanged,
     required this.onPageChanged,
@@ -3553,6 +3780,9 @@ class _PhoneContactList extends StatelessWidget {
   final void Function(String id, bool selected) onSelectionChanged;
   final void Function(Iterable<String> ids, bool selected) onSelectPage;
   final VoidCallback onDeleteSelected;
+  final VoidCallback onBulkParty;
+  final VoidCallback onBulkGroup;
+  final VoidCallback onBulkAnubhag;
   final VoidCallback onClearSelection;
   final VoidCallback onChanged;
   final ValueChanged<int> onPageChanged;
@@ -3579,15 +3809,15 @@ class _PhoneContactList extends StatelessWidget {
       if (selectedIds.isNotEmpty)
         Container(
           margin: const EdgeInsets.only(bottom: 10),
-          padding: const EdgeInsets.all(10),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
           decoration: BoxDecoration(
-            color: const Color(0xfffff5f5),
+            color: const Color(0xffeef5ff),
             borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: Colors.red.withValues(alpha: .18)),
+            border: Border.all(color: const Color(0xff1A73E8).withValues(alpha: .25)),
           ),
           child: Row(children: [
             Expanded(
-              child: Text('${selectedIds.length} selected',
+              child: Text('${selectedIds.length} चयनित',
                   style: const TextStyle(
                       color: navy, fontWeight: FontWeight.w900)),
             ),
@@ -3595,18 +3825,57 @@ class _PhoneContactList extends StatelessWidget {
               onPressed: pageIds.isEmpty
                   ? null
                   : () => onSelectPage(pageIds, !allSelected),
-              child: Text(allSelected ? 'Unselect all' : 'Select all'),
+              child: Text(allSelected ? 'सब हटाएं' : 'सभी चुनें'),
+            ),
+            PopupMenuButton<String>(
+              tooltip: 'बल्क एक्शन (3 Dots)',
+              icon: const Icon(Icons.more_vert_rounded, color: navy),
+              onSelected: (value) {
+                if (value == 'party') onBulkParty();
+                if (value == 'group') onBulkGroup();
+                if (value == 'anubhag') onBulkAnubhag();
+                if (value == 'delete') onDeleteSelected();
+              },
+              itemBuilder: (context) => [
+                const PopupMenuItem(
+                  value: 'party',
+                  child: Row(children: [
+                    Icon(Icons.how_to_vote_rounded, color: Color(0xff1A73E8), size: 20),
+                    SizedBox(width: 10),
+                    Text('1. पार्टी अपडेट करें (Bulk Party)', style: TextStyle(fontWeight: FontWeight.w700)),
+                  ]),
+                ),
+                const PopupMenuItem(
+                  value: 'group',
+                  child: Row(children: [
+                    Icon(Icons.group_add_rounded, color: Color(0xff0d9488), size: 20),
+                    SizedBox(width: 10),
+                    Text('2. कस्टम ग्रुप में जोड़ें (Add to Group)', style: TextStyle(fontWeight: FontWeight.w700)),
+                  ]),
+                ),
+                const PopupMenuItem(
+                  value: 'anubhag',
+                  child: Row(children: [
+                    Icon(Icons.edit_note_rounded, color: Color(0xffd97706), size: 20),
+                    SizedBox(width: 10),
+                    Text('3. अनुभाग नाम अपडेट (Update Anubhag)', style: TextStyle(fontWeight: FontWeight.w700)),
+                  ]),
+                ),
+                const PopupMenuDivider(),
+                const PopupMenuItem(
+                  value: 'delete',
+                  child: Row(children: [
+                    Icon(Icons.delete_outline_rounded, color: Colors.red, size: 20),
+                    SizedBox(width: 10),
+                    Text('चयनित हटाएं (Delete Selected)', style: TextStyle(color: Colors.red, fontWeight: FontWeight.w700)),
+                  ]),
+                ),
+              ],
             ),
             IconButton(
               tooltip: 'Clear',
               onPressed: onClearSelection,
               icon: const Icon(Icons.close_rounded),
-            ),
-            IconButton.filled(
-              tooltip: 'Delete selected',
-              style: IconButton.styleFrom(backgroundColor: Colors.red),
-              onPressed: onDeleteSelected,
-              icon: const Icon(Icons.delete_outline_rounded),
             ),
           ]),
         ),
@@ -3770,6 +4039,18 @@ class _PhoneContactTile extends StatelessWidget {
                             ? 'EPIC: ${voter['voterId'] ?? '-'}'
                             : mobile,
                         style: const TextStyle(color: muted, fontSize: 12)),
+                    if ('${voter['guardianName'] ?? ''}'.trim().isNotEmpty || ('${voter['houseNumber'] ?? ''}'.trim().isNotEmpty && '${voter['houseNumber']}' != '0')) ...[
+                      const SizedBox(height: 2),
+                      Text(
+                        [
+                          if ('${voter['guardianName'] ?? ''}'.trim().isNotEmpty) 'पिता/पति: ${voter['guardianName']}',
+                          if ('${voter['houseNumber'] ?? ''}'.trim().isNotEmpty && '${voter['houseNumber']}' != '0') 'म.नं.: ${voter['houseNumber']}',
+                        ].join(' · '),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(color: navy, fontSize: 11, fontWeight: FontWeight.w600),
+                      ),
+                    ],
                     if (place.isNotEmpty) ...[
                       const SizedBox(height: 2),
                       Text(place,
@@ -3779,6 +4060,16 @@ class _PhoneContactTile extends StatelessWidget {
                     ],
                     const SizedBox(height: 5),
                     Wrap(spacing: 5, runSpacing: 4, children: [
+                      if ('${voter['wardVoterSerial'] ?? ''}'.trim().isNotEmpty)
+                        _MembershipBadge(
+                          label: 'वार्ड क्र. #${voter['wardVoterSerial']}',
+                          color: const Color(0xff0d9488),
+                        ),
+                      if ('${voter['voterSerial'] ?? ''}'.trim().isNotEmpty)
+                        _MembershipBadge(
+                          label: 'वि.स. क्र. #${voter['voterSerial']}',
+                          color: const Color(0xff4338ca),
+                        ),
                       if (voter['groups'] is List && (voter['groups'] as List).isNotEmpty)
                         for (final g in (voter['groups'] as List).take(3))
                           _MembershipBadge(

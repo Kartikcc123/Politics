@@ -197,7 +197,11 @@ exports.create = async (req, res, next) => {
       }
     }
 
-    if (req.file) data.photo = await persistLocalImage(req.file.path, req.currentUser._id, true);
+    if (req.file) {
+      data.photo = await persistLocalImage(req.file.path, req.currentUser._id, true);
+    } else if (data.photo) {
+      data.photo = await persistLocalImage(data.photo, req.currentUser._id, false);
+    }
     await attachBoothWard(data, req.currentUser);
     if (data.booth) assertBoothAccess(req.currentUser, data.booth);
     if (data.ward) assertWardAccess(req.currentUser, data.ward);
@@ -224,14 +228,14 @@ exports.list = async (req, res, next) => {
     const page = Math.max(Number(req.query.page) || 1, 1);
     const paged = String(req.query.paged || '').toLowerCase() === 'true' || req.query.page !== undefined;
     const filter = applyMemberScope(req.currentUser, {});
-    const selectedRoll = String(rollType || "assembly").toLowerCase();
+    const selectedRoll = String(rollType || "").toLowerCase();
     if (contactType !== "personal") {
       if (selectedRoll === "assembly") {
         filter.$and = [...(filter.$and || []), { $or: [
           { hasAssemblyMembership: true },
           { hasAssemblyMembership: { $exists: false }, assemblyNumber: { $nin: ["", null] } },
         ] }];
-      } else if (selectedRoll === "municipal") {
+      } else if (selectedRoll === "municipal" || selectedRoll === "ward") {
         filter.hasMunicipalMembership = true;
       }
       if (matchStatus === "both") {
@@ -242,7 +246,7 @@ exports.list = async (req, res, next) => {
           { hasAssemblyMembership: true },
           { hasAssemblyMembership: { $exists: false }, assemblyNumber: { $nin: ["", null] } },
         ] }, { hasMunicipalMembership: { $ne: true } }];
-      } else if (matchStatus === "municipal_only") {
+      } else if (matchStatus === "municipal_only" || matchStatus === "ward_only") {
         filter.hasMunicipalMembership = true;
         filter.hasAssemblyMembership = { $ne: true };
       }
@@ -878,14 +882,14 @@ exports.filterOptions = async (req, res, next) => {
     if (field === 'section') field = 'sectionName';
 
     const filter = applyMemberScope(req.currentUser, {});
-    const selectedRoll = String(rollType || "assembly").toLowerCase();
+    const selectedRoll = String(rollType || "").toLowerCase();
     if (contactType !== "personal") {
       if (selectedRoll === "assembly") {
         filter.$and = [...(filter.$and || []), { $or: [
           { hasAssemblyMembership: true },
           { hasAssemblyMembership: { $exists: false }, assemblyNumber: { $nin: ["", null] } },
         ] }];
-      } else if (selectedRoll === "municipal") {
+      } else if (selectedRoll === "municipal" || selectedRoll === "ward") {
         filter.hasMunicipalMembership = true;
       }
       if (matchStatus === "both") {
@@ -896,11 +900,10 @@ exports.filterOptions = async (req, res, next) => {
           { hasAssemblyMembership: true },
           { hasAssemblyMembership: { $exists: false }, assemblyNumber: { $nin: ["", null] } },
         ] }, { hasMunicipalMembership: { $ne: true } }];
-      } else if (matchStatus === "municipal_only") {
+      } else if (matchStatus === "municipal_only" || matchStatus === "ward_only") {
         filter.hasMunicipalMembership = true;
         filter.hasAssemblyMembership = { $ne: true };
       }
-      if (municipalWard) filter.municipalWardNumbers = String(municipalWard).trim();
     }
     for (const key of [
       'assemblyNumber', 'assemblyName', 'partNumber', 'sectionNumber', 'sectionName',
@@ -1178,8 +1181,9 @@ exports.update = async (req, res, next) => {
       };
     }
     if (req.file) {
-      requirePermission(req.currentUser, 'canEditPhoto');
       member.photo = await persistLocalImage(req.file.path, req.currentUser._id, true);
+    } else if (updates.photo && updates.photo !== member.photo) {
+      member.photo = await persistLocalImage(updates.photo, req.currentUser._id, false);
     }
     member.updatedBy = req.currentUser._id;
     member.duplicateWarnings = await duplicateWarnings(member, member._id);
@@ -1602,7 +1606,7 @@ exports.bulkAssignGroup = async (req, res, next) => {
     if (!memberIds.length || !groupId) {
       return res.status(400).json({ message: 'memberIds array and groupId are required.' });
     }
-    const group = await Group.findOne({ _id: groupId, createdBy: req.currentUser._id });
+    const group = await Group.findById(groupId);
     if (!group) return res.status(404).json({ message: 'ग्रुप नहीं मिला।' });
 
     const scope = applyMemberScope(req.currentUser, { _id: { $in: memberIds } });
@@ -1931,13 +1935,41 @@ exports.hierarchicalTree = async (req, res, next) => {
 
 exports.bulkParty = async (req, res, next) => {
   try {
-    const { memberIds, partyAffiliation } = req.body;
+    const { memberIds, partyPreference, partyAffiliation, party } = req.body;
     if (!Array.isArray(memberIds) || !memberIds.length) {
       return res.status(400).json({ message: 'मतदाता चुनें।' });
     }
+    const val = String(partyPreference || partyAffiliation || party || '').trim();
     const filter = applyMemberScope(req.currentUser, { _id: { $in: memberIds } });
-    await Member.updateMany(filter, { $set: { partyAffiliation: String(partyAffiliation || '').trim() } });
-    res.json({ message: 'पार्टी/श्रेणी सफलतापूर्वक अपडेट की गई।' });
+    await Member.updateMany(filter, {
+      $set: {
+        partyPreference: val,
+        partyAffiliation: val,
+        updatedBy: req.currentUser._id,
+      }
+    });
+    invalidateMemberData();
+    res.json({ message: 'पार्टी प्राथमिकता सफलतापूर्वक अपडेट की गई।' });
+  } catch (error) { next(error); }
+};
+
+exports.bulkAnubhag = async (req, res, next) => {
+  try {
+    const { memberIds, sectionName, sectionNumber } = req.body;
+    if (!Array.isArray(memberIds) || !memberIds.length) {
+      return res.status(400).json({ message: 'मतदाता चुनें।' });
+    }
+    const updates = { updatedBy: req.currentUser._id };
+    if (sectionName !== undefined) updates.sectionName = String(sectionName).trim();
+    if (sectionNumber !== undefined) updates.sectionNumber = String(sectionNumber).trim();
+
+    const filter = applyMemberScope(req.currentUser, { _id: { $in: memberIds } });
+    const result = await Member.updateMany(filter, { $set: updates });
+    invalidateMemberData();
+    res.json({
+      message: `${result.modifiedCount} मतदाताओं का अनुभाग सफलतापूर्वक अपडेट किया गया।`,
+      modifiedCount: result.modifiedCount
+    });
   } catch (error) { next(error); }
 };
 

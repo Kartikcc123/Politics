@@ -16,6 +16,7 @@ router.post('/location-reviews/:id/resolve', allowRoles('admin'), controller.res
 router.get('/hierarchical-tree', controller.hierarchicalTree);
 router.post('/enrich-batch', allowRoles('admin'), controller.enrichBatch);
 router.post('/bulk-party', controller.bulkParty);
+router.post('/bulk-anubhag', controller.bulkAnubhag);
 router.post('/assign-part-to-village', allowRoles('admin'), controller.assignPartToVillage);
 router.post('/bulk-location-correction', allowRoles('admin'), controller.bulkLocationCorrection);
 router.post('/recheck-ocr', allowRoles('admin'), controller.recheckOcr);
