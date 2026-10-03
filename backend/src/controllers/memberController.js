@@ -246,7 +246,6 @@ exports.list = async (req, res, next) => {
         filter.hasMunicipalMembership = true;
         filter.hasAssemblyMembership = { $ne: true };
       }
-      if (municipalWard) filter.municipalWardNumbers = String(municipalWard).trim();
     }
     if (party) filter.party = party;
     if (supportLevel) filter.supportLevel = supportLevel;
@@ -282,13 +281,14 @@ exports.list = async (req, res, next) => {
       if (rawWard) {
         const wardRegex = new RegExp(`^(वार्ड\\s*)?0*${rawWard}$`, 'i');
         const wardConditions = [
-          { ward: rawWard },
-          { ward: wardRegex },
           { wardNumber: rawWard },
           { wardNumber: wardRegex },
           { municipalWardNumbers: rawWard },
           { municipalWardNumbers: wardRegex }
         ];
+        if (ward && mongoose.Types.ObjectId.isValid(ward)) {
+          wardConditions.push({ ward: ward });
+        }
         addOrClause(wardConditions);
       }
     }
