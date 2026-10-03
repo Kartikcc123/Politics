@@ -39,21 +39,31 @@ const requireBooth = async (assignedBooth) => {
 
 const normalizeUserPayload = async (body, existingUser) => {
   const data = { ...body };
-  const role = data.role || existingUser?.role || 'booth';
+  const role = data.role || existingUser?.role || 'user';
   data.role = role;
 
-  if (role === 'booth') {
+  if (role === 'booth' && (data.assignedBooth || existingUser?.assignedBooth)) {
     const booth = await requireBooth(data.assignedBooth || existingUser?.assignedBooth);
     data.assignedBooth = booth._id;
     data.assignedWard = booth.ward?._id || booth.ward;
   } else if (role === 'ward_head') {
-    if (!data.assignedWard && !existingUser?.assignedWard) {
-      throwBadRequest('Ward head requires assignedWard');
-    }
     data.assignedBooth = undefined;
   } else if (role === 'admin') {
     data.assignedBooth = undefined;
     data.assignedWard = undefined;
+    data.assignedGramPanchayats = [];
+    data.assignedVillages = [];
+    data.assignedWards = [];
+  }
+
+  if (Array.isArray(data.assignedGramPanchayats)) {
+    data.assignedGramPanchayats = data.assignedGramPanchayats.filter(Boolean).map(s => String(s).trim());
+  }
+  if (Array.isArray(data.assignedVillages)) {
+    data.assignedVillages = data.assignedVillages.filter(Boolean).map(s => String(s).trim());
+  }
+  if (Array.isArray(data.assignedWards)) {
+    data.assignedWards = data.assignedWards.filter(Boolean).map(s => String(s).trim());
   }
 
   return data;

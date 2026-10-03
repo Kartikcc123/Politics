@@ -2632,12 +2632,30 @@ class _VoterManagementPageState extends State<VoterManagementPage> {
             color: const Color(0xfff2f6ff),
             borderRadius: BorderRadius.circular(10)),
         child: Wrap(spacing: 8, runSpacing: 8, children: [
-          if (selectedIds.isNotEmpty)
+          if (selectedIds.isNotEmpty) ...[
             Chip(
               avatar: const Icon(Icons.check_circle, color: green, size: 18),
               label: Text('${selectedIds.length} मतदाता चयनित'),
               onDeleted: () => setState(selectedIds.clear),
             ),
+            FilledButton.icon(
+              onPressed: _bulkMarkVoted,
+              icon: const Icon(Icons.how_to_vote_rounded, size: 18),
+              style: FilledButton.styleFrom(backgroundColor: royalBlue),
+              label: const Text('🗳️ वोट दिया (Mark Voted)'),
+            ),
+            FilledButton.icon(
+              onPressed: _bulkPartyDialog,
+              icon: const Icon(Icons.flag_rounded, size: 18),
+              style: FilledButton.styleFrom(backgroundColor: green),
+              label: const Text('✋/🪷 पार्टी अपडेट'),
+            ),
+            OutlinedButton.icon(
+              onPressed: _bulkAnubhagDialog,
+              icon: const Icon(Icons.edit_location_alt_rounded, size: 18),
+              label: const Text('अनुभाग अपडेट'),
+            ),
+          ],
           OutlinedButton.icon(
               onPressed: () => saveApiFile(context,
                       path: '/api/export/members.xlsx',
@@ -2659,6 +2677,160 @@ class _VoterManagementPageState extends State<VoterManagementPage> {
         ]),
       )
     ]);
+  }
+
+  Future<void> _bulkMarkVoted() async {
+    if (selectedIds.isEmpty) return;
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('वोट मार्क करें'),
+        content: Text('क्या आप चयनित ${selectedIds.length} मतदाताओं को "वोट दिया" मार्क करना चाहते हैं?'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('रद्द करें')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('हाँ, मार्क करें')),
+        ],
+      ),
+    );
+    if (confirm != true) return;
+    try {
+      await api.post('/api/members/bulk-vote-status', {
+        'memberIds': selectedIds.toList(),
+        'status': 'voted',
+      });
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('${selectedIds.length} मतदाताओं को "वोट दिया" मार्क कर दिया गया।')),
+        );
+        setState(() {
+          selectedIds.clear();
+          refreshVoters();
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error: $e')),
+        );
+      }
+    }
+  }
+
+  Future<void> _bulkPartyDialog() async {
+    if (selectedIds.isEmpty) return;
+    String selectedParty = 'congress';
+    final confirmed = await showDialog<String>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDState) => AlertDialog(
+          title: const Text('पार्टी प्राथमिकता बदलें'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text('चयनित ${selectedIds.length} मतदाताओं की पार्टी चुनें:'),
+              const SizedBox(height: 12),
+              RadioListTile<String>(
+                title: const Text('✋ Congress (कांग्रेस)'),
+                value: 'congress',
+                groupValue: selectedParty,
+                onChanged: (v) => setDState(() => selectedParty = v!),
+              ),
+              RadioListTile<String>(
+                title: const Text('🪷 BJP (भाजपा)'),
+                value: 'bjp',
+                groupValue: selectedParty,
+                onChanged: (v) => setDState(() => selectedParty = v!),
+              ),
+              RadioListTile<String>(
+                title: const Text('⚪ अन्य / निर्दलीय'),
+                value: 'other',
+                groupValue: selectedParty,
+                onChanged: (v) => setDState(() => selectedParty = v!),
+              ),
+              RadioListTile<String>(
+                title: const Text('❓ अनिर्णीत (Undecided)'),
+                value: 'undecided',
+                groupValue: selectedParty,
+                onChanged: (v) => setDState(() => selectedParty = v!),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('रद्द करें')),
+            FilledButton(onPressed: () => Navigator.pop(ctx, selectedParty), child: const Text('अपडेट करें')),
+          ],
+        ),
+      ),
+    );
+    if (confirmed == null) return;
+    try {
+      await api.post('/api/members/bulk-party', {
+        'memberIds': selectedIds.toList(),
+        'partyPreference': confirmed,
+      });
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('${selectedIds.length} मतदाताओं की पार्टी अपडेट कर दी गई।')),
+        );
+        setState(() {
+          selectedIds.clear();
+          refreshVoters();
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e')));
+      }
+    }
+  }
+
+  Future<void> _bulkAnubhagDialog() async {
+    if (selectedIds.isEmpty) return;
+    final controller = TextEditingController();
+    final confirmed = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('अनुभाग नाम अपडेट करें'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text('चयनित ${selectedIds.length} मतदाताओं के लिए नया अनुभाग नाम लिखें:'),
+            const SizedBox(height: 12),
+            TextField(
+              controller: controller,
+              decoration: const InputDecoration(
+                hintText: 'अनुभाग नाम (जैसे: मोहल्ला/ढाणी)',
+                border: OutlineInputBorder(),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('रद्द करें')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, controller.text.trim()), child: const Text('अपडेट करें')),
+        ],
+      ),
+    );
+    if (confirmed == null || confirmed.isEmpty) return;
+    try {
+      await api.post('/api/members/bulk-anubhag', {
+        'memberIds': selectedIds.toList(),
+        'sectionName': confirmed,
+      });
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('${selectedIds.length} मतदाताओं का अनुभाग अपडेट हो गया।')),
+        );
+        setState(() {
+          selectedIds.clear();
+          refreshVoters();
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e')));
+      }
+    }
   }
 }
 

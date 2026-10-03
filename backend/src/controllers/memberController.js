@@ -2032,4 +2032,147 @@ exports.enrichBatch = async (req, res, next) => {
   }
 };
 
+exports.partyAnalytics = async (req, res, next) => {
+  try {
+    const { groupBy, gramPanchayat, village } = req.query;
+    const filter = applyMemberScope(req.currentUser, {});
+    if (gramPanchayat) filter.gramPanchayat = new RegExp(`^${gramPanchayat.trim()}$`, 'i');
+    if (village) filter.village = new RegExp(`^${village.trim()}$`, 'i');
+
+    let groupField = '$gramPanchayat';
+    if (groupBy === 'village') groupField = '$village';
+    else if (groupBy === 'ward') groupField = '$wardNumber';
+
+    const pipeline = [
+      { $match: filter },
+      {
+        $group: {
+          _id: groupField,
+          totalVoters: { $sum: 1 },
+          congress: {
+            $sum: {
+              $cond: [
+                { $in: ['$partyPreference', ['congress', 'Congress', 'CONGRESS', 'inc', 'INC', 'कांग्रेस', 'हाथ']] },
+                1,
+                0
+              ]
+            }
+          },
+          bjp: {
+            $sum: {
+              $cond: [
+                { $in: ['$partyPreference', ['bjp', 'BJP', 'बीजेपी', 'भाजपा', 'कमल']] },
+                1,
+                0
+              ]
+            }
+          },
+          other: {
+            $sum: {
+              $cond: [
+                { $in: ['$partyPreference', ['other', 'Other', 'अन्य', 'rld', 'bsp', 'aap']] },
+                1,
+                0
+              ]
+            }
+          },
+          undecided: {
+            $sum: {
+              $cond: [
+                {
+                  $or: [
+                    { $eq: ['$partyPreference', 'undecided'] },
+                    { $eq: ['$partyPreference', ''] },
+                    { $eq: ['$partyPreference', null] },
+                    { $not: ['$partyPreference'] }
+                  ]
+                },
+                1,
+                0
+              ]
+            }
+          },
+          voted: {
+            $sum: {
+              $cond: [
+                { $in: ['$voteStatus', ['voted', 'VOTED', 'वोट दिया', 'done']] },
+                1,
+                0
+              ]
+            }
+          }
+        }
+      },
+      { $sort: { totalVoters: -1 } }
+    ];
+
+    const results = await Member.aggregate(pipeline);
+
+    const totals = {
+      totalVoters: 0,
+      congress: 0,
+      bjp: 0,
+      other: 0,
+      undecided: 0,
+      voted: 0
+    };
+
+    results.forEach(r => {
+      totals.totalVoters += r.totalVoters || 0;
+      totals.congress += r.congress || 0;
+      totals.bjp += r.bjp || 0;
+      totals.other += r.other || 0;
+      totals.undecided += r.undecided || 0;
+      totals.voted += r.voted || 0;
+    });
+
+    res.json({
+      breakdown: results.map(r => ({
+        name: r._id || 'अन्य / अनिर्दिष्ट',
+        totalVoters: r.totalVoters,
+        congress: r.congress,
+        bjp: r.bjp,
+        other: r.other,
+        undecided: r.undecided,
+        voted: r.voted,
+        pendingVotes: Math.max(0, r.totalVoters - (r.voted || 0)),
+        congressPercent: r.totalVoters > 0 ? Number(((r.congress / r.totalVoters) * 100).toFixed(1)) : 0,
+        bjpPercent: r.totalVoters > 0 ? Number(((r.bjp / r.totalVoters) * 100).toFixed(1)) : 0,
+        votedPercent: r.totalVoters > 0 ? Number((( (r.voted || 0) / r.totalVoters) * 100).toFixed(1)) : 0,
+      })),
+      totals: {
+        ...totals,
+        pendingVotes: Math.max(0, totals.totalVoters - totals.voted),
+        congressPercent: totals.totalVoters > 0 ? Number(((totals.congress / totals.totalVoters) * 100).toFixed(1)) : 0,
+        bjpPercent: totals.totalVoters > 0 ? Number(((totals.bjp / totals.totalVoters) * 100).toFixed(1)) : 0,
+        votedPercent: totals.totalVoters > 0 ? Number(((totals.voted / totals.totalVoters) * 100).toFixed(1)) : 0,
+      }
+    });
+  } catch (error) { next(error); }
+};
+
+exports.bulkVoteStatus = async (req, res, next) => {
+  try {
+    const { memberIds, status } = req.body;
+    if (!Array.isArray(memberIds) || !memberIds.length) {
+      return res.status(400).json({ message: 'मतदाता चुनें।' });
+    }
+    const val = String(status || 'voted').trim();
+    const filter = applyMemberScope(req.currentUser, { _id: { $in: memberIds } });
+    const result = await Member.updateMany(filter, {
+      $set: {
+        voteStatus: val,
+        votedAt: val === 'voted' ? new Date() : null,
+        updatedBy: req.currentUser._id
+      }
+    });
+    invalidateMemberData();
+    res.json({
+      message: `${result.modifiedCount} मतदाताओं का वोट स्टेटस '${val}' अपडेट किया गया।`,
+      modifiedCount: result.modifiedCount
+    });
+  } catch (error) { next(error); }
+};
+
+
 

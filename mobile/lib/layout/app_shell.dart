@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../core/api_client.dart';
 import '../core/theme.dart';
+import '../features/analytics/party_analytics_page.dart';
 import '../features/areas/samiti_hierarchy_page.dart';
 import '../features/more/more_page.dart';
 import '../features/voters/voter_management_page.dart';
@@ -59,6 +60,30 @@ class _AppShellState extends State<AppShell> {
   }
 
   List<NavItem> get items {
+    final isAdmin = widget.role == 'admin';
+    final canUploadPdf = api.user?['permissions']?['canUploadPdf'] == true ||
+        api.user?['permissions']?['canImportData'] == true;
+
+    if (!isAdmin && !canUploadPdf) {
+      return [
+        NavItem(
+          'मतदाता सूची',
+          Icons.groups_rounded,
+          VoterManagementPage(key: ValueKey('voters-$refreshVersion')),
+        ),
+        NavItem(
+          'गाँव व पंचायत',
+          Icons.holiday_village_rounded,
+          SamitiHierarchyPage(key: ValueKey('samiti-hierarchy-$refreshVersion')),
+        ),
+        NavItem(
+          'पार्टी गणना',
+          Icons.analytics_rounded,
+          PartyAnalyticsPage(key: ValueKey('party-analytics-$refreshVersion')),
+        ),
+      ];
+    }
+
     return [
       NavItem(
         'क्षेत्र व गाँव',
@@ -69,6 +94,11 @@ class _AppShellState extends State<AppShell> {
         'सभी मतदाता',
         Icons.groups_outlined,
         VoterManagementPage(key: ValueKey('voters-$refreshVersion')),
+      ),
+      NavItem(
+        'पार्टी गणना',
+        Icons.analytics_outlined,
+        PartyAnalyticsPage(key: ValueKey('party-analytics-$refreshVersion')),
       ),
       NavItem(
         'अधिक',
