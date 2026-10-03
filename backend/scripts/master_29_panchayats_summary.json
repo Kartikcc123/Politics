@@ -4,8 +4,8 @@
     "gpHindi": "चारोट",
     "wardsCount": 7,
     "totalLive": 2765,
-    "matched": 2474,
-    "created": 291,
+    "matched": 2475,
+    "created": 290,
     "wardStats": [
       {
         "ward": "1",
@@ -51,8 +51,8 @@
         "ward": "6",
         "village": "चारोट",
         "liveVoters": 334,
-        "matched": 307,
-        "created": 27,
+        "matched": 308,
+        "created": 26,
         "serialRange": "#1..#334"
       },
       {
@@ -70,8 +70,8 @@
     "gpHindi": "गलवा",
     "wardsCount": 7,
     "totalLive": 2710,
-    "matched": 2416,
-    "created": 294,
+    "matched": 2417,
+    "created": 293,
     "wardStats": [
       {
         "ward": "1",
@@ -93,8 +93,8 @@
         "ward": "3",
         "village": "गलवा",
         "liveVoters": 394,
-        "matched": 340,
-        "created": 54,
+        "matched": 341,
+        "created": 53,
         "serialRange": "#1..#394"
       },
       {
@@ -202,8 +202,8 @@
     "gpHindi": "कलालखेड़ी",
     "wardsCount": 7,
     "totalLive": 2746,
-    "matched": 2407,
-    "created": 339,
+    "matched": 2408,
+    "created": 338,
     "wardStats": [
       {
         "ward": "1",
@@ -225,8 +225,8 @@
         "ward": "3",
         "village": "कलालखेड़ी",
         "liveVoters": 381,
-        "matched": 284,
-        "created": 97,
+        "matched": 285,
+        "created": 96,
         "serialRange": "#1..#381"
       },
       {
@@ -268,8 +268,8 @@
     "gpHindi": "खाखरमाला",
     "wardsCount": 7,
     "totalLive": 2679,
-    "matched": 2384,
-    "created": 295,
+    "matched": 2385,
+    "created": 294,
     "wardStats": [
       {
         "ward": "1",
@@ -283,8 +283,8 @@
         "ward": "2",
         "village": "खाखरमाला",
         "liveVoters": 608,
-        "matched": 543,
-        "created": 65,
+        "matched": 544,
+        "created": 64,
         "serialRange": "#1..#608"
       },
       {
@@ -334,8 +334,8 @@
     "gpHindi": "भींटा",
     "wardsCount": 11,
     "totalLive": 4284,
-    "matched": 3844,
-    "created": 440,
+    "matched": 3845,
+    "created": 439,
     "wardStats": [
       {
         "ward": "1",
@@ -413,8 +413,8 @@
         "ward": "10",
         "village": "भींटा",
         "liveVoters": 385,
-        "matched": 325,
-        "created": 60,
+        "matched": 326,
+        "created": 59,
         "serialRange": "#1..#385"
       },
       {
@@ -530,8 +530,8 @@
     "gpHindi": "बोरियापुरा",
     "wardsCount": 7,
     "totalLive": 2076,
-    "matched": 1741,
-    "created": 335,
+    "matched": 1745,
+    "created": 331,
     "wardStats": [
       {
         "ward": "1",
@@ -561,32 +561,32 @@
         "ward": "4",
         "village": "बोरियापुरा",
         "liveVoters": 318,
-        "matched": 279,
-        "created": 39,
+        "matched": 280,
+        "created": 38,
         "serialRange": "#1..#318"
       },
       {
         "ward": "5",
         "village": "बोरियापुरा",
         "liveVoters": 297,
-        "matched": 243,
-        "created": 54,
+        "matched": 244,
+        "created": 53,
         "serialRange": "#1..#297"
       },
       {
         "ward": "6",
         "village": "बोरियापुरा",
         "liveVoters": 259,
-        "matched": 189,
-        "created": 70,
+        "matched": 190,
+        "created": 69,
         "serialRange": "#1..#259"
       },
       {
         "ward": "7",
         "village": "बोरियापुरा",
         "liveVoters": 397,
-        "matched": 328,
-        "created": 69,
+        "matched": 329,
+        "created": 68,
         "serialRange": "#1..#397"
       }
     ]
@@ -678,8 +678,8 @@
     "gpHindi": "झाड़ोल",
     "wardsCount": 9,
     "totalLive": 3163,
-    "matched": 2665,
-    "created": 498,
+    "matched": 2667,
+    "created": 496,
     "wardStats": [
       {
         "ward": "1",
@@ -709,16 +709,16 @@
         "ward": "4",
         "village": "झाड़ोल",
         "liveVoters": 277,
-        "matched": 214,
-        "created": 63,
+        "matched": 215,
+        "created": 62,
         "serialRange": "#1..#471"
       },
       {
         "ward": "5",
         "village": "झाड़ोल",
         "liveVoters": 385,
-        "matched": 314,
-        "created": 71,
+        "matched": 315,
+        "created": 70,
         "serialRange": "#1..#478"
       },
       {
@@ -760,23 +760,23 @@
     "gpHindi": "खेमाणा",
     "wardsCount": 7,
     "totalLive": 2478,
-    "matched": 2114,
-    "created": 364,
+    "matched": 2116,
+    "created": 362,
     "wardStats": [
       {
         "ward": "1",
         "village": "खेमाणा",
         "liveVoters": 300,
-        "matched": 271,
-        "created": 29,
+        "matched": 272,
+        "created": 28,
         "serialRange": "#1..#300"
       },
       {
         "ward": "2",
         "village": "खेमाणा",
         "liveVoters": 393,
-        "matched": 355,
-        "created": 38,
+        "matched": 356,
+        "created": 37,
         "serialRange": "#1..#393"
       },
       {
@@ -892,8 +892,8 @@
     "gpHindi": "नाहरी",
     "wardsCount": 9,
     "totalLive": 2667,
-    "matched": 2171,
-    "created": 496,
+    "matched": 2172,
+    "created": 495,
     "wardStats": [
       {
         "ward": "1",
@@ -955,8 +955,8 @@
         "ward": "8",
         "village": "नाहरी",
         "liveVoters": 318,
-        "matched": 272,
-        "created": 46,
+        "matched": 273,
+        "created": 45,
         "serialRange": "#1..#318"
       },
       {
@@ -1434,8 +1434,8 @@
     "gpHindi": "पानोतिया",
     "wardsCount": 7,
     "totalLive": 2702,
-    "matched": 2360,
-    "created": 342,
+    "matched": 2361,
+    "created": 341,
     "wardStats": [
       {
         "ward": "1",
@@ -1449,8 +1449,8 @@
         "ward": "2",
         "village": "पानोतिया",
         "liveVoters": 355,
-        "matched": 308,
-        "created": 47,
+        "matched": 309,
+        "created": 46,
         "serialRange": "#1..#355"
       },
       {
@@ -1526,8 +1526,8 @@
     "gpHindi": "रायपुर",
     "wardsCount": 17,
     "totalLive": 6835,
-    "matched": 5711,
-    "created": 1124,
+    "matched": 5713,
+    "created": 1122,
     "wardStats": [
       {
         "ward": "1",
@@ -1565,16 +1565,16 @@
         "ward": "5",
         "village": "रायपुर",
         "liveVoters": 324,
-        "matched": 280,
-        "created": 44,
+        "matched": 281,
+        "created": 43,
         "serialRange": "#1..#363"
       },
       {
         "ward": "6",
         "village": "रायपुर",
         "liveVoters": 421,
-        "matched": 335,
-        "created": 86,
+        "matched": 336,
+        "created": 85,
         "serialRange": "#1..#458"
       },
       {
