@@ -13,7 +13,7 @@ const Area = require(path.join(srcDir, 'models/Area'));
 const User = require(path.join(srcDir, 'models/User'));
 
 async function updateBoothVillages() {
-  const mongoUri = process.env.MONGO_URI || 'mongodb://politics_mongo:27017/political_crm';
+  const mongoUri = process.env.MONGO_URI || 'mongodb://187.127.173.42:27017/political_crm';
   console.log('========================================================================');
   console.log('🏛️ UPDATING BOOTH 1 TO 103+ VILLAGE NAMES (OFFICIAL 179 MASTER)');
   console.log('========================================================================\n');

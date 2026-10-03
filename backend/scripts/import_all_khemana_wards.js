@@ -3,17 +3,19 @@ const { execSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 const Member = require('../src/models/Member');
+const { decodeSecHindi } = require('../src/utils/secHindiDecoder');
 
 const MONGO_URI = process.env.MONGO_URI || 'mongodb://187.127.173.42:27017/political_crm';
 
 function cleanText(text) {
   if (!text) return '';
-  return text
+  const cleaned = text
     .replace(/Photo\s*is\s*Available/gi, '')
     .replace(/Available/gi, '')
     .replace(/Photo/gi, '')
     .replace(/is/gi, '')
     .trim();
+  return decodeSecHindi(cleaned);
 }
 
 function parseWardPdfFull(pdfPath) {
