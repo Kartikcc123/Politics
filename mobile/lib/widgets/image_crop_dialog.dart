@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:io' as io;
 import 'dart:math' as math;
-import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:file_picker/file_picker.dart';
@@ -56,8 +55,9 @@ Future<PlatformFile?> pickAndCropImage(
 
   if (croppedBytes == null) return null;
 
+  final cleanName = pickedFile.name.replaceAll(RegExp(r'\.[^.]+$'), '');
   return PlatformFile(
-    name: pickedFile.name.replaceAll(RegExp(r'\.[^.]+$'), '') + '_cropped.png',
+    name: '${cleanName}_cropped.png',
     size: croppedBytes.length,
     bytes: croppedBytes,
     path: pickedFile.path,
@@ -165,8 +165,6 @@ class _ImageCropDialogState extends State<ImageCropDialog> {
         viewportSize / effectiveW,
         viewportSize / effectiveH,
       );
-
-      final totalScale = baseScale * scale;
 
       // Render onto high-res canvas (e.g. 600x600 px)
       const outputSize = 600.0;
