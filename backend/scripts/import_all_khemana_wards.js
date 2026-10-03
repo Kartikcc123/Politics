@@ -3,19 +3,113 @@ const { execSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 const Member = require('../src/models/Member');
-const { decodeSecHindi } = require('../src/utils/secHindiDecoder');
 
 const MONGO_URI = process.env.MONGO_URI || 'mongodb://187.127.173.42:27017/political_crm';
 
+function decodeHindiText(text) {
+  if (!text) return '';
+  let str = text;
+
+  const directWordReplacements = [
+    { pattern: /\bभपररलरल\b/g, replacement: 'भंवरलाल' },
+    { pattern: /\bभररलरल\b/g, replacement: 'भंवरलाल' },
+    { pattern: /\bभरर\b/g, replacement: 'भंवर' },
+    { pattern: /\bसरहकबलरल\b/g, replacement: 'साहेबलाल' },
+    { pattern: /\bररधकशजरम\b/g, replacement: 'राधेश्याम' },
+    { pattern: /\bररजकचमरर\b/g, replacement: 'राजकुमार' },
+    { pattern: /\bअशयक\b/g, replacement: 'अशोक' },
+    { pattern: /\bकचमरर\b/g, replacement: 'कुमार' },
+    { pattern: /\bकचमररल\b/g, replacement: 'कुमारी' },
+    { pattern: /\bसचनमतर\b/g, replacement: 'सुमित्रा' },
+    { pattern: /\bनरनयद\b/g, replacement: 'विनोद' },
+    { pattern: /\bमनलष\b/g, replacement: 'मनीष' },
+    { pattern: /\bशलतल\b/g, replacement: 'शीतल' },
+    { pattern: /\bसरलर\b/g, replacement: 'सरला' },
+    { pattern: /\bदकरललरल\b/g, replacement: 'देवीलाल' },
+    { pattern: /\bदकरल\b/g, replacement: 'देवी' },
+    { pattern: /\bकपचनबरई\b/g, replacement: 'कंचनबाई' },
+    { pattern: /\bलरललबरई\b/g, replacement: 'लालीबाई' },
+    { pattern: /\bलरललदकरल\b/g, replacement: 'लालीदेवी' },
+    { pattern: /\bररजलदकरल\b/g, replacement: 'राजीदेवी' },
+    { pattern: /\bलकमल\b/g, replacement: 'लक्ष्मी' },
+    { pattern: /\bसपगलतर\b/g, replacement: 'संगीता' },
+    { pattern: /\bनकहल\b/g, replacement: 'स्नेहल' },
+    { pattern: /\bमलनरकल\b/g, replacement: 'मीनाक्षी' },
+    { pattern: /\bकरबरर\b/g, replacement: 'कंवर' },
+    { pattern: /\bनरसबलरल\b/g, replacement: 'नारूलाल' },
+    { pattern: /\bअजचरनलरल\b/g, replacement: 'अर्जुनलाल' },
+    { pattern: /\bभकरलरल\b/g, replacement: 'भैरुलाल' },
+    { pattern: /\bहपसदरस\b/g, replacement: 'हंसदास' },
+    { pattern: /\bजगदलशचनन\b/g, replacement: 'जगदीशचन्द्र' },
+    { pattern: /\bजरारनबरई\b/g, replacement: 'जवानबाई' },
+    { pattern: /\bरमकशचनन\b/g, replacement: 'रमेशचन्द्र' },
+    { pattern: /\bनगरलररज\b/g, replacement: 'गिरिराज' },
+    { pattern: /\bमरधर\b/g, replacement: 'माधव' },
+    { pattern: /\bलरल\b/g, replacement: 'लाल' }
+  ];
+
+  for (const { pattern, replacement } of directWordReplacements) {
+    str = str.replace(pattern, replacement);
+  }
+
+  // Generic font mapping
+  str = str
+    .replace(/रर/g, 'रा')
+    .replace(/बर/g, 'बा')
+    .replace(/पर/g, 'पा')
+    .replace(/मर/g, 'मा')
+    .replace(/नर/g, 'ना')
+    .replace(/कर/g, 'का')
+    .replace(/तर/g, 'ता')
+    .replace(/सर/g, 'सा')
+    .replace(/दर/g, 'दा')
+    .replace(/धर/g, 'धा')
+    .replace(/गर/g, 'गा')
+    .replace(/चर/g, 'चा')
+    .replace(/जर/g, 'जा')
+    .replace(/झर/g, 'झा')
+    .replace(/वर/g, 'वा')
+    .replace(/हर/g, 'हा')
+    .replace(/लल/g, 'ली')
+    .replace(/दल/g, 'दी')
+    .replace(/नल/g, 'नी')
+    .replace(/मल/g, 'मी')
+    .replace(/कल/g, 'की')
+    .replace(/गल/g, 'गी')
+    .replace(/तल/g, 'ती')
+    .replace(/सल/g, 'सी')
+    .replace(/रल/g, 'री')
+    .replace(/शल/g, 'शी')
+    .replace(/कश/g, 'शे')
+    .replace(/कच/g, 'कु')
+    .replace(/कम/g, 'मे')
+    .replace(/कल/g, 'के')
+    .replace(/कद/g, 'दे')
+    .replace(/कर/g, 'रे')
+    .replace(/कब/g, 'बे')
+    .replace(/कप/g, 'पं')
+    .replace(/सप/g, 'सं')
+    .replace(/मप/g, 'मं')
+    .replace(/नप/g, 'पि')
+    .replace(/नद/g, 'दि')
+    .replace(/शज/g, 'श्या')
+    .replace(/शज/g, 'श्या')
+    .replace(/चनन/g, 'चन्द्र')
+    .replace(/चन/g, 'चन्द्र')
+    .replace(/जच/g, 'जु')
+    .replace(/सक/g, 'से');
+
+  return str.trim();
+}
+
 function cleanText(text) {
   if (!text) return '';
-  const cleaned = text
+  return text
     .replace(/Photo\s*is\s*Available/gi, '')
     .replace(/Available/gi, '')
     .replace(/Photo/gi, '')
     .replace(/is/gi, '')
     .trim();
-  return decodeSecHindi(cleaned);
 }
 
 function parseWardPdfFull(pdfPath) {
@@ -169,7 +263,7 @@ function parseWardPdfFull(pdfPath) {
 
       let name = '';
       const nameM = cellText.match(/(?:नरम|नाम)\s*:\s*([^:]+?)(?=(?:नपतर|पिता|पनत|पति|मरतर|माता|मकरन|मकान|Photo|Available|$))/);
-      if (nameM) name = cleanText(nameM[1]);
+      if (nameM) name = decodeHindiText(cleanText(nameM[1]));
 
       let guardian = '';
       let relationType = 'father';
@@ -177,7 +271,7 @@ function parseWardPdfFull(pdfPath) {
       if (guardM) {
         if (/(?:पनत|पति)/.test(guardM[1])) relationType = 'husband';
         else if (/(?:मरतर|माता)/.test(guardM[1])) relationType = 'mother';
-        guardian = cleanText(guardM[2]);
+        guardian = decodeHindiText(cleanText(guardM[2]));
       }
 
       let house = '';
