@@ -13,6 +13,7 @@ import '../../core/picked_file_source.dart';
 import '../../core/print_helper.dart';
 import '../../core/theme.dart';
 import '../../layout/app_layout.dart';
+import '../../widgets/image_crop_dialog.dart';
 import '../../widgets/mobile_components.dart';
 import '../../widgets/voter_phonebook.dart'
     show voterPhotoHeaders, voterPhotoUrl;
@@ -7599,15 +7600,14 @@ class _VoterFormState extends State<VoterForm> {
   }
 
   Future<void> pickPhoto() async {
-    final result = await FilePicker.platform
-        .pickFiles(type: FileType.image, withData: true, withReadStream: false);
-    if (result == null || !mounted) return;
-    final file = result.files.single;
-    if (file.size > 10 * 1024 * 1024) {
-      showError('Photo 10 MB se chhoti honi chahiye.');
-      return;
-    }
-    setState(() => selectedPhoto = file);
+    final croppedFile = await pickAndCropImage(
+      context,
+      title: 'मतदाता फ़ोटो क्रॉप करें',
+      circular: true,
+      targetAspectRatio: 1.0,
+    );
+    if (croppedFile == null || !mounted) return;
+    setState(() => selectedPhoto = croppedFile);
   }
 
   void showError(String message) {

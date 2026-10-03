@@ -13,6 +13,7 @@ import '../../core/offline_voter_cache.dart';
 import '../../core/picked_file_source.dart';
 import '../../core/print_helper.dart';
 import '../../core/theme.dart';
+import '../../widgets/image_crop_dialog.dart';
 import '../../widgets/voter_phonebook.dart'
     show voterPhotoHeaders, voterPhotoUrl;
 
@@ -1036,12 +1037,14 @@ class _VoterEditPageState extends State<VoterEditPage> {
   }
 
   Future<void> _pickPhoto() async {
-    final result = await FilePicker.platform.pickFiles(
-      type: FileType.image,
-      withData: kIsWeb,
+    final croppedFile = await pickAndCropImage(
+      context,
+      title: 'मतदाता फ़ोटो क्रॉप करें',
+      circular: true,
+      targetAspectRatio: 1.0,
     );
-    if (result == null || !mounted) return;
-    setState(() => selectedPhoto = result.files.single);
+    if (croppedFile == null || !mounted) return;
+    setState(() => selectedPhoto = croppedFile);
   }
 
   Widget _section(String title, IconData icon, List<Widget> children) => Card(
