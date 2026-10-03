@@ -39,15 +39,15 @@ const GP_CONFIG = {
   'THALA': { hindi: 'थला', defaultVillage: 'थला' }
 };
 
-function cleanText(text) {
+function cleanField(text) {
   if (!text) return '';
-  const cleaned = text
+  return text
     .replace(/Photo\s*is\s*Available/gi, '')
     .replace(/Available/gi, '')
     .replace(/Photo/gi, '')
     .replace(/is/gi, '')
+    .replace(/[\r\n]+/g, ' ')
     .trim();
-  return decodeSecHindi(cleaned);
 }
 
 function parseWardPdfFull(pdfPath, gpHindi, defaultVillage) {
@@ -79,7 +79,7 @@ function parseWardPdfFull(pdfPath, gpHindi, defaultVillage) {
       const page1Text = pageXml.replace(/<[^>]+>/g, ' ');
       const villM = page1Text.match(/(?:गांव|गाँव|ग्राम|महरललर|मोहल्ला|वार्ड)\s*:\s*([^\n\r,]+)/);
       if (villM) {
-        const extractedVillage = cleanText(villM[1]);
+        const extractedVillage = cleanField(decodeSecHindi(villM[1]));
         if (extractedVillage && extractedVillage.length > 2 && !extractedVillage.includes('राजस्थान') && !extractedVillage.includes('पंचायत')) {
           villageName = extractedVillage;
         }
@@ -101,15 +101,16 @@ function parseWardPdfFull(pdfPath, gpHindi, defaultVillage) {
     }
 
     // Skip summary / signature last page
-    const pageText = words.map(w => w.text).join(' ');
-    if (pageText.includes('कुल पृष्ठ') || pageText.includes('हस्ताक्षर') || pageText.includes('कुल मतदाता') || words.length < 15) {
+    const rawPageText = words.map(w => w.text).join(' ');
+    const decodedPageText = decodeSecHindi(rawPageText);
+    if (decodedPageText.includes('हस्ताक्षर') || decodedPageText.includes('कुल पृष्ठ') || words.length < 30) {
       continue;
     }
 
     // Identify Card Boxes across 3 columns
     const serialCandidates = [];
     for (const w of words) {
-      if (w.yMin > 60 && w.yMin < 750) {
+      if (w.yMin >= 68 && w.yMin <= 740) {
         if (/^[OESR]?\d{1,4}$/.test(w.text)) {
           const num = parseInt(w.text.replace(/^[OESR]/, ''), 10);
           if (num >= 1 && num <= 2500) {
@@ -132,6 +133,9 @@ function parseWardPdfFull(pdfPath, gpHindi, defaultVillage) {
         }
       }
     }
+
+    // Skip pages with fewer than 3 serials (cover pages, section indices)
+    if (serialCandidates.length < 3) continue;
 
     // Cluster cards
     const cards = [];
@@ -163,7 +167,6 @@ function parseWardPdfFull(pdfPath, gpHindi, defaultVillage) {
         }
       }
 
-      // Check multi-word EPIC e.g. "RJ/20/152/ 109187"
       if (!epic) {
         const topWords = cardWords.filter(w => w.yMin <= sc.y + 14).map(w => w.text).join('');
         const epM = topWords.match(/([A-Z]{2,4}\/?\d{6,10}|RJ\/\d{2}\/\d{2,4}\/\d{5,8})/i);
@@ -180,31 +183,37 @@ function parseWardPdfFull(pdfPath, gpHindi, defaultVillage) {
 
     // Parse Fields for each card
     cards.forEach(card => {
-      const cellText = card.words.map(w => w.text).join(' ');
+      const rawCardText = card.words.map(w => w.text).join(' ');
+      const cleanCard = decodeSecHindi(rawCardText);
       let serial = card.serial;
 
       let name = '';
-      const nameM = cellText.match(/(?:नरम|नाम)\s*:\s*([^:]+?)(?=(?:नपतर|पिता|पनत|पति|मरतर|माता|मकरन|मकान|Photo|Available|$))/);
-      if (nameM) name = cleanText(nameM[1]);
+      const nameM = cleanCard.match(/(?:नाम|नरम|रिम)\s*:\s*([^:]+?)(?=(?:पिता|पति|माता|नपतर|पनत|मरतर|मकान|मकरन|Photo|Available|$))/);
+      if (nameM) name = cleanField(nameM[1]);
 
       let guardian = '';
       let relationType = 'father';
-      const guardM = cellText.match(/(?:(नपतर|पिता|पनत|पति|मरतर|माता)\s*कर?\s*नरम|पिता|पति|माता)\s*:\s*([^:]+?)(?=(?:मकरन|मकान|आजच|आयु|Photo|$))/);
+      const guardM = cleanCard.match(/(?:(पिता|पति|माता|नपतर|पनत|मरतर)\s*का?\s*नाम|पिता|पति|माता|नपतर|पनत|मरतर)\s*:\s*([^:]+?)(?=(?:मकान|मकरन|आयु|आजच|Photo|$))/);
       if (guardM) {
-        if (/(?:पनत|पति)/.test(guardM[1])) relationType = 'husband';
-        else if (/(?:मरतर|माता)/.test(guardM[1])) relationType = 'mother';
-        guardian = cleanText(guardM[2]);
+        if (/(?:पति|पनत)/.test(guardM[1])) relationType = 'husband';
+        else if (/(?:माता|मरतर)/.test(guardM[1])) relationType = 'mother';
+        guardian = cleanField(guardM[2]);
       }
 
       let house = '';
-      const houseM = cellText.match(/(?:मकरन|मकान)\s*(?:सपखजर|संख्या)?\s*:\s*([^:]+?)(?=(?:आजच|आयु|Photo|$))/);
-      if (houseM) house = cleanText(houseM[1]);
+      const houseM = cleanCard.match(/(?:मकान|मकरन)\s*(?:संख्या|सपखजर)?\s*:\s*([^:]+?)(?=(?:आयु|आजच|Photo|$))/);
+      if (houseM) house = cleanField(houseM[1]);
 
       let age = null;
       let gender = 'male';
-      const ageM = cellText.match(/(?:आजच|आयु)\s*:\s*(\d+)/);
+      const ageM = cleanCard.match(/(?:आयु|आजच)\s*:\s*(\d+)/);
       if (ageM) age = parseInt(ageM[1], 10);
-      if (/(?:सल|स्त्री|F|महिला)/i.test(cellText)) gender = 'female';
+      if (/(?:सल|स्त्री|F|महिला)/i.test(cleanCard)) gender = 'female';
+
+      // Ignore phantom cards that have neither name nor epic
+      if (!name && !card.epic && !guardian) {
+        return;
+      }
 
       allVoters.push({
         pageNumber: pageIndex,
@@ -225,19 +234,16 @@ function parseWardPdfFull(pdfPath, gpHindi, defaultVillage) {
   }
 
   // Deduplicate by serial, preserving non-deleted
-  const unique = [];
   const bySerial = new Map();
   for (const v of allVoters) {
     if (v.serial) {
       if (!bySerial.has(v.serial) || (!v.isDeleted && bySerial.get(v.serial).isDeleted)) {
         bySerial.set(v.serial, v);
       }
-    } else {
-      unique.push(v);
     }
   }
 
-  return Array.from(bySerial.values()).concat(unique).sort((a,b) => (a.serial||0) - (b.serial||0));
+  return Array.from(bySerial.values()).sort((a,b) => (a.serial||0) - (b.serial||0));
 }
 
 function discoverAll29Pdfs() {
@@ -274,8 +280,15 @@ async function runMasterSync() {
   await mongoose.connect(MONGO_URI);
   console.log('MongoDB Connected successfully!\n');
 
+  // Clean out any previously generated phantom placeholder voters
+  const deletedPhantoms = await Member.deleteMany({
+    name: /^मतदाता\s*#/i,
+    hasAssemblyMembership: false
+  });
+  console.log(`Cleaned up ${deletedPhantoms.deletedCount} phantom placeholder voter entries from database.`);
+
   console.log('======================================================');
-  console.log('STARTING COMPLETE MASTER SYNC & REPAIR OF ALL 29 PANCHAYATS');
+  console.log('STARTING COMPLETE MASTER SYNC (CLEAN NAMES & SERIALS) FOR ALL 29 PANCHAYATS');
   console.log('======================================================\n');
 
   const allPanchayats = discoverAll29Pdfs();
@@ -291,7 +304,6 @@ async function runMasterSync() {
     console.log(`Processing Gram Panchayat: ${gpHindi} (${gpKey}) [${wardNos.length} Wards]`);
     console.log(`------------------------------------------------------`);
 
-    let gpTotalCards = 0;
     let gpMatched = 0;
     let gpCreated = 0;
     const wardStats = [];
@@ -391,10 +403,41 @@ async function runMasterSync() {
           };
 
           if (v.epic) {
+            const setFields = {
+              wardVoterSerial: serialStr,
+              voterSerial: serialStr,
+              gramPanchayat: gpHindi,
+              village: v.villageName || defaultVillage,
+              wardNumber: wardStr,
+              hasMunicipalMembership: true
+            };
+            if (v.name) setFields.name = v.name;
+            if (v.guardianName) {
+              setFields.guardianName = v.guardianName;
+              setFields.relativeName = v.guardianName;
+            }
+            if (v.relationType) setFields.relationType = v.relationType;
+            if (v.houseNumber) setFields.houseNumber = v.houseNumber;
+            if (v.age) setFields.age = v.age;
+            if (v.gender) setFields.gender = v.gender;
+
             bulkOps.push({
               updateOne: {
                 filter: { voterId: v.epic },
-                update: { $setOnInsert: newDoc },
+                update: {
+                  $set: setFields,
+                  $setOnInsert: {
+                    contactType: 'voter',
+                    hasAssemblyMembership: false,
+                    wardSerialMap: { [wardStr]: serialStr },
+                    municipalWardNumbers: [wardStr],
+                    sourceDocument: {
+                      type: 'pdf',
+                      file: path.basename(item.pdfPath),
+                      rawText: `Ward ${wardStr} Serial ${serialStr}`
+                    }
+                  }
+                },
                 upsert: true
               }
             });
@@ -421,7 +464,6 @@ async function runMasterSync() {
       const totalWardLive = wardMatched + wardCreated;
       gpMatched += wardMatched;
       gpCreated += wardCreated;
-      gpTotalCards += voters.length;
 
       wardStats.push({
         ward: wardNo,
@@ -429,7 +471,7 @@ async function runMasterSync() {
         liveVoters: totalWardLive,
         matched: wardMatched,
         created: wardCreated,
-        serialRange: voters.length > 0 ? `#1..#${voters[voters.length-1].serial}` : '-'
+        serialRange: voters.length > 0 ? `#${voters[0].serial}..#${voters[voters.length-1].serial}` : '-'
       });
     }
 
@@ -447,40 +489,19 @@ async function runMasterSync() {
   }
 
   console.log(`\n======================================================`);
-  console.log(`ALL 29 PANCHAYATS IMPORT AND FIX COMPLETED SUCCESSFULLY!`);
+  console.log(`ALL 29 PANCHAYATS CLEAN RE-IMPORT COMPLETED!`);
   console.log(`======================================================\n`);
 
-  console.log(`FINAL REPORT SUMMARY TABLE:`);
-  console.log(`---------------------------------------------------------------------------------------`);
-  console.log(`GP NAME           | WARDS | TOTAL LIVE | MATCHED (ASSEMBLY) | NEW WARD ONLY | % MATCH`);
-  console.log(`---------------------------------------------------------------------------------------`);
-  let grandLive = 0;
-  let grandMatched = 0;
-  let grandCreated = 0;
-  for (const rep of summaryReport) {
-    grandLive += rep.totalLive;
-    grandMatched += rep.matched;
-    grandCreated += rep.created;
-    const matchPct = rep.totalLive > 0 ? ((rep.matched / rep.totalLive) * 100).toFixed(1) + '%' : '0%';
-    console.log(`${rep.gpHindi.padEnd(17)} | ${String(rep.wardsCount).padStart(5)} | ${String(rep.totalLive).padStart(10)} | ${String(rep.matched).padStart(18)} | ${String(rep.created).padStart(13)} | ${matchPct.padStart(7)}`);
-  }
-  console.log(`---------------------------------------------------------------------------------------`);
-  const grandPct = grandLive > 0 ? ((grandMatched / grandLive) * 100).toFixed(1) + '%' : '0%';
-  console.log(`GRAND TOTAL       |       | ${String(grandLive).padStart(10)} | ${String(grandMatched).padStart(18)} | ${String(grandCreated).padStart(13)} | ${grandPct.padStart(7)}`);
-  console.log(`---------------------------------------------------------------------------------------\n`);
-
-  // Write summary JSON artifact for frontend verification
   fs.writeFileSync(
     path.join(__dirname, 'master_29_panchayats_summary.json'),
     JSON.stringify(summaryReport, null, 2),
     'utf8'
   );
-  console.log('Saved summary report to backend/scripts/master_29_panchayats_summary.json');
 
   await mongoose.disconnect();
 }
 
 runMasterSync().catch(err => {
-  console.error('Fatal error during master sync:', err);
+  console.error('Fatal error during clean re-import:', err);
   process.exit(1);
 });

@@ -3,65 +3,65 @@
     "gpKey": "CHAROT",
     "gpHindi": "चारोट",
     "wardsCount": 7,
-    "totalLive": 2772,
-    "matched": 2421,
-    "created": 351,
+    "totalLive": 2765,
+    "matched": 2474,
+    "created": 291,
     "wardStats": [
       {
         "ward": "1",
         "village": "चारोट",
-        "liveVoters": 435,
-        "matched": 399,
-        "created": 36,
-        "serialRange": "#1..#2026"
+        "liveVoters": 434,
+        "matched": 406,
+        "created": 28,
+        "serialRange": "#1..#434"
       },
       {
         "ward": "2",
         "village": "चारोट",
-        "liveVoters": 446,
-        "matched": 399,
-        "created": 47,
-        "serialRange": "#1..#2026"
+        "liveVoters": 445,
+        "matched": 410,
+        "created": 35,
+        "serialRange": "#1..#798"
       },
       {
         "ward": "3",
         "village": "चारोट",
-        "liveVoters": 499,
-        "matched": 441,
-        "created": 58,
-        "serialRange": "#1..#2026"
+        "liveVoters": 498,
+        "matched": 454,
+        "created": 44,
+        "serialRange": "#1..#498"
       },
       {
         "ward": "4",
         "village": "चारोट",
-        "liveVoters": 385,
-        "matched": 325,
-        "created": 60,
-        "serialRange": "#1..#2026"
+        "liveVoters": 384,
+        "matched": 335,
+        "created": 49,
+        "serialRange": "#1..#384"
       },
       {
         "ward": "5",
         "village": "चारोट",
-        "liveVoters": 375,
-        "matched": 298,
-        "created": 77,
-        "serialRange": "#1..#2026"
+        "liveVoters": 374,
+        "matched": 305,
+        "created": 69,
+        "serialRange": "#1..#374"
       },
       {
         "ward": "6",
         "village": "चारोट",
-        "liveVoters": 335,
-        "matched": 305,
-        "created": 30,
-        "serialRange": "#1..#2026"
+        "liveVoters": 334,
+        "matched": 307,
+        "created": 27,
+        "serialRange": "#1..#334"
       },
       {
         "ward": "7",
         "village": "चारोट",
-        "liveVoters": 297,
-        "matched": 254,
-        "created": 43,
-        "serialRange": "#1..#2026"
+        "liveVoters": 296,
+        "matched": 257,
+        "created": 39,
+        "serialRange": "#1..#547"
       }
     ]
   },
@@ -69,65 +69,65 @@
     "gpKey": "GALWA",
     "gpHindi": "गलवा",
     "wardsCount": 7,
-    "totalLive": 2717,
-    "matched": 2360,
-    "created": 357,
+    "totalLive": 2710,
+    "matched": 2416,
+    "created": 294,
     "wardStats": [
       {
         "ward": "1",
         "village": "गलवा",
-        "liveVoters": 392,
-        "matched": 342,
-        "created": 50,
-        "serialRange": "#1..#2026"
+        "liveVoters": 391,
+        "matched": 350,
+        "created": 41,
+        "serialRange": "#1..#391"
       },
       {
         "ward": "2",
         "village": "गलवा",
-        "liveVoters": 428,
-        "matched": 382,
-        "created": 46,
-        "serialRange": "#1..#2026"
+        "liveVoters": 427,
+        "matched": 388,
+        "created": 39,
+        "serialRange": "#1..#427"
       },
       {
         "ward": "3",
         "village": "गलवा",
-        "liveVoters": 395,
-        "matched": 337,
-        "created": 58,
-        "serialRange": "#1..#2026"
+        "liveVoters": 394,
+        "matched": 340,
+        "created": 54,
+        "serialRange": "#1..#394"
       },
       {
         "ward": "4",
         "village": "गलवा",
-        "liveVoters": 385,
-        "matched": 321,
-        "created": 64,
-        "serialRange": "#1..#2026"
+        "liveVoters": 384,
+        "matched": 334,
+        "created": 50,
+        "serialRange": "#1..#719"
       },
       {
         "ward": "5",
         "village": "गलवा",
-        "liveVoters": 349,
-        "matched": 299,
-        "created": 50,
-        "serialRange": "#1..#2026"
+        "liveVoters": 348,
+        "matched": 306,
+        "created": 42,
+        "serialRange": "#1..#348"
       },
       {
         "ward": "6",
         "village": "गलवा",
-        "liveVoters": 406,
-        "matched": 359,
-        "created": 47,
-        "serialRange": "#1..#2026"
+        "liveVoters": 405,
+        "matched": 372,
+        "created": 33,
+        "serialRange": "#1..#405"
       },
       {
         "ward": "7",
         "village": "गलवा",
-        "liveVoters": 362,
-        "matched": 320,
-        "created": 42,
-        "serialRange": "#1..#2026"
+        "liveVoters": 361,
+        "matched": 326,
+        "created": 35,
+        "serialRange": "#1..#361"
       }
     ]
   },
@@ -135,65 +135,65 @@
     "gpKey": "GALYAWADI",
     "gpHindi": "गल्यावड़ी",
     "wardsCount": 7,
-    "totalLive": 2244,
-    "matched": 1939,
-    "created": 305,
+    "totalLive": 2237,
+    "matched": 1983,
+    "created": 254,
     "wardStats": [
       {
         "ward": "1",
         "village": "गल्यावड़ी",
-        "liveVoters": 263,
-        "matched": 227,
-        "created": 36,
-        "serialRange": "#1..#2026"
+        "liveVoters": 262,
+        "matched": 234,
+        "created": 28,
+        "serialRange": "#1..#262"
       },
       {
         "ward": "2",
         "village": "गल्यावड़ी",
-        "liveVoters": 303,
-        "matched": 266,
-        "created": 37,
-        "serialRange": "#1..#2026"
+        "liveVoters": 302,
+        "matched": 274,
+        "created": 28,
+        "serialRange": "#1..#302"
       },
       {
         "ward": "3",
         "village": "गल्यावड़ी",
-        "liveVoters": 204,
-        "matched": 161,
-        "created": 43,
-        "serialRange": "#1..#2026"
+        "liveVoters": 203,
+        "matched": 172,
+        "created": 31,
+        "serialRange": "#1..#203"
       },
       {
         "ward": "4",
         "village": "गल्यावड़ी",
-        "liveVoters": 180,
-        "matched": 146,
-        "created": 34,
-        "serialRange": "#1..#2026"
+        "liveVoters": 179,
+        "matched": 150,
+        "created": 29,
+        "serialRange": "#1..#179"
       },
       {
         "ward": "5",
         "village": "गल्यावड़ी",
-        "liveVoters": 468,
-        "matched": 418,
-        "created": 50,
-        "serialRange": "#1..#2026"
+        "liveVoters": 467,
+        "matched": 425,
+        "created": 42,
+        "serialRange": "#1..#467"
       },
       {
         "ward": "6",
         "village": "गल्यावड़ी",
-        "liveVoters": 347,
-        "matched": 298,
-        "created": 49,
-        "serialRange": "#1..#2026"
+        "liveVoters": 346,
+        "matched": 300,
+        "created": 46,
+        "serialRange": "#1..#346"
       },
       {
         "ward": "7",
         "village": "गल्यावड़ी",
-        "liveVoters": 479,
-        "matched": 423,
-        "created": 56,
-        "serialRange": "#1..#2026"
+        "liveVoters": 478,
+        "matched": 428,
+        "created": 50,
+        "serialRange": "#1..#478"
       }
     ]
   },
@@ -201,65 +201,65 @@
     "gpKey": "KALALKHEDI",
     "gpHindi": "कलालखेड़ी",
     "wardsCount": 7,
-    "totalLive": 2753,
-    "matched": 2359,
-    "created": 394,
+    "totalLive": 2746,
+    "matched": 2407,
+    "created": 339,
     "wardStats": [
       {
         "ward": "1",
         "village": "कलालखेड़ी",
-        "liveVoters": 545,
-        "matched": 512,
-        "created": 33,
-        "serialRange": "#1..#2026"
+        "liveVoters": 544,
+        "matched": 514,
+        "created": 30,
+        "serialRange": "#1..#544"
       },
       {
         "ward": "2",
         "village": "कलालखेड़ी",
-        "liveVoters": 367,
-        "matched": 315,
-        "created": 52,
-        "serialRange": "#1..#2026"
+        "liveVoters": 366,
+        "matched": 326,
+        "created": 40,
+        "serialRange": "#1..#366"
       },
       {
         "ward": "3",
         "village": "कलालखेड़ी",
-        "liveVoters": 382,
-        "matched": 281,
-        "created": 101,
-        "serialRange": "#1..#2026"
+        "liveVoters": 381,
+        "matched": 284,
+        "created": 97,
+        "serialRange": "#1..#381"
       },
       {
         "ward": "4",
         "village": "कलालखेड़ी",
-        "liveVoters": 384,
-        "matched": 314,
-        "created": 70,
-        "serialRange": "#1..#2026"
+        "liveVoters": 383,
+        "matched": 321,
+        "created": 62,
+        "serialRange": "#1..#383"
       },
       {
         "ward": "5",
         "village": "कलालखेड़ी",
-        "liveVoters": 368,
-        "matched": 329,
-        "created": 39,
-        "serialRange": "#1..#2026"
+        "liveVoters": 367,
+        "matched": 336,
+        "created": 31,
+        "serialRange": "#1..#367"
       },
       {
         "ward": "6",
         "village": "कलालखेड़ी",
-        "liveVoters": 410,
-        "matched": 375,
-        "created": 35,
-        "serialRange": "#1..#2026"
+        "liveVoters": 409,
+        "matched": 383,
+        "created": 26,
+        "serialRange": "#1..#409"
       },
       {
         "ward": "7",
         "village": "कलालखेड़ी",
-        "liveVoters": 297,
-        "matched": 233,
-        "created": 64,
-        "serialRange": "#1..#2026"
+        "liveVoters": 296,
+        "matched": 243,
+        "created": 53,
+        "serialRange": "#1..#296"
       }
     ]
   },
@@ -267,65 +267,65 @@
     "gpKey": "KHAKHAR MALA",
     "gpHindi": "खाखरमाला",
     "wardsCount": 7,
-    "totalLive": 2686,
-    "matched": 2344,
-    "created": 342,
+    "totalLive": 2679,
+    "matched": 2384,
+    "created": 295,
     "wardStats": [
       {
         "ward": "1",
         "village": "खाखरमाला",
-        "liveVoters": 297,
-        "matched": 262,
-        "created": 35,
-        "serialRange": "#1..#2026"
+        "liveVoters": 296,
+        "matched": 265,
+        "created": 31,
+        "serialRange": "#1..#296"
       },
       {
         "ward": "2",
         "village": "खाखरमाला",
-        "liveVoters": 609,
-        "matched": 539,
-        "created": 70,
-        "serialRange": "#1..#2026"
+        "liveVoters": 608,
+        "matched": 543,
+        "created": 65,
+        "serialRange": "#1..#608"
       },
       {
         "ward": "3",
         "village": "खाखरमाला",
-        "liveVoters": 330,
-        "matched": 290,
-        "created": 40,
-        "serialRange": "#1..#2026"
+        "liveVoters": 329,
+        "matched": 293,
+        "created": 36,
+        "serialRange": "#1..#329"
       },
       {
         "ward": "4",
         "village": "खाखरमाला",
-        "liveVoters": 313,
-        "matched": 262,
-        "created": 51,
-        "serialRange": "#1..#2026"
+        "liveVoters": 312,
+        "matched": 267,
+        "created": 45,
+        "serialRange": "#1..#312"
       },
       {
         "ward": "5",
         "village": "खाखरमाला",
-        "liveVoters": 380,
-        "matched": 332,
-        "created": 48,
-        "serialRange": "#1..#2026"
+        "liveVoters": 379,
+        "matched": 340,
+        "created": 39,
+        "serialRange": "#1..#379"
       },
       {
         "ward": "6",
         "village": "खाखरमाला",
-        "liveVoters": 325,
-        "matched": 282,
-        "created": 43,
-        "serialRange": "#1..#2026"
+        "liveVoters": 324,
+        "matched": 293,
+        "created": 31,
+        "serialRange": "#1..#324"
       },
       {
         "ward": "7",
         "village": "खाखरमाला",
-        "liveVoters": 432,
-        "matched": 377,
-        "created": 55,
-        "serialRange": "#1..#2026"
+        "liveVoters": 431,
+        "matched": 383,
+        "created": 48,
+        "serialRange": "#1..#431"
       }
     ]
   },
@@ -333,97 +333,97 @@
     "gpKey": "BHEETA",
     "gpHindi": "भींटा",
     "wardsCount": 11,
-    "totalLive": 4295,
-    "matched": 3728,
-    "created": 567,
+    "totalLive": 4284,
+    "matched": 3844,
+    "created": 440,
     "wardStats": [
       {
         "ward": "1",
         "village": "भींटा",
-        "liveVoters": 470,
-        "matched": 420,
-        "created": 50,
-        "serialRange": "#1..#2026"
+        "liveVoters": 469,
+        "matched": 431,
+        "created": 38,
+        "serialRange": "#1..#469"
       },
       {
         "ward": "2",
         "village": "भींटा",
-        "liveVoters": 465,
-        "matched": 415,
-        "created": 50,
-        "serialRange": "#1..#2026"
+        "liveVoters": 464,
+        "matched": 424,
+        "created": 40,
+        "serialRange": "#1..#464"
       },
       {
         "ward": "3",
         "village": "भींटा",
-        "liveVoters": 452,
-        "matched": 413,
-        "created": 39,
-        "serialRange": "#1..#2026"
+        "liveVoters": 451,
+        "matched": 420,
+        "created": 31,
+        "serialRange": "#1..#451"
       },
       {
         "ward": "4",
         "village": "भींटा",
-        "liveVoters": 371,
-        "matched": 323,
-        "created": 48,
-        "serialRange": "#1..#2026"
+        "liveVoters": 370,
+        "matched": 326,
+        "created": 44,
+        "serialRange": "#1..#370"
       },
       {
         "ward": "5",
         "village": "भींटा",
-        "liveVoters": 367,
-        "matched": 327,
-        "created": 40,
-        "serialRange": "#1..#2026"
+        "liveVoters": 366,
+        "matched": 330,
+        "created": 36,
+        "serialRange": "#1..#366"
       },
       {
         "ward": "6",
         "village": "भींटा",
-        "liveVoters": 264,
-        "matched": 196,
-        "created": 68,
-        "serialRange": "#1..#2026"
+        "liveVoters": 263,
+        "matched": 202,
+        "created": 61,
+        "serialRange": "#1..#263"
       },
       {
         "ward": "7",
         "village": "भींटा",
-        "liveVoters": 238,
-        "matched": 204,
-        "created": 34,
-        "serialRange": "#1..#2026"
+        "liveVoters": 237,
+        "matched": 207,
+        "created": 30,
+        "serialRange": "#1..#237"
       },
       {
         "ward": "8",
         "village": "भींटा",
-        "liveVoters": 406,
-        "matched": 367,
-        "created": 39,
-        "serialRange": "#1..#2026"
+        "liveVoters": 405,
+        "matched": 379,
+        "created": 26,
+        "serialRange": "#1..#405"
       },
       {
         "ward": "9",
         "village": "भींटा",
-        "liveVoters": 383,
-        "matched": 332,
-        "created": 51,
-        "serialRange": "#1..#2026"
+        "liveVoters": 382,
+        "matched": 348,
+        "created": 34,
+        "serialRange": "#1..#382"
       },
       {
         "ward": "10",
         "village": "भींटा",
-        "liveVoters": 386,
-        "matched": 313,
-        "created": 73,
-        "serialRange": "#1..#2026"
+        "liveVoters": 385,
+        "matched": 325,
+        "created": 60,
+        "serialRange": "#1..#385"
       },
       {
         "ward": "11",
         "village": "भींटा",
-        "liveVoters": 493,
-        "matched": 418,
-        "created": 75,
-        "serialRange": "#1..#2026"
+        "liveVoters": 492,
+        "matched": 452,
+        "created": 40,
+        "serialRange": "#1..#684"
       }
     ]
   },
@@ -431,97 +431,97 @@
     "gpKey": "BORANA",
     "gpHindi": "बोराणा",
     "wardsCount": 11,
-    "totalLive": 4290,
-    "matched": 3523,
-    "created": 767,
+    "totalLive": 4275,
+    "matched": 3582,
+    "created": 693,
     "wardStats": [
       {
         "ward": "1",
         "village": "बोराणा",
-        "liveVoters": 427,
-        "matched": 370,
-        "created": 57,
-        "serialRange": "#1..#2026"
+        "liveVoters": 426,
+        "matched": 374,
+        "created": 52,
+        "serialRange": "#1..#739"
       },
       {
         "ward": "2",
         "village": "बोराणा",
-        "liveVoters": 397,
-        "matched": 351,
-        "created": 46,
-        "serialRange": "#1..#2026"
+        "liveVoters": 396,
+        "matched": 354,
+        "created": 42,
+        "serialRange": "#1..#443"
       },
       {
         "ward": "3",
         "village": "बोराणा",
-        "liveVoters": 314,
-        "matched": 246,
-        "created": 68,
-        "serialRange": "#1..#2026"
+        "liveVoters": 313,
+        "matched": 252,
+        "created": 61,
+        "serialRange": "#1..#958"
       },
       {
         "ward": "4",
         "village": "बोराणा",
-        "liveVoters": 362,
-        "matched": 311,
-        "created": 51,
-        "serialRange": "#1..#2026"
+        "liveVoters": 361,
+        "matched": 315,
+        "created": 46,
+        "serialRange": "#1..#520"
       },
       {
         "ward": "5",
         "village": "बोराणा",
-        "liveVoters": 306,
-        "matched": 238,
-        "created": 68,
-        "serialRange": "#1..#2026"
+        "liveVoters": 304,
+        "matched": 243,
+        "created": 61,
+        "serialRange": "#1..#516"
       },
       {
         "ward": "6",
         "village": "बोराणा",
-        "liveVoters": 365,
-        "matched": 293,
-        "created": 72,
-        "serialRange": "#1..#2026"
+        "liveVoters": 364,
+        "matched": 297,
+        "created": 67,
+        "serialRange": "#1..#540"
       },
       {
         "ward": "7",
         "village": "बोराणा",
-        "liveVoters": 538,
-        "matched": 447,
-        "created": 91,
-        "serialRange": "#1..#2026"
+        "liveVoters": 537,
+        "matched": 450,
+        "created": 87,
+        "serialRange": "#1..#537"
       },
       {
         "ward": "8",
         "village": "बोराणा",
-        "liveVoters": 464,
-        "matched": 380,
-        "created": 84,
-        "serialRange": "#1..#2026"
+        "liveVoters": 463,
+        "matched": 386,
+        "created": 77,
+        "serialRange": "#1..#785"
       },
       {
         "ward": "9",
         "village": "बोराणा",
-        "liveVoters": 500,
-        "matched": 404,
-        "created": 96,
-        "serialRange": "#1..#2026"
+        "liveVoters": 498,
+        "matched": 415,
+        "created": 83,
+        "serialRange": "#1..#845"
       },
       {
         "ward": "10",
         "village": "बोराणा",
-        "liveVoters": 357,
-        "matched": 287,
-        "created": 70,
-        "serialRange": "#1..#2026"
+        "liveVoters": 356,
+        "matched": 296,
+        "created": 60,
+        "serialRange": "#1..#823"
       },
       {
         "ward": "11",
         "village": "बोराणा",
-        "liveVoters": 260,
-        "matched": 196,
-        "created": 64,
-        "serialRange": "#1..#2026"
+        "liveVoters": 257,
+        "matched": 200,
+        "created": 57,
+        "serialRange": "#1..#800"
       }
     ]
   },
@@ -529,65 +529,65 @@
     "gpKey": "BORIYAPURA",
     "gpHindi": "बोरियापुरा",
     "wardsCount": 7,
-    "totalLive": 2083,
-    "matched": 1649,
-    "created": 434,
+    "totalLive": 2076,
+    "matched": 1741,
+    "created": 335,
     "wardStats": [
       {
         "ward": "1",
         "village": "बोरियापुरा",
-        "liveVoters": 222,
-        "matched": 186,
-        "created": 36,
-        "serialRange": "#1..#2026"
+        "liveVoters": 221,
+        "matched": 188,
+        "created": 33,
+        "serialRange": "#1..#221"
       },
       {
         "ward": "2",
         "village": "बोरियापुरा",
-        "liveVoters": 280,
-        "matched": 239,
-        "created": 41,
-        "serialRange": "#1..#2026"
+        "liveVoters": 279,
+        "matched": 242,
+        "created": 37,
+        "serialRange": "#1..#279"
       },
       {
         "ward": "3",
         "village": "बोरियापुरा",
-        "liveVoters": 306,
-        "matched": 268,
-        "created": 38,
-        "serialRange": "#1..#2026"
+        "liveVoters": 305,
+        "matched": 272,
+        "created": 33,
+        "serialRange": "#1..#305"
       },
       {
         "ward": "4",
         "village": "बोरियापुरा",
-        "liveVoters": 319,
-        "matched": 260,
-        "created": 59,
-        "serialRange": "#1..#2026"
+        "liveVoters": 318,
+        "matched": 279,
+        "created": 39,
+        "serialRange": "#1..#318"
       },
       {
         "ward": "5",
         "village": "बोरियापुरा",
-        "liveVoters": 298,
-        "matched": 225,
-        "created": 73,
-        "serialRange": "#1..#2026"
+        "liveVoters": 297,
+        "matched": 243,
+        "created": 54,
+        "serialRange": "#1..#297"
       },
       {
         "ward": "6",
         "village": "बोरियापुरा",
-        "liveVoters": 260,
-        "matched": 171,
-        "created": 89,
-        "serialRange": "#1..#2026"
+        "liveVoters": 259,
+        "matched": 189,
+        "created": 70,
+        "serialRange": "#1..#259"
       },
       {
         "ward": "7",
         "village": "बोरियापुरा",
-        "liveVoters": 398,
-        "matched": 300,
-        "created": 98,
-        "serialRange": "#1..#2026"
+        "liveVoters": 397,
+        "matched": 328,
+        "created": 69,
+        "serialRange": "#1..#397"
       }
     ]
   },
@@ -595,81 +595,81 @@
     "gpKey": "AASHAHOLI",
     "gpHindi": "आशाहोली",
     "wardsCount": 9,
-    "totalLive": 2988,
-    "matched": 2346,
-    "created": 642,
+    "totalLive": 2971,
+    "matched": 2396,
+    "created": 575,
     "wardStats": [
       {
         "ward": "1",
         "village": "आशाहोली",
-        "liveVoters": 321,
-        "matched": 282,
-        "created": 39,
-        "serialRange": "#1..#2026"
+        "liveVoters": 320,
+        "matched": 286,
+        "created": 34,
+        "serialRange": "#1..#320"
       },
       {
         "ward": "2",
         "village": "आशाहोली",
-        "liveVoters": 301,
-        "matched": 225,
-        "created": 76,
-        "serialRange": "#1..#2026"
+        "liveVoters": 298,
+        "matched": 230,
+        "created": 68,
+        "serialRange": "#1..#530"
       },
       {
         "ward": "3",
         "village": "आशाहोली",
-        "liveVoters": 324,
-        "matched": 242,
-        "created": 82,
-        "serialRange": "#1..#2026"
+        "liveVoters": 322,
+        "matched": 246,
+        "created": 76,
+        "serialRange": "#1..#393"
       },
       {
         "ward": "4",
         "village": "आशाहोली",
-        "liveVoters": 349,
-        "matched": 288,
-        "created": 61,
-        "serialRange": "#1..#2026"
+        "liveVoters": 347,
+        "matched": 297,
+        "created": 50,
+        "serialRange": "#1..#482"
       },
       {
         "ward": "5",
         "village": "आशाहोली",
-        "liveVoters": 355,
-        "matched": 267,
-        "created": 88,
-        "serialRange": "#1..#2026"
+        "liveVoters": 354,
+        "matched": 273,
+        "created": 81,
+        "serialRange": "#1..#543"
       },
       {
         "ward": "6",
         "village": "आशाहोली",
-        "liveVoters": 305,
-        "matched": 248,
-        "created": 57,
-        "serialRange": "#1..#2026"
+        "liveVoters": 302,
+        "matched": 252,
+        "created": 50,
+        "serialRange": "#1..#522"
       },
       {
         "ward": "7",
         "village": "आशाहोली",
-        "liveVoters": 345,
-        "matched": 247,
-        "created": 98,
-        "serialRange": "#1..#2026"
+        "liveVoters": 343,
+        "matched": 255,
+        "created": 88,
+        "serialRange": "#1..#506"
       },
       {
         "ward": "8",
         "village": "आशाहोली",
-        "liveVoters": 337,
-        "matched": 262,
-        "created": 75,
-        "serialRange": "#1..#2026"
+        "liveVoters": 335,
+        "matched": 269,
+        "created": 66,
+        "serialRange": "#1..#593"
       },
       {
         "ward": "9",
         "village": "आशाहोली",
-        "liveVoters": 351,
-        "matched": 285,
-        "created": 66,
-        "serialRange": "#1..#2026"
+        "liveVoters": 350,
+        "matched": 288,
+        "created": 62,
+        "serialRange": "#1..#635"
       }
     ]
   },
@@ -677,81 +677,81 @@
     "gpKey": "JHADOL",
     "gpHindi": "झाड़ोल",
     "wardsCount": 9,
-    "totalLive": 3195,
-    "matched": 2610,
-    "created": 585,
+    "totalLive": 3163,
+    "matched": 2665,
+    "created": 498,
     "wardStats": [
       {
         "ward": "1",
         "village": "झाड़ोल",
-        "liveVoters": 374,
-        "matched": 346,
-        "created": 28,
-        "serialRange": "#1..#2026"
+        "liveVoters": 373,
+        "matched": 348,
+        "created": 25,
+        "serialRange": "#1..#373"
       },
       {
         "ward": "2",
         "village": "झाड़ोल",
-        "liveVoters": 615,
-        "matched": 565,
-        "created": 50,
-        "serialRange": "#1..#2026"
+        "liveVoters": 614,
+        "matched": 567,
+        "created": 47,
+        "serialRange": "#1..#614"
       },
       {
         "ward": "3",
         "village": "झाड़ोल",
-        "liveVoters": 325,
-        "matched": 255,
-        "created": 70,
-        "serialRange": "#1..#2026"
+        "liveVoters": 324,
+        "matched": 258,
+        "created": 66,
+        "serialRange": "#1..#881"
       },
       {
         "ward": "4",
         "village": "झाड़ोल",
-        "liveVoters": 284,
-        "matched": 200,
-        "created": 84,
-        "serialRange": "#1..#2026"
+        "liveVoters": 277,
+        "matched": 214,
+        "created": 63,
+        "serialRange": "#1..#471"
       },
       {
         "ward": "5",
         "village": "झाड़ोल",
-        "liveVoters": 390,
-        "matched": 306,
-        "created": 84,
-        "serialRange": "#1..#2026"
+        "liveVoters": 385,
+        "matched": 314,
+        "created": 71,
+        "serialRange": "#1..#478"
       },
       {
         "ward": "6",
         "village": "झाड़ोल",
-        "liveVoters": 316,
-        "matched": 229,
-        "created": 87,
-        "serialRange": "#1..#2026"
+        "liveVoters": 310,
+        "matched": 247,
+        "created": 63,
+        "serialRange": "#1..#539"
       },
       {
         "ward": "7",
         "village": "झाड़ोल",
-        "liveVoters": 352,
-        "matched": 274,
-        "created": 78,
-        "serialRange": "#1..#2026"
+        "liveVoters": 350,
+        "matched": 280,
+        "created": 70,
+        "serialRange": "#1..#641"
       },
       {
         "ward": "8",
         "village": "झाड़ोल",
-        "liveVoters": 340,
-        "matched": 268,
-        "created": 72,
-        "serialRange": "#1..#2026"
+        "liveVoters": 332,
+        "matched": 269,
+        "created": 63,
+        "serialRange": "#1..#643"
       },
       {
         "ward": "9",
         "village": "झाड़ोल",
-        "liveVoters": 199,
-        "matched": 167,
-        "created": 32,
-        "serialRange": "#1..#2026"
+        "liveVoters": 198,
+        "matched": 168,
+        "created": 30,
+        "serialRange": "#1..#198"
       }
     ]
   },
@@ -759,65 +759,65 @@
     "gpKey": "KHEMANA",
     "gpHindi": "खेमाणा",
     "wardsCount": 7,
-    "totalLive": 2485,
-    "matched": 2035,
-    "created": 450,
+    "totalLive": 2478,
+    "matched": 2114,
+    "created": 364,
     "wardStats": [
       {
         "ward": "1",
         "village": "खेमाणा",
-        "liveVoters": 301,
-        "matched": 263,
-        "created": 38,
-        "serialRange": "#1..#2026"
+        "liveVoters": 300,
+        "matched": 271,
+        "created": 29,
+        "serialRange": "#1..#300"
       },
       {
         "ward": "2",
         "village": "खेमाणा",
-        "liveVoters": 394,
-        "matched": 343,
-        "created": 51,
-        "serialRange": "#1..#2026"
+        "liveVoters": 393,
+        "matched": 355,
+        "created": 38,
+        "serialRange": "#1..#393"
       },
       {
         "ward": "3",
         "village": "खेमाणा",
-        "liveVoters": 373,
-        "matched": 324,
-        "created": 49,
-        "serialRange": "#1..#2026"
+        "liveVoters": 372,
+        "matched": 339,
+        "created": 33,
+        "serialRange": "#1..#372"
       },
       {
         "ward": "4",
         "village": "खेमाणा",
-        "liveVoters": 339,
-        "matched": 264,
-        "created": 75,
-        "serialRange": "#1..#2026"
+        "liveVoters": 338,
+        "matched": 276,
+        "created": 62,
+        "serialRange": "#1..#338"
       },
       {
         "ward": "5",
         "village": "खेमाणा",
-        "liveVoters": 362,
-        "matched": 279,
-        "created": 83,
-        "serialRange": "#1..#2026"
+        "liveVoters": 361,
+        "matched": 292,
+        "created": 69,
+        "serialRange": "#1..#384"
       },
       {
         "ward": "6",
         "village": "खेमाणा",
-        "liveVoters": 346,
-        "matched": 272,
-        "created": 74,
-        "serialRange": "#1..#2026"
+        "liveVoters": 345,
+        "matched": 278,
+        "created": 67,
+        "serialRange": "#1..#596"
       },
       {
         "ward": "7",
         "village": "खेमाणा",
-        "liveVoters": 370,
-        "matched": 290,
-        "created": 80,
-        "serialRange": "#1..#2026"
+        "liveVoters": 369,
+        "matched": 303,
+        "created": 66,
+        "serialRange": "#1..#654"
       }
     ]
   },
@@ -825,65 +825,65 @@
     "gpKey": "MASINGHPURA",
     "gpHindi": "मासिंगपुरा",
     "wardsCount": 7,
-    "totalLive": 2506,
-    "matched": 2111,
-    "created": 395,
+    "totalLive": 2499,
+    "matched": 2189,
+    "created": 310,
     "wardStats": [
       {
         "ward": "1",
         "village": "मासिंगपुरा",
-        "liveVoters": 391,
-        "matched": 321,
-        "created": 70,
-        "serialRange": "#1..#2026"
+        "liveVoters": 390,
+        "matched": 329,
+        "created": 61,
+        "serialRange": "#1..#390"
       },
       {
         "ward": "2",
         "village": "मासिंगपुरा",
-        "liveVoters": 337,
-        "matched": 274,
-        "created": 63,
-        "serialRange": "#1..#2026"
+        "liveVoters": 336,
+        "matched": 293,
+        "created": 43,
+        "serialRange": "#1..#768"
       },
       {
         "ward": "3",
         "village": "मासिंगपुरा",
-        "liveVoters": 312,
-        "matched": 244,
-        "created": 68,
-        "serialRange": "#1..#2026"
+        "liveVoters": 311,
+        "matched": 264,
+        "created": 47,
+        "serialRange": "#1..#311"
       },
       {
         "ward": "4",
         "village": "मासिंगपुरा",
-        "liveVoters": 526,
-        "matched": 457,
-        "created": 69,
-        "serialRange": "#1..#2026"
+        "liveVoters": 525,
+        "matched": 471,
+        "created": 54,
+        "serialRange": "#1..#525"
       },
       {
         "ward": "5",
         "village": "मासिंगपुरा",
-        "liveVoters": 354,
-        "matched": 311,
-        "created": 43,
-        "serialRange": "#1..#2026"
+        "liveVoters": 353,
+        "matched": 319,
+        "created": 34,
+        "serialRange": "#1..#353"
       },
       {
         "ward": "6",
         "village": "मासिंगपुरा",
-        "liveVoters": 283,
-        "matched": 241,
-        "created": 42,
-        "serialRange": "#1..#2026"
+        "liveVoters": 282,
+        "matched": 248,
+        "created": 34,
+        "serialRange": "#1..#282"
       },
       {
         "ward": "7",
         "village": "मासिंगपुरा",
-        "liveVoters": 303,
-        "matched": 263,
-        "created": 40,
-        "serialRange": "#1..#2026"
+        "liveVoters": 302,
+        "matched": 265,
+        "created": 37,
+        "serialRange": "#1..#302"
       }
     ]
   },
@@ -891,81 +891,81 @@
     "gpKey": "NAHRI",
     "gpHindi": "नाहरी",
     "wardsCount": 9,
-    "totalLive": 2678,
-    "matched": 2098,
-    "created": 580,
+    "totalLive": 2667,
+    "matched": 2171,
+    "created": 496,
     "wardStats": [
       {
         "ward": "1",
         "village": "नाहरी",
-        "liveVoters": 338,
-        "matched": 259,
-        "created": 79,
-        "serialRange": "#1..#2026"
+        "liveVoters": 337,
+        "matched": 264,
+        "created": 73,
+        "serialRange": "#1..#467"
       },
       {
         "ward": "2",
         "village": "नाहरी",
-        "liveVoters": 332,
-        "matched": 260,
-        "created": 72,
-        "serialRange": "#1..#2026"
+        "liveVoters": 331,
+        "matched": 266,
+        "created": 65,
+        "serialRange": "#1..#467"
       },
       {
         "ward": "3",
         "village": "नाहरी",
-        "liveVoters": 369,
-        "matched": 293,
-        "created": 76,
-        "serialRange": "#1..#2026"
+        "liveVoters": 368,
+        "matched": 301,
+        "created": 67,
+        "serialRange": "#1..#375"
       },
       {
         "ward": "4",
         "village": "नाहरी",
-        "liveVoters": 300,
-        "matched": 234,
-        "created": 66,
-        "serialRange": "#1..#2026"
+        "liveVoters": 297,
+        "matched": 243,
+        "created": 54,
+        "serialRange": "#1..#332"
       },
       {
         "ward": "5",
         "village": "नाहरी",
-        "liveVoters": 271,
-        "matched": 206,
-        "created": 65,
-        "serialRange": "#1..#2026"
+        "liveVoters": 270,
+        "matched": 211,
+        "created": 59,
+        "serialRange": "#1..#320"
       },
       {
         "ward": "6",
         "village": "नाहरी",
-        "liveVoters": 251,
-        "matched": 185,
-        "created": 66,
-        "serialRange": "#1..#2026"
+        "liveVoters": 250,
+        "matched": 195,
+        "created": 55,
+        "serialRange": "#1..#250"
       },
       {
         "ward": "7",
         "village": "नाहरी",
-        "liveVoters": 227,
-        "matched": 177,
-        "created": 50,
-        "serialRange": "#1..#2026"
+        "liveVoters": 226,
+        "matched": 185,
+        "created": 41,
+        "serialRange": "#1..#320"
       },
       {
         "ward": "8",
         "village": "नाहरी",
-        "liveVoters": 319,
-        "matched": 259,
-        "created": 60,
-        "serialRange": "#1..#2026"
+        "liveVoters": 318,
+        "matched": 272,
+        "created": 46,
+        "serialRange": "#1..#318"
       },
       {
         "ward": "9",
         "village": "नाहरी",
-        "liveVoters": 271,
-        "matched": 225,
-        "created": 46,
-        "serialRange": "#1..#2026"
+        "liveVoters": 270,
+        "matched": 234,
+        "created": 36,
+        "serialRange": "#1..#270"
       }
     ]
   },
@@ -973,81 +973,81 @@
     "gpKey": "MOKHUNDA",
     "gpHindi": "मोखुन्दा",
     "wardsCount": 9,
-    "totalLive": 3035,
-    "matched": 2412,
-    "created": 623,
+    "totalLive": 3019,
+    "matched": 2480,
+    "created": 539,
     "wardStats": [
       {
         "ward": "1",
         "village": "मोखुन्दा",
-        "liveVoters": 256,
-        "matched": 214,
-        "created": 42,
-        "serialRange": "#1..#2026"
+        "liveVoters": 255,
+        "matched": 225,
+        "created": 30,
+        "serialRange": "#1..#255"
       },
       {
         "ward": "2",
         "village": "मोखुन्दा",
-        "liveVoters": 248,
-        "matched": 209,
-        "created": 39,
-        "serialRange": "#1..#2026"
+        "liveVoters": 247,
+        "matched": 215,
+        "created": 32,
+        "serialRange": "#1..#247"
       },
       {
         "ward": "3",
         "village": "मोखुन्दा",
-        "liveVoters": 356,
-        "matched": 284,
-        "created": 72,
-        "serialRange": "#1..#2026"
+        "liveVoters": 353,
+        "matched": 294,
+        "created": 59,
+        "serialRange": "#1..#770"
       },
       {
         "ward": "4",
         "village": "मोखुन्दा",
-        "liveVoters": 565,
-        "matched": 446,
-        "created": 119,
-        "serialRange": "#1..#2026"
+        "liveVoters": 564,
+        "matched": 452,
+        "created": 112,
+        "serialRange": "#1..#683"
       },
       {
         "ward": "5",
         "village": "मोखुन्दा",
-        "liveVoters": 238,
-        "matched": 164,
-        "created": 74,
-        "serialRange": "#1..#2026"
+        "liveVoters": 235,
+        "matched": 168,
+        "created": 67,
+        "serialRange": "#1..#606"
       },
       {
         "ward": "6",
         "village": "मोखुन्दा",
-        "liveVoters": 277,
-        "matched": 216,
-        "created": 61,
-        "serialRange": "#1..#2026"
+        "liveVoters": 274,
+        "matched": 222,
+        "created": 52,
+        "serialRange": "#1..#626"
       },
       {
         "ward": "7",
         "village": "मोखुन्दा",
-        "liveVoters": 393,
-        "matched": 335,
-        "created": 58,
-        "serialRange": "#1..#2026"
+        "liveVoters": 392,
+        "matched": 342,
+        "created": 50,
+        "serialRange": "#1..#392"
       },
       {
         "ward": "8",
         "village": "मोखुन्दा",
-        "liveVoters": 312,
-        "matched": 240,
-        "created": 72,
-        "serialRange": "#1..#2026"
+        "liveVoters": 311,
+        "matched": 246,
+        "created": 65,
+        "serialRange": "#1..#367"
       },
       {
         "ward": "9",
         "village": "मोखुन्दा",
-        "liveVoters": 390,
-        "matched": 304,
-        "created": 86,
-        "serialRange": "#1..#2026"
+        "liveVoters": 388,
+        "matched": 316,
+        "created": 72,
+        "serialRange": "#1..#672"
       }
     ]
   },
@@ -1055,65 +1055,65 @@
     "gpKey": "KOT",
     "gpHindi": "कोट",
     "wardsCount": 7,
-    "totalLive": 2219,
-    "matched": 1874,
-    "created": 345,
+    "totalLive": 2211,
+    "matched": 1930,
+    "created": 281,
     "wardStats": [
       {
         "ward": "1",
         "village": "कोट",
-        "liveVoters": 460,
-        "matched": 414,
-        "created": 46,
-        "serialRange": "#1..#2026"
+        "liveVoters": 459,
+        "matched": 422,
+        "created": 37,
+        "serialRange": "#1..#459"
       },
       {
         "ward": "2",
         "village": "कोट",
-        "liveVoters": 290,
-        "matched": 228,
-        "created": 62,
-        "serialRange": "#1..#2026"
+        "liveVoters": 289,
+        "matched": 242,
+        "created": 47,
+        "serialRange": "#1..#289"
       },
       {
         "ward": "4",
         "village": "कोट",
-        "liveVoters": 242,
-        "matched": 190,
-        "created": 52,
-        "serialRange": "#1..#2026"
+        "liveVoters": 241,
+        "matched": 196,
+        "created": 45,
+        "serialRange": "#1..#270"
       },
       {
         "ward": "6",
         "village": "कोट",
-        "liveVoters": 339,
-        "matched": 295,
-        "created": 44,
-        "serialRange": "#1..#2026"
+        "liveVoters": 338,
+        "matched": 301,
+        "created": 37,
+        "serialRange": "#1..#341"
       },
       {
         "ward": "7",
         "village": "कोट",
-        "liveVoters": 256,
-        "matched": 213,
-        "created": 43,
-        "serialRange": "#1..#2026"
+        "liveVoters": 254,
+        "matched": 221,
+        "created": 33,
+        "serialRange": "#1..#340"
       },
       {
         "ward": "8",
         "village": "कोट",
-        "liveVoters": 306,
-        "matched": 253,
-        "created": 53,
-        "serialRange": "#1..#2026"
+        "liveVoters": 305,
+        "matched": 264,
+        "created": 41,
+        "serialRange": "#1..#305"
       },
       {
         "ward": "9",
         "village": "कोट",
-        "liveVoters": 326,
-        "matched": 281,
-        "created": 45,
-        "serialRange": "#1..#2026"
+        "liveVoters": 325,
+        "matched": 284,
+        "created": 41,
+        "serialRange": "#1..#325"
       }
     ]
   },
@@ -1121,97 +1121,97 @@
     "gpKey": "NANDSHA JAGEER",
     "gpHindi": "नान्दशा जागीर",
     "wardsCount": 11,
-    "totalLive": 3966,
-    "matched": 3351,
-    "created": 615,
+    "totalLive": 3951,
+    "matched": 3391,
+    "created": 560,
     "wardStats": [
       {
         "ward": "1",
         "village": "नान्दशा जागीर",
-        "liveVoters": 533,
-        "matched": 480,
-        "created": 53,
-        "serialRange": "#1..#2026"
+        "liveVoters": 532,
+        "matched": 487,
+        "created": 45,
+        "serialRange": "#1..#532"
       },
       {
         "ward": "2",
         "village": "नान्दशा जागीर",
-        "liveVoters": 336,
-        "matched": 301,
-        "created": 35,
-        "serialRange": "#1..#2026"
+        "liveVoters": 335,
+        "matched": 304,
+        "created": 31,
+        "serialRange": "#1..#335"
       },
       {
         "ward": "3",
         "village": "नान्दशा जागीर",
-        "liveVoters": 409,
-        "matched": 330,
-        "created": 79,
-        "serialRange": "#1..#2026"
+        "liveVoters": 408,
+        "matched": 335,
+        "created": 73,
+        "serialRange": "#1..#592"
       },
       {
         "ward": "4",
         "village": "नान्दशा जागीर",
-        "liveVoters": 360,
-        "matched": 289,
-        "created": 71,
-        "serialRange": "#1..#2026"
+        "liveVoters": 358,
+        "matched": 292,
+        "created": 66,
+        "serialRange": "#1..#421"
       },
       {
         "ward": "5",
         "village": "नान्दशा जागीर",
-        "liveVoters": 404,
-        "matched": 317,
-        "created": 87,
-        "serialRange": "#1..#2026"
+        "liveVoters": 400,
+        "matched": 322,
+        "created": 78,
+        "serialRange": "#1..#503"
       },
       {
         "ward": "6",
         "village": "नान्दशा जागीर",
-        "liveVoters": 424,
-        "matched": 361,
-        "created": 63,
-        "serialRange": "#1..#2026"
+        "liveVoters": 423,
+        "matched": 365,
+        "created": 58,
+        "serialRange": "#1..#956"
       },
       {
         "ward": "7",
         "village": "नान्दशा जागीर",
-        "liveVoters": 304,
-        "matched": 237,
-        "created": 67,
-        "serialRange": "#1..#2026"
+        "liveVoters": 303,
+        "matched": 240,
+        "created": 63,
+        "serialRange": "#1..#303"
       },
       {
         "ward": "8",
         "village": "नान्दशा जागीर",
-        "liveVoters": 274,
-        "matched": 234,
-        "created": 40,
-        "serialRange": "#1..#2026"
+        "liveVoters": 273,
+        "matched": 236,
+        "created": 37,
+        "serialRange": "#1..#273"
       },
       {
         "ward": "9",
         "village": "नान्दशा जागीर",
-        "liveVoters": 274,
-        "matched": 234,
-        "created": 40,
-        "serialRange": "#1..#2026"
+        "liveVoters": 273,
+        "matched": 238,
+        "created": 35,
+        "serialRange": "#1..#273"
       },
       {
         "ward": "10",
         "village": "नान्दशा जागीर",
-        "liveVoters": 330,
-        "matched": 294,
-        "created": 36,
-        "serialRange": "#1..#2026"
+        "liveVoters": 329,
+        "matched": 296,
+        "created": 33,
+        "serialRange": "#1..#664"
       },
       {
         "ward": "11",
         "village": "नान्दशा जागीर",
-        "liveVoters": 318,
-        "matched": 274,
-        "created": 44,
-        "serialRange": "#1..#2026"
+        "liveVoters": 317,
+        "matched": 276,
+        "created": 41,
+        "serialRange": "#1..#317"
       }
     ]
   },
@@ -1219,81 +1219,81 @@
     "gpKey": "NARAYAN KHERA",
     "gpHindi": "नारायणखेड़ा",
     "wardsCount": 9,
-    "totalLive": 2718,
-    "matched": 2261,
-    "created": 457,
+    "totalLive": 2707,
+    "matched": 2326,
+    "created": 381,
     "wardStats": [
       {
         "ward": "1",
         "village": "नारायणखेड़ा",
-        "liveVoters": 292,
-        "matched": 244,
-        "created": 48,
-        "serialRange": "#1..#2026"
+        "liveVoters": 291,
+        "matched": 251,
+        "created": 40,
+        "serialRange": "#1..#291"
       },
       {
         "ward": "2",
         "village": "नारायणखेड़ा",
-        "liveVoters": 358,
-        "matched": 295,
-        "created": 63,
-        "serialRange": "#1..#2026"
+        "liveVoters": 357,
+        "matched": 302,
+        "created": 55,
+        "serialRange": "#1..#473"
       },
       {
         "ward": "3",
         "village": "नारायणखेड़ा",
-        "liveVoters": 496,
-        "matched": 440,
-        "created": 56,
-        "serialRange": "#1..#2026"
+        "liveVoters": 495,
+        "matched": 445,
+        "created": 50,
+        "serialRange": "#1..#495"
       },
       {
         "ward": "4",
         "village": "नारायणखेड़ा",
-        "liveVoters": 325,
-        "matched": 290,
-        "created": 35,
-        "serialRange": "#1..#2026"
+        "liveVoters": 324,
+        "matched": 295,
+        "created": 29,
+        "serialRange": "#1..#324"
       },
       {
         "ward": "5",
         "village": "नारायणखेड़ा",
-        "liveVoters": 281,
-        "matched": 234,
-        "created": 47,
-        "serialRange": "#1..#2026"
+        "liveVoters": 280,
+        "matched": 245,
+        "created": 35,
+        "serialRange": "#1..#280"
       },
       {
         "ward": "6",
         "village": "नारायणखेड़ा",
-        "liveVoters": 182,
-        "matched": 148,
-        "created": 34,
-        "serialRange": "#1..#2026"
+        "liveVoters": 181,
+        "matched": 151,
+        "created": 30,
+        "serialRange": "#1..#181"
       },
       {
         "ward": "7",
         "village": "नारायणखेड़ा",
-        "liveVoters": 255,
-        "matched": 208,
-        "created": 47,
-        "serialRange": "#1..#2026"
+        "liveVoters": 254,
+        "matched": 215,
+        "created": 39,
+        "serialRange": "#1..#254"
       },
       {
         "ward": "8",
         "village": "नारायणखेड़ा",
-        "liveVoters": 183,
-        "matched": 123,
-        "created": 60,
-        "serialRange": "#1..#2026"
+        "liveVoters": 180,
+        "matched": 133,
+        "created": 47,
+        "serialRange": "#1..#189"
       },
       {
         "ward": "9",
         "village": "नारायणखेड़ा",
-        "liveVoters": 346,
-        "matched": 279,
-        "created": 67,
-        "serialRange": "#1..#2026"
+        "liveVoters": 345,
+        "matched": 289,
+        "created": 56,
+        "serialRange": "#1..#345"
       }
     ]
   },
@@ -1301,65 +1301,65 @@
     "gpKey": "NATHDIYAAS",
     "gpHindi": "नाथड़ियास",
     "wardsCount": 7,
-    "totalLive": 2416,
-    "matched": 2001,
-    "created": 415,
+    "totalLive": 2409,
+    "matched": 2044,
+    "created": 365,
     "wardStats": [
       {
         "ward": "1",
         "village": "नाथड़ियास",
-        "liveVoters": 391,
-        "matched": 347,
-        "created": 44,
-        "serialRange": "#1..#2026"
+        "liveVoters": 390,
+        "matched": 356,
+        "created": 34,
+        "serialRange": "#1..#390"
       },
       {
         "ward": "2",
         "village": "नाथड़ियास",
-        "liveVoters": 341,
-        "matched": 284,
-        "created": 57,
-        "serialRange": "#1..#2026"
+        "liveVoters": 340,
+        "matched": 291,
+        "created": 49,
+        "serialRange": "#1..#340"
       },
       {
         "ward": "3",
         "village": "नाथड़ियास",
-        "liveVoters": 243,
-        "matched": 180,
-        "created": 63,
-        "serialRange": "#1..#2026"
+        "liveVoters": 242,
+        "matched": 185,
+        "created": 57,
+        "serialRange": "#1..#242"
       },
       {
         "ward": "4",
         "village": "नाथड़ियास",
-        "liveVoters": 348,
-        "matched": 284,
-        "created": 64,
-        "serialRange": "#1..#2026"
+        "liveVoters": 347,
+        "matched": 289,
+        "created": 58,
+        "serialRange": "#1..#347"
       },
       {
         "ward": "5",
         "village": "नाथड़ियास",
-        "liveVoters": 351,
-        "matched": 268,
-        "created": 83,
-        "serialRange": "#1..#2026"
+        "liveVoters": 350,
+        "matched": 276,
+        "created": 74,
+        "serialRange": "#1..#350"
       },
       {
         "ward": "6",
         "village": "नाथड़ियास",
-        "liveVoters": 372,
-        "matched": 331,
-        "created": 41,
-        "serialRange": "#1..#2026"
+        "liveVoters": 371,
+        "matched": 337,
+        "created": 34,
+        "serialRange": "#1..#371"
       },
       {
         "ward": "7",
         "village": "नाथड़ियास",
-        "liveVoters": 370,
-        "matched": 307,
-        "created": 63,
-        "serialRange": "#1..#2026"
+        "liveVoters": 369,
+        "matched": 310,
+        "created": 59,
+        "serialRange": "#1..#369"
       }
     ]
   },
@@ -1367,65 +1367,65 @@
     "gpKey": "PALRA",
     "gpHindi": "पालरा",
     "wardsCount": 7,
-    "totalLive": 2193,
-    "matched": 1833,
-    "created": 360,
+    "totalLive": 2186,
+    "matched": 1884,
+    "created": 302,
     "wardStats": [
       {
         "ward": "1",
         "village": "पालरा",
-        "liveVoters": 293,
-        "matched": 248,
-        "created": 45,
-        "serialRange": "#1..#2026"
+        "liveVoters": 292,
+        "matched": 258,
+        "created": 34,
+        "serialRange": "#1..#292"
       },
       {
         "ward": "2",
         "village": "पालरा",
-        "liveVoters": 325,
-        "matched": 284,
-        "created": 41,
-        "serialRange": "#1..#2026"
+        "liveVoters": 324,
+        "matched": 296,
+        "created": 28,
+        "serialRange": "#1..#324"
       },
       {
         "ward": "3",
         "village": "पालरा",
-        "liveVoters": 287,
-        "matched": 233,
-        "created": 54,
-        "serialRange": "#1..#2026"
+        "liveVoters": 286,
+        "matched": 242,
+        "created": 44,
+        "serialRange": "#1..#286"
       },
       {
         "ward": "4",
         "village": "पालरा",
-        "liveVoters": 403,
-        "matched": 342,
-        "created": 61,
-        "serialRange": "#1..#2026"
+        "liveVoters": 402,
+        "matched": 349,
+        "created": 53,
+        "serialRange": "#1..#402"
       },
       {
         "ward": "5",
         "village": "पालरा",
-        "liveVoters": 318,
-        "matched": 250,
-        "created": 68,
-        "serialRange": "#1..#2026"
+        "liveVoters": 317,
+        "matched": 256,
+        "created": 61,
+        "serialRange": "#1..#822"
       },
       {
         "ward": "6",
         "village": "पालरा",
-        "liveVoters": 293,
-        "matched": 228,
-        "created": 65,
-        "serialRange": "#1..#2026"
+        "liveVoters": 292,
+        "matched": 233,
+        "created": 59,
+        "serialRange": "#1..#311"
       },
       {
         "ward": "7",
         "village": "पालरा",
-        "liveVoters": 274,
-        "matched": 248,
-        "created": 26,
-        "serialRange": "#1..#2026"
+        "liveVoters": 273,
+        "matched": 250,
+        "created": 23,
+        "serialRange": "#1..#273"
       }
     ]
   },
@@ -1433,65 +1433,65 @@
     "gpKey": "PANOTIYA",
     "gpHindi": "पानोतिया",
     "wardsCount": 7,
-    "totalLive": 2711,
-    "matched": 2326,
-    "created": 385,
+    "totalLive": 2702,
+    "matched": 2360,
+    "created": 342,
     "wardStats": [
       {
         "ward": "1",
         "village": "पानोतिया",
-        "liveVoters": 404,
-        "matched": 343,
-        "created": 61,
-        "serialRange": "#1..#2026"
+        "liveVoters": 403,
+        "matched": 350,
+        "created": 53,
+        "serialRange": "#1..#403"
       },
       {
         "ward": "2",
         "village": "पानोतिया",
-        "liveVoters": 356,
-        "matched": 304,
-        "created": 52,
-        "serialRange": "#1..#2026"
+        "liveVoters": 355,
+        "matched": 308,
+        "created": 47,
+        "serialRange": "#1..#355"
       },
       {
         "ward": "3",
         "village": "पानोतिया",
-        "liveVoters": 374,
-        "matched": 322,
-        "created": 52,
-        "serialRange": "#1..#2026"
+        "liveVoters": 373,
+        "matched": 326,
+        "created": 47,
+        "serialRange": "#1..#373"
       },
       {
         "ward": "4",
         "village": "पानोतिया",
-        "liveVoters": 348,
-        "matched": 313,
-        "created": 35,
-        "serialRange": "#1..#2026"
+        "liveVoters": 346,
+        "matched": 318,
+        "created": 28,
+        "serialRange": "#1..#346"
       },
       {
         "ward": "5",
         "village": "पानोतिया",
-        "liveVoters": 434,
-        "matched": 379,
-        "created": 55,
-        "serialRange": "#1..#2026"
+        "liveVoters": 433,
+        "matched": 385,
+        "created": 48,
+        "serialRange": "#1..#433"
       },
       {
         "ward": "6",
         "village": "पानोतिया",
-        "liveVoters": 292,
-        "matched": 229,
-        "created": 63,
-        "serialRange": "#1..#2026"
+        "liveVoters": 291,
+        "matched": 233,
+        "created": 58,
+        "serialRange": "#1..#291"
       },
       {
         "ward": "7",
         "village": "पानोतिया",
-        "liveVoters": 503,
-        "matched": 436,
-        "created": 67,
-        "serialRange": "#1..#2026"
+        "liveVoters": 501,
+        "matched": 440,
+        "created": 61,
+        "serialRange": "#1..#1078"
       }
     ]
   },
@@ -1499,25 +1499,25 @@
     "gpKey": "PEETHA KA KHERA",
     "gpHindi": "पीथा का खेड़ा",
     "wardsCount": 2,
-    "totalLive": 640,
-    "matched": 539,
-    "created": 101,
+    "totalLive": 638,
+    "matched": 579,
+    "created": 59,
     "wardStats": [
       {
         "ward": "1",
         "village": "पीथा का खेड़ा",
-        "liveVoters": 330,
-        "matched": 274,
-        "created": 56,
-        "serialRange": "#1..#2026"
+        "liveVoters": 329,
+        "matched": 299,
+        "created": 30,
+        "serialRange": "#1..#329"
       },
       {
         "ward": "2",
         "village": "पीथा का खेड़ा",
-        "liveVoters": 310,
-        "matched": 265,
-        "created": 45,
-        "serialRange": "#1..#2026"
+        "liveVoters": 309,
+        "matched": 280,
+        "created": 29,
+        "serialRange": "#1..#309"
       }
     ]
   },
@@ -1525,145 +1525,145 @@
     "gpKey": "RAIPUR",
     "gpHindi": "रायपुर",
     "wardsCount": 17,
-    "totalLive": 6889,
-    "matched": 5545,
-    "created": 1344,
+    "totalLive": 6835,
+    "matched": 5711,
+    "created": 1124,
     "wardStats": [
       {
         "ward": "1",
         "village": "रायपुर",
-        "liveVoters": 612,
-        "matched": 495,
-        "created": 117,
-        "serialRange": "#1..#2026"
+        "liveVoters": 610,
+        "matched": 534,
+        "created": 76,
+        "serialRange": "#1..#1323"
       },
       {
         "ward": "2",
         "village": "रायपुर",
-        "liveVoters": 386,
-        "matched": 349,
-        "created": 37,
-        "serialRange": "#1..#2026"
+        "liveVoters": 385,
+        "matched": 356,
+        "created": 29,
+        "serialRange": "#1..#385"
       },
       {
         "ward": "3",
         "village": "रायपुर",
-        "liveVoters": 417,
-        "matched": 372,
-        "created": 45,
-        "serialRange": "#1..#2026"
+        "liveVoters": 416,
+        "matched": 376,
+        "created": 40,
+        "serialRange": "#1..#416"
       },
       {
         "ward": "4",
         "village": "रायपुर",
-        "liveVoters": 381,
-        "matched": 300,
-        "created": 81,
-        "serialRange": "#1..#2026"
+        "liveVoters": 378,
+        "matched": 313,
+        "created": 65,
+        "serialRange": "#1..#440"
       },
       {
         "ward": "5",
         "village": "रायपुर",
-        "liveVoters": 327,
-        "matched": 260,
-        "created": 67,
-        "serialRange": "#1..#2026"
+        "liveVoters": 324,
+        "matched": 280,
+        "created": 44,
+        "serialRange": "#1..#363"
       },
       {
         "ward": "6",
         "village": "रायपुर",
-        "liveVoters": 424,
-        "matched": 321,
-        "created": 103,
-        "serialRange": "#1..#2026"
+        "liveVoters": 421,
+        "matched": 335,
+        "created": 86,
+        "serialRange": "#1..#458"
       },
       {
         "ward": "7",
         "village": "रायपुर",
-        "liveVoters": 185,
-        "matched": 111,
-        "created": 74,
-        "serialRange": "#1..#2026"
+        "liveVoters": 182,
+        "matched": 122,
+        "created": 60,
+        "serialRange": "#1..#572"
       },
       {
         "ward": "8",
         "village": "रायपुर",
-        "liveVoters": 331,
-        "matched": 264,
-        "created": 67,
-        "serialRange": "#1..#2026"
+        "liveVoters": 330,
+        "matched": 272,
+        "created": 58,
+        "serialRange": "#1..#734"
       },
       {
         "ward": "9",
         "village": "रायपुर",
-        "liveVoters": 542,
-        "matched": 450,
-        "created": 92,
-        "serialRange": "#1..#2026"
+        "liveVoters": 533,
+        "matched": 453,
+        "created": 80,
+        "serialRange": "#1..#815"
       },
       {
         "ward": "10",
         "village": "रायपुर",
-        "liveVoters": 435,
-        "matched": 348,
-        "created": 87,
-        "serialRange": "#1..#2026"
+        "liveVoters": 431,
+        "matched": 356,
+        "created": 75,
+        "serialRange": "#1..#707"
       },
       {
         "ward": "11",
         "village": "रायपुर",
-        "liveVoters": 487,
-        "matched": 391,
-        "created": 96,
-        "serialRange": "#1..#2026"
+        "liveVoters": 486,
+        "matched": 403,
+        "created": 83,
+        "serialRange": "#1..#900"
       },
       {
         "ward": "12",
         "village": "रायपुर",
-        "liveVoters": 462,
-        "matched": 368,
-        "created": 94,
-        "serialRange": "#1..#2026"
+        "liveVoters": 457,
+        "matched": 372,
+        "created": 85,
+        "serialRange": "#1..#1328"
       },
       {
         "ward": "13",
         "village": "रायपुर",
-        "liveVoters": 383,
-        "matched": 298,
-        "created": 85,
-        "serialRange": "#1..#2026"
+        "liveVoters": 381,
+        "matched": 301,
+        "created": 80,
+        "serialRange": "#1..#1027"
       },
       {
         "ward": "14",
         "village": "रायपुर",
-        "liveVoters": 286,
-        "matched": 221,
-        "created": 65,
-        "serialRange": "#1..#2026"
+        "liveVoters": 283,
+        "matched": 223,
+        "created": 60,
+        "serialRange": "#1..#1130"
       },
       {
         "ward": "15",
         "village": "रायपुर",
-        "liveVoters": 575,
-        "matched": 469,
-        "created": 106,
-        "serialRange": "#1..#2026"
+        "liveVoters": 572,
+        "matched": 473,
+        "created": 99,
+        "serialRange": "#1..#1276"
       },
       {
         "ward": "16",
         "village": "रायपुर",
-        "liveVoters": 268,
-        "matched": 208,
-        "created": 60,
-        "serialRange": "#1..#2026"
+        "liveVoters": 263,
+        "matched": 215,
+        "created": 48,
+        "serialRange": "#1..#1271"
       },
       {
         "ward": "17",
         "village": "रायपुर",
-        "liveVoters": 388,
-        "matched": 320,
-        "created": 68,
-        "serialRange": "#1..#2026"
+        "liveVoters": 383,
+        "matched": 327,
+        "created": 56,
+        "serialRange": "#1..#1219"
       }
     ]
   },
@@ -1671,81 +1671,81 @@
     "gpKey": "SAGREV",
     "gpHindi": "सागरेव",
     "wardsCount": 9,
-    "totalLive": 3045,
-    "matched": 2544,
-    "created": 501,
+    "totalLive": 3035,
+    "matched": 2598,
+    "created": 437,
     "wardStats": [
       {
         "ward": "1",
         "village": "सागरेव",
-        "liveVoters": 383,
-        "matched": 349,
-        "created": 34,
-        "serialRange": "#1..#2026"
+        "liveVoters": 382,
+        "matched": 355,
+        "created": 27,
+        "serialRange": "#1..#546"
       },
       {
         "ward": "2",
         "village": "सागरेव",
-        "liveVoters": 399,
-        "matched": 359,
-        "created": 40,
-        "serialRange": "#1..#2026"
+        "liveVoters": 398,
+        "matched": 365,
+        "created": 33,
+        "serialRange": "#1..#398"
       },
       {
         "ward": "3",
         "village": "सागरेव",
-        "liveVoters": 232,
-        "matched": 181,
-        "created": 51,
-        "serialRange": "#1..#2026"
+        "liveVoters": 231,
+        "matched": 185,
+        "created": 46,
+        "serialRange": "#1..#231"
       },
       {
         "ward": "4",
         "village": "सागरेव",
-        "liveVoters": 190,
-        "matched": 134,
-        "created": 56,
-        "serialRange": "#1..#2026"
+        "liveVoters": 188,
+        "matched": 136,
+        "created": 52,
+        "serialRange": "#1..#194"
       },
       {
         "ward": "5",
         "village": "सागरेव",
-        "liveVoters": 377,
-        "matched": 311,
-        "created": 66,
-        "serialRange": "#1..#2026"
+        "liveVoters": 376,
+        "matched": 318,
+        "created": 58,
+        "serialRange": "#1..#376"
       },
       {
         "ward": "6",
         "village": "सागरेव",
-        "liveVoters": 391,
-        "matched": 319,
-        "created": 72,
-        "serialRange": "#1..#2026"
+        "liveVoters": 390,
+        "matched": 329,
+        "created": 61,
+        "serialRange": "#1..#390"
       },
       {
         "ward": "7",
         "village": "सागरेव",
-        "liveVoters": 370,
-        "matched": 306,
-        "created": 64,
-        "serialRange": "#1..#2026"
+        "liveVoters": 369,
+        "matched": 312,
+        "created": 57,
+        "serialRange": "#1..#369"
       },
       {
         "ward": "8",
         "village": "सागरेव",
-        "liveVoters": 354,
-        "matched": 281,
-        "created": 73,
-        "serialRange": "#1..#2026"
+        "liveVoters": 353,
+        "matched": 288,
+        "created": 65,
+        "serialRange": "#1..#369"
       },
       {
         "ward": "9",
         "village": "सागरेव",
-        "liveVoters": 349,
-        "matched": 304,
-        "created": 45,
-        "serialRange": "#1..#2026"
+        "liveVoters": 348,
+        "matched": 310,
+        "created": 38,
+        "serialRange": "#1..#348"
       }
     ]
   },
@@ -1753,65 +1753,65 @@
     "gpKey": "SURAS",
     "gpHindi": "सुरास",
     "wardsCount": 7,
-    "totalLive": 2294,
-    "matched": 2017,
-    "created": 277,
+    "totalLive": 2287,
+    "matched": 2050,
+    "created": 237,
     "wardStats": [
       {
         "ward": "1",
         "village": "सुरास",
-        "liveVoters": 234,
-        "matched": 197,
-        "created": 37,
-        "serialRange": "#1..#2026"
+        "liveVoters": 233,
+        "matched": 204,
+        "created": 29,
+        "serialRange": "#1..#233"
       },
       {
         "ward": "2",
         "village": "सुरास",
-        "liveVoters": 309,
-        "matched": 273,
-        "created": 36,
-        "serialRange": "#1..#2026"
+        "liveVoters": 308,
+        "matched": 277,
+        "created": 31,
+        "serialRange": "#1..#308"
       },
       {
         "ward": "3",
         "village": "सुरास",
-        "liveVoters": 265,
-        "matched": 220,
-        "created": 45,
-        "serialRange": "#1..#2026"
+        "liveVoters": 264,
+        "matched": 224,
+        "created": 40,
+        "serialRange": "#1..#264"
       },
       {
         "ward": "4",
         "village": "सुरास",
-        "liveVoters": 394,
-        "matched": 343,
-        "created": 51,
-        "serialRange": "#1..#2026"
+        "liveVoters": 393,
+        "matched": 349,
+        "created": 44,
+        "serialRange": "#1..#393"
       },
       {
         "ward": "5",
         "village": "सुरास",
-        "liveVoters": 335,
-        "matched": 300,
-        "created": 35,
-        "serialRange": "#1..#2026"
+        "liveVoters": 334,
+        "matched": 305,
+        "created": 29,
+        "serialRange": "#1..#754"
       },
       {
         "ward": "6",
         "village": "सुरास",
-        "liveVoters": 390,
-        "matched": 353,
-        "created": 37,
-        "serialRange": "#1..#2026"
+        "liveVoters": 389,
+        "matched": 356,
+        "created": 33,
+        "serialRange": "#1..#389"
       },
       {
         "ward": "7",
         "village": "सुरास",
-        "liveVoters": 367,
-        "matched": 331,
-        "created": 36,
-        "serialRange": "#1..#2026"
+        "liveVoters": 366,
+        "matched": 335,
+        "created": 31,
+        "serialRange": "#1..#366"
       }
     ]
   },
@@ -1819,81 +1819,81 @@
     "gpKey": "THALA",
     "gpHindi": "थला",
     "wardsCount": 9,
-    "totalLive": 3243,
-    "matched": 2768,
-    "created": 475,
+    "totalLive": 3234,
+    "matched": 2853,
+    "created": 381,
     "wardStats": [
       {
         "ward": "1",
         "village": "थला",
-        "liveVoters": 357,
-        "matched": 302,
-        "created": 55,
-        "serialRange": "#1..#2026"
+        "liveVoters": 356,
+        "matched": 309,
+        "created": 47,
+        "serialRange": "#1..#367"
       },
       {
         "ward": "2",
         "village": "थला",
-        "liveVoters": 337,
-        "matched": 296,
-        "created": 41,
-        "serialRange": "#1..#2026"
+        "liveVoters": 336,
+        "matched": 302,
+        "created": 34,
+        "serialRange": "#1..#336"
       },
       {
         "ward": "3",
         "village": "थला",
-        "liveVoters": 289,
-        "matched": 220,
-        "created": 69,
-        "serialRange": "#1..#2026"
+        "liveVoters": 288,
+        "matched": 235,
+        "created": 53,
+        "serialRange": "#1..#288"
       },
       {
         "ward": "4",
         "village": "थला",
-        "liveVoters": 255,
-        "matched": 202,
-        "created": 53,
-        "serialRange": "#1..#2026"
+        "liveVoters": 254,
+        "matched": 209,
+        "created": 45,
+        "serialRange": "#1..#254"
       },
       {
         "ward": "5",
         "village": "थला",
-        "liveVoters": 402,
-        "matched": 328,
-        "created": 74,
-        "serialRange": "#1..#2026"
+        "liveVoters": 401,
+        "matched": 343,
+        "created": 58,
+        "serialRange": "#1..#632"
       },
       {
         "ward": "6",
         "village": "थला",
-        "liveVoters": 304,
-        "matched": 266,
-        "created": 38,
-        "serialRange": "#1..#2026"
+        "liveVoters": 303,
+        "matched": 273,
+        "created": 30,
+        "serialRange": "#1..#303"
       },
       {
         "ward": "7",
         "village": "थला",
-        "liveVoters": 306,
-        "matched": 268,
-        "created": 38,
-        "serialRange": "#1..#2026"
+        "liveVoters": 305,
+        "matched": 273,
+        "created": 32,
+        "serialRange": "#1..#305"
       },
       {
         "ward": "8",
         "village": "थला",
-        "liveVoters": 541,
-        "matched": 497,
-        "created": 44,
-        "serialRange": "#1..#2026"
+        "liveVoters": 540,
+        "matched": 506,
+        "created": 34,
+        "serialRange": "#1..#540"
       },
       {
         "ward": "9",
         "village": "थला",
-        "liveVoters": 452,
-        "matched": 389,
-        "created": 63,
-        "serialRange": "#1..#2026"
+        "liveVoters": 451,
+        "matched": 403,
+        "created": 48,
+        "serialRange": "#1..#451"
       }
     ]
   },
@@ -1901,65 +1901,65 @@
     "gpKey": "DEVRIYA",
     "gpHindi": "देवरिया",
     "wardsCount": 7,
-    "totalLive": 3035,
-    "matched": 2508,
-    "created": 527,
+    "totalLive": 3023,
+    "matched": 2574,
+    "created": 449,
     "wardStats": [
       {
         "ward": "1",
         "village": "देवरिया",
-        "liveVoters": 501,
-        "matched": 429,
-        "created": 72,
-        "serialRange": "#1..#2026"
+        "liveVoters": 500,
+        "matched": 439,
+        "created": 61,
+        "serialRange": "#1..#500"
       },
       {
         "ward": "2",
         "village": "देवरिया",
-        "liveVoters": 420,
-        "matched": 344,
-        "created": 76,
-        "serialRange": "#1..#2026"
+        "liveVoters": 418,
+        "matched": 355,
+        "created": 63,
+        "serialRange": "#1..#747"
       },
       {
         "ward": "3",
         "village": "देवरिया",
-        "liveVoters": 392,
-        "matched": 314,
-        "created": 78,
-        "serialRange": "#1..#2026"
+        "liveVoters": 391,
+        "matched": 324,
+        "created": 67,
+        "serialRange": "#1..#391"
       },
       {
         "ward": "4",
         "village": "देवरिया",
-        "liveVoters": 508,
-        "matched": 432,
-        "created": 76,
-        "serialRange": "#1..#2026"
+        "liveVoters": 507,
+        "matched": 438,
+        "created": 69,
+        "serialRange": "#1..#602"
       },
       {
         "ward": "5",
         "village": "देवरिया",
-        "liveVoters": 429,
-        "matched": 356,
-        "created": 73,
-        "serialRange": "#1..#2026"
+        "liveVoters": 427,
+        "matched": 363,
+        "created": 64,
+        "serialRange": "#1..#650"
       },
       {
         "ward": "6",
         "village": "देवरिया",
-        "liveVoters": 384,
-        "matched": 315,
-        "created": 69,
-        "serialRange": "#1..#2026"
+        "liveVoters": 382,
+        "matched": 329,
+        "created": 53,
+        "serialRange": "#1..#615"
       },
       {
         "ward": "7",
         "village": "देवरिया",
-        "liveVoters": 401,
-        "matched": 318,
-        "created": 83,
-        "serialRange": "#1..#2026"
+        "liveVoters": 398,
+        "matched": 326,
+        "created": 72,
+        "serialRange": "#1..#668"
       }
     ]
   },
@@ -1967,81 +1967,81 @@
     "gpKey": "BAGAR",
     "gpHindi": "बागड़",
     "wardsCount": 9,
-    "totalLive": 2799,
-    "matched": 2402,
-    "created": 397,
+    "totalLive": 2790,
+    "matched": 2470,
+    "created": 320,
     "wardStats": [
       {
         "ward": "1",
         "village": "बागड़",
-        "liveVoters": 298,
-        "matched": 242,
-        "created": 56,
-        "serialRange": "#1..#2026"
+        "liveVoters": 297,
+        "matched": 262,
+        "created": 35,
+        "serialRange": "#1..#297"
       },
       {
         "ward": "2",
         "village": "बागड़",
-        "liveVoters": 263,
-        "matched": 225,
-        "created": 38,
-        "serialRange": "#1..#2026"
+        "liveVoters": 262,
+        "matched": 228,
+        "created": 34,
+        "serialRange": "#1..#262"
       },
       {
         "ward": "3",
         "village": "बागड़",
-        "liveVoters": 381,
-        "matched": 347,
-        "created": 34,
-        "serialRange": "#1..#2026"
+        "liveVoters": 380,
+        "matched": 350,
+        "created": 30,
+        "serialRange": "#1..#380"
       },
       {
         "ward": "4",
         "village": "बागड़",
-        "liveVoters": 317,
-        "matched": 285,
-        "created": 32,
-        "serialRange": "#1..#2026"
+        "liveVoters": 316,
+        "matched": 288,
+        "created": 28,
+        "serialRange": "#1..#316"
       },
       {
         "ward": "5",
         "village": "बागड़",
-        "liveVoters": 331,
-        "matched": 288,
-        "created": 43,
-        "serialRange": "#1..#2026"
+        "liveVoters": 330,
+        "matched": 292,
+        "created": 38,
+        "serialRange": "#1..#330"
       },
       {
         "ward": "6",
         "village": "बागड़",
-        "liveVoters": 254,
-        "matched": 215,
-        "created": 39,
-        "serialRange": "#1..#2026"
+        "liveVoters": 253,
+        "matched": 219,
+        "created": 34,
+        "serialRange": "#1..#253"
       },
       {
         "ward": "7",
         "village": "बागड़",
-        "liveVoters": 310,
-        "matched": 265,
-        "created": 45,
-        "serialRange": "#1..#2026"
+        "liveVoters": 309,
+        "matched": 272,
+        "created": 37,
+        "serialRange": "#1..#309"
       },
       {
         "ward": "8",
         "village": "बागड़",
-        "liveVoters": 219,
-        "matched": 165,
-        "created": 54,
-        "serialRange": "#1..#2026"
+        "liveVoters": 218,
+        "matched": 175,
+        "created": 43,
+        "serialRange": "#1..#218"
       },
       {
         "ward": "9",
         "village": "बागड़",
-        "liveVoters": 426,
-        "matched": 370,
-        "created": 56,
-        "serialRange": "#1..#2026"
+        "liveVoters": 425,
+        "matched": 384,
+        "created": 41,
+        "serialRange": "#1..#425"
       }
     ]
   },
@@ -2049,81 +2049,81 @@
     "gpKey": "BAGOLIYA",
     "gpHindi": "बागोलिया",
     "wardsCount": 9,
-    "totalLive": 3086,
-    "matched": 2618,
-    "created": 468,
+    "totalLive": 3077,
+    "matched": 2693,
+    "created": 384,
     "wardStats": [
       {
         "ward": "1",
         "village": "बागोलिया",
-        "liveVoters": 409,
-        "matched": 373,
-        "created": 36,
-        "serialRange": "#1..#2026"
+        "liveVoters": 408,
+        "matched": 379,
+        "created": 29,
+        "serialRange": "#1..#408"
       },
       {
         "ward": "2",
         "village": "बागोलिया",
-        "liveVoters": 426,
-        "matched": 384,
-        "created": 42,
-        "serialRange": "#1..#2026"
+        "liveVoters": 425,
+        "matched": 389,
+        "created": 36,
+        "serialRange": "#1..#425"
       },
       {
         "ward": "3",
         "village": "बागोलिया",
-        "liveVoters": 372,
-        "matched": 328,
-        "created": 44,
-        "serialRange": "#1..#2026"
+        "liveVoters": 371,
+        "matched": 337,
+        "created": 34,
+        "serialRange": "#1..#371"
       },
       {
         "ward": "4",
         "village": "बागोलिया",
-        "liveVoters": 383,
-        "matched": 316,
-        "created": 67,
-        "serialRange": "#1..#2026"
+        "liveVoters": 382,
+        "matched": 326,
+        "created": 56,
+        "serialRange": "#1..#382"
       },
       {
         "ward": "5",
         "village": "बागोलिया",
-        "liveVoters": 377,
-        "matched": 331,
-        "created": 46,
-        "serialRange": "#1..#2026"
+        "liveVoters": 376,
+        "matched": 342,
+        "created": 34,
+        "serialRange": "#1..#376"
       },
       {
         "ward": "6",
         "village": "बागोलिया",
-        "liveVoters": 303,
-        "matched": 262,
-        "created": 41,
-        "serialRange": "#1..#2026"
+        "liveVoters": 302,
+        "matched": 271,
+        "created": 31,
+        "serialRange": "#1..#302"
       },
       {
         "ward": "7",
         "village": "बागोलिया",
-        "liveVoters": 271,
-        "matched": 208,
-        "created": 63,
-        "serialRange": "#1..#2026"
+        "liveVoters": 270,
+        "matched": 216,
+        "created": 54,
+        "serialRange": "#1..#368"
       },
       {
         "ward": "8",
         "village": "बागोलिया",
-        "liveVoters": 274,
-        "matched": 212,
-        "created": 62,
-        "serialRange": "#1..#2026"
+        "liveVoters": 273,
+        "matched": 219,
+        "created": 54,
+        "serialRange": "#1..#330"
       },
       {
         "ward": "9",
         "village": "बागोलिया",
-        "liveVoters": 271,
-        "matched": 204,
-        "created": 67,
-        "serialRange": "#1..#2026"
+        "liveVoters": 270,
+        "matched": 214,
+        "created": 56,
+        "serialRange": "#1..#368"
       }
     ]
   },
@@ -2131,65 +2131,65 @@
     "gpKey": "BAKAN",
     "gpHindi": "बकाण",
     "wardsCount": 7,
-    "totalLive": 2467,
-    "matched": 2191,
-    "created": 276,
+    "totalLive": 2459,
+    "matched": 2219,
+    "created": 240,
     "wardStats": [
       {
         "ward": "1",
         "village": "बकाण",
-        "liveVoters": 493,
-        "matched": 446,
-        "created": 47,
-        "serialRange": "#1..#2026"
+        "liveVoters": 492,
+        "matched": 448,
+        "created": 44,
+        "serialRange": "#1..#492"
       },
       {
         "ward": "2",
         "village": "बकाण",
-        "liveVoters": 298,
-        "matched": 268,
-        "created": 30,
-        "serialRange": "#1..#2026"
+        "liveVoters": 297,
+        "matched": 271,
+        "created": 26,
+        "serialRange": "#1..#297"
       },
       {
         "ward": "3",
         "village": "बकाण",
-        "liveVoters": 368,
-        "matched": 331,
-        "created": 37,
-        "serialRange": "#1..#2026"
+        "liveVoters": 366,
+        "matched": 338,
+        "created": 28,
+        "serialRange": "#1..#366"
       },
       {
         "ward": "4",
         "village": "बकाण",
-        "liveVoters": 339,
-        "matched": 301,
-        "created": 38,
-        "serialRange": "#1..#2026"
+        "liveVoters": 338,
+        "matched": 304,
+        "created": 34,
+        "serialRange": "#1..#338"
       },
       {
         "ward": "5",
         "village": "बकाण",
-        "liveVoters": 257,
-        "matched": 214,
-        "created": 43,
-        "serialRange": "#1..#2026"
+        "liveVoters": 256,
+        "matched": 219,
+        "created": 37,
+        "serialRange": "#1..#707"
       },
       {
         "ward": "6",
         "village": "बकाण",
-        "liveVoters": 400,
-        "matched": 363,
-        "created": 37,
-        "serialRange": "#1..#2026"
+        "liveVoters": 399,
+        "matched": 367,
+        "created": 32,
+        "serialRange": "#1..#399"
       },
       {
         "ward": "7",
         "village": "बकाण",
-        "liveVoters": 312,
-        "matched": 268,
-        "created": 44,
-        "serialRange": "#1..#2026"
+        "liveVoters": 311,
+        "matched": 272,
+        "created": 39,
+        "serialRange": "#1..#311"
       }
     ]
   }
