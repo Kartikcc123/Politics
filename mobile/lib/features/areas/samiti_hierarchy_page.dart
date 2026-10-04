@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../core/api_client.dart';
 import '../../core/theme.dart';
 import '../voters/voter_management_page.dart';
 
@@ -15,6 +16,69 @@ class _SamitiHierarchyPageState extends State<SamitiHierarchyPage> {
   String query = '';
   String selectedSamiti = 'रायपुर';
   String? expandedPanchayat;
+  Map<String, dynamic>? liveHierarchyData;
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchLiveHierarchy();
+  }
+
+  Future<void> _fetchLiveHierarchy() async {
+    try {
+      final res = await api.get('/api/auth/hierarchy-options');
+      if (mounted) {
+        setState(() => liveHierarchyData = res);
+      }
+    } catch (_) {}
+  }
+
+  List<Map<String, dynamic>> getGpParts(String gpName) {
+    if (liveHierarchyData == null) return [];
+    final cleanGp = gpName.trim();
+
+    // 1. Check from panchayats array in liveHierarchyData
+    final panchayats = liveHierarchyData?['panchayats'];
+    if (panchayats is List) {
+      for (final p in panchayats) {
+        if (p is Map) {
+          final pName = '${p['name']}'.trim();
+          if (pName == cleanGp || cleanGp.contains(pName) || pName.contains(cleanGp)) {
+            final parts = p['parts'];
+            if (parts is List && parts.isNotEmpty) {
+              final list = parts.whereType<Map>().map((x) => Map<String, dynamic>.from(x)).toList();
+              list.sort((a, b) {
+                final aNum = int.tryParse('${a['partNumber']}') ?? 0;
+                final bNum = int.tryParse('${b['partNumber']}') ?? 0;
+                return aNum.compareTo(bNum);
+              });
+              return list;
+            }
+          }
+        }
+      }
+    }
+
+    // 2. Fallback to raw parts list if structured as part objects
+    final rawParts = liveHierarchyData?['parts'];
+    if (rawParts is List) {
+      final list = rawParts
+          .whereType<Map>()
+          .map((p) => Map<String, dynamic>.from(p))
+          .where((p) => '${p['gramPanchayat']}'.trim() == cleanGp)
+          .toList();
+
+      if (list.isNotEmpty) {
+        list.sort((a, b) {
+          final aNum = int.tryParse('${a['partNumber']}') ?? 0;
+          final bNum = int.tryParse('${b['partNumber']}') ?? 0;
+          return aNum.compareTo(bNum);
+        });
+        return list;
+      }
+    }
+    return [];
+  }
 
   static const samitiData = <String, Map<String, dynamic>>{
     'रायपुर': {
@@ -477,22 +541,36 @@ class _SamitiHierarchyPageState extends State<SamitiHierarchyPage> {
     super.dispose();
   }
 
-  void _openVoters({String? village, String? gramPanchayat, String? tehsil, String? ward}) {
+  void _openVoters({
+    String? village,
+    String? gramPanchayat,
+    String? tehsil,
+    String? ward,
+    String? partNumber,
+  }) {
+    String titleText = '';
+    if (partNumber != null && partNumber.isNotEmpty) {
+      titleText = 'भाग #$partNumber ${village != null ? '($village)' : (gramPanchayat != null ? '($gramPanchayat)' : '')}';
+    } else if (village != null && village.isNotEmpty) {
+      titleText = 'गाँव: $village';
+    } else if (gramPanchayat != null && gramPanchayat.isNotEmpty) {
+      titleText = ward != null ? '$gramPanchayat (वार्ड $ward)' : 'पंचायत: $gramPanchayat';
+    } else {
+      titleText = tehsil ?? 'मतदाता सूची';
+    }
+
     Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => Scaffold(
           appBar: AppBar(
-            title: Text(village != null
-                ? 'गाँव: $village'
-                : (gramPanchayat != null
-                    ? (ward != null ? '$gramPanchayat (वार्ड $ward)' : 'पंचायत: $gramPanchayat')
-                    : '$tehsil')),
+            title: Text(titleText),
           ),
           body: VoterManagementPage(
             initialVillage: village,
             initialGramPanchayat: village != null ? null : gramPanchayat,
             initialWard: ward,
-            initialTehsil: (village != null || gramPanchayat != null) ? null : tehsil,
+            initialPartNumber: partNumber,
+            initialTehsil: (village != null || gramPanchayat != null || (partNumber != null && partNumber.isNotEmpty)) ? null : tehsil,
           ),
         ),
       ),
@@ -701,8 +779,9 @@ class _SamitiHierarchyPageState extends State<SamitiHierarchyPage> {
                                 final gpInfo = panchayatsMap[gpName] as Map<String, dynamic>? ?? {};
                                 final wardCount = gpInfo['wards'] as int? ?? villages.length;
                                 final popCount = gpInfo['pop'] as int? ?? 0;
+                                final gpParts = getGpParts(gpName);
                                 return Text(
-                                  '${villages.length} गाँव • $wardCount वार्ड ${popCount > 0 ? '• $popCount जनसंख्या' : ''}',
+                                  '${villages.length} गाँव • $wardCount वार्ड ${gpParts.isNotEmpty ? '• ${gpParts.length} भाग' : ''} ${popCount > 0 ? '• $popCount जनसंख्या' : ''}',
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
                                   style: const TextStyle(fontSize: 12, color: muted),
@@ -711,122 +790,230 @@ class _SamitiHierarchyPageState extends State<SamitiHierarchyPage> {
                               children: [
                                 Container(
                                   padding: const EdgeInsets.fromLTRB(14, 0, 14, 12),
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      const Divider(color: border, height: 1),
-                                      const SizedBox(height: 8),
+                                  child: Builder(builder: (context) {
+                                    final gpInfo = panchayatsMap[gpName] as Map<String, dynamic>? ?? {};
+                                    final wardCount = gpInfo['wards'] as int? ?? 0;
+                                    final gpParts = getGpParts(gpName);
 
-                                      InkWell(
-                                        onTap: () => _openVoters(gramPanchayat: gpName),
-                                        borderRadius: BorderRadius.circular(10),
-                                        child: Container(
-                                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                                          decoration: BoxDecoration(
-                                            color: softBlue,
-                                            borderRadius: BorderRadius.circular(10),
-                                          ),
-                                          child: Row(
-                                            children: [
-                                              const Icon(Icons.people_alt_rounded, size: 16, color: blue),
-                                              const SizedBox(width: 8),
-                                              Text(
-                                                'पूरी $gpName पंचायत के मतदाता देखें',
-                                                style: const TextStyle(
-                                                  color: blue,
-                                                  fontSize: 12,
-                                                  fontWeight: FontWeight.w800,
-                                                ),
-                                              ),
-                                              const Spacer(),
-                                              const Icon(Icons.arrow_forward_rounded, size: 14, color: blue),
-                                            ],
-                                          ),
-                                        ),
-                                      ),
-                                      const SizedBox(height: 10),
+                                    return Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        const Divider(color: border, height: 1),
+                                        const SizedBox(height: 8),
 
-                                      Builder(builder: (context) {
-                                        final gpInfo = panchayatsMap[gpName] as Map<String, dynamic>? ?? {};
-                                        final wardCount = gpInfo['wards'] as int? ?? 0;
-                                        if (wardCount <= 0) return const SizedBox.shrink();
-
-                                        return Column(
-                                          crossAxisAlignment: CrossAxisAlignment.start,
-                                          children: [
-                                            Row(
+                                        // 1. पूरी पंचायत के सभी मतदाता देखें
+                                        InkWell(
+                                          onTap: () => _openVoters(gramPanchayat: gpName),
+                                          borderRadius: BorderRadius.circular(10),
+                                          child: Container(
+                                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+                                            decoration: BoxDecoration(
+                                              color: softBlue,
+                                              borderRadius: BorderRadius.circular(10),
+                                              border: Border.all(color: blue.withValues(alpha: 0.2)),
+                                            ),
+                                            child: Row(
                                               children: [
-                                                const Icon(Icons.grid_view_rounded, size: 13, color: muted),
-                                                const SizedBox(width: 5),
+                                                const Icon(Icons.people_alt_rounded, size: 16, color: blue),
+                                                const SizedBox(width: 8),
                                                 Text(
-                                                  'वार्डवार फ़िल्टर ($wardCount वार्ड):',
-                                                  style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: muted),
+                                                  'पूरी $gpName पंचायत के सभी मतदाता देखें',
+                                                  style: const TextStyle(
+                                                    color: blue,
+                                                    fontSize: 12,
+                                                    fontWeight: FontWeight.w800,
+                                                  ),
                                                 ),
+                                                const Spacer(),
+                                                const Icon(Icons.arrow_forward_rounded, size: 14, color: blue),
                                               ],
                                             ),
-                                            const SizedBox(height: 6),
-                                            SingleChildScrollView(
-                                              scrollDirection: Axis.horizontal,
-                                              child: Row(
-                                                children: List.generate(wardCount, (wIdx) {
-                                                  final wNum = '${wIdx + 1}';
-                                                  return Padding(
-                                                    padding: const EdgeInsets.only(right: 6),
-                                                    child: ActionChip(
-                                                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                                      visualDensity: VisualDensity.compact,
-                                                      label: Text('वार्ड $wNum', style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: navy)),
-                                                      backgroundColor: Colors.white,
-                                                      side: const BorderSide(color: border),
-                                                      onPressed: () => _openVoters(gramPanchayat: gpName, ward: wNum),
+                                          ),
+                                        ),
+                                        const SizedBox(height: 12),
+
+                                        // 2. भागवार / बूथ फ़िल्टर (Part/Booth Filters)
+                                        if (gpParts.isNotEmpty) ...[
+                                          Row(
+                                            children: [
+                                              const Icon(Icons.how_to_vote_rounded, size: 14, color: orange),
+                                              const SizedBox(width: 5),
+                                              Text(
+                                                'भागवार / बूथ फ़िल्टर (${gpParts.length} भाग):',
+                                                style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: orange),
+                                              ),
+                                            ],
+                                          ),
+                                          const SizedBox(height: 6),
+                                          SingleChildScrollView(
+                                            scrollDirection: Axis.horizontal,
+                                            child: Row(
+                                              children: gpParts.map((p) {
+                                                final pNum = '${p['partNumber']}';
+                                                final vCount = p['voterCount'] as int? ?? 0;
+                                                return Padding(
+                                                  padding: const EdgeInsets.only(right: 6),
+                                                  child: ActionChip(
+                                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                                    visualDensity: VisualDensity.compact,
+                                                    avatar: const CircleAvatar(
+                                                      radius: 8,
+                                                      backgroundColor: orange,
+                                                      child: Text('भ', style: TextStyle(fontSize: 8, color: Colors.white, fontWeight: FontWeight.w900)),
                                                     ),
-                                                  );
-                                                }),
+                                                    label: Text(
+                                                      'भाग $pNum ${vCount > 0 ? '($vCount)' : ''}',
+                                                      style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: orange),
+                                                    ),
+                                                    backgroundColor: const Color(0xfffff7ed),
+                                                    side: const BorderSide(color: Color(0xffffedd5)),
+                                                    onPressed: () => _openVoters(gramPanchayat: gpName, partNumber: pNum),
+                                                  ),
+                                                );
+                                              }).toList(),
+                                            ),
+                                          ),
+                                          const SizedBox(height: 10),
+                                        ],
+
+                                        // 3. वार्डवार फ़िल्टर (Ward Filters)
+                                        if (wardCount > 0) ...[
+                                          Row(
+                                            children: [
+                                              const Icon(Icons.grid_view_rounded, size: 13, color: muted),
+                                              const SizedBox(width: 5),
+                                              Text(
+                                                'वार्डवार फ़िल्टर ($wardCount वार्ड):',
+                                                style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: muted),
+                                              ),
+                                            ],
+                                          ),
+                                          const SizedBox(height: 6),
+                                          SingleChildScrollView(
+                                            scrollDirection: Axis.horizontal,
+                                            child: Row(
+                                              children: List.generate(wardCount, (wIdx) {
+                                                final wNum = '${wIdx + 1}';
+                                                return Padding(
+                                                  padding: const EdgeInsets.only(right: 6),
+                                                  child: ActionChip(
+                                                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                                    visualDensity: VisualDensity.compact,
+                                                    label: Text('वार्ड $wNum', style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: navy)),
+                                                    backgroundColor: Colors.white,
+                                                    side: const BorderSide(color: border),
+                                                    onPressed: () => _openVoters(gramPanchayat: gpName, ward: wNum),
+                                                  ),
+                                                );
+                                              }),
+                                            ),
+                                          ),
+                                          const SizedBox(height: 10),
+                                        ],
+
+                                        // 4. सम्मिलित राजस्व गाँव व बूथ (Villages & Part details)
+                                        const Row(
+                                          children: [
+                                            Icon(Icons.location_city_rounded, size: 13, color: muted),
+                                            SizedBox(width: 5),
+                                            Text(
+                                              'सम्मिलित राजस्व गाँव व बूथ:',
+                                              style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: muted),
+                                            ),
+                                          ],
+                                        ),
+                                        const SizedBox(height: 6),
+
+                                        ...villages.map((v) {
+                                          final vName = v['name'] as String;
+                                          final pop = v['pop'] as int? ?? 0;
+
+                                          // Match parts for this village
+                                          final vClean = vName.trim().toLowerCase();
+                                          final matchedParts = gpParts.where((p) {
+                                            final vList = (p['villages'] as List? ?? []).map((e) => e.toString().trim().toLowerCase()).toList();
+                                            return vList.any((vill) => vill.contains(vClean) || vClean.contains(vill));
+                                          }).toList();
+
+                                          final matchedPartNums = matchedParts.map((p) => '${p['partNumber']}').toList();
+
+                                          return Container(
+                                            margin: const EdgeInsets.only(bottom: 6),
+                                            decoration: BoxDecoration(
+                                              color: Colors.white,
+                                              borderRadius: BorderRadius.circular(10),
+                                              border: Border.all(color: border.withValues(alpha: 0.6)),
+                                            ),
+                                            child: ListTile(
+                                              contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
+                                              leading: Container(
+                                                width: 36,
+                                                height: 36,
+                                                decoration: BoxDecoration(
+                                                  color: matchedPartNums.isNotEmpty ? const Color(0xffeff6ff) : const Color(0xfff8fafc),
+                                                  shape: BoxShape.circle,
+                                                ),
+                                                alignment: Alignment.center,
+                                                child: Icon(
+                                                  Icons.location_on_rounded,
+                                                  color: matchedPartNums.isNotEmpty ? blue : muted,
+                                                  size: 18,
+                                                ),
+                                              ),
+                                              title: Row(
+                                                children: [
+                                                  Expanded(
+                                                    child: Text(
+                                                      vName,
+                                                      style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 13, color: navy),
+                                                    ),
+                                                  ),
+                                                  if (matchedPartNums.isNotEmpty)
+                                                    Container(
+                                                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                                      decoration: BoxDecoration(
+                                                        color: orange.withValues(alpha: 0.12),
+                                                        borderRadius: BorderRadius.circular(6),
+                                                        border: Border.all(color: orange.withValues(alpha: 0.3)),
+                                                      ),
+                                                      child: Text(
+                                                        'भाग ${matchedPartNums.join(', ')}',
+                                                        style: const TextStyle(
+                                                          fontSize: 10,
+                                                          fontWeight: FontWeight.w900,
+                                                          color: orange,
+                                                        ),
+                                                      ),
+                                                    ),
+                                                ],
+                                              ),
+                                              subtitle: Padding(
+                                                padding: const EdgeInsets.only(top: 3),
+                                                child: Text(
+                                                  matchedPartNums.isNotEmpty
+                                                      ? 'बूथ: भाग ${matchedPartNums.join(', ')} ${pop > 0 ? '• जनसंख्या: $pop' : ''}'
+                                                      : (pop > 0 ? 'जनसंख्या: $pop' : 'ग्राम पंचायत $gpName'),
+                                                  style: const TextStyle(fontSize: 11, color: muted, fontWeight: FontWeight.w600),
+                                                ),
+                                              ),
+                                              trailing: FilledButton.tonal(
+                                                style: FilledButton.styleFrom(
+                                                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                                  visualDensity: VisualDensity.compact,
+                                                ),
+                                                onPressed: () => _openVoters(
+                                                  village: vName,
+                                                  gramPanchayat: gpName,
+                                                  partNumber: matchedPartNums.length == 1 ? matchedPartNums.first : null,
+                                                ),
+                                                child: const Text('मतदाता ➔', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800)),
                                               ),
                                             ),
-                                            const SizedBox(height: 10),
-                                          ],
-                                        );
-                                      }),
-
-                                      const Row(
-                                        children: [
-                                          Icon(Icons.location_city_rounded, size: 13, color: muted),
-                                          SizedBox(width: 5),
-                                          Text(
-                                            'सम्मिलित राजस्व गाँव / मजरे:',
-                                            style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: muted),
-                                          ),
-                                        ],
-                                      ),
-                                      const SizedBox(height: 4),
-
-                                      ...villages.map((v) {
-                                        final vName = v['name'] as String;
-                                        final pop = v['pop'] as int? ?? 0;
-
-                                        return ListTile(
-                                          contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                                          leading: const Icon(Icons.location_on_outlined, color: blue, size: 20),
-                                          title: Text(
-                                            vName,
-                                            style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 14, color: navy),
-                                          ),
-                                          subtitle: pop > 0
-                                              ? Text('जनसंख्या: $pop', style: const TextStyle(fontSize: 11, color: muted, fontWeight: FontWeight.w700))
-                                              : null,
-                                          trailing: FilledButton.tonal(
-                                            style: FilledButton.styleFrom(
-                                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                                              visualDensity: VisualDensity.compact,
-                                            ),
-                                            onPressed: () => _openVoters(village: vName),
-                                            child: const Text('मतदाता देखें ➔', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800)),
-                                          ),
-                                        );
-                                      }),
-                                    ],
-                                  ),
+                                          );
+                                        }),
+                                      ],
+                                    );
+                                  }),
                                 ),
                               ],
                             ),

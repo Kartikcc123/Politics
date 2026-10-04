@@ -271,7 +271,7 @@ exports.hierarchyOptions = async (req, res, next) => {
         { $match: { gramPanchayat: { $nin: ['', null] } } },
         {
           $group: {
-            _id: { gp: '$gramPanchayat', ward: '$wardNumber', village: '$village' },
+            _id: { gp: '$gramPanchayat', ward: '$wardNumber', village: '$village', part: '$partNumber' },
             count: { $sum: 1 }
           }
         }
@@ -281,14 +281,21 @@ exports.hierarchyOptions = async (req, res, next) => {
 
     const gpMap = {};
     for (const gp of gps.filter(Boolean).sort()) {
-      gpMap[gp] = { name: gp, wards: new Set(), villages: new Set(), totalVoters: 0 };
+      gpMap[gp] = { name: gp, wards: new Set(), villages: new Set(), parts: new Map(), totalVoters: 0 };
     }
 
     for (const item of gpBreakdown) {
       const gp = item._id.gp;
-      if (!gpMap[gp]) gpMap[gp] = { name: gp, wards: new Set(), villages: new Set(), totalVoters: 0 };
+      if (!gpMap[gp]) gpMap[gp] = { name: gp, wards: new Set(), villages: new Set(), parts: new Map(), totalVoters: 0 };
       if (item._id.ward && item._id.ward !== 'NO_WARD') gpMap[gp].wards.add(String(item._id.ward));
       if (item._id.village && item._id.village !== 'NO_VILLAGE') gpMap[gp].villages.add(String(item._id.village));
+      if (item._id.part) {
+        const pStr = String(item._id.part);
+        const existing = gpMap[gp].parts.get(pStr) || { partNumber: pStr, voterCount: 0, villages: new Set() };
+        existing.voterCount += (item.count || 0);
+        if (item._id.village && item._id.village !== 'NO_VILLAGE') existing.villages.add(String(item._id.village));
+        gpMap[gp].parts.set(pStr, existing);
+      }
       gpMap[gp].totalVoters += (item.count || 0);
     }
 
@@ -296,7 +303,12 @@ exports.hierarchyOptions = async (req, res, next) => {
       name: gp.name,
       totalVoters: gp.totalVoters,
       wards: Array.from(gp.wards).sort((a, b) => (parseInt(a) || 0) - (parseInt(b) || 0)),
-      villages: Array.from(gp.villages).sort()
+      villages: Array.from(gp.villages).sort(),
+      parts: Array.from(gp.parts.values()).map(p => ({
+        partNumber: p.partNumber,
+        voterCount: p.voterCount,
+        villages: Array.from(p.villages)
+      })).sort((a, b) => (parseInt(a.partNumber) || 0) - (parseInt(b.partNumber) || 0))
     })).sort((a, b) => a.name.localeCompare(b.name, 'hi-IN'));
 
     const sortedParts = parts
