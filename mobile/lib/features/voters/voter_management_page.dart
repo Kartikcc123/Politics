@@ -2278,6 +2278,29 @@ class _VoterManagementPageState extends State<VoterManagementPage> {
           filterButton,
         ]);
       }),
+      const SizedBox(height: 8),
+      SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Row(
+          children: [
+            _DatabaseFilterPicker(
+              label: 'जाति फ़िल्टर',
+              icon: Icons.groups_2_rounded,
+              value: _filterValue('caste', caste),
+              onTap: () => openSmartFilter('caste', 'जाति'),
+              onClear: () => _clearSmartOrText('caste', caste),
+            ),
+            const SizedBox(width: 8),
+            _DatabaseFilterPicker(
+              label: 'गाँव / भाग',
+              icon: Icons.holiday_village_outlined,
+              value: partVillageValue,
+              onTap: () => openSmartFilter('partVillage', 'गाँव / भाग'),
+              onClear: _clearPartVillageFilter,
+            ),
+          ],
+        ),
+      ),
       if (listening)
         const Padding(
           padding: EdgeInsets.only(top: 6),

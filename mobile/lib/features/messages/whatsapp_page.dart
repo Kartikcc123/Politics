@@ -27,17 +27,17 @@ class _WhatsAppPageState extends State<WhatsAppPage> with SingleTickerProviderSt
   String? _pickedImagePath;
   String? _pickedImageName;
 
-  // Hierarchy Data
-  List<Map<String, dynamic>> _areaTree = [];
-  List<String> _samitiList = ['रायपुर', 'सहाड़ा', 'सुवाणा', 'गंगापुर'];
-  String _selectedSamiti = 'रायपुर';
+  // Filter selections
   String _selectedVillage = 'all'; // 'all' or village name
-  String _selectedWard = 'all'; // 'all' or ward/part number
+  String _selectedPart = 'all'; // 'all' or part number
   String _selectedCaste = 'all'; // 'all' or caste name
   bool _onlyWithMobile = true;
 
-  // Castes
-  List<String> _casteOptions = [];
+  // Options from DB
+  List<Map<String, dynamic>> _villageOptions = [];
+  List<Map<String, dynamic>> _partOptions = [];
+  List<Map<String, dynamic>> _casteOptions = [];
+  bool _loadingFilters = true;
 
   // Voters
   List<Map<String, dynamic>> _voters = [];
@@ -47,9 +47,9 @@ class _WhatsAppPageState extends State<WhatsAppPage> with SingleTickerProviderSt
   // Quick message presets
   static const Map<String, String> _presets = {
     'सामान्य': 'नमस्कार {{name}} जी,\n\nआशा है आप सपरिवार सकुशल होंगे।',
-    'बधाई/शुभकामनाएँ': 'हार्दिक शुभकामनाएँ {{name}} जी! 💐\nआपके उज्ज्वल भविष्य व सुख-समृद्धि की कामना करते हैं।',
-    'निमंत्रण/बैठक': 'सादर प्रणाम {{name}} जी,\n\nआपको हमारे विशेष कार्यक्रम/बैठक में सादर आमंत्रित किया जाता है। कृपया पधारकर अनुग्रहित करें।\n\nस्थान: {{village}}',
-    'मतदान अपील': 'सादर प्रणाम {{name}} जी,\n\nलोकतंत्र के महापर्व में अपने अमूल्य मत का प्रयोग अवश्य करें। आपका एक वोट क्षेत्र के विकास के लिए महत्वपूर्ण है।\n\nवार्ड/भाग: {{ward}}',
+    'बधाई/शुभकामनाएँ': 'हार्दिक शुभकामनाएँ {{name}} जी! 💐\nआपके सुख, समृद्धि एवं उत्तम स्वास्थ्य की कामना करते हैं।',
+    'निमंत्रण/कार्यक्रम': 'सादर प्रणाम {{name}} जी,\n\nआपको हमारे आगामी विशेष कार्यक्रम में सादर आमंत्रित किया जाता है।\nस्थान: {{village}}\nकृपया सपरिवार पधारकर अनुग्रहित करें।',
+    'मतदान अपील': 'सादर प्रणाम {{name}} जी,\n\nलोकतंत्र के महापर्व में अपने अमूल्य मत का प्रयोग अवश्य करें। आपका एक वोट क्षेत्र के विकास के लिए महत्वपूर्ण है।\nवार्ड/भाग: {{ward}}',
   };
 
   @override
@@ -57,7 +57,7 @@ class _WhatsAppPageState extends State<WhatsAppPage> with SingleTickerProviderSt
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
     _messageController.text = _presets['सामान्य']!;
-    _loadAreasAndCastes();
+    _loadAllFilters();
   }
 
   @override
@@ -69,89 +69,53 @@ class _WhatsAppPageState extends State<WhatsAppPage> with SingleTickerProviderSt
     super.dispose();
   }
 
-  Future<void> _loadAreasAndCastes() async {
+  Future<void> _loadAllFilters() async {
+    setState(() => _loadingFilters = true);
+
     try {
-      final dynamic treeRes = await api.get('/api/areas/tree');
-      if (treeRes is List && treeRes.isNotEmpty) {
-        final rawList = treeRes as List;
-        _areaTree = rawList
+      // 1. Fetch live distinct villages from DB
+      final dynamic vRes = await api.get('/api/members/field-values?field=village&limit=300');
+      if (vRes is Map && vRes['items'] is List) {
+        final raw = vRes['items'] as List;
+        _villageOptions = raw
             .whereType<Map>()
             .map((e) => Map<String, dynamic>.from(e))
+            .where((e) => (e['value'] ?? '').toString().trim().isNotEmpty)
             .toList();
-
-        final names = _areaTree
-            .map((e) => (e['name'] ?? '').toString().trim())
-            .where((n) => n.isNotEmpty)
-            .toList();
-        if (names.isNotEmpty) {
-          _samitiList = names;
-          if (!_samitiList.contains(_selectedSamiti)) {
-            _selectedSamiti = _samitiList.first;
-          }
-        }
       }
-    } catch (_) {}
 
-    try {
-      final dynamic casteRes = await api.get('/api/members/field-values?field=caste&limit=150');
-      if (casteRes is Map && casteRes['items'] is List) {
-        final rawList = casteRes['items'] as List;
-        _casteOptions = rawList
+      // 2. Fetch live distinct parts from DB
+      final dynamic pRes = await api.get('/api/members/field-values?field=partNumber&limit=300');
+      if (pRes is Map && pRes['items'] is List) {
+        final raw = pRes['items'] as List;
+        _partOptions = raw
             .whereType<Map>()
-            .map((e) => (e['value'] ?? e['label'] ?? '').toString().trim())
-            .where((s) => s.isNotEmpty)
-            .toSet()
+            .map((e) => Map<String, dynamic>.from(e))
+            .where((e) => (e['value'] ?? '').toString().trim().isNotEmpty)
+            .toList();
+        _partOptions.sort((a, b) {
+          final aNum = int.tryParse('${a['value']}') ?? 0;
+          final bNum = int.tryParse('${b['value']}') ?? 0;
+          return aNum.compareTo(bNum);
+        });
+      }
+
+      // 3. Fetch live distinct castes from DB
+      final dynamic cRes = await api.get('/api/members/field-values?field=caste&limit=150');
+      if (cRes is Map && cRes['items'] is List) {
+        final raw = cRes['items'] as List;
+        _casteOptions = raw
+            .whereType<Map>()
+            .map((e) => Map<String, dynamic>.from(e))
+            .where((e) => (e['value'] ?? '').toString().trim().isNotEmpty)
             .toList();
       }
     } catch (_) {}
 
     if (mounted) {
+      setState(() => _loadingFilters = false);
       _fetchVoters();
     }
-  }
-
-  List<String> get _villageOptions {
-    final list = <String>['all'];
-    if (_areaTree.isEmpty) {
-      list.addAll(['रायपुर', 'बलीचा', 'कोट', 'मोखमपुरा', 'भीमगढ़']);
-      return list;
-    }
-    final samitiNode = _areaTree.firstWhere(
-      (s) => (s['name'] ?? '').toString().trim() == _selectedSamiti,
-      orElse: () => _areaTree.first,
-    );
-    final children = samitiNode['children'] as List? ?? [];
-    for (final child in children) {
-      final name = (child['name'] ?? '').toString().trim();
-      if (name.isNotEmpty && !list.contains(name)) {
-        list.add(name);
-      }
-    }
-    return list;
-  }
-
-  List<String> get _wardOptions {
-    final list = <String>['all'];
-    if (_selectedVillage == 'all') return list;
-    if (_areaTree.isEmpty) return list;
-
-    final samitiNode = _areaTree.firstWhere(
-      (s) => (s['name'] ?? '').toString().trim() == _selectedSamiti,
-      orElse: () => _areaTree.first,
-    );
-    final villageNodes = (samitiNode['children'] as List? ?? []).where(
-      (v) => (v['name'] ?? '').toString().trim() == _selectedVillage,
-    );
-    for (final vNode in villageNodes) {
-      final wards = vNode['children'] as List? ?? [];
-      for (final w in wards) {
-        final wName = (w['name'] ?? w['partNumber'] ?? '').toString().trim();
-        if (wName.isNotEmpty && !list.contains(wName)) {
-          list.add(wName);
-        }
-      }
-    }
-    return list;
   }
 
   Future<void> _fetchVoters() async {
@@ -163,14 +127,7 @@ class _WhatsAppPageState extends State<WhatsAppPage> with SingleTickerProviderSt
       };
       if (_onlyWithMobile) queryParams['hasMobile'] = 'true';
       if (_selectedVillage != 'all') queryParams['village'] = _selectedVillage;
-      if (_selectedWard != 'all') {
-        final digits = _selectedWard.replaceAll(RegExp(r'\D'), '');
-        if (digits.isNotEmpty) {
-          queryParams['partNumber'] = digits;
-        } else {
-          queryParams['ward'] = _selectedWard;
-        }
-      }
+      if (_selectedPart != 'all') queryParams['partNumber'] = _selectedPart;
       if (_selectedCaste != 'all') queryParams['caste'] = _selectedCaste;
       final q = _searchController.text.trim();
       if (q.isNotEmpty) queryParams['q'] = q;
@@ -178,7 +135,7 @@ class _WhatsAppPageState extends State<WhatsAppPage> with SingleTickerProviderSt
       final dynamic res = await api.get('/api/members?${Uri(queryParameters: queryParams).query}');
       List<Map<String, dynamic>> items = [];
       if (res is List) {
-        final rawList = res as List;
+        final rawList = res;
         items = rawList
             .whereType<Map>()
             .map((e) => Map<String, dynamic>.from(e))
@@ -195,7 +152,6 @@ class _WhatsAppPageState extends State<WhatsAppPage> with SingleTickerProviderSt
         setState(() {
           _voters = items;
           _loadingVoters = false;
-          // Auto select all voters with mobile by default
           _selectedVoterIds.clear();
           for (final v in _voters) {
             final mob = (v['mobile'] ?? '').toString().trim();
@@ -284,7 +240,6 @@ class _WhatsAppPageState extends State<WhatsAppPage> with SingleTickerProviderSt
       } catch (_) {}
     }
 
-    // Direct WhatsApp chat
     if (mounted) {
       await openWhatsApp(context, mobile, message: rendered);
     }
@@ -360,7 +315,7 @@ class _WhatsAppPageState extends State<WhatsAppPage> with SingleTickerProviderSt
           unselectedLabelColor: Colors.white70,
           labelStyle: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
           tabs: const [
-            Tab(icon: Icon(Icons.groups_rounded), text: 'मतदाता सूची (वार्ड/गाँव)'),
+            Tab(icon: Icon(Icons.groups_rounded), text: 'मतदाता सूची (गाँव/वार्ड)'),
             Tab(icon: Icon(Icons.share_rounded), text: 'डायरेक्ट शेयर व संपर्क'),
           ],
         ),
@@ -481,7 +436,7 @@ class _WhatsAppPageState extends State<WhatsAppPage> with SingleTickerProviderSt
                 children: [
                   const Text('टैग जोड़ें: ', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: muted)),
                   _tagChip('+ नाम', '{{name}}'),
-                  _tagChip('+ गाँव', '{{village}}'),
+                  _tagChip('+ गाँव/स्थान', '{{village}}'),
                   _tagChip('+ वार्ड/भाग', '{{ward}}'),
                   _tagChip('+ पिता/पति', '{{guardian}}'),
                 ],
@@ -521,7 +476,7 @@ class _WhatsAppPageState extends State<WhatsAppPage> with SingleTickerProviderSt
     return Column(
       children: [
         _buildComposerCard(),
-        _buildHierarchyAndFiltersCard(),
+        _buildFiltersCard(),
         _buildVoterListHeader(totalWithMobile),
         Expanded(
           child: _loadingVoters
@@ -534,7 +489,7 @@ class _WhatsAppPageState extends State<WhatsAppPage> with SingleTickerProviderSt
                           Icon(Icons.person_search_rounded, size: 54, color: Colors.grey.shade400),
                           const SizedBox(height: 8),
                           const Text('कोई मतदाता नहीं मिला।', style: TextStyle(fontWeight: FontWeight.bold, color: muted)),
-                          const Text('कृपया फ़िल्टर या खोज बदलें।', style: TextStyle(fontSize: 12, color: muted)),
+                          const Text('कृपया गाँव, भाग या जाति फ़िल्टर बदलें।', style: TextStyle(fontSize: 12, color: muted)),
                         ],
                       ),
                     )
@@ -548,7 +503,7 @@ class _WhatsAppPageState extends State<WhatsAppPage> with SingleTickerProviderSt
     );
   }
 
-  Widget _buildHierarchyAndFiltersCard() {
+  Widget _buildFiltersCard() {
     return Card(
       elevation: 1,
       margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
@@ -557,28 +512,29 @@ class _WhatsAppPageState extends State<WhatsAppPage> with SingleTickerProviderSt
         padding: const EdgeInsets.all(12),
         child: Column(
           children: [
-            // Row 1: Samiti & Village
+            // Row 1: Village & Part Dropdowns
             Row(
               children: [
                 Expanded(
+                  flex: 3,
                   child: DropdownButtonFormField<String>(
-                    value: _selectedSamiti,
+                    value: _villageOptions.any((v) => v['value'] == _selectedVillage) ? _selectedVillage : 'all',
                     decoration: InputDecoration(
-                      labelText: 'समिति / क्षेत्र',
+                      labelText: 'गाँव / पंचायत',
                       contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
                       border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
                       isDense: true,
                     ),
-                    items: _samitiList
-                        .map((s) => DropdownMenuItem(value: s, child: Text(s, style: const TextStyle(fontSize: 13))))
-                        .toList(),
+                    items: [
+                      const DropdownMenuItem(value: 'all', child: Text('सभी गाँव / पंचायत', style: TextStyle(fontSize: 13))),
+                      ..._villageOptions.map((v) => DropdownMenuItem(
+                            value: '${v['value']}',
+                            child: Text('${v['label'] ?? v['value']} (${v['count'] ?? ''})', style: const TextStyle(fontSize: 13)),
+                          )),
+                    ],
                     onChanged: (val) {
-                      if (val != null && val != _selectedSamiti) {
-                        setState(() {
-                          _selectedSamiti = val;
-                          _selectedVillage = 'all';
-                          _selectedWard = 'all';
-                        });
+                      if (val != null) {
+                        setState(() => _selectedVillage = val);
                         _fetchVoters();
                       }
                     },
@@ -586,26 +542,25 @@ class _WhatsAppPageState extends State<WhatsAppPage> with SingleTickerProviderSt
                 ),
                 const SizedBox(width: 8),
                 Expanded(
+                  flex: 2,
                   child: DropdownButtonFormField<String>(
-                    value: _villageOptions.contains(_selectedVillage) ? _selectedVillage : 'all',
+                    value: _partOptions.any((p) => p['value'] == _selectedPart) ? _selectedPart : 'all',
                     decoration: InputDecoration(
-                      labelText: 'पंचायत / गाँव',
+                      labelText: 'भाग / बूथ',
                       contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
                       border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
                       isDense: true,
                     ),
-                    items: _villageOptions
-                        .map((v) => DropdownMenuItem(
-                              value: v,
-                              child: Text(v == 'all' ? 'सभी गाँव' : v, style: const TextStyle(fontSize: 13)),
-                            ))
-                        .toList(),
+                    items: [
+                      const DropdownMenuItem(value: 'all', child: Text('सभी भाग', style: TextStyle(fontSize: 13))),
+                      ..._partOptions.map((p) => DropdownMenuItem(
+                            value: '${p['value']}',
+                            child: Text('भाग ${p['value']} (${p['count'] ?? ''})', style: const TextStyle(fontSize: 13)),
+                          )),
+                    ],
                     onChanged: (val) {
                       if (val != null) {
-                        setState(() {
-                          _selectedVillage = val;
-                          _selectedWard = 'all';
-                        });
+                        setState(() => _selectedPart = val);
                         _fetchVoters();
                       }
                     },
@@ -614,36 +569,12 @@ class _WhatsAppPageState extends State<WhatsAppPage> with SingleTickerProviderSt
               ],
             ),
             const SizedBox(height: 8),
-            // Row 2: Ward/Bhag & Caste Filter
+            // Row 2: Caste Filter & Live Search
             Row(
               children: [
                 Expanded(
                   child: DropdownButtonFormField<String>(
-                    value: _wardOptions.contains(_selectedWard) ? _selectedWard : 'all',
-                    decoration: InputDecoration(
-                      labelText: 'वार्ड / भाग',
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                      isDense: true,
-                    ),
-                    items: _wardOptions
-                        .map((w) => DropdownMenuItem(
-                              value: w,
-                              child: Text(w == 'all' ? 'सभी वार्ड/भाग' : 'वार्ड/भाग $w', style: const TextStyle(fontSize: 13)),
-                            ))
-                        .toList(),
-                    onChanged: (val) {
-                      if (val != null) {
-                        setState(() => _selectedWard = val);
-                        _fetchVoters();
-                      }
-                    },
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: DropdownButtonFormField<String>(
-                    value: _casteOptions.contains(_selectedCaste) ? _selectedCaste : 'all',
+                    value: _casteOptions.any((c) => c['value'] == _selectedCaste) ? _selectedCaste : 'all',
                     decoration: InputDecoration(
                       labelText: 'जाति फ़िल्टर',
                       contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
@@ -653,8 +584,8 @@ class _WhatsAppPageState extends State<WhatsAppPage> with SingleTickerProviderSt
                     items: [
                       const DropdownMenuItem(value: 'all', child: Text('सभी जातियाँ', style: TextStyle(fontSize: 13))),
                       ..._casteOptions.map((c) => DropdownMenuItem(
-                            value: c,
-                            child: Text(c, style: const TextStyle(fontSize: 13)),
+                            value: '${c['value']}',
+                            child: Text('${c['label'] ?? c['value']} (${c['count'] ?? ''})', style: const TextStyle(fontSize: 13)),
                           )),
                     ],
                     onChanged: (val) {
@@ -665,18 +596,13 @@ class _WhatsAppPageState extends State<WhatsAppPage> with SingleTickerProviderSt
                     },
                   ),
                 ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            // Row 3: Search Bar + Mobile toggle
-            Row(
-              children: [
+                const SizedBox(width: 8),
                 Expanded(
                   child: TextField(
                     controller: _searchController,
                     onSubmitted: (_) => _fetchVoters(),
                     decoration: InputDecoration(
-                      hintText: 'नाम, मोबाइल, EPIC से खोजें...',
+                      hintText: 'नाम, मोबाइल...',
                       hintStyle: const TextStyle(fontSize: 12),
                       prefixIcon: const Icon(Icons.search_rounded, size: 20),
                       suffixIcon: _searchController.text.isNotEmpty
@@ -694,12 +620,6 @@ class _WhatsAppPageState extends State<WhatsAppPage> with SingleTickerProviderSt
                     ),
                   ),
                 ),
-                const SizedBox(width: 6),
-                IconButton.filledTonal(
-                  icon: const Icon(Icons.refresh_rounded, size: 20),
-                  onPressed: _fetchVoters,
-                  tooltip: 'सूची ताज़ा करें',
-                ),
               ],
             ),
             const SizedBox(height: 4),
@@ -715,6 +635,12 @@ class _WhatsAppPageState extends State<WhatsAppPage> with SingleTickerProviderSt
                   },
                 ),
                 const Text('केवल मोबाइल नंबर वाले मतदाता दिखाएँ', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+                const Spacer(),
+                IconButton.filledTonal(
+                  icon: const Icon(Icons.refresh_rounded, size: 18),
+                  onPressed: _fetchVoters,
+                  tooltip: 'सूची ताज़ा करें',
+                ),
               ],
             ),
           ],
