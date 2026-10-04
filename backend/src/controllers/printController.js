@@ -3,6 +3,8 @@ const path = require('path');
 const PDFDocument = require('pdfkit');
 const QRCode = require('qrcode');
 const Member = require('../models/Member');
+const Booth = require('../models/Booth');
+const Ward = require('../models/Ward');
 const MediaAsset = require('../models/MediaAsset');
 const { applyMemberScope } = require('../utils/boothAccess');
 const { resolveUploadPublicPath } = require('../utils/uploadPath');
@@ -102,19 +104,33 @@ function applyPrintFilters(req, filter) {
   }
 }
 
+const httpsAgent = new https.Agent({ keepAlive: true, maxSockets: 50, maxFreeSockets: 20, timeout: 8000 });
+const httpAgent = new http.Agent({ keepAlive: true, maxSockets: 50, maxFreeSockets: 20, timeout: 8000 });
+
 function fetchHttpBuffer(url) {
   return new Promise((resolve) => {
     try {
-      const client = url.startsWith('https') ? https : http;
-      client.get(url, { timeout: 4000 }, (res) => {
-        if (res.statusCode !== 200) return resolve(null);
+      const isHttps = url.startsWith('https');
+      const client = isHttps ? https : http;
+      const agent = isHttps ? httpsAgent : httpAgent;
+
+      const req = client.get(url, { agent, timeout: 8000 }, (res) => {
+        if (res.statusCode !== 200) {
+          res.resume();
+          return resolve(null);
+        }
         const chunks = [];
         res.on('data', (c) => chunks.push(c));
         res.on('end', () => {
           const buf = Buffer.concat(chunks);
           resolve(normalizeImageBuffer(buf));
         });
-      }).on('error', () => resolve(null));
+      });
+      req.on('error', () => resolve(null));
+      req.on('timeout', () => {
+        req.destroy();
+        resolve(null);
+      });
     } catch (_) {
       resolve(null);
     }
@@ -158,8 +174,10 @@ function normalizeImageBuffer(value) {
 
 async function loadPhotoSources(members, includePhoto = true) {
   if (!includePhoto) return () => null;
-  const mediaIds = [...new Set(members.map((member) => mediaIdFromPhoto(member.photo)).filter(Boolean))];
   const media = new Map();
+
+  // 1. Check MongoDB MediaAssets
+  const mediaIds = [...new Set(members.map((m) => mediaIdFromPhoto(m.photo)).filter(Boolean))];
   if (mediaIds.length) {
     const assets = await MediaAsset.find({ _id: { $in: mediaIds } }).select('+data contentType').lean();
     for (const asset of assets) {
@@ -168,13 +186,18 @@ async function loadPhotoSources(members, includePhoto = true) {
     }
   }
 
-  // Fetch S3/HTTP photos in parallel batches (up to 150 members to keep speed fast)
-  const httpMembers = members.filter(m => m.photo && /^https?:\/\//i.test(m.photo)).slice(0, 150);
-  const httpPromises = httpMembers.map(async (m) => {
-    const buf = await fetchHttpBuffer(m.photo);
-    if (buf) media.set(m.photo, buf);
-  });
-  await Promise.all(httpPromises);
+  // 2. Fetch all S3/HTTP photos in parallel concurrency batches of 35
+  const httpPhotos = [...new Set(members.map(m => m.photo).filter(p => p && /^https?:\/\//i.test(p)))];
+  const concurrency = 35;
+  for (let i = 0; i < httpPhotos.length; i += concurrency) {
+    const batch = httpPhotos.slice(i, i + concurrency);
+    await Promise.all(batch.map(async (url) => {
+      try {
+        const buf = await fetchHttpBuffer(url);
+        if (buf) media.set(url, buf);
+      } catch (_) {}
+    }));
+  }
 
   return (member) => {
     if (!member.photo) return null;
@@ -204,27 +227,29 @@ exports.printMembers = async (req, res, next) => {
   try {
     const filter = applyMemberScope(req.currentUser, {});
     applyPrintFilters(req, filter);
-    const limit = Math.min(Math.max(Number(req.query.limit) || 2000, 1), 2000);
+    const limit = Math.min(Math.max(Number(req.query.limit) || 10000, 1), 10000);
     const members = await Member.find(filter)
       .populate('booth ward')
-      .sort({ village: 1, houseNumber: 1, name: 1 })
+      .sort({ village: 1, houseNumber: 1, voterSerial: 1, name: 1 })
       .collation({ locale: 'en', numericOrdering: true, strength: 1 })
       .limit(limit)
       .lean();
-    const getPhotoSource = await loadPhotoSources(members);
 
-    const selected = [...new Set(String(req.query.fields || 'name,voterId,mobile,village,booth')
+    const getPhotoSource = await loadPhotoSources(members, req.query.photo !== 'false');
+
+    const selected = [...new Set(String(req.query.fields || 'name,voterId,voterSerial,wardNumber,partNumber,guardianName,mobile,village,gramPanchayat')
       .split(',').map((key) => key.trim()).filter((key) => fields[key]))];
-    const columns = Math.max(1, Math.min(3, Number(req.query.columns || 1)));
+    const columns = Math.max(1, Math.min(3, Number(req.query.columns || 2)));
     const includePhoto = req.query.photo !== 'false';
-    const paperSize = ['A4', 'A3', 'LETTER'].includes(String(req.query.paperSize).toUpperCase())
+    const paperSize = ['A4', 'A3', 'LETTER', 'LEGAL'].includes(String(req.query.paperSize).toUpperCase())
       ? String(req.query.paperSize).toUpperCase() : 'A4';
     const orientation = req.query.orientation === 'landscape' ? 'landscape' : 'portrait';
-    const title = String(req.query.title || 'मतदाता सूची').slice(0, 100);
+    const title = String(req.query.title || 'मतदाता सूची 2026').slice(0, 100);
+
     const doc = new PDFDocument({ size: paperSize, layout: orientation, margin: 28, bufferPages: true });
     doc.registerFont('Hindi', regularFont).registerFont('HindiBold', boldFont).font('Hindi');
     res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', 'inline; filename="custom-voter-list.pdf"');
+    res.setHeader('Content-Disposition', 'inline; filename="voter-list.pdf"');
     doc.pipe(res);
 
     const margin = 28;
@@ -236,70 +261,104 @@ exports.printMembers = async (req, res, next) => {
     const topY = 64;
     const bottomY = doc.page.height - 38;
 
+    // Aggregate metadata for official cover and headers
+    const sampleMember = members[0] || {};
+    const uniqueAssembly = [...new Set(members.map(m => m.assemblyName || (m.assemblyNumber ? `${m.assemblyNumber} - ${m.assemblyName}` : '')).filter(Boolean))].join(', ') || '179 - सहाड़ा (सामान्य)';
+    const uniqueGps = [...new Set(members.map(m => m.gramPanchayat).filter(Boolean))].join(', ');
+    const uniqueVillages = [...new Set(members.map(m => m.village || m.location).filter(Boolean))].slice(0, 12).join(', ');
+    const uniqueWards = [...new Set(members.map(m => m.wardNumber || (Array.isArray(m.municipalWardNumbers) && m.municipalWardNumbers[0])).filter(Boolean))].sort((a, b) => (parseInt(a) || 0) - (parseInt(b) || 0));
+    const uniqueParts = [...new Set(members.map(m => m.partNumber).filter(Boolean))].sort((a, b) => (parseInt(a) || 0) - (parseInt(b) || 0));
+    const uniqueSections = [...new Set(members.map(m => m.sectionName || (m.sectionNumber ? `अनुभाग ${m.sectionNumber}: ${m.sectionName || ''}` : '')).filter(Boolean))];
+
+    const maleCount = members.filter(m => m.gender === 'male').length;
+    const femaleCount = members.filter(m => m.gender === 'female').length;
+    const otherCount = members.length - (maleCount + femaleCount);
+
     const drawHeader = () => {
-      doc.font('HindiBold').fontSize(14).fillColor('#071b4b').text(title, margin, 25, { width: usableWidth - 120 });
-      doc.font('Hindi').fontSize(8.5).fillColor('#667394').text(`कुल मतदाता: ${members.length}`, doc.page.width - margin - 115, 29, { width: 115, align: 'right' });
-      doc.moveTo(margin, 53).lineTo(doc.page.width - margin, 53).strokeColor('#dbe4f2').stroke();
+      doc.font('HindiBold').fontSize(13).fillColor('#071b4b').text(title, margin, 24, { width: usableWidth - 150 });
+      let subHeader = `विधानसभा: ${uniqueAssembly}`;
+      if (uniqueGps) subHeader += ` | पं.: ${uniqueGps}`;
+      if (uniqueWards.length === 1) subHeader += ` | वार्ड ${uniqueWards[0]}`;
+      if (uniqueParts.length === 1) subHeader += ` | भाग #${uniqueParts[0]}`;
+      doc.font('Hindi').fontSize(8).fillColor('#475569').text(subHeader, margin, 40, { width: usableWidth - 150 });
+
+      doc.font('HindiBold').fontSize(8.5).fillColor('#1e40af').text(`कुल मतदाता: ${members.length}`, doc.page.width - margin - 140, 26, { width: 140, align: 'right' });
+      doc.moveTo(margin, 54).lineTo(doc.page.width - margin, 54).strokeColor('#cbd5e1').stroke();
       doc.fillColor('#111827');
     };
 
-    // Draw 1st Page Official Cover Page Summary if requested or default true for full lists
+    // 1. Draw Official Cover Page (Like Official Election Commission Voter List)
     if (req.query.includeCoverPage !== 'false') {
-      const maleCount = members.filter(m => m.gender === 'male').length;
-      const femaleCount = members.filter(m => m.gender === 'female').length;
-      const otherCount = members.length - (maleCount + femaleCount);
-      const uniqueSections = [...new Set(members.map(m => m.sectionName || m.sectionNumber).filter(Boolean))];
-      const sampleMember = members[0] || {};
+      doc.rect(margin, margin, usableWidth, doc.page.height - margin * 2).lineWidth(2).strokeColor('#071b4b').stroke();
 
-      doc.rect(margin, margin, usableWidth, doc.page.height - margin * 2).lineWidth(1.5).strokeColor('#071b4b').stroke();
+      // Official Title Header
+      doc.font('HindiBold').fontSize(18).fillColor('#071b4b').text('निर्वाचन नामावली - 2026', margin + 15, margin + 18, { align: 'center', width: usableWidth - 30 });
+      doc.font('HindiBold').fontSize(12).fillColor('#2563eb').text(`विधानसभा निर्वाचन क्षेत्र: ${uniqueAssembly}`, margin + 15, margin + 44, { align: 'center', width: usableWidth - 30 });
+
+      let coverY = margin + 74;
+
+      // Box 1: Administrative & Hierarchy Details (Ward & Part & GP)
+      doc.roundedRect(margin + 15, coverY, usableWidth - 30, 95, 6).fillOpacity(0.04).fillAndStroke('#2563eb', '#cbd5e1').fillOpacity(1);
+      doc.font('HindiBold').fontSize(11).fillColor('#1e40af').text('1. क्षेत्र एवं प्रशासनिक विवरण (Area & Administrative Details):', margin + 25, coverY + 8);
+      doc.font('Hindi').fontSize(9.5).fillColor('#0f172a');
       
-      doc.font('HindiBold').fontSize(18).fillColor('#071b4b').text('मतदाता सूची का विवरण (भाग की स्थिति)', margin + 15, margin + 20, { align: 'center', width: usableWidth - 30 });
-      doc.font('HindiBold').fontSize(12).fillColor('#2563eb').text(`विधानसभा / क्षेत्र: ${sampleMember.assemblyName || sampleMember.municipality || 'सामान्य'}`, margin + 15, margin + 50, { align: 'center', width: usableWidth - 30 });
-      
-      let coverY = margin + 85;
-      
-      // Section Box
-      doc.roundedRect(margin + 15, coverY, usableWidth - 30, 110, 6).fillOpacity(0.03).fillAndStroke('#071b4b', '#cbd5e1').fillOpacity(1);
-      doc.font('HindiBold').fontSize(11).fillColor('#071b4b').text('1. भाग में आने वाले अनुभागों की संख्या एवं नाम:', margin + 25, coverY + 10);
+      const partDisplay = uniqueParts.length > 0
+        ? (uniqueParts.length <= 10 ? uniqueParts.map(p => `भाग #${p}`).join(', ') : `भाग #${uniqueParts[0]} से #${uniqueParts[uniqueParts.length - 1]} (${uniqueParts.length} भाग)`)
+        : (req.query.partNumber ? `भाग #${req.query.partNumber}` : 'समस्त भाग');
+
+      const wardDisplay = uniqueWards.length > 0
+        ? (uniqueWards.length <= 12 ? uniqueWards.map(w => `वार्ड ${w}`).join(', ') : `वार्ड ${uniqueWards[0]} से ${uniqueWards[uniqueWards.length - 1]} (${uniqueWards.length} वार्ड)`)
+        : (req.query.wardNumber ? `वार्ड ${req.query.wardNumber}` : 'समस्त वार्ड');
+
+      doc.text(`ग्राम पंचायत / निकाय: ${uniqueGps || req.query.gramPanchayat || sampleMember.gramPanchayat || 'समस्त'}  |  तहसील: ${sampleMember.tehsil || req.query.tehsil || 'रायपुर'}`, margin + 35, coverY + 28);
+      doc.text(`वार्ड संख्या: ${wardDisplay}`, margin + 35, coverY + 46);
+      doc.text(`मतदान केंद्र / भाग संख्या: ${partDisplay}`, margin + 35, coverY + 64);
+      doc.text(`सम्मिलित राजस्व गाँव: ${uniqueVillages || sampleMember.village || '-'}`, margin + 35, coverY + 80);
+
+      coverY += 105;
+
+      // Box 2: Sections List (भाग में आने वाले अनुभाग)
+      doc.roundedRect(margin + 15, coverY, usableWidth - 30, 85, 6).fillOpacity(0.03).fillAndStroke('#071b4b', '#cbd5e1').fillOpacity(1);
+      doc.font('HindiBold').fontSize(11).fillColor('#071b4b').text('2. अनुभागों की संख्या एवं नाम (Sections in this Part / Ward):', margin + 25, coverY + 8);
       doc.font('Hindi').fontSize(9.5).fillColor('#1f2937');
-      let secText = uniqueSections.slice(0, 5).map((sec, idx) => `${idx + 1}. ${sec}`).join('\n');
-      if (!secText) secText = '1. मुख्य भाग एवं समस्त अनुभाग';
+      let secText = uniqueSections.slice(0, 4).map((sec, idx) => `${idx + 1}. ${sec}`).join('\n');
+      if (!secText) secText = '1. मुख्य भाग एवं समस्त सम्मिलित क्षेत्र';
       doc.text(secText, margin + 35, coverY + 28, { width: usableWidth - 50 });
-      
-      coverY += 125;
-      
-      // Stats Table Box
-      doc.roundedRect(margin + 15, coverY, usableWidth - 30, 95, 6).strokeColor('#cbd5e1').stroke();
-      doc.font('HindiBold').fontSize(11).fillColor('#071b4b').text('2. मतदाता संख्या का विवरण (Gender Breakdown):', margin + 25, coverY + 10);
-      
+
+      coverY += 95;
+
+      // Box 3: Gender Breakdown Table (मतदाता संख्या का विवरण)
+      doc.roundedRect(margin + 15, coverY, usableWidth - 30, 85, 6).strokeColor('#cbd5e1').stroke();
+      doc.font('HindiBold').fontSize(11).fillColor('#071b4b').text('3. मतदाता संख्या का विवरण (Gender Breakdown Summary):', margin + 25, coverY + 8);
+
       const colW = (usableWidth - 50) / 4;
       doc.font('HindiBold').fontSize(9.5).fillColor('#1e293b');
-      doc.text('पुरुष', margin + 35, coverY + 32, { width: colW });
-      doc.text('महिला', margin + 35 + colW, coverY + 32, { width: colW });
-      doc.text('तृतीय लिंग', margin + 35 + colW * 2, coverY + 32, { width: colW });
-      doc.text('कुल मतदाता', margin + 35 + colW * 3, coverY + 32, { width: colW });
+      doc.text('पुरुष मतदाता', margin + 35, coverY + 28, { width: colW });
+      doc.text('महिला मतदाता', margin + 35 + colW, coverY + 28, { width: colW });
+      doc.text('तृतीय लिंग', margin + 35 + colW * 2, coverY + 28, { width: colW });
+      doc.text('कुल मतदाता', margin + 35 + colW * 3, coverY + 28, { width: colW });
 
-      doc.moveTo(margin + 25, coverY + 48).lineTo(margin + usableWidth - 25, coverY + 48).strokeColor('#cbd5e1').stroke();
+      doc.moveTo(margin + 25, coverY + 44).lineTo(margin + usableWidth - 25, coverY + 44).strokeColor('#cbd5e1').stroke();
 
       doc.font('Hindi').fontSize(11).fillColor('#0f172a');
-      doc.text(String(maleCount), margin + 35, coverY + 56, { width: colW });
-      doc.text(String(femaleCount), margin + 35 + colW, coverY + 56, { width: colW });
-      doc.text(String(otherCount), margin + 35 + colW * 2, coverY + 56, { width: colW });
-      doc.font('HindiBold').text(String(members.length), margin + 35 + colW * 3, coverY + 56, { width: colW });
+      doc.text(String(maleCount), margin + 35, coverY + 52, { width: colW });
+      doc.text(String(femaleCount), margin + 35 + colW, coverY + 52, { width: colW });
+      doc.text(String(otherCount), margin + 35 + colW * 2, coverY + 52, { width: colW });
+      doc.font('HindiBold').fillColor('#2563eb').text(String(members.length), margin + 35 + colW * 3, coverY + 52, { width: colW });
 
-      coverY += 110;
+      coverY += 95;
 
-      // Location Box with Complete Address Details (No QR Code)
-      doc.roundedRect(margin + 15, coverY, usableWidth - 30, 95, 6).fillOpacity(0.03).fillAndStroke('#2563eb', '#bfdbfe').fillOpacity(1);
-      doc.font('HindiBold').fontSize(11).fillColor('#1e40af').text('3. मतदान केंद्र एवं क्षेत्र का विवरण (Location Details):', margin + 25, coverY + 10);
+      // Box 4: Polling Station & Address Details
+      doc.roundedRect(margin + 15, coverY, usableWidth - 30, 75, 6).fillOpacity(0.03).fillAndStroke('#16a34a', '#bbf7d0').fillOpacity(1);
+      doc.font('HindiBold').fontSize(11).fillColor('#15803d').text('4. मतदान केंद्र भवन व संपर्क विवरण (Polling Station Details):', margin + 25, coverY + 8);
       doc.font('Hindi').fontSize(9.5).fillColor('#1f2937');
-      doc.text(`बूथ / भाग संख्या: ${sampleMember.partNumber || '-'} | भाग का नाम: ${sampleMember.partName || '-'}`, margin + 35, coverY + 30);
-      doc.text(`मुख्य गाँव / मोहल्ला: ${sampleMember.village || sampleMember.location || '-'} | पिन कोड: ${sampleMember.pinCode || '-'}`, margin + 35, coverY + 48);
-      doc.text(`तहसील / ग्राम पंचायत: ${sampleMember.tehsil || sampleMember.gramPanchayat || '-'} | थाना / डाकघर: ${sampleMember.policeStation || '-'}/${sampleMember.postOffice || '-'}`, margin + 35, coverY + 66);
+      doc.text(`मतदान केंद्र भवन: ${sampleMember.sectionName || sampleMember.partName || (uniqueGps ? `राजकीय विद्यालय, ${uniqueGps}` : 'राजकीय उच्च प्राथमिक विद्यालय')}`, margin + 35, coverY + 28);
+      doc.text(`थाना / डाकघर: ${sampleMember.policeStation || 'रायपुर'} / ${sampleMember.postOffice || 'रायपुर'}  |  पिन कोड: ${sampleMember.pinCode || '311803'}`, margin + 35, coverY + 48);
 
       doc.addPage();
     }
 
+    // 2. Draw Voter Cards
     drawHeader();
     let y = topY;
     for (let index = 0; index < members.length; index += columns) {
@@ -329,7 +388,6 @@ exports.printMembers = async (req, res, next) => {
               doc.image(image, x + 9, y + 10, { fit: [48, 62], align: 'center', valign: 'center' });
             }
             catch (error) {
-              console.warn('Failed to draw voter photo in PDF:', item.member.voterId || item.member._id, error.message);
               doc.roundedRect(x + 9, y + 10, 48, 62, 3).strokeColor('#dbe4f2').stroke();
               doc.font('Hindi').fontSize(6).fillColor('#94a3b8').text('Photo', x + 9, y + 36, { width: 48, align: 'center' });
             }
