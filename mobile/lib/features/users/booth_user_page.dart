@@ -1,15 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:speech_to_text/speech_to_text.dart';
-import 'package:intl/intl.dart';
 
 import '../../core/api_client.dart';
-import '../../core/contact_actions.dart';
 import '../../core/theme.dart';
 import '../../layout/app_layout.dart';
-import '../../widgets/common.dart';
-import '../../widgets/mobile_components.dart';
-import '../../widgets/voter_phonebook.dart';
-import '../voters/voter_management_page.dart';
 
 class BoothUserPage extends StatefulWidget {
   const BoothUserPage({super.key});
@@ -18,1970 +12,1283 @@ class BoothUserPage extends StatefulWidget {
   State<BoothUserPage> createState() => _BoothUserPageState();
 }
 
-class _BoothUserPageState extends State<BoothUserPage> {
-  final boothSearch = TextEditingController();
-  final voterSearch = TextEditingController();
-  final voterSectionKey = GlobalKey();
-  final voterSpeech = SpeechToText();
-  bool voterListening = false;
-  String? selectedBoothId;
-  String letter = '';
+class _BoothUserPageState extends State<BoothUserPage> with SingleTickerProviderStateMixin {
+  late TabController tabController;
+  final searchController = TextEditingController();
+  final voterSearchController = TextEditingController();
+  final speech = SpeechToText();
+  bool isListening = false;
+
+  Map<String, dynamic>? hierarchyData;
+  List<Map<String, dynamic>> allUsers = [];
+  bool loading = true;
+  String? errorMessage;
+
+  // Selected filters
+  String? selectedPanchayat;
+  String? selectedWard;
+  String? selectedPart;
+  String scopeType = 'all'; // 'all', 'panchayat', 'ward', 'booth'
+
   int refreshKey = 0;
-
-  void refresh() => setState(() => refreshKey++);
-
-  @override
-  void dispose() {
-    boothSearch.dispose();
-    voterSpeech.stop();
-    voterSearch.dispose();
-    super.dispose();
-  }
-
-  Future<void> toggleVoterVoiceSearch() async {
-    if (voterListening) {
-      await voterSpeech.stop();
-      if (mounted) setState(() => voterListening = false);
-      return;
-    }
-    final available = await voterSpeech.initialize(
-      onStatus: (status) {
-        if (mounted && (status == 'done' || status == 'notListening')) {
-          setState(() => voterListening = false);
-        }
-      },
-      onError: (_) {
-        if (mounted) setState(() => voterListening = false);
-      },
-    );
-    if (!available) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-            content: Text('इस डिवाइस पर voice search उपलब्ध नहीं है।')));
-      }
-      return;
-    }
-    setState(() => voterListening = true);
-    await voterSpeech.listen(
-      listenOptions: SpeechListenOptions(
-        localeId: 'hi_IN',
-        listenMode: ListenMode.search,
-        partialResults: true,
-      ),
-      onResult: (result) {
-        voterSearch.text = result.recognizedWords;
-        voterSearch.selection =
-            TextSelection.collapsed(offset: voterSearch.text.length);
-        if (mounted) setState(() {});
-      },
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) => FutureBlock<List<dynamic>>(
-        key: ValueKey('booth-users-$refreshKey'),
-        load: () => api.list('/api/booths'),
-        builder: (boothsRaw) => FutureBlock<List<dynamic>>(
-          load: () => api.list('/api/auth/users'),
-          builder: (usersRaw) {
-            final booths = boothsRaw
-                .whereType<Map>()
-                .map((item) => Map<String, dynamic>.from(item))
-                .where(_hasMappedVoters)
-                .toList();
-            final heads = usersRaw
-                .whereType<Map>()
-                .where((item) =>
-                    item['role'] == 'booth' &&
-                    item['active'] != false &&
-                    (_idOf(item['assignedBooth']) ?? '').isNotEmpty)
-                .map((item) => Map<String, dynamic>.from(item))
-                .toList();
-            if (selectedBoothId == null && booths.isNotEmpty) {
-              final mapped = booths.where((booth) {
-                final id = booth['_id']?.toString() ?? '';
-                return heads.any((user) =>
-                    _idOf(user['assignedBooth']) == id &&
-                    _stat(user, 'boothVoterCount') > 0);
-              }).toList();
-              selectedBoothId =
-                  ((mapped.isNotEmpty ? mapped.first : booths.first)['_id'] ??
-                          '')
-                      .toString();
-            }
-            final selectedBooth =
-                booths.cast<Map<String, dynamic>?>().firstWhere(
-                      (booth) => '${booth?['_id']}' == selectedBoothId,
-                      orElse: () => booths.isEmpty ? null : booths.first,
-                    );
-            final totalVoters = heads.fold<int>(
-                0, (sum, user) => sum + _stat(user, 'boothVoterCount'));
-            return AppPage(children: [
-              PremiumFeatureHero(
-                title: 'बूथ मैनेजर',
-                subtitle:
-                    'बूथ खोजें, मतदाता देखें और सही manager को सुरक्षित access दें।',
-                icon: Icons.manage_accounts_rounded,
-                badges: const ['Role access', 'Booth wise', 'Secure'],
-              ),
-              _SummaryStrip(
-                booths: booths.length,
-                heads: heads.length,
-                activeHeads: heads.where((u) => u['active'] != false).length,
-                voters: totalVoters,
-              ),
-              LayoutBuilder(builder: (context, constraints) {
-                final wide = constraints.maxWidth >= 980;
-                final finder = _BoothFinder(
-                  booths: booths,
-                  heads: heads,
-                  selectedBoothId: selectedBoothId,
-                  controller: boothSearch,
-                  onChanged: () => setState(() {}),
-                  onSelect: (id) => setState(() {
-                    selectedBoothId = id;
-                    voterSearch.clear();
-                    letter = '';
-                  }),
-                );
-                final workspace = _BoothWorkspace(
-                  booth: selectedBooth,
-                  booths: booths,
-                  heads: heads
-                      .where((user) =>
-                          _idOf(user['assignedBooth']) == selectedBoothId)
-                      .toList(),
-                  voterSearch: voterSearch,
-                  voterSectionKey: voterSectionKey,
-                  letter: letter,
-                  onLetter: (value) => setState(() => letter = value),
-                  onVoterSearch: () => setState(() {}),
-                  voterListening: voterListening,
-                  onVoterVoiceSearch: toggleVoterVoiceSearch,
-                  onRefresh: refresh,
-                  onAddManager: (candidate) => _openManagerForm(
-                    booths: booths,
-                    boothId: selectedBoothId,
-                    candidate: candidate,
-                  ),
-                  onManualAdd: () => _openManagerForm(
-                    booths: booths,
-                    boothId: selectedBoothId,
-                  ),
-                );
-                if (!wide) {
-                  return Column(children: [
-                    finder,
-                    const SizedBox(height: 12),
-                    workspace,
-                  ]);
-                }
-                return Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      SizedBox(width: 330, child: finder),
-                      const SizedBox(width: 14),
-                      Expanded(child: workspace),
-                    ]);
-              }),
-            ]);
-          },
-        ),
-      );
-
-  void _openManagerForm({
-    required List<Map<String, dynamic>> booths,
-    String? boothId,
-    Map<String, dynamic>? candidate,
-    Map<String, dynamic>? user,
-  }) {
-    showDialog(
-      context: context,
-      builder: (_) => BoothUserForm(
-        user: user,
-        booths: booths,
-        initialBoothId: boothId,
-        candidate: candidate,
-        onSaved: refresh,
-      ),
-    );
-  }
-}
-
-List<String> _stringList(dynamic value) => value is List
-    ? value
-        .map((item) => item.toString().trim())
-        .where((item) => item.isNotEmpty)
-        .toList()
-    : const [];
-
-bool _hasMappedVoters(Map<String, dynamic> booth) {
-  final count = (booth['memberCount'] as num?)?.toInt() ?? 0;
-  return count > 0 || _stringList(booth['locationNames']).isNotEmpty;
-}
-
-String _boothDisplayName(Map<String, dynamic> booth) {
-  final updatedName = (booth['name'] ?? '').toString().trim();
-  if (updatedName.isNotEmpty && updatedName != '-') return updatedName;
-  final villages = _stringList(booth['villages']);
-  final locations = _stringList(booth['locationNames']);
-  final village = villages.isNotEmpty
-      ? villages.first
-      : locations.firstWhere(
-          (value) => !value.contains(','),
-          orElse: () => locations.isEmpty ? '' : locations.last,
-        );
-  final part = (booth['number'] ?? '').toString().trim();
-  if (village.isNotEmpty) return village;
-  if (part.isNotEmpty) return 'भाग $part';
-  return village.isNotEmpty ? village : 'बूथ';
-}
-
-class _SummaryStrip extends StatelessWidget {
-  const _SummaryStrip({
-    required this.booths,
-    required this.heads,
-    required this.activeHeads,
-    required this.voters,
-  });
-
-  final int booths;
-  final int heads;
-  final int activeHeads;
-  final int voters;
-
-  @override
-  Widget build(BuildContext context) => LayoutBuilder(
-        builder: (context, constraints) {
-          final items = [
-            _TinyMetric('Booths', booths, Icons.home_work_rounded, blue),
-            _TinyMetric(
-                'Managers', heads, Icons.supervisor_account_rounded, green),
-            _TinyMetric(
-                'Active', activeHeads, Icons.verified_user_rounded, orange),
-            _TinyMetric(
-                'Mapped voters', voters, Icons.how_to_vote_rounded, navy),
-          ];
-          if (constraints.maxWidth < 600) {
-            return SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: Row(
-                children: items
-                    .map((item) => Padding(
-                          padding: const EdgeInsets.only(right: 8),
-                          child: item,
-                        ))
-                    .toList(),
-              ),
-            );
-          }
-          return Wrap(spacing: 10, runSpacing: 10, children: items);
-        },
-      );
-}
-
-class _TinyMetric extends StatelessWidget {
-  const _TinyMetric(this.label, this.value, this.icon, this.color);
-
-  final String label;
-  final int value;
-  final IconData icon;
-  final Color color;
-
-  @override
-  Widget build(BuildContext context) => Container(
-        width: 142,
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          border: Border.all(color: border),
-          borderRadius: BorderRadius.circular(8),
-        ),
-        child: Row(children: [
-          Icon(icon, color: color, size: 22),
-          const SizedBox(width: 9),
-          Expanded(
-            child:
-                Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text(label,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(color: muted, fontSize: 12)),
-              Text('$value',
-                  style: const TextStyle(
-                      color: navy, fontSize: 20, fontWeight: FontWeight.w900)),
-            ]),
-          ),
-        ]),
-      );
-}
-
-class _BoothFinder extends StatelessWidget {
-  const _BoothFinder({
-    required this.booths,
-    required this.heads,
-    required this.selectedBoothId,
-    required this.controller,
-    required this.onChanged,
-    required this.onSelect,
-  });
-
-  final List<Map<String, dynamic>> booths;
-  final List<Map<String, dynamic>> heads;
-  final String? selectedBoothId;
-  final TextEditingController controller;
-  final VoidCallback onChanged;
-  final ValueChanged<String> onSelect;
-
-  @override
-  Widget build(BuildContext context) {
-    final query = controller.text.trim().toLowerCase();
-    final filtered = booths.where((booth) {
-      final text =
-          '${booth['number'] ?? ''} ${booth['name'] ?? ''} ${booth['area'] ?? ''} ${booth['ward']?['number'] ?? ''} ${_stringList(booth['villages']).join(' ')} ${_stringList(booth['locationNames']).join(' ')}'
-              .toLowerCase();
-      return query.isEmpty || text.contains(query);
-    }).toList();
-    return _Surface(
-      title: 'Find booth',
-      action: Text('${filtered.length}/${booths.length}',
-          style: const TextStyle(color: muted, fontWeight: FontWeight.w800)),
-      child: Column(children: [
-        TextField(
-          controller: controller,
-          onChanged: (_) => onChanged(),
-          decoration: InputDecoration(
-            isDense: true,
-            prefixIcon: const Icon(Icons.search_rounded),
-            suffixIcon: controller.text.isEmpty
-                ? null
-                : IconButton(
-                    onPressed: () {
-                      controller.clear();
-                      onChanged();
-                    },
-                    icon: const Icon(Icons.close_rounded),
-                  ),
-            hintText: 'Booth no, name, ward...',
-          ),
-        ),
-        const SizedBox(height: 10),
-        ConstrainedBox(
-          constraints: const BoxConstraints(maxHeight: 560),
-          child: ListView.separated(
-            shrinkWrap: true,
-            itemCount: filtered.length,
-            separatorBuilder: (_, __) => const SizedBox(height: 6),
-            itemBuilder: (_, index) {
-              final booth = filtered[index];
-              final id = '${booth['_id']}';
-              final selected = id == selectedBoothId;
-              final voters = heads
-                  .where((u) => _idOf(u['assignedBooth']) == id)
-                  .fold<int>(
-                      0, (sum, user) => sum + _stat(user, 'boothVoterCount'));
-              return InkWell(
-                onTap: () => onSelect(id),
-                borderRadius: BorderRadius.circular(8),
-                child: Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
-                  decoration: BoxDecoration(
-                    color: selected ? const Color(0xffedf4ff) : Colors.white,
-                    border: Border.all(color: selected ? blue : border),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Row(children: [
-                    Icon(Icons.how_to_vote_rounded,
-                        color: selected ? blue : navy, size: 24),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(_boothDisplayName(booth),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(
-                                    color: navy, fontWeight: FontWeight.w800)),
-                            Text('$voters मतदाता',
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(
-                                    color: muted, fontSize: 12)),
-                          ]),
-                    ),
-                    Icon(Icons.chevron_right_rounded,
-                        color: selected ? blue : muted),
-                  ]),
-                ),
-              );
-            },
-          ),
-        ),
-      ]),
-    );
-  }
-}
-
-class _BoothWorkspace extends StatelessWidget {
-  const _BoothWorkspace({
-    required this.booth,
-    required this.booths,
-    required this.heads,
-    required this.voterSearch,
-    required this.voterSectionKey,
-    required this.letter,
-    required this.onLetter,
-    required this.onVoterSearch,
-    required this.voterListening,
-    required this.onVoterVoiceSearch,
-    required this.onRefresh,
-    required this.onAddManager,
-    required this.onManualAdd,
-  });
-
-  final Map<String, dynamic>? booth;
-  final List<Map<String, dynamic>> booths;
-  final List<Map<String, dynamic>> heads;
-  final TextEditingController voterSearch;
-  final GlobalKey voterSectionKey;
-  final String letter;
-  final ValueChanged<String> onLetter;
-  final VoidCallback onVoterSearch;
-  final bool voterListening;
-  final VoidCallback onVoterVoiceSearch;
-  final VoidCallback onRefresh;
-  final ValueChanged<Map<String, dynamic>> onAddManager;
-  final VoidCallback onManualAdd;
-
-  @override
-  Widget build(BuildContext context) {
-    if (booth == null) {
-      return const _Surface(
-        title: '1. बूथ चुनें',
-        child: ListTile(
-          leading: Icon(Icons.info_outline_rounded),
-          title: Text('बाईं सूची से बूथ चुनें'),
-        ),
-      );
-    }
-    final boothId = '${booth!['_id']}';
-    final compact = MediaQuery.sizeOf(context).width < 700;
-    return Column(children: [
-      if (compact)
-        _Surface(
-          title: _boothDisplayName(booth!),
-          action: _Pill(
-              Icons.supervisor_account_rounded, '${heads.length} manager'),
-          child: Column(children: [
-            Row(children: [
-              const Icon(Icons.location_on_outlined, color: blue),
-              const SizedBox(width: 7),
-              Expanded(
-                child: Text(
-                  '${booth!['area'] ?? booth!['address'] ?? 'Bheeta'}',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style:
-                      const TextStyle(color: navy, fontWeight: FontWeight.w800),
-                ),
-              ),
-            ]),
-            const SizedBox(height: 10),
-            Row(children: [
-              Expanded(
-                child: FilledButton.icon(
-                  onPressed: () => Scrollable.ensureVisible(
-                    voterSectionKey.currentContext ?? context,
-                    duration: const Duration(milliseconds: 280),
-                    curve: Curves.easeOut,
-                  ),
-                  icon: const Icon(Icons.person_search_rounded, size: 18),
-                  label: const Text('Voter चुनें'),
-                ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: OutlinedButton.icon(
-                  onPressed: onManualAdd,
-                  icon: const Icon(Icons.person_add_alt_1_rounded, size: 18),
-                  label: const Text('Manager जोड़ें'),
-                ),
-              ),
-            ]),
-            if (heads.isNotEmpty)
-              ExpansionTile(
-                tilePadding: EdgeInsets.zero,
-                childrenPadding: EdgeInsets.zero,
-                title: const Text('Current manager details',
-                    style: TextStyle(color: navy, fontWeight: FontWeight.w800)),
-                children: [
-                  _HeadGrid(
-                    heads: heads,
-                    booths: booths,
-                    boothId: boothId,
-                    onChanged: onRefresh,
-                  ),
-                ],
-              ),
-          ]),
-        )
-      else ...[
-        _Surface(
-          title: '1. चुना हुआ भाग',
-          action: const Icon(Icons.check_circle_rounded, color: green),
-          child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            const CircleAvatar(
-              backgroundColor: softBlue,
-              foregroundColor: blue,
-              child: Icon(Icons.how_to_vote_rounded),
-            ),
-            const SizedBox(width: 11),
-            Expanded(
-              child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text('${booth!['name'] ?? '-'}',
-                        style: const TextStyle(
-                            color: navy,
-                            fontSize: 18,
-                            fontWeight: FontWeight.w900)),
-                    const SizedBox(height: 5),
-                    Wrap(spacing: 8, runSpacing: 8, children: [
-                      _Pill(Icons.map_rounded,
-                          'Ward ${booth!['ward']?['number'] ?? '-'}'),
-                      _Pill(Icons.location_on_outlined,
-                          '${booth!['area'] ?? booth!['address'] ?? 'No area'}'),
-                    ]),
-                  ]),
-            ),
-          ]),
-        ),
-        const SizedBox(height: 12),
-        _Surface(
-          title: 'Current manager',
-          action: _Pill(
-              Icons.supervisor_account_rounded, '${heads.length} manager'),
-          child: _HeadGrid(
-            heads: heads,
-            booths: booths,
-            boothId: boothId,
-            onChanged: onRefresh,
-          ),
-        ),
-        const SizedBox(height: 12),
-        _ManagerChoicePanel(
-          onManualAdd: onManualAdd,
-          onPickVoter: () => Scrollable.ensureVisible(
-            voterSectionKey.currentContext ?? context,
-            duration: const Duration(milliseconds: 280),
-            curve: Curves.easeOut,
-          ),
-        ),
-      ],
-      const SizedBox(height: 12),
-      _Surface(
-        title: '2. मतदाता खोजें और चुनें',
-        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          SizedBox(
-            key: voterSectionKey,
-            width: double.infinity,
-            child: TextField(
-              controller: voterSearch,
-              onChanged: (_) => onVoterSearch(),
-              textInputAction: TextInputAction.search,
-              decoration: InputDecoration(
-                isDense: true,
-                prefixIcon: const Icon(Icons.search_rounded),
-                hintText: 'नाम, मोबाइल या EPIC से खोजें…',
-                suffixIcon: Row(mainAxisSize: MainAxisSize.min, children: [
-                  if (voterSearch.text.isNotEmpty)
-                    IconButton(
-                      tooltip: 'खोज साफ करें',
-                      onPressed: () {
-                        voterSearch.clear();
-                        onVoterSearch();
-                      },
-                      icon: const Icon(Icons.close_rounded),
-                    ),
-                  IconButton(
-                    tooltip: voterListening ? 'सुनना बंद करें' : 'बोलकर खोजें',
-                    onPressed: onVoterVoiceSearch,
-                    icon: Icon(
-                      voterListening
-                          ? Icons.mic_rounded
-                          : Icons.mic_none_rounded,
-                      color: voterListening ? Colors.red : blue,
-                    ),
-                  ),
-                ]),
-              ),
-            ),
-          ),
-          if (voterListening) ...[
-            const SizedBox(height: 7),
-            const Text('सुन रहा है…', style: TextStyle(color: blue)),
-          ],
-          const SizedBox(height: 10),
-          _AlphabetBar(selected: letter, onSelected: onLetter),
-          const SizedBox(height: 10),
-          _BoothVoterList(
-            boothId: boothId,
-            query: voterSearch.text.trim(),
-            letter: letter,
-            managers: heads,
-            onMakeManager: onAddManager,
-          ),
-        ]),
-      ),
-    ]);
-  }
-}
-
-class _ManagerChoicePanel extends StatelessWidget {
-  const _ManagerChoicePanel(
-      {required this.onManualAdd, required this.onPickVoter});
-
-  final VoidCallback onManualAdd;
-  final VoidCallback onPickVoter;
-
-  @override
-  Widget build(BuildContext context) => _Surface(
-        title: 'Manager कैसे जोड़ना है?',
-        child: LayoutBuilder(builder: (context, constraints) {
-          final compact = constraints.maxWidth < 520;
-          final voterButton = FilledButton.icon(
-            key: const ValueKey('choose-voter-manager'),
-            onPressed: onPickVoter,
-            icon: const Icon(Icons.person_search_rounded),
-            label: const Text('Voter से Manager चुनें'),
-          );
-          final manualButton = OutlinedButton.icon(
-            key: const ValueKey('add-manual-manager'),
-            onPressed: onManualAdd,
-            icon: const Icon(Icons.person_add_alt_1_rounded),
-            label: const Text('Manual Manager जोड़ें'),
-          );
-          if (compact) {
-            return Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  voterButton,
-                  const SizedBox(height: 9),
-                  manualButton,
-                ]);
-          }
-          return Row(children: [
-            Expanded(child: voterButton),
-            const SizedBox(width: 10),
-            Expanded(child: manualButton),
-          ]);
-        }),
-      );
-}
-
-class _HeadGrid extends StatelessWidget {
-  const _HeadGrid({
-    required this.heads,
-    required this.booths,
-    required this.boothId,
-    required this.onChanged,
-  });
-
-  final List<Map<String, dynamic>> heads;
-  final List<Map<String, dynamic>> booths;
-  final String boothId;
-  final VoidCallback onChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    if (heads.isEmpty) {
-      return Container(
-        width: double.infinity,
-        padding: const EdgeInsets.all(18),
-        decoration: BoxDecoration(
-          color: const Color(0xfff7f9ff),
-          border: Border.all(color: border),
-          borderRadius: BorderRadius.circular(18),
-        ),
-        child: const Column(children: [
-          CircleAvatar(
-            radius: 26,
-            backgroundColor: softBlue,
-            child: Icon(Icons.supervisor_account_outlined, color: blue),
-          ),
-          SizedBox(height: 10),
-          Text('अभी कोई manager assigned नहीं है',
-              style: TextStyle(color: navy, fontWeight: FontWeight.w900)),
-          SizedBox(height: 4),
-          Text('नीचे voter list से “Make manager” करें या Add manager दबाएँ।',
-              textAlign: TextAlign.center,
-              style: TextStyle(color: muted, fontSize: 12)),
-        ]),
-      );
-    }
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text('${heads.length} manager इस booth में',
-            style: const TextStyle(color: muted, fontWeight: FontWeight.w800)),
-        const SizedBox(height: 8),
-        ...heads.map((user) => _ManagerCard(
-              user: user,
-              booths: booths,
-              boothId: boothId,
-              onChanged: onChanged,
-            )),
-      ],
-    );
-  }
-}
-
-class _ManagerCard extends StatelessWidget {
-  const _ManagerCard({
-    required this.user,
-    required this.booths,
-    required this.boothId,
-    required this.onChanged,
-  });
-
-  final Map<String, dynamic> user;
-  final List<Map<String, dynamic>> booths;
-  final String boothId;
-  final VoidCallback onChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    final active = user['active'] != false;
-    final phone = '${user['phone'] ?? ''}'.trim();
-    final permissions = user['permissions'] as Map?;
-    final enabledPermissions = [
-      if (permissions?['canViewFullMobile'] == true) 'Mobile',
-      if (permissions?['canPrintProfiles'] == true) 'Print',
-      if (permissions?['canExportData'] == true) 'Export',
-    ];
-    Future<void> deleteManager() async {
-      final confirmed = await showDialog<bool>(
-        context: context,
-        builder: (_) => AlertDialog(
-          icon: const Icon(Icons.delete_outline_rounded,
-              color: Colors.red, size: 42),
-          title: const Text('Delete booth manager?'),
-          content: Text(
-              '${user['name'] ?? 'Manager'} ka login access permanently delete ho jayega.'),
-          actions: [
-            TextButton(
-                onPressed: () => Navigator.pop(context, false),
-                child: const Text('Cancel')),
-            FilledButton.icon(
-              style: FilledButton.styleFrom(backgroundColor: Colors.red),
-              onPressed: () => Navigator.pop(context, true),
-              icon: const Icon(Icons.delete_outline_rounded),
-              label: const Text('Delete'),
-            ),
-          ],
-        ),
-      );
-      if (confirmed != true) return;
-      await api.delete('/api/auth/users/${user['_id']}');
-      onChanged();
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Manager deleted')),
-        );
-      }
-    }
-
-    return Container(
-      margin: const EdgeInsets.only(bottom: 10),
-      padding: const EdgeInsets.all(13),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        border:
-            Border.all(color: active ? green.withValues(alpha: .28) : border),
-        borderRadius: BorderRadius.circular(20),
-        boxShadow: const [
-          BoxShadow(
-              color: Color(0x0c071b4b), blurRadius: 16, offset: Offset(0, 8)),
-        ],
-      ),
-      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Row(children: [
-          CircleAvatar(
-            radius: 26,
-            backgroundColor: active ? const Color(0xffe9f8ef) : Colors.red[50],
-            foregroundColor: active ? green : Colors.red,
-            child: Text(_initials('${user['name'] ?? ''}'),
-                style: TextStyle(
-                    color: active ? green : Colors.red,
-                    fontWeight: FontWeight.w900)),
-          ),
-          const SizedBox(width: 11),
-          Expanded(
-            child:
-                Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text('${user['name'] ?? '-'}',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                      color: navy, fontWeight: FontWeight.w900)),
-              Text('${user['email'] ?? '-'}',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(color: muted, fontSize: 12)),
-              const SizedBox(height: 3),
-              Text(phone.isEmpty ? '   ' : phone,
-                  style: const TextStyle(
-                      color: navy, fontSize: 12, fontWeight: FontWeight.w700)),
-            ]),
-          ),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
-            decoration: BoxDecoration(
-              color: active ? const Color(0xffe9f8ef) : Colors.red[50],
-              borderRadius: BorderRadius.circular(20),
-            ),
-            child: Text(active ? 'Active' : 'Inactive',
-                style: TextStyle(
-                    color: active ? green : Colors.red,
-                    fontSize: 11,
-                    fontWeight: FontWeight.w900)),
-          ),
-        ]),
-        const SizedBox(height: 10),
-        Wrap(spacing: 6, runSpacing: 6, children: [
-          _Pill(
-              Icons.admin_panel_settings_rounded,
-              enabledPermissions.isEmpty
-                  ? 'Basic access'
-                  : enabledPermissions.join(', ')),
-          _Pill(Icons.person_add_alt_rounded,
-              'Created ${_stat(user, 'votersCreated')}'),
-          _Pill(Icons.edit_note_rounded,
-              'Updated ${_stat(user, 'votersUpdated')}'),
-          _Pill(Icons.how_to_vote_rounded,
-              'Voters ${_stat(user, 'boothVoterCount')}'),
-        ]),
-        const Divider(height: 18),
-        Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            crossAxisAlignment: WrapCrossAlignment.center,
-            children: [
-              _ManagerActionButton(
-                icon: Icons.call_rounded,
-                label: 'Call',
-                onTap: () => callNumber(context, phone),
-                color: green,
-              ),
-              _ManagerActionButton(
-                icon: Icons.tune_rounded,
-                label: 'Permission',
-                onTap: () => showDialog(
-                  context: context,
-                  builder: (_) => BoothUserForm(
-                    user: user,
-                    booths: booths,
-                    initialBoothId: boothId,
-                    onSaved: onChanged,
-                  ),
-                ),
-                color: blue,
-              ),
-              _ManagerActionButton(
-                icon: Icons.analytics_outlined,
-                label: 'Work',
-                onTap: () => showDialog(
-                  context: context,
-                  builder: (_) => BoothHeadWorkDialog(user: user),
-                ),
-                color: purple,
-              ),
-              _ManagerActionButton(
-                icon: Icons.password_rounded,
-                label: 'Password',
-                onTap: () => showDialog(
-                  context: context,
-                  builder: (_) => ResetPasswordDialog(userId: '${user['_id']}'),
-                ),
-                color: orange,
-              ),
-              _ManagerActionButton(
-                icon: Icons.delete_outline_rounded,
-                label: 'Delete',
-                onTap: deleteManager,
-                color: rose,
-              ),
-              Container(
-                height: 40,
-                padding: const EdgeInsets.only(left: 10),
-                decoration: BoxDecoration(
-                  color: active
-                      ? const Color(0xffe9f8ef)
-                      : const Color(0xfffff1f3),
-                  borderRadius: BorderRadius.circular(14),
-                  border: Border.all(
-                      color: active
-                          ? green.withValues(alpha: .25)
-                          : rose.withValues(alpha: .25)),
-                ),
-                child: Row(mainAxisSize: MainAxisSize.min, children: [
-                  Text(active ? 'Active' : 'Inactive',
-                      style: TextStyle(
-                          color: active ? green : rose,
-                          fontSize: 12,
-                          fontWeight: FontWeight.w900)),
-                  Switch(
-                    value: active,
-                    materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                    onChanged: (value) async {
-                      await api.put(
-                          '/api/auth/users/${user['_id']}', {'active': value});
-                      onChanged();
-                    },
-                  ),
-                ]),
-              ),
-            ]),
-      ]),
-    );
-  }
-}
-
-class _ManagerActionButton extends StatelessWidget {
-  const _ManagerActionButton({
-    required this.icon,
-    required this.label,
-    required this.onTap,
-    required this.color,
-  });
-
-  final IconData icon;
-  final String label;
-  final VoidCallback onTap;
-  final Color color;
-
-  @override
-  Widget build(BuildContext context) => InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(14),
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 8),
-          decoration: BoxDecoration(
-            color: color.withValues(alpha: .09),
-            borderRadius: BorderRadius.circular(14),
-            border: Border.all(color: color.withValues(alpha: .18)),
-          ),
-          child: Row(mainAxisSize: MainAxisSize.min, children: [
-            Icon(icon, color: color, size: 18),
-            const SizedBox(width: 5),
-            Text(label,
-                style: const TextStyle(
-                    color: navy, fontSize: 11, fontWeight: FontWeight.w900)),
-          ]),
-        ),
-      );
-}
-
-class _BoothVoterList extends StatelessWidget {
-  const _BoothVoterList({
-    required this.boothId,
-    required this.query,
-    required this.letter,
-    required this.managers,
-    required this.onMakeManager,
-  });
-
-  final String boothId;
-  final String query;
-  final String letter;
-  final List<Map<String, dynamic>> managers;
-  final ValueChanged<Map<String, dynamic>> onMakeManager;
-
-  Map<String, dynamic>? existingManager(Map<String, dynamic> voter) {
-    final candidateEmail = _candidateEmail(voter).toLowerCase();
-    final mobile = '${voter['mobile'] ?? ''}'.replaceAll(RegExp(r'\D'), '');
-    for (final manager in managers) {
-      final managerEmail = '${manager['email'] ?? ''}'.trim().toLowerCase();
-      final managerMobile =
-          '${manager['phone'] ?? ''}'.replaceAll(RegExp(r'\D'), '');
-      if (candidateEmail.isNotEmpty && managerEmail == candidateEmail) {
-        return manager;
-      }
-      if (mobile.length >= 10 && managerMobile == mobile) return manager;
-    }
-    return null;
-  }
-
-  @override
-  Widget build(BuildContext context) => FutureBlock<Map<String, dynamic>>(
-        key: ValueKey('$boothId-$query-$letter'),
-        load: () => api.getQuery('/api/members', {
-          'booth': boothId,
-          'contactType': 'voter',
-          'q': query,
-          'letter': letter,
-          if (letter.isNotEmpty) 'qMode': 'name',
-          'paged': 'true',
-          'page': '1',
-          'limit': '60',
-        }),
-        builder: (data) {
-          final voters = List<Map<String, dynamic>>.from(
-            (data['items'] as List? ?? [])
-                .map((item) => Map<String, dynamic>.from(item)),
-          );
-          final total = _number(data['total']);
-          if (voters.isEmpty) {
-            return const Padding(
-              padding: EdgeInsets.symmetric(vertical: 24),
-              child: Column(children: [
-                Icon(Icons.person_search_rounded, size: 44, color: muted),
-                SizedBox(height: 7),
-                Text('कोई मतदाता नहीं मिला',
-                    style: TextStyle(color: navy, fontWeight: FontWeight.w900)),
-                Text('नाम, मोबाइल या EPIC जाँचकर दोबारा खोजें।',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(color: muted, fontSize: 12)),
-              ]),
-            );
-          }
-          return Column(children: [
-            Align(
-              alignment: Alignment.centerLeft,
-              child: Text('$total मतदाता · ${voters.length} दिख रहे हैं',
-                  style: const TextStyle(color: muted, fontSize: 12)),
-            ),
-            const SizedBox(height: 6),
-            ...voters.map((voter) {
-              final manager = existingManager(voter);
-              return _VoterManagerRow(
-                voter: voter,
-                existingManager: manager,
-                onOpenProfile: () => Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => VoterDetailPage(
-                      voter: voter,
-                      onChanged: () {},
-                    ),
-                  ),
-                ),
-                onMakeManager: () => onMakeManager(voter),
-              );
-            }),
-          ]);
-        },
-      );
-}
-
-class _VoterManagerRow extends StatelessWidget {
-  const _VoterManagerRow({
-    required this.voter,
-    required this.existingManager,
-    required this.onOpenProfile,
-    required this.onMakeManager,
-  });
-
-  final Map<String, dynamic> voter;
-  final Map<String, dynamic>? existingManager;
-  final VoidCallback onOpenProfile;
-  final VoidCallback onMakeManager;
-
-  @override
-  Widget build(BuildContext context) => Container(
-        margin: const EdgeInsets.only(bottom: 6),
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
-        decoration: BoxDecoration(
-          color:
-              existingManager == null ? Colors.white : const Color(0xfffffbeb),
-          border: Border.all(
-              color: existingManager == null
-                  ? border
-                  : orange.withValues(alpha: .45)),
-          borderRadius: BorderRadius.circular(12),
-        ),
-        child: VoterPhoneTile(
-          voter: voter,
-          onTap: onOpenProfile,
-          trailing: existingManager == null
-              ? Column(mainAxisSize: MainAxisSize.min, children: [
-                  IconButton(
-                    tooltip: 'प्रोफाइल देखें',
-                    visualDensity: VisualDensity.compact,
-                    onPressed: onOpenProfile,
-                    icon: const Icon(Icons.person_outline_rounded, color: blue),
-                  ),
-                  SizedBox(
-                    height: 30,
-                    child: FilledButton(
-                      onPressed: onMakeManager,
-                      style: FilledButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(horizontal: 9),
-                        visualDensity: VisualDensity.compact,
-                      ),
-                      child: const Text('चुनें'),
-                    ),
-                  ),
-                ])
-              : const Tooltip(
-                  message: 'यह व्यक्ति पहले से manager है',
-                  child: Chip(
-                    avatar: Icon(Icons.warning_amber_rounded,
-                        color: orange, size: 17),
-                    label: Text('पहले से Manager'),
-                  ),
-                ),
-        ),
-      );
-}
-
-class _AlphabetBar extends StatelessWidget {
-  const _AlphabetBar({required this.selected, required this.onSelected});
-
-  final String selected;
-  final ValueChanged<String> onSelected;
-
-  static const letters = [
-    '',
-    'A',
-    'B',
-    'C',
-    'D',
-    'E',
-    'F',
-    'G',
-    'H',
-    'I',
-    'J',
-    'K',
-    'L',
-    'M',
-    'N',
-    'O',
-    'P',
-    'Q',
-    'R',
-    'S',
-    'T',
-    'U',
-    'V',
-    'W',
-    'X',
-    'Y',
-    'Z',
-    'अ',
-    'आ',
-    'इ',
-    'क',
-    'ख',
-    'ग',
-    'च',
-    'ज',
-    'ट',
-    'ड',
-    'त',
-    'द',
-    'न',
-    'प',
-    'ब',
-    'म',
-    'य',
-    'र',
-    'ल',
-    'व',
-    'स',
-    'ह',
-  ];
-
-  @override
-  Widget build(BuildContext context) => SingleChildScrollView(
-        scrollDirection: Axis.horizontal,
-        child: Row(
-          children: letters
-              .map((item) => Padding(
-                    padding: const EdgeInsets.only(right: 5),
-                    child: ChoiceChip(
-                      label: Text(item.isEmpty ? 'All' : item),
-                      selected: selected == item,
-                      onSelected: (_) => onSelected(item),
-                      visualDensity: VisualDensity.compact,
-                    ),
-                  ))
-              .toList(),
-        ),
-      );
-}
-
-class _Pill extends StatelessWidget {
-  const _Pill(this.icon, this.label);
-  final IconData icon;
-  final String label;
-
-  @override
-  Widget build(BuildContext context) => Container(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
-        decoration: BoxDecoration(
-          color: const Color(0xfff6f8fc),
-          border: Border.all(color: border),
-          borderRadius: BorderRadius.circular(20),
-        ),
-        child: Row(mainAxisSize: MainAxisSize.min, children: [
-          Icon(icon, size: 13, color: muted),
-          const SizedBox(width: 4),
-          Text(label,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                  color: muted, fontSize: 11, fontWeight: FontWeight.w800)),
-        ]),
-      );
-}
-
-class _Surface extends StatelessWidget {
-  const _Surface({required this.title, required this.child, this.action});
-
-  final String title;
-  final Widget child;
-  final Widget? action;
-
-  @override
-  Widget build(BuildContext context) => Container(
-        width: double.infinity,
-        padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          border: Border.all(color: border),
-          borderRadius: BorderRadius.circular(8),
-        ),
-        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Row(children: [
-            Expanded(
-              child: Text(title,
-                  style: const TextStyle(
-                      color: navy, fontSize: 16, fontWeight: FontWeight.w900)),
-            ),
-            if (action != null) action!,
-          ]),
-          const SizedBox(height: 12),
-          child,
-        ]),
-      );
-}
-
-class BoothUserForm extends StatefulWidget {
-  const BoothUserForm({
-    super.key,
-    this.user,
-    required this.booths,
-    this.initialBoothId,
-    this.candidate,
-    required this.onSaved,
-  });
-
-  final Map<String, dynamic>? user;
-  final List<Map<String, dynamic>> booths;
-  final String? initialBoothId;
-  final Map<String, dynamic>? candidate;
-  final VoidCallback onSaved;
-
-  @override
-  State<BoothUserForm> createState() => _BoothUserFormState();
-}
-
-class _BoothUserFormState extends State<BoothUserForm> {
-  late final name = TextEditingController(
-      text: widget.user?['name'] ??
-          [widget.candidate?['name'], widget.candidate?['surname']]
-              .where((part) => '${part ?? ''}'.trim().isNotEmpty)
-              .join(' '));
-  late final email = TextEditingController(
-      text: widget.user?['email'] ?? _candidateEmail(widget.candidate));
-  late final phone = TextEditingController(
-      text: widget.user?['phone'] ?? '${widget.candidate?['mobile'] ?? ''}');
-  final password = TextEditingController();
-  late String? boothId =
-      widget.initialBoothId ?? _idOf(widget.user?['assignedBooth']);
-  final boothFilter = TextEditingController();
-  bool active = true;
-  bool canPrint = false;
-  bool canExport = false;
-  bool canViewMobile = false;
-  bool canBackup = false;
-  bool canReports = false;
-  bool canImportData = false;
-  bool canCreateVoters = true;
-  bool canEditVoters = true;
-  bool canEditPhoto = true;
-  bool canDeleteVoters = false;
-  bool showPassword = false;
-  bool saving = false;
-  String error = '';
 
   @override
   void initState() {
     super.initState();
-    final permissions = widget.user?['permissions'] as Map?;
-    active = widget.user?['active'] != false;
-    canPrint = permissions?['canPrintProfiles'] == true;
-    canExport = permissions?['canExportData'] == true;
-    canViewMobile = permissions?['canViewFullMobile'] == true;
-    canBackup = permissions?['canBackup'] == true;
-    canReports = permissions?['canViewReports'] == true;
-    canImportData = permissions?['canImportData'] == true;
-    canCreateVoters = permissions?['canCreateVoters'] != false;
-    canEditVoters = permissions?['canEditVoters'] != false;
-    canEditPhoto = permissions?['canEditPhoto'] != false;
-    canDeleteVoters = permissions?['canDeleteVoters'] == true;
+    tabController = TabController(length: 4, vsync: this);
+    _loadInitialData();
   }
 
   @override
   void dispose() {
-    name.dispose();
-    email.dispose();
-    phone.dispose();
-    password.dispose();
-    boothFilter.dispose();
+    tabController.dispose();
+    searchController.dispose();
+    voterSearchController.dispose();
+    speech.stop();
     super.dispose();
   }
 
-  Map<String, dynamic>? get selectedBooth {
-    for (final booth in widget.booths) {
-      if ('${booth['_id']}' == boothId) return booth;
-    }
-    return null;
-  }
-
-  Future<void> save() async {
-    if (boothId == null || boothId!.isEmpty) {
-      setState(() => error = 'Select a booth for this manager.');
-      return;
-    }
-    if (name.text.trim().isEmpty || email.text.trim().isEmpty) {
-      setState(() => error = 'Name and email are required.');
-      return;
-    }
-    if (widget.user == null && password.text.length < 6) {
-      setState(() => error = 'Password must be at least 6 characters.');
-      return;
-    }
+  Future<void> _loadInitialData() async {
     setState(() {
-      saving = true;
-      error = '';
+      loading = true;
+      errorMessage = null;
     });
     try {
-      final body = <String, dynamic>{
-        'name': name.text.trim(),
-        'email': email.text.trim(),
-        'phone': phone.text.trim(),
-        'role': 'booth',
-        'assignedBooth': boothId,
-        'active': active,
-        'permissions': {
-          'canPrintProfiles': canPrint,
-          'canExportData': canExport,
-          'canViewFullMobile': canViewMobile,
-          'canViewReports': canReports,
-          'canImportData': canImportData,
-          'canCreateVoters': canCreateVoters,
-          'canEditVoters': canEditVoters,
-          'canEditPhoto': canEditPhoto,
-          'canDeleteVoters': canDeleteVoters,
-        },
-      };
-      if (password.text.isNotEmpty) body['password'] = password.text;
-      if (widget.user == null) {
-        await api.post('/api/auth/users', body);
+      final hierarchyRes = await api.get('/api/auth/hierarchy-options');
+      final usersRes = await api.list('/api/auth/users');
+
+      if (mounted) {
+        setState(() {
+          hierarchyData = hierarchyRes is Map<String, dynamic> ? hierarchyRes : {};
+          allUsers = usersRes.whereType<Map>().map((u) => Map<String, dynamic>.from(u)).toList();
+          loading = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          errorMessage = 'डेटा लोड करने में त्रुटि: $e';
+          loading = false;
+        });
+      }
+    }
+  }
+
+  void _refresh() {
+    setState(() => refreshKey++);
+    _loadInitialData();
+  }
+
+  List<Map<String, dynamic>> get panchayats {
+    if (hierarchyData == null || hierarchyData!['panchayats'] == null) return [];
+    final list = hierarchyData!['panchayats'] as List;
+    return list.whereType<Map>().map((p) => Map<String, dynamic>.from(p)).toList();
+  }
+
+  List<String> get parts {
+    if (hierarchyData == null || hierarchyData!['parts'] == null) return [];
+    final list = hierarchyData!['parts'] as List;
+    return list.map((p) => p.toString()).toList();
+  }
+
+  List<Map<String, dynamic>> get filteredUsers {
+    final q = searchController.text.trim().toLowerCase();
+    return allUsers.where((user) {
+      if (q.isNotEmpty) {
+        final name = (user['name'] ?? '').toString().toLowerCase();
+        final email = (user['email'] ?? '').toString().toLowerCase();
+        final phone = (user['phone'] ?? '').toString().toLowerCase();
+        final gps = (user['assignedGramPanchayats'] as List? ?? []).join(' ').toLowerCase();
+        final wards = (user['assignedWards'] as List? ?? []).join(' ').toLowerCase();
+        final pParts = (user['assignedParts'] as List? ?? []).join(' ').toLowerCase();
+        if (!name.contains(q) &&
+            !email.contains(q) &&
+            !phone.contains(q) &&
+            !gps.contains(q) &&
+            !wards.contains(q) &&
+            !pParts.contains(q)) {
+          return false;
+        }
+      }
+      return true;
+    }).toList();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (loading) {
+      return const AppPage(children: [
+        Center(child: Padding(padding: EdgeInsets.all(40), child: CircularProgressIndicator())),
+      ]);
+    }
+
+    if (errorMessage != null) {
+      return AppPage(children: [
+        Center(
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            const Icon(Icons.error_outline_rounded, color: Colors.red, size: 48),
+            const SizedBox(height: 12),
+            Text(errorMessage!, style: const TextStyle(color: Colors.red)),
+            const SizedBox(height: 12),
+            ElevatedButton.icon(
+              onPressed: _loadInitialData,
+              icon: const Icon(Icons.refresh),
+              label: const Text('पुनः प्रयास करें'),
+            ),
+          ]),
+        ),
+      ]);
+    }
+
+    final totalManagers = allUsers.length;
+    final activeManagers = allUsers.where((u) => u['active'] != false).length;
+
+    return AppPage(children: [
+      Container(
+        padding: const EdgeInsets.all(18),
+        decoration: BoxDecoration(
+          gradient: const LinearGradient(
+            colors: [Color(0xff1e3a8a), Color(0xff2563eb)],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+          borderRadius: BorderRadius.circular(24),
+          boxShadow: [
+            BoxShadow(color: const Color(0xff2563eb).withValues(alpha: .28), blurRadius: 18, offset: const Offset(0, 8)),
+          ],
+        ),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Row(children: [
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: .18),
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: const Icon(Icons.manage_accounts_rounded, color: Colors.white, size: 28),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                const Text('मैनेजर एवं कार्यकर्ता प्रबंधन',
+                    style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.w900)),
+                const SizedBox(height: 2),
+                Text('${hierarchyData?['samiti'] ?? 'विधानसभा क्षेत्र'} · कुल $totalManagers प्रभारी',
+                    style: TextStyle(color: Colors.white.withValues(alpha: .85), fontSize: 12)),
+              ]),
+            ),
+            ElevatedButton.icon(
+              onPressed: () => _openAddEditDialog(),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.white,
+                foregroundColor: const Color(0xff1e3a8a),
+                elevation: 0,
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+              ),
+              icon: const Icon(Icons.person_add_rounded, size: 18),
+              label: const Text('नया प्रभारी', style: TextStyle(fontWeight: FontWeight.bold)),
+            ),
+          ]),
+          const SizedBox(height: 16),
+          Row(children: [
+            _metricPill('कुल पंचायतें', '${panchayats.length} GP'),
+            const SizedBox(width: 8),
+            _metricPill('सक्रिय प्रभारी', '$activeManagers Active'),
+            const SizedBox(width: 8),
+            _metricPill('कुल भाग/बूथ', '${parts.length} Parts'),
+          ]),
+        ]),
+      ),
+      const SizedBox(height: 16),
+
+      // Tab selector
+      Container(
+        decoration: BoxDecoration(
+          color: const Color(0xffedf2f7),
+          borderRadius: BorderRadius.circular(16),
+        ),
+        child: TabBar(
+          controller: tabController,
+          labelColor: Colors.white,
+          unselectedLabelColor: navy,
+          indicatorSize: TabBarIndicatorSize.tab,
+          indicator: BoxDecoration(
+            color: const Color(0xff2563eb),
+            borderRadius: BorderRadius.circular(14),
+          ),
+          dividerColor: Colors.transparent,
+          tabs: const [
+            Tab(icon: Icon(Icons.groups_rounded, size: 18), text: 'सभी प्रभारी'),
+            Tab(icon: Icon(Icons.location_city_rounded, size: 18), text: 'पंचायतवार'),
+            Tab(icon: Icon(Icons.maps_home_work_rounded, size: 18), text: 'वार्डवार'),
+            Tab(icon: Icon(Icons.how_to_vote_rounded, size: 18), text: 'बूथ/भागवार'),
+          ],
+        ),
+      ),
+      const SizedBox(height: 14),
+
+      // Search Bar
+      TextField(
+        controller: searchController,
+        onChanged: (_) => setState(() {}),
+        decoration: InputDecoration(
+          prefixIcon: const Icon(Icons.search_rounded, color: Color(0xff2563eb)),
+          suffixIcon: searchController.text.isNotEmpty
+              ? IconButton(
+                  icon: const Icon(Icons.close_rounded, size: 18),
+                  onPressed: () => setState(() => searchController.clear()),
+                )
+              : null,
+          hintText: 'प्रभारी का नाम, फोन, पंचायत या वार्ड खोजें...',
+          filled: true,
+          fillColor: Colors.white,
+          border: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: const BorderSide(color: border)),
+          enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: const BorderSide(color: border)),
+          focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: const BorderSide(color: Color(0xff2563eb), width: 1.5)),
+        ),
+      ),
+      const SizedBox(height: 14),
+
+      // Tab Views
+      SizedBox(
+        height: 620,
+        child: TabBarView(
+          controller: tabController,
+          children: [
+            _buildAllManagersView(),
+            _buildPanchayatManagersView(),
+            _buildWardManagersView(),
+            _buildBoothManagersView(),
+          ],
+        ),
+      ),
+    ]);
+  }
+
+  Widget _metricPill(String label, String value) => Expanded(
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 10),
+          decoration: BoxDecoration(
+            color: Colors.black.withValues(alpha: .15),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text(label, style: TextStyle(color: Colors.white.withValues(alpha: .75), fontSize: 10)),
+            Text(value, style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.bold)),
+          ]),
+        ),
+      );
+
+  // TAB 1: ALL MANAGERS LIST
+  Widget _buildAllManagersView() {
+    final list = filteredUsers;
+    if (list.isEmpty) {
+      return Center(
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          const Icon(Icons.person_off_rounded, color: muted, size: 48),
+          const SizedBox(height: 10),
+          const Text('कोई प्रभारी नहीं मिला।', style: TextStyle(color: muted, fontSize: 15)),
+          const SizedBox(height: 10),
+          ElevatedButton.icon(
+            onPressed: () => _openAddEditDialog(),
+            icon: const Icon(Icons.add),
+            label: const Text('नया प्रभारी जोड़ें'),
+          ),
+        ]),
+      );
+    }
+
+    return ListView.separated(
+      itemCount: list.length,
+      separatorBuilder: (_, __) => const SizedBox(height: 10),
+      itemBuilder: (_, index) => _ManagerCard(
+        user: list[index],
+        onEdit: () => _openAddEditDialog(user: list[index]),
+        onToggleActive: (active) => _toggleUserActive(list[index], active),
+        onDelete: () => _deleteUser(list[index]),
+      ),
+    );
+  }
+
+  // TAB 2: PANCHAYAT LEVEL
+  Widget _buildPanchayatManagersView() {
+    final pList = panchayats;
+    return ListView.separated(
+      itemCount: pList.length,
+      separatorBuilder: (_, __) => const SizedBox(height: 10),
+      itemBuilder: (_, index) {
+        final gp = pList[index];
+        final gpName = '${gp['name'] ?? ''}';
+        final gpManagers = allUsers.where((u) {
+          final assignedGps = (u['assignedGramPanchayats'] as List? ?? []).map((e) => e.toString());
+          return assignedGps.contains(gpName);
+        }).toList();
+
+        return Container(
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(color: border),
+          ),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Row(children: [
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(color: const Color(0xffeff6ff), borderRadius: BorderRadius.circular(12)),
+                child: const Icon(Icons.location_city_rounded, color: Color(0xff2563eb), size: 22),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Text(gpName, style: const TextStyle(color: navy, fontSize: 16, fontWeight: FontWeight.bold)),
+                  Text('${gp['totalVoters'] ?? 0} मतदाता · ${(gp['wards'] as List? ?? []).length} वार्ड · ${(gp['villages'] as List? ?? []).length} गाँव',
+                      style: const TextStyle(color: muted, fontSize: 11)),
+                ]),
+              ),
+              IconButton(
+                tooltip: 'इस पंचायत में नया प्रभारी जोड़ें',
+                onPressed: () => _openAddEditDialog(initialPanchayat: gpName, initialScope: 'panchayat'),
+                style: IconButton.styleFrom(backgroundColor: const Color(0xffeff6ff), foregroundColor: const Color(0xff2563eb)),
+                icon: const Icon(Icons.person_add_alt_1_rounded, size: 20),
+              ),
+            ]),
+            if (gpManagers.isNotEmpty) ...[
+              const SizedBox(height: 12),
+              const Divider(height: 1, color: border),
+              const SizedBox(height: 8),
+              Text('नियुक्त प्रभारी (${gpManagers.length}):', style: const TextStyle(color: navy, fontSize: 12, fontWeight: FontWeight.w600)),
+              const SizedBox(height: 6),
+              for (final u in gpManagers)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 6),
+                  child: _MiniUserRow(
+                    user: u,
+                    onEdit: () => _openAddEditDialog(user: u),
+                    onDelete: () => _deleteUser(u),
+                  ),
+                ),
+            ] else ...[
+              const SizedBox(height: 8),
+              const Text('⚠️ कोई संपूर्ण पंचायत प्रभारी नियुक्त नहीं है।', style: TextStyle(color: Colors.orange, fontSize: 11)),
+            ],
+          ]),
+        );
+      },
+    );
+  }
+
+  // TAB 3: WARD LEVEL
+  Widget _buildWardManagersView() {
+    final pList = panchayats;
+    return Column(children: [
+      // Dropdown to pick Panchayat
+      Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14),
+        decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(14), border: Border.all(color: border)),
+        child: DropdownButtonHideUnderline(
+          child: DropdownButton<String>(
+            isExpanded: true,
+            hint: const Text('ग्राम पंचायत चुनें...'),
+            value: selectedPanchayat ?? (pList.isNotEmpty ? '${pList.first['name']}' : null),
+            onChanged: (val) => setState(() => selectedPanchayat = val),
+            items: pList.map((p) => DropdownMenuItem(value: '${p['name']}', child: Text('पंचायत: ${p['name']}'))).toList(),
+          ),
+        ),
+      ),
+      const SizedBox(height: 10),
+      Expanded(
+        child: Builder(builder: (_) {
+          final curGpName = selectedPanchayat ?? (pList.isNotEmpty ? '${pList.first['name']}' : '');
+          final curGp = pList.firstWhere((p) => '${p['name']}' == curGpName, orElse: () => {});
+          final wards = (curGp['wards'] as List? ?? []).map((w) => w.toString()).toList();
+
+          if (wards.isEmpty) {
+            return const Center(child: Text('इस पंचायत में वार्ड डेटा उपलब्ध नहीं है।', style: TextStyle(color: muted)));
+          }
+
+          return ListView.separated(
+            itemCount: wards.length,
+            separatorBuilder: (_, __) => const SizedBox(height: 8),
+            itemBuilder: (_, index) {
+              final wardNum = wards[index];
+              final wardManagers = allUsers.where((u) {
+                final assignedGps = (u['assignedGramPanchayats'] as List? ?? []).map((e) => e.toString());
+                final assignedWards = (u['assignedWards'] as List? ?? []).map((e) => e.toString());
+                return assignedGps.contains(curGpName) && assignedWards.contains(wardNum);
+              }).toList();
+
+              return Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16), border: Border.all(color: border)),
+                child: Row(children: [
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(color: const Color(0xffecfdf5), borderRadius: BorderRadius.circular(10)),
+                    child: Text('वार्ड $wardNum', style: const TextStyle(color: Color(0xff059669), fontWeight: FontWeight.bold, fontSize: 13)),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      Text('$curGpName (वार्ड $wardNum)', style: const TextStyle(color: navy, fontWeight: FontWeight.bold, fontSize: 14)),
+                      if (wardManagers.isNotEmpty)
+                        Text('${wardManagers.map((m) => m['name']).join(', ')} (${wardManagers.first['phone'] ?? wardManagers.first['email']})',
+                            style: const TextStyle(color: Color(0xff059669), fontSize: 11, fontWeight: FontWeight.w600))
+                      else
+                        const Text('प्रभारी नियुक्त नहीं', style: TextStyle(color: muted, fontSize: 11)),
+                    ]),
+                  ),
+                  IconButton(
+                    tooltip: 'वार्ड प्रभारी नियुक्त करें',
+                    onPressed: () => _openAddEditDialog(initialPanchayat: curGpName, initialWard: wardNum, initialScope: 'ward'),
+                    icon: const Icon(Icons.person_add_alt_1_rounded, color: Color(0xff059669), size: 20),
+                  ),
+                ]),
+              );
+            },
+          );
+        }),
+      ),
+    ]);
+  }
+
+  // TAB 4: BOOTH / PART LEVEL
+  Widget _buildBoothManagersView() {
+    final pList = parts;
+    return ListView.separated(
+      itemCount: pList.length,
+      separatorBuilder: (_, __) => const SizedBox(height: 8),
+      itemBuilder: (_, index) {
+        final partNum = pList[index];
+        final partManagers = allUsers.where((u) {
+          final assignedParts = (u['assignedParts'] as List? ?? []).map((e) => e.toString());
+          return assignedParts.contains(partNum);
+        }).toList();
+
+        return Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16), border: Border.all(color: border)),
+          child: Row(children: [
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+              decoration: BoxDecoration(color: const Color(0xffeff6ff), borderRadius: BorderRadius.circular(10)),
+              child: Text('भाग #$partNum', style: const TextStyle(color: Color(0xff2563eb), fontWeight: FontWeight.bold, fontSize: 13)),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text('बूथ / भाग संख्या $partNum', style: const TextStyle(color: navy, fontWeight: FontWeight.bold, fontSize: 14)),
+                if (partManagers.isNotEmpty)
+                  Text('प्रभारी: ${partManagers.map((m) => m['name']).join(', ')}', style: const TextStyle(color: Color(0xff2563eb), fontSize: 11, fontWeight: FontWeight.w600))
+                else
+                  const Text('बूथ प्रभारी नियुक्त नहीं', style: TextStyle(color: muted, fontSize: 11)),
+              ]),
+            ),
+            IconButton(
+              tooltip: 'बूथ प्रभारी नियुक्त करें',
+              onPressed: () => _openAddEditDialog(initialPart: partNum, initialScope: 'booth'),
+              icon: const Icon(Icons.person_add_alt_1_rounded, color: Color(0xff2563eb), size: 20),
+            ),
+          ]),
+        );
+      },
+    );
+  }
+
+  Future<void> _toggleUserActive(Map<String, dynamic> user, bool active) async {
+    try {
+      await api.put('/api/auth/users/${user['_id']}', {'active': active});
+      setState(() => user['active'] = active);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('${user['name']} को ${active ? 'सक्रिय' : 'निष्क्रिय'} किया गया।')),
+        );
+      }
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e')));
+    }
+  }
+
+  Future<void> _deleteUser(Map<String, dynamic> user) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('प्रभारी को हटाएं?'),
+        content: Text('क्या आप सचमुच "${user['name']}" को हटाना चाहते हैं?'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('रद्द करें')),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            child: const Text('हटाएं', style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm == true) {
+      try {
+        await api.delete('/api/auth/users/${user['_id']}');
+        _refresh();
+      } catch (e) {
+        if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e')));
+      }
+    }
+  }
+
+  void _openAddEditDialog({
+    Map<String, dynamic>? user,
+    String? initialPanchayat,
+    String? initialWard,
+    String? initialPart,
+    String? initialScope,
+  }) {
+    showDialog(
+      context: context,
+      builder: (_) => _AddEditManagerDialog(
+        user: user,
+        panchayats: panchayats,
+        parts: parts,
+        initialPanchayat: initialPanchayat,
+        initialWard: initialWard,
+        initialPart: initialPart,
+        initialScope: initialScope,
+        onSaved: _refresh,
+      ),
+    );
+  }
+}
+
+// MANAGER CARD WIDGET
+class _ManagerCard extends StatelessWidget {
+  const _ManagerCard({
+    required this.user,
+    required this.onEdit,
+    required this.onToggleActive,
+    required this.onDelete,
+  });
+
+  final Map<String, dynamic> user;
+  final VoidCallback onEdit;
+  final ValueChanged<bool> onToggleActive;
+  final VoidCallback onDelete;
+
+  @override
+  Widget build(BuildContext context) {
+    final name = '${user['name'] ?? '-'}';
+    final email = '${user['email'] ?? '-'}';
+    final phone = '${user['phone'] ?? ''}';
+    final role = '${user['role'] ?? 'user'}';
+    final active = user['active'] != false;
+    final gps = (user['assignedGramPanchayats'] as List? ?? []).map((e) => e.toString()).toList();
+    final wards = (user['assignedWards'] as List? ?? []).map((e) => e.toString()).toList();
+    final pParts = (user['assignedParts'] as List? ?? []).map((e) => e.toString()).toList();
+
+    String roleTitle = 'कार्यकर्ता';
+    Color roleColor = Colors.blueGrey;
+    if (role == 'admin') {
+      roleTitle = 'व्यवस्थापक (Admin)';
+      roleColor = const Color(0xffea4335);
+    } else if (role == 'booth') {
+      roleTitle = 'बूथ मैनेजर';
+      roleColor = const Color(0xff2563eb);
+    } else if (role == 'ward_head') {
+      roleTitle = 'वार्ड प्रभारी';
+      roleColor = const Color(0xff059669);
+    } else if (gps.isNotEmpty && wards.isEmpty) {
+      roleTitle = 'पंचायत संयोजक';
+      roleColor = const Color(0xff7c3aed);
+    }
+
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: active ? border : Colors.red.withValues(alpha: .3)),
+        boxShadow: const [BoxShadow(color: Color(0x08000000), blurRadius: 8, offset: Offset(0, 2))],
+      ),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [
+          CircleAvatar(
+            radius: 22,
+            backgroundColor: roleColor.withValues(alpha: .14),
+            child: Text(name.isNotEmpty ? name[0].toUpperCase() : 'M',
+                style: TextStyle(color: roleColor, fontWeight: FontWeight.bold, fontSize: 18)),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Row(children: [
+                Expanded(
+                  child: Text(name, maxLines: 1, overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(color: navy, fontSize: 16, fontWeight: FontWeight.bold)),
+                ),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  decoration: BoxDecoration(color: roleColor.withValues(alpha: .12), borderRadius: BorderRadius.circular(8)),
+                  child: Text(roleTitle, style: TextStyle(color: roleColor, fontSize: 11, fontWeight: FontWeight.bold)),
+                ),
+              ]),
+              const SizedBox(height: 2),
+              Text(phone.isNotEmpty ? '📞 $phone · ✉️ $email' : '✉️ $email',
+                  maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: muted, fontSize: 12)),
+            ]),
+          ),
+        ]),
+        const SizedBox(height: 10),
+        // Scope badges
+        Wrap(spacing: 6, runSpacing: 4, children: [
+          if (gps.isNotEmpty)
+            for (final gp in gps)
+              _tag('🏛️ GP: $gp', const Color(0xff7c3aed)),
+          if (wards.isNotEmpty)
+            for (final w in wards)
+              _tag('🏘️ वार्ड #$w', const Color(0xff059669)),
+          if (pParts.isNotEmpty)
+            for (final p in pParts)
+              _tag('🗳️ भाग #$p', const Color(0xff2563eb)),
+          if (gps.isEmpty && wards.isEmpty && pParts.isEmpty && role == 'admin')
+            _tag('🌐 संपूर्ण विधानसभा क्षेत्र', const Color(0xffea4335)),
+        ]),
+        const SizedBox(height: 10),
+        const Divider(height: 1, color: border),
+        const SizedBox(height: 6),
+        Row(children: [
+          Switch(
+            value: active,
+            activeColor: const Color(0xff2563eb),
+            onChanged: onToggleActive,
+          ),
+          Text(active ? 'सक्रिय (Active)' : 'निष्क्रिय (Disabled)', style: TextStyle(color: active ? navy : muted, fontSize: 12)),
+          const Spacer(),
+          IconButton(
+            tooltip: 'संपादित करें',
+            onPressed: onEdit,
+            icon: const Icon(Icons.edit_rounded, color: Color(0xff2563eb), size: 20),
+          ),
+          IconButton(
+            tooltip: 'हटाएं',
+            onPressed: onDelete,
+            icon: const Icon(Icons.delete_outline_rounded, color: Colors.red, size: 20),
+          ),
+        ]),
+      ]),
+    );
+  }
+
+  Widget _tag(String text, Color color) => Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+        decoration: BoxDecoration(color: color.withValues(alpha: .1), borderRadius: BorderRadius.circular(6)),
+        child: Text(text, style: TextStyle(color: color, fontSize: 11, fontWeight: FontWeight.w600)),
+      );
+}
+
+class _MiniUserRow extends StatelessWidget {
+  const _MiniUserRow({required this.user, required this.onEdit, required this.onDelete});
+  final Map<String, dynamic> user;
+  final VoidCallback onEdit;
+  final VoidCallback onDelete;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(color: const Color(0xfff8fafc), borderRadius: BorderRadius.circular(10), border: Border.all(color: border)),
+      child: Row(children: [
+        const Icon(Icons.person, size: 16, color: Color(0xff2563eb)),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text('${user['name']} (${user['phone'] ?? user['email']})',
+              maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: navy, fontSize: 12, fontWeight: FontWeight.bold)),
+        ),
+        IconButton(icon: const Icon(Icons.edit, size: 16, color: Color(0xff2563eb)), onPressed: onEdit, padding: EdgeInsets.zero, constraints: const BoxConstraints()),
+        const SizedBox(width: 8),
+        IconButton(icon: const Icon(Icons.delete, size: 16, color: Colors.red), onPressed: onDelete, padding: EdgeInsets.zero, constraints: const BoxConstraints()),
+      ]),
+    );
+  }
+}
+
+// ADD / EDIT MANAGER DIALOG
+class _AddEditManagerDialog extends StatefulWidget {
+  const _AddEditManagerDialog({
+    this.user,
+    required this.panchayats,
+    required this.parts,
+    this.initialPanchayat,
+    this.initialWard,
+    this.initialPart,
+    this.initialScope,
+    required this.onSaved,
+  });
+
+  final Map<String, dynamic>? user;
+  final List<Map<String, dynamic>> panchayats;
+  final List<String> parts;
+  final String? initialPanchayat;
+  final String? initialWard;
+  final String? initialPart;
+  final String? initialScope;
+  final VoidCallback onSaved;
+
+  @override
+  State<_AddEditManagerDialog> createState() => _AddEditManagerDialogState();
+}
+
+class _AddEditManagerDialogState extends State<_AddEditManagerDialog> {
+  final nameController = TextEditingController();
+  final phoneController = TextEditingController();
+  final emailController = TextEditingController();
+  final passwordController = TextEditingController();
+  final voterSearchController = TextEditingController();
+
+  String selectedScope = 'panchayat'; // 'panchayat', 'ward', 'booth', 'all'
+  String? selectedGp;
+  String? selectedWard;
+  String? selectedPart;
+  String selectedRole = 'booth'; // 'admin', 'ward_head', 'booth', 'worker', 'user'
+  bool selectFromVoters = true;
+
+  // Voter Search State
+  List<Map<String, dynamic>> foundVoters = [];
+  bool searchingVoters = false;
+  Map<String, dynamic>? selectedVoter;
+
+  // Permissions
+  bool canViewFullMobile = true;
+  bool canEditVoters = true;
+  bool canCreateVoters = true;
+  bool canEditPhoto = true;
+  bool canEditParty = true;
+  bool canEditAnubhag = true;
+  bool canMarkVoted = true;
+  bool canDeleteVoters = false;
+  bool canExportData = false;
+  bool canPrintProfiles = true;
+  bool canViewReports = true;
+
+  bool saving = false;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.user != null) {
+      final u = widget.user!;
+      nameController.text = '${u['name'] ?? ''}';
+      phoneController.text = '${u['phone'] ?? ''}';
+      emailController.text = '${u['email'] ?? ''}';
+      selectedRole = '${u['role'] ?? 'booth'}';
+
+      final gps = (u['assignedGramPanchayats'] as List? ?? []).map((e) => e.toString()).toList();
+      final wards = (u['assignedWards'] as List? ?? []).map((e) => e.toString()).toList();
+      final pParts = (u['assignedParts'] as List? ?? []).map((e) => e.toString()).toList();
+
+      if (wards.isNotEmpty) {
+        selectedScope = 'ward';
+        selectedGp = gps.isNotEmpty ? gps.first : null;
+        selectedWard = wards.first;
+      } else if (gps.isNotEmpty) {
+        selectedScope = 'panchayat';
+        selectedGp = gps.first;
+      } else if (pParts.isNotEmpty) {
+        selectedScope = 'booth';
+        selectedPart = pParts.first;
       } else {
-        await api.put('/api/auth/users/${widget.user!['_id']}', body);
+        selectedScope = 'all';
+      }
+
+      final perms = (u['permissions'] as Map?) ?? {};
+      canViewFullMobile = perms['canViewFullMobile'] != false;
+      canEditVoters = perms['canEditVoters'] != false;
+      canCreateVoters = perms['canCreateVoters'] != false;
+      canEditPhoto = perms['canEditPhoto'] != false;
+      canEditParty = perms['canEditParty'] != false;
+      canEditAnubhag = perms['canEditAnubhag'] != false;
+      canMarkVoted = perms['canMarkVoted'] != false;
+      canDeleteVoters = perms['canDeleteVoters'] == true;
+      canExportData = perms['canExportData'] == true;
+      canPrintProfiles = perms['canPrintProfiles'] != false;
+      canViewReports = perms['canViewReports'] != false;
+      selectFromVoters = false;
+    } else {
+      selectedScope = widget.initialScope ?? 'panchayat';
+      selectedGp = widget.initialPanchayat ?? (widget.panchayats.isNotEmpty ? '${widget.panchayats.first['name']}' : null);
+      selectedWard = widget.initialWard;
+      selectedPart = widget.initialPart;
+      if (selectedScope == 'ward') selectedRole = 'ward_head';
+      if (selectedScope == 'panchayat') selectedRole = 'booth';
+      if (selectedScope == 'booth') selectedRole = 'booth';
+    }
+
+    _searchVoters();
+  }
+
+  @override
+  void dispose() {
+    nameController.dispose();
+    phoneController.dispose();
+    emailController.dispose();
+    passwordController.dispose();
+    voterSearchController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _searchVoters() async {
+    if (!mounted) return;
+    setState(() => searchingVoters = true);
+
+    try {
+      final queryParams = <String, String>{
+        'limit': '15',
+      };
+      if (selectedGp != null && selectedGp!.isNotEmpty) {
+        queryParams['gramPanchayat'] = selectedGp!;
+      }
+      if (selectedScope == 'ward' && selectedWard != null && selectedWard!.isNotEmpty) {
+        queryParams['wardNumber'] = selectedWard!;
+      }
+      if (selectedScope == 'booth' && selectedPart != null && selectedPart!.isNotEmpty) {
+        queryParams['partNumber'] = selectedPart!;
+      }
+      final q = voterSearchController.text.trim();
+      if (q.isNotEmpty) {
+        queryParams['q'] = q;
+      }
+
+      final uri = Uri(path: '/api/members', queryParameters: queryParams).toString();
+      final dynamic res = await api.get(uri);
+      final List rawList;
+      if (res is Map && res['items'] is List) {
+        rawList = res['items'] as List;
+      } else if (res is List) {
+        rawList = res;
+      } else {
+        rawList = [];
+      }
+
+      if (mounted) {
+        setState(() {
+          foundVoters = rawList.whereType<Map>().map((v) => Map<String, dynamic>.from(v)).toList();
+          searchingVoters = false;
+        });
+      }
+    } catch (_) {
+      if (mounted) setState(() => searchingVoters = false);
+    }
+  }
+
+  void _onSelectVoter(Map<String, dynamic> v) {
+    setState(() {
+      selectedVoter = v;
+      nameController.text = '${v['name'] ?? ''}'.trim();
+      final mobile = '${v['mobile'] ?? ''}'.replaceAll(RegExp(r'\D'), '');
+      if (mobile.length == 10) phoneController.text = mobile;
+      final epic = '${v['voterId'] ?? ''}'.trim().toLowerCase().replaceAll('/', '_');
+      if (emailController.text.isEmpty && epic.isNotEmpty) {
+        emailController.text = '$epic@crm.com';
+      }
+      if (passwordController.text.isEmpty) {
+        passwordController.text = '123456';
+      }
+    });
+  }
+
+  Future<void> _save() async {
+    final name = nameController.text.trim();
+    var email = emailController.text.trim().toLowerCase();
+    final phone = phoneController.text.trim();
+    final password = passwordController.text.trim();
+
+    if (name.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('कृपया नाम दर्ज करें।')));
+      return;
+    }
+
+    if (email.isEmpty) {
+      if (phone.length >= 10) {
+        email = '$phone@crm.com';
+      } else {
+        final clean = name.replaceAll(RegExp(r'\s+'), '').toLowerCase();
+        email = '$clean${DateTime.now().millisecondsSinceEpoch % 10000}@crm.com';
+      }
+    }
+
+    if (widget.user == null && (password.isEmpty || password.length < 6)) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('पासवर्ड कम से कम 6 अक्षरों का होना चाहिए।')));
+      return;
+    }
+
+    setState(() => saving = true);
+
+    final payload = <String, dynamic>{
+      'name': name,
+      'email': email,
+      'phone': phone,
+      'role': selectedRole,
+      'assignedGramPanchayats': selectedGp != null && selectedScope != 'all' && selectedScope != 'booth' ? [selectedGp!] : [],
+      'assignedWards': selectedScope == 'ward' && selectedWard != null ? [selectedWard!] : [],
+      'assignedParts': selectedScope == 'booth' && selectedPart != null ? [selectedPart!] : [],
+      'assignedVoterId': selectedVoter?['voterId'] ?? '',
+      'permissions': {
+        'canViewFullMobile': canViewFullMobile,
+        'canEditVoters': canEditVoters,
+        'canCreateVoters': canCreateVoters,
+        'canEditPhoto': canEditPhoto,
+        'canEditParty': canEditParty,
+        'canEditAnubhag': canEditAnubhag,
+        'canMarkVoted': canMarkVoted,
+        'canDeleteVoters': canDeleteVoters,
+        'canExportData': canExportData,
+        'canPrintProfiles': canPrintProfiles,
+        'canViewReports': canViewReports,
+      },
+    };
+
+    if (password.isNotEmpty) {
+      payload['password'] = password;
+    }
+
+    try {
+      if (widget.user != null) {
+        await api.put('/api/auth/users/${widget.user!['_id']}', payload);
+      } else {
+        await api.post('/api/auth/users', payload);
       }
       widget.onSaved();
-      if (mounted) Navigator.pop(context);
+      if (mounted) {
+        Navigator.pop(context);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(widget.user != null ? 'प्रभारी अपडेट हो गया।' : 'नया प्रभारी सफलतापूर्वक बनाया गया।')),
+        );
+      }
     } catch (e) {
-      setState(() => error = e.toString().replaceFirst('Exception: ', ''));
-    } finally {
-      if (mounted) setState(() => saving = false);
+      if (mounted) {
+        setState(() => saving = false);
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e')));
+      }
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final mobile = MediaQuery.sizeOf(context).width < 700;
-    final title = widget.user == null
-        ? (widget.candidate == null
-            ? 'Manual booth manager add karein'
-            : 'Voter se manager banayein')
-        : 'Manager access edit karein';
-    final form = ListView(
-      padding: const EdgeInsets.fromLTRB(18, 14, 18, 24),
-      shrinkWrap: !mobile,
-      children: [
-        _managerHero(title),
-        if (widget.candidate != null) ...[
-          const SizedBox(height: 12),
-          _candidatePreview(),
-        ],
-        const SizedBox(height: 18),
-        _formSectionTitle(widget.candidate == null
-            ? 'Manager login details'
-            : '3. Login details'),
-        const SizedBox(height: 9),
-        _managerField(name, 'नाम *', Icons.person_outline_rounded),
-        const SizedBox(height: 12),
-        _managerField(phone, 'मोबाइल नंबर', Icons.phone_outlined,
-            keyboard: TextInputType.phone),
-        const SizedBox(height: 12),
-        _managerField(email, 'लॉगिन ईमेल *', Icons.email_outlined,
-            keyboard: TextInputType.emailAddress),
-        const SizedBox(height: 12),
-        _managerField(password, widget.user == null ? ' *' : 'नया पासवर्ड',
-            Icons.lock_outline_rounded,
-            obscure: !showPassword,
-            suffix: IconButton(
-              tooltip: showPassword ? 'Password ' : 'Password दिखाएँ',
-              onPressed: () => setState(() => showPassword = !showPassword),
-              icon: Icon(showPassword
-                  ? Icons.visibility_off_rounded
-                  : Icons.visibility_rounded),
-            )),
-        const SizedBox(height: 12),
-        _boothPickerCard(),
-        const SizedBox(height: 16),
-        _permissionPanel(),
-        if (error.isNotEmpty) ...[
-          const SizedBox(height: 10),
-          Text(error,
-              style: const TextStyle(
-                  color: Colors.red, fontWeight: FontWeight.w700)),
-        ],
-      ],
-    );
-    if (mobile) {
-      return Dialog.fullscreen(
-        child: Scaffold(
-          backgroundColor: const Color(0xfff7f8fb),
-          appBar: AppBar(
-            backgroundColor: Colors.white,
-            foregroundColor: navy,
-            title: Text(title,
-                style: const TextStyle(fontWeight: FontWeight.w900)),
-            actions: [
-              Padding(
-                padding: const EdgeInsets.only(right: 10),
-                child: FilledButton.icon(
-                  onPressed: saving ? null : save,
-                  icon: const Icon(Icons.save_rounded),
-                  label: Text(saving ? 'Saving...' : 'Confirm'),
-                ),
-              )
-            ],
-          ),
-          body: form,
-        ),
-      );
-    }
+    final curGp = widget.panchayats.firstWhere((p) => '${p['name']}' == selectedGp, orElse: () => {});
+    final wards = (curGp['wards'] as List? ?? []).map((w) => w.toString()).toList();
+
     return AlertDialog(
-      contentPadding: EdgeInsets.zero,
-      content: SizedBox(width: 520, height: 720, child: form),
-      actions: [
-        TextButton(
-            onPressed: saving ? null : () => Navigator.pop(context),
-            child: const Text('Cancel')),
-        FilledButton.icon(
-            onPressed: saving ? null : save,
-            icon: const Icon(Icons.save_outlined),
-            label: Text(saving ? 'Saving...' : 'Confirm & create manager')),
-      ],
-    );
-  }
-
-  Widget _managerHero(String title) {
-    final initial = name.text.trim().isEmpty ? 'M' : name.text.trim()[0];
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(22),
-        border: Border.all(color: border),
-      ),
-      child: Row(children: [
-        CircleAvatar(
-          radius: 34,
-          backgroundColor: softBlue,
-          child: Text(initial.toUpperCase(),
-              style: const TextStyle(
-                  color: blue, fontSize: 24, fontWeight: FontWeight.w900)),
-        ),
-        const SizedBox(width: 12),
+      titlePadding: const EdgeInsets.fromLTRB(20, 18, 20, 12),
+      contentPadding: const EdgeInsets.fromLTRB(20, 0, 20, 16),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+      title: Row(children: [
+        Icon(widget.user != null ? Icons.edit_note_rounded : Icons.person_add_rounded, color: const Color(0xff2563eb)),
+        const SizedBox(width: 10),
         Expanded(
-          child:
-              Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text(title,
-                style: const TextStyle(
-                    color: navy, fontSize: 19, fontWeight: FontWeight.w900)),
-            const SizedBox(height: 3),
-            const Text('नाम, login, बूथ और permissions साफ-साफ सेट करें',
-                style: TextStyle(color: muted, fontSize: 12)),
-          ]),
-        ),
-        Switch(
-          value: active,
-          onChanged: (value) => setState(() => active = value),
+          child: Text(widget.user != null ? 'प्रभारी संपादित करें' : 'नया प्रभारी नियुक्त करें',
+              style: const TextStyle(color: navy, fontSize: 18, fontWeight: FontWeight.bold)),
         ),
       ]),
-    );
-  }
-
-  Widget _candidatePreview() {
-    final candidate = widget.candidate!;
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: const Color(0xfff7fbff),
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: blue.withValues(alpha: .22)),
-      ),
-      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        const Row(children: [
-          Icon(Icons.check_circle_rounded, color: green, size: 19),
-          SizedBox(width: 7),
-          Text('3. Selected voter',
-              style: TextStyle(color: navy, fontWeight: FontWeight.w900)),
-        ]),
-        const SizedBox(height: 7),
-        VoterPhoneTile(voter: candidate),
-      ]),
-    );
-  }
-
-  Widget _boothPickerCard() {
-    final booth = selectedBooth;
-    final label = booth == null
-        ? '  *'
-        : ' ${booth['number'] ?? '-'}  ${booth['name'] ?? '-'}';
-    final sub = booth == null
-        ? 'Search  booth assign '
-        : [
-            if ('${booth['ward']?['number'] ?? ''}'.isNotEmpty)
-              ' ${booth['ward']?['number']}',
-            '${booth['area'] ?? ''}',
-          ].where((v) => v.trim().isNotEmpty).join(' · ');
-    return InkWell(
-      onTap: _pickBooth,
-      borderRadius: BorderRadius.circular(18),
-      child: Container(
-        padding: const EdgeInsets.all(13),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(18),
-          border: Border.all(color: booth == null ? orange : border),
-        ),
-        child: Row(children: [
-          const CircleAvatar(
-            backgroundColor: softBlue,
-            child: Icon(Icons.how_to_vote_rounded, color: blue),
-          ),
-          const SizedBox(width: 11),
-          Expanded(
-            child:
-                Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text(label,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                      color: navy, fontWeight: FontWeight.w900)),
-              const SizedBox(height: 3),
-              Text(sub,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(color: muted, fontSize: 12)),
+      content: SizedBox(
+        width: 600,
+        height: 580,
+        child: SingleChildScrollView(
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            const SizedBox(height: 10),
+            // STEP 1: SCOPE SELECTOR
+            const Text('१. कार्यक्षेत्र का स्तर चुनें (Scope Level):', style: TextStyle(color: navy, fontWeight: FontWeight.bold, fontSize: 13)),
+            const SizedBox(height: 8),
+            Row(children: [
+              _scopeChip('panchayat', '🏛️ पंचायत स्तर', Icons.location_city),
+              const SizedBox(width: 8),
+              _scopeChip('ward', '🏘️ वार्ड स्तर', Icons.maps_home_work),
+              const SizedBox(width: 8),
+              _scopeChip('booth', '🗳️ भाग/बूथ स्तर', Icons.how_to_vote),
             ]),
-          ),
-          const Icon(Icons.search_rounded, color: blue),
-        ]),
-      ),
-    );
-  }
+            const SizedBox(height: 12),
 
-  Future<void> _pickBooth() async {
-    boothFilter.clear();
-    final picked = await showDialog<String>(
-      context: context,
-      builder: (_) => StatefulBuilder(
-        builder: (context, setDialogState) {
-          final query = boothFilter.text.toLowerCase().trim();
-          final filtered = widget.booths.where((booth) {
-            final haystack =
-                '${booth['number'] ?? ''} ${booth['name'] ?? ''} ${booth['area'] ?? ''} ${booth['ward']?['number'] ?? ''}'
-                    .toLowerCase();
-            return query.isEmpty || haystack.contains(query);
-          }).toList();
-          return AlertDialog(
-            title: const Text('बूथ खोजें और चुनें'),
-            content: SizedBox(
-              width: 520,
-              height: 520,
-              child: Column(children: [
-                TextField(
-                  controller: boothFilter,
-                  onChanged: (_) => setDialogState(() {}),
-                  decoration: const InputDecoration(
-                    prefixIcon: Icon(Icons.search_rounded),
-                    hintText: 'बूथ नंबर, नाम, वार्ड या क्षेत्र लिखें...',
+            // Dropdowns based on scope
+            if (selectedScope == 'panchayat' || selectedScope == 'ward') ...[
+              const Text('ग्राम पंचायत:', style: TextStyle(color: muted, fontSize: 12)),
+              const SizedBox(height: 4),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                decoration: BoxDecoration(color: const Color(0xfff8fafc), borderRadius: BorderRadius.circular(12), border: Border.all(color: border)),
+                child: DropdownButtonHideUnderline(
+                  child: DropdownButton<String>(
+                    isExpanded: true,
+                    value: selectedGp,
+                    hint: const Text('पंचायत चुनें...'),
+                    onChanged: (val) {
+                      setState(() {
+                        selectedGp = val;
+                        selectedWard = null;
+                      });
+                      _searchVoters();
+                    },
+                    items: widget.panchayats.map((p) => DropdownMenuItem(value: '${p['name']}', child: Text('पंचायत: ${p['name']} (${p['totalVoters']} वोटर्स)'))).toList(),
                   ),
                 ),
-                const SizedBox(height: 10),
-                Expanded(
+              ),
+              const SizedBox(height: 10),
+            ],
+
+            if (selectedScope == 'ward') ...[
+              const Text('वार्ड नंबर:', style: TextStyle(color: muted, fontSize: 12)),
+              const SizedBox(height: 4),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                decoration: BoxDecoration(color: const Color(0xfff8fafc), borderRadius: BorderRadius.circular(12), border: Border.all(color: border)),
+                child: DropdownButtonHideUnderline(
+                  child: DropdownButton<String>(
+                    isExpanded: true,
+                    value: selectedWard,
+                    hint: const Text('वार्ड नंबर चुनें...'),
+                    onChanged: (val) {
+                      setState(() => selectedWard = val);
+                      _searchVoters();
+                    },
+                    items: wards.map((w) => DropdownMenuItem(value: w, child: Text('वार्ड नंबर $w'))).toList(),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 10),
+            ],
+
+            if (selectedScope == 'booth') ...[
+              const Text('भाग / बूथ संख्या:', style: TextStyle(color: muted, fontSize: 12)),
+              const SizedBox(height: 4),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                decoration: BoxDecoration(color: const Color(0xfff8fafc), borderRadius: BorderRadius.circular(12), border: Border.all(color: border)),
+                child: DropdownButtonHideUnderline(
+                  child: DropdownButton<String>(
+                    isExpanded: true,
+                    value: selectedPart,
+                    hint: const Text('भाग संख्या चुनें...'),
+                    onChanged: (val) {
+                      setState(() => selectedPart = val);
+                      _searchVoters();
+                    },
+                    items: widget.parts.map((p) => DropdownMenuItem(value: p, child: Text('भाग संख्या $p'))).toList(),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 10),
+            ],
+
+            const Divider(color: border, height: 24),
+
+            // STEP 2: CHOOSE FROM VOTERS OR CUSTOM
+            Row(children: [
+              const Text('२. प्रभारी विवरण:', style: TextStyle(color: navy, fontWeight: FontWeight.bold, fontSize: 13)),
+              const Spacer(),
+              ChoiceChip(
+                label: const Text('मतदाता में से चुनें'),
+                selected: selectFromVoters,
+                onSelected: (val) => setState(() => selectFromVoters = true),
+              ),
+              const SizedBox(width: 6),
+              ChoiceChip(
+                label: const Text('कस्टम यूजर'),
+                selected: !selectFromVoters,
+                onSelected: (val) => setState(() => selectFromVoters = false),
+              ),
+            ]),
+            const SizedBox(height: 10),
+
+            if (selectFromVoters) ...[
+              TextField(
+                controller: voterSearchController,
+                onChanged: (_) => _searchVoters(),
+                decoration: InputDecoration(
+                  prefixIcon: const Icon(Icons.search, size: 18),
+                  hintText: 'इस क्षेत्र में मतदाता खोजें (नाम / EPIC)...',
+                  isDense: true,
+                  filled: true,
+                  fillColor: const Color(0xfff8fafc),
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: border)),
+                ),
+              ),
+              const SizedBox(height: 8),
+              if (searchingVoters)
+                const Center(child: Padding(padding: EdgeInsets.all(12), child: SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 2))))
+              else if (foundVoters.isEmpty)
+                const Padding(padding: EdgeInsets.all(8), child: Text('कोई मतदाता नहीं मिला।', style: TextStyle(color: muted, fontSize: 12)))
+              else
+                Container(
+                  height: 160,
+                  decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12), border: Border.all(color: border)),
                   child: ListView.separated(
-                    itemCount: filtered.length,
-                    separatorBuilder: (_, __) => const SizedBox(height: 8),
-                    itemBuilder: (_, index) {
-                      final booth = filtered[index];
+                    itemCount: foundVoters.length,
+                    separatorBuilder: (_, __) => const Divider(height: 1, color: border),
+                    itemBuilder: (_, idx) {
+                      final v = foundVoters[idx];
+                      final isSel = selectedVoter?['voterId'] == v['voterId'];
                       return ListTile(
-                        shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(14),
-                            side: const BorderSide(color: border)),
-                        leading: const CircleAvatar(
-                          backgroundColor: softBlue,
-                          child: Icon(Icons.how_to_vote_rounded, color: blue),
-                        ),
-                        title: Text(
-                            ' ${booth['number'] ?? '-'}  ${booth['name'] ?? '-'}'),
-                        subtitle: Text(
-                            ' ${booth['ward']?['number'] ?? '-'}  ${booth['area'] ?? '-'}'),
-                        trailing: const Icon(Icons.chevron_right_rounded),
-                        onTap: () => Navigator.pop(context, '${booth['_id']}'),
+                        dense: true,
+                        selected: isSel,
+                        selectedTileColor: const Color(0xffeff6ff),
+                        leading: _VoterPhoto(photo: v, radius: 18),
+                        title: Text('${v['name'] ?? '-'} (${v['guardianName'] ?? '-'})', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+                        subtitle: Text('EPIC: ${v['voterId'] ?? '-'} · मो: ${v['mobile'] ?? '-'}', style: const TextStyle(fontSize: 10)),
+                        trailing: isSel ? const Icon(Icons.check_circle, color: Color(0xff2563eb), size: 18) : null,
+                        onTap: () => _onSelectVoter(v),
                       );
                     },
                   ),
                 ),
-              ]),
-            ),
-          );
-        },
-      ),
-    );
-    if (picked == null) return;
-    setState(() => boothId = picked);
-  }
+              const SizedBox(height: 12),
+            ],
 
-  Widget _permissionPanel() => Container(
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          border: Border.all(color: border),
-          borderRadius: BorderRadius.circular(18),
-        ),
-        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          const Text('4. Permissions confirm करें',
-              style: TextStyle(color: navy, fontWeight: FontWeight.w900)),
-          const SizedBox(height: 4),
-          const Text('Admin yahan decide kare ki manager ko kya access milega.',
-              style: TextStyle(color: muted, fontSize: 12)),
-          const SizedBox(height: 10),
-          _fixedAccessCard(),
-          _permissionCard(
-              Icons.login_rounded,
-              'Active login',
-              'मैनेजर app में login कर सकता है',
-              active,
-              (value) => setState(() => active = value)),
-          _permissionCard(
-              Icons.phone_android_rounded,
-              'पूरे मोबाइल नंबर देखें',
-              'Masked नंबर की जगह full mobile दिखेगा',
-              canViewMobile,
-              (value) => setState(() => canViewMobile = value)),
-          _permissionCard(
-              Icons.print_rounded,
-              'मतदाता profile print करें',
-              'PDF profile print/download की अनुमति',
-              canPrint,
-              (value) => setState(() => canPrint = value)),
-          _permissionCard(
-              Icons.file_download_rounded,
-              'Voter data export karein',
-              'Excel/CSV export ki permission',
-              canExport,
-              (value) => setState(() => canExport = value)),
-          _permissionCard(
-              Icons.backup_rounded,
-              'Backup access',
-              'Data backup/download jaise sensitive kaam ki permission',
-              canBackup,
-              (value) => setState(() => canBackup = value)),
-          _permissionCard(
-              Icons.upload_file_rounded,
-              'PDF/Excel upload करें',
-              'Import और OCR upload की अनुमति',
-              canImportData,
-              (value) => setState(() => canImportData = value)),
-          _permissionCard(
-              Icons.bar_chart_rounded,
-              'Reports देखें',
-              'Dashboard और reports',
-              canReports,
-              (value) => setState(() => canReports = value)),
-          _permissionCard(
-              Icons.person_add_alt_1_rounded,
-              'Voter जोड़ें',
-              'नया contact जोड़ें',
-              canCreateVoters,
-              (value) => setState(() => canCreateVoters = value)),
-          _permissionCard(
-              Icons.edit_rounded,
-              'Voter edit करें',
-              'Details बदलें',
-              canEditVoters,
-              (value) => setState(() => canEditVoters = value)),
-          _permissionCard(
-              Icons.photo_camera_rounded,
-              'Photo बदलें',
-              'Photo update करें',
-              canEditPhoto,
-              (value) => setState(() => canEditPhoto = value)),
-          _permissionCard(
-              Icons.delete_outline_rounded,
-              'Voter delete करें',
-              'Single और bulk delete',
-              canDeleteVoters,
-              (value) => setState(() => canDeleteVoters = value)),
-        ]),
-      );
-
-  Widget _fixedAccessCard() => Padding(
-        padding: const EdgeInsets.only(bottom: 8),
-        child: Container(
-          padding: const EdgeInsets.all(11),
-          decoration: BoxDecoration(
-            color: const Color(0xffecfdf3),
-            borderRadius: BorderRadius.circular(15),
-            border: Border.all(color: green.withValues(alpha: .24)),
-          ),
-          child: const Row(children: [
-            Icon(Icons.verified_user_rounded, color: green),
-            SizedBox(width: 10),
-            Expanded(
-              child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text('Basic booth work',
-                        style: TextStyle(
-                            color: navy, fontWeight: FontWeight.w900)),
-                    Text(
-                        'Assigned booth के contacts ही दिखेंगे; add/edit/delete access नीचे admin set करे।',
-                        style: TextStyle(color: muted, fontSize: 11)),
-                  ]),
+            // Text Inputs
+            TextField(
+              controller: nameController,
+              decoration: const InputDecoration(labelText: 'प्रभारी का पूरा नाम *', prefixIcon: Icon(Icons.person)),
             ),
-            Icon(Icons.lock_open_rounded, color: green),
-          ]),
-        ),
-      );
-
-  Widget _permissionCard(IconData icon, String title, String subtitle,
-          bool value, ValueChanged<bool> onChanged) =>
-      Padding(
-        padding: const EdgeInsets.only(bottom: 8),
-        child: InkWell(
-          onTap: () => onChanged(!value),
-          borderRadius: BorderRadius.circular(15),
-          child: Container(
-            padding: const EdgeInsets.all(11),
-            decoration: BoxDecoration(
-              color: value ? softBlue : const Color(0xfff8fafc),
-              borderRadius: BorderRadius.circular(15),
-              border: Border.all(
-                  color: value ? blue.withValues(alpha: .35) : border),
-            ),
-            child: Row(children: [
-              Icon(icon, color: value ? blue : muted),
+            const SizedBox(height: 10),
+            Row(children: [
+              Expanded(
+                child: TextField(
+                  controller: phoneController,
+                  keyboardType: TextInputType.phone,
+                  decoration: const InputDecoration(labelText: 'मोबाइल नंबर', prefixIcon: Icon(Icons.phone)),
+                ),
+              ),
               const SizedBox(width: 10),
               Expanded(
-                child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(title,
-                          style: const TextStyle(
-                              color: navy, fontWeight: FontWeight.w900)),
-                      Text(subtitle,
-                          style: const TextStyle(color: muted, fontSize: 11)),
-                    ]),
-              ),
-              Switch(value: value, onChanged: onChanged),
-            ]),
-          ),
-        ),
-      );
-
-  Widget _formSectionTitle(String value) => Text(value,
-      style: const TextStyle(
-          color: navy, fontSize: 15, fontWeight: FontWeight.w900));
-  Widget _managerField(
-          TextEditingController controller, String label, IconData icon,
-          {TextInputType? keyboard, bool obscure = false, Widget? suffix}) =>
-      TextField(
-        controller: controller,
-        keyboardType: keyboard,
-        obscureText: obscure,
-        decoration: InputDecoration(
-            labelText: label, prefixIcon: Icon(icon), suffixIcon: suffix),
-      );
-}
-
-class BoothHeadWorkDialog extends StatelessWidget {
-  const BoothHeadWorkDialog({super.key, required this.user});
-
-  final Map<String, dynamic> user;
-
-  @override
-  Widget build(BuildContext context) => AlertDialog(
-        title: Text('${user['name'] ?? 'Manager'} work'),
-        content: SizedBox(
-          width: 560,
-          child: FutureBlock<Map<String, dynamic>>(
-            load: () => api.get('/api/auth/users/${user['_id']}/work-summary'),
-            builder: (data) {
-              final stats = Map<String, dynamic>.from(data['stats'] as Map);
-              final activities = data['recentActivities'] as List? ?? const [];
-              return SingleChildScrollView(
-                child: Column(mainAxisSize: MainAxisSize.min, children: [
-                  Wrap(spacing: 10, runSpacing: 10, children: [
-                    _SmallStat('Created', _number(stats['votersCreated'])),
-                    _SmallStat('Updated', _number(stats['votersUpdated'])),
-                    _SmallStat('Deleted', _number(stats['votersDeleted'])),
-                    _SmallStat('Activity', _number(stats['totalActivities'])),
-                    _SmallStat(
-                        'Booth voters', _number(stats['boothVoterCount'])),
-                  ]),
-                  const Divider(height: 28),
-                  Align(
-                    alignment: Alignment.centerLeft,
-                    child: Text('Recent activity',
-                        style: Theme.of(context).textTheme.titleMedium),
+                child: TextField(
+                  controller: passwordController,
+                  obscureText: true,
+                  decoration: InputDecoration(
+                    labelText: widget.user != null ? 'नया पासवर्ड (ऐच्छिक)' : 'पासवर्ड (कम से कम 6 अक्षर) *',
+                    prefixIcon: const Icon(Icons.lock),
                   ),
-                  const SizedBox(height: 8),
-                  if (activities.isEmpty)
-                    const ListTile(title: Text('No activity recorded yet.'))
-                  else
-                    ...activities.take(20).map((a) {
-                      final row = Map<String, dynamic>.from(a as Map);
-                      return ListTile(
-                        dense: true,
-                        leading: const Icon(Icons.history_rounded),
-                        title: Text('${row['action'] ?? '-'}'),
-                        subtitle: Text(_formatDate(row['createdAt'])),
-                      );
-                    }),
-                ]),
-              );
-            },
-          ),
+                ),
+              ),
+            ]),
+            const SizedBox(height: 10),
+            TextField(
+              controller: emailController,
+              decoration: const InputDecoration(labelText: 'लॉगिन ईमेल / यूजरनेम', prefixIcon: Icon(Icons.email)),
+            ),
+
+            const Divider(color: border, height: 24),
+
+            // STEP 3: ROLE & PERMISSIONS
+            const Text('३. भूमिका एवं अधिकार (Permissions):', style: TextStyle(color: navy, fontWeight: FontWeight.bold, fontSize: 13)),
+            const SizedBox(height: 8),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              decoration: BoxDecoration(color: const Color(0xfff8fafc), borderRadius: BorderRadius.circular(12), border: Border.all(color: border)),
+              child: DropdownButtonHideUnderline(
+                child: DropdownButton<String>(
+                  isExpanded: true,
+                  value: selectedRole,
+                  onChanged: (val) => setState(() => selectedRole = val ?? 'booth'),
+                  items: const [
+                    DropdownMenuItem(value: 'booth', child: Text('बूथ मैनेजर (Booth Manager)')),
+                    DropdownMenuItem(value: 'ward_head', child: Text('वार्ड प्रभारी (Ward Head)')),
+                    DropdownMenuItem(value: 'worker', child: Text('कार्यकर्ता (Field Worker)')),
+                    DropdownMenuItem(value: 'admin', child: Text('व्यवस्थापक (Full Admin)')),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 10),
+
+            _permSwitch('📱 मोबाइल नंबर देखें (View Full Mobile)', canViewFullMobile, (v) => setState(() => canViewFullMobile = v)),
+            _permSwitch('✏️ मतदाता संपादित करें (Edit Voter)', canEditVoters, (v) => setState(() => canEditVoters = v)),
+            _permSwitch('➕ नए मतदाता जोड़ें (Create Voter)', canCreateVoters, (v) => setState(() => canCreateVoters = v)),
+            _permSwitch('📷 फोटो बदलें (Upload Photo)', canEditPhoto, (v) => setState(() => canEditPhoto = v)),
+            _permSwitch('🚩 पार्टी व रुझान बदलें (Edit Party/Preference)', canEditParty, (v) => setState(() => canEditParty = v)),
+            _permSwitch('🗳️ वोट स्थिति मार्क करें (Mark Voted)', canMarkVoted, (v) => setState(() => canMarkVoted = v)),
+            _permSwitch('🖨️ प्रिंट एवं एक्सपोर्ट (Print & Export)', canPrintProfiles, (v) => setState(() => canPrintProfiles = v)),
+            _permSwitch('📊 रिपोर्ट्स देखें (View Reports)', canViewReports, (v) => setState(() => canViewReports = v)),
+            _permSwitch('🗑️ मतदाता हटाएं (Delete Voter)', canDeleteVoters, (v) => setState(() => canDeleteVoters = v)),
+          ]),
         ),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Close')),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('रद्द करें', style: TextStyle(color: muted)),
+        ),
+        ElevatedButton(
+          onPressed: saving ? null : _save,
+          style: ElevatedButton.styleFrom(
+            backgroundColor: const Color(0xff2563eb),
+            foregroundColor: Colors.white,
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          ),
+          child: saving
+              ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+              : const Text('सुरक्षित करें (Save Manager)', style: TextStyle(fontWeight: FontWeight.bold)),
+        ),
+      ],
+    );
+  }
+
+  Widget _scopeChip(String type, String label, IconData icon) {
+    final isSel = selectedScope == type;
+    return Expanded(
+      child: InkWell(
+        onTap: () {
+          setState(() {
+            selectedScope = type;
+            if (type == 'ward') selectedRole = 'ward_head';
+            if (type == 'booth') selectedRole = 'booth';
+            if (type == 'panchayat') selectedRole = 'booth';
+          });
+          _searchVoters();
+        },
+        borderRadius: BorderRadius.circular(12),
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 6),
+          decoration: BoxDecoration(
+            color: isSel ? const Color(0xff2563eb) : const Color(0xfff1f5f9),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: isSel ? const Color(0xff2563eb) : border),
+          ),
+          child: Column(children: [
+            Icon(icon, size: 18, color: isSel ? Colors.white : navy),
+            const SizedBox(height: 4),
+            Text(label, textAlign: TextAlign.center, style: TextStyle(color: isSel ? Colors.white : navy, fontSize: 10, fontWeight: FontWeight.bold)),
+          ]),
+        ),
+      ),
+    );
+  }
+
+  Widget _permSwitch(String title, bool val, ValueChanged<bool> onChange) => Row(
+        children: [
+          Expanded(child: Text(title, style: const TextStyle(fontSize: 12, color: navy))),
+          Transform.scale(scale: 0.8, child: Switch(value: val, activeColor: const Color(0xff2563eb), onChanged: onChange)),
         ],
       );
 }
 
-class _SmallStat extends StatelessWidget {
-  const _SmallStat(this.label, this.value);
-  final String label;
-  final int value;
+// VOTER PHOTO WIDGET
+class _VoterPhoto extends StatelessWidget {
+  const _VoterPhoto({required this.photo, required this.radius});
+  final Map<String, dynamic> photo;
+  final double radius;
 
   @override
-  Widget build(BuildContext context) => Container(
-        width: 150,
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          border: Border.all(color: border),
-          borderRadius: BorderRadius.circular(8),
-        ),
-        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text(label, style: const TextStyle(color: muted, fontSize: 12)),
-          const SizedBox(height: 6),
-          Text('$value',
-              style:
-                  const TextStyle(fontSize: 22, fontWeight: FontWeight.w900)),
-        ]),
+  Widget build(BuildContext context) {
+    final url = (photo['photo'] ?? '').toString().trim();
+    if (url.isNotEmpty && url.startsWith('http')) {
+      return CircleAvatar(
+        radius: radius,
+        backgroundImage: NetworkImage(url),
+        backgroundColor: const Color(0xffeff6ff),
       );
-}
-
-class ResetPasswordDialog extends StatefulWidget {
-  const ResetPasswordDialog({super.key, required this.userId});
-  final String userId;
-
-  @override
-  State<ResetPasswordDialog> createState() => _ResetPasswordDialogState();
-}
-
-class _ResetPasswordDialogState extends State<ResetPasswordDialog> {
-  final password = TextEditingController();
-  String error = '';
-
-  @override
-  Widget build(BuildContext context) => AlertDialog(
-        title: const Text('Reset password'),
-        content: Column(mainAxisSize: MainAxisSize.min, children: [
-          TextField(
-              controller: password,
-              obscureText: true,
-              decoration: const InputDecoration(labelText: 'New password')),
-          if (error.isNotEmpty)
-            Text(error, style: const TextStyle(color: Colors.red)),
-        ]),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Cancel')),
-          FilledButton(
-            onPressed: () async {
-              if (password.text.length < 6) {
-                setState(
-                    () => error = 'Password must be at least 6 characters.');
-                return;
-              }
-              await api.put('/api/auth/users/${widget.userId}',
-                  {'password': password.text});
-              if (context.mounted) Navigator.pop(context);
-            },
-            child: const Text('Reset'),
-          ),
-        ],
-      );
-}
-
-String? _idOf(dynamic value) {
-  if (value == null) return null;
-  if (value is Map) return '${value['_id'] ?? ''}';
-  return '$value';
-}
-
-int _stat(Map<String, dynamic> user, String key) =>
-    _number((user['workStats'] as Map?)?[key]);
-
-int _number(dynamic value) =>
-    value is num ? value.toInt() : int.tryParse('$value') ?? 0;
-
-String _formatDate(dynamic raw) {
-  final date = DateTime.tryParse('${raw ?? ''}');
-  if (date == null) return '-';
-  return DateFormat('dd MMM yyyy, hh:mm a').format(date.toLocal());
-}
-
-String _initials(String value) {
-  final text = value.trim();
-  if (text.isEmpty) return '?';
-  return text.characters.first.toUpperCase();
-}
-
-String _candidateEmail(Map<String, dynamic>? candidate) {
-  if (candidate == null) return '';
-  final voterId = '${candidate['voterId'] ?? ''}'.trim().toLowerCase();
-  if (voterId.isNotEmpty) return '$voterId@booth.local';
-  final mobile = '${candidate['mobile'] ?? ''}'.replaceAll(RegExp(r'\D'), '');
-  if (mobile.isNotEmpty) return '$mobile@booth.local';
-  return '';
+    }
+    final name = (photo['name'] ?? 'V').toString().trim();
+    return CircleAvatar(
+      radius: radius,
+      backgroundColor: const Color(0xffeff6ff),
+      child: Text(name.isNotEmpty ? name[0] : 'V', style: TextStyle(color: const Color(0xff2563eb), fontWeight: FontWeight.bold, fontSize: radius * 0.8)),
+    );
+  }
 }

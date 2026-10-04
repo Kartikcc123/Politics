@@ -10,6 +10,8 @@ const UserSchema = new mongoose.Schema({
   assignedGramPanchayats: [{ type: String, trim: true }],
   assignedVillages: [{ type: String, trim: true }],
   assignedWards: [{ type: String, trim: true }],
+  assignedParts: [{ type: String, trim: true }],
+  assignedVoterId: { type: String, trim: true },
   phone: String,
   active: { type: Boolean, default: true },
   permissions: {

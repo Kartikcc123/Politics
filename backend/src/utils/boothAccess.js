@@ -1,21 +1,39 @@
 exports.applyMemberScope = (user, filter = {}) => {
   if (!user || user.role === 'admin') return filter;
 
-  // 1. Village level scope (if user assigned to specific villages)
+  // 1. Part / Booth number scope
+  if (Array.isArray(user.assignedParts) && user.assignedParts.length > 0) {
+    filter.partNumber = { $in: user.assignedParts.map(String) };
+  }
+
+  // 2. Village level scope (if user assigned to specific villages)
   if (Array.isArray(user.assignedVillages) && user.assignedVillages.length > 0) {
     filter.village = { $in: user.assignedVillages };
   }
-  // 2. Gram Panchayat level scope (if user assigned to whole gram panchayat)
+  // 3. Gram Panchayat level scope (if user assigned to whole gram panchayat)
   else if (Array.isArray(user.assignedGramPanchayats) && user.assignedGramPanchayats.length > 0) {
     filter.gramPanchayat = { $in: user.assignedGramPanchayats };
   }
 
-  // 3. Ward level scope
+  // 4. Ward level scope
   if (Array.isArray(user.assignedWards) && user.assignedWards.length > 0) {
-    filter.municipalWardNumbers = { $in: user.assignedWards };
+    const wards = user.assignedWards.map(String);
+    if (filter.$or) {
+      filter.$and = [
+        ...(filter.$and || []),
+        { $or: filter.$or },
+        { $or: [{ wardNumber: { $in: wards } }, { municipalWardNumbers: { $in: wards } }] }
+      ];
+      delete filter.$or;
+    } else {
+      filter.$or = [
+        { wardNumber: { $in: wards } },
+        { municipalWardNumbers: { $in: wards } }
+      ];
+    }
   }
 
-  // 4. Booth / Ward head level scope
+  // 5. Booth / Ward head level scope
   if (user.role === 'booth' && user.assignedBooth) {
     filter.booth = user.assignedBooth?._id || user.assignedBooth;
   } else if (user.role === 'ward_head' && user.assignedWard) {

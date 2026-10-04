@@ -81,7 +81,7 @@ class BoundedTtlCache {
   }
 }
 
-const reportCache = new BoundedTtlCache({ ttlMs: 15000, maxEntries: 500 });
+const reportCache = new BoundedTtlCache({ ttlMs: 10 * 60 * 1000, maxEntries: 500 });
 const areaImportCache = new BoundedTtlCache({ ttlMs: 30 * 60 * 1000, maxEntries: 5000 });
 const pdfAreaHierarchyCache = new BoundedTtlCache({ ttlMs: 15 * 60 * 1000, maxEntries: 10000 });
 

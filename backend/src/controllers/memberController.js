@@ -384,7 +384,8 @@ exports.list = async (req, res, next) => {
     }
 
     const sortParam = String(req.query.sortBy || req.query.sort || '').toLowerCase();
-    const hasLocationScope = Boolean(village || partNumber || booth || sectionName || gramPanchayat || ward || req.query.municipalWardNumber || req.query.wardNumber || req.query.ward);
+    const isWardScope = Boolean(ward || req.query.municipalWardNumber || req.query.wardNumber || req.query.municipalWard || req.query.ward);
+    const hasLocationScope = Boolean(village || partNumber || booth || sectionName || gramPanchayat || isWardScope);
     let sortObj = { _id: -1 };
 
     if (sortParam === 'recent') {
@@ -392,20 +393,24 @@ exports.list = async (req, res, next) => {
     } else if (['name', 'alphabetic', 'alphabetical'].includes(sortParam)) {
       sortObj = { name: 1, surname: 1, houseNumber: 1 };
     } else if (['voterserial', 'serial', 'serialnumber', 'matdatakram', 'kram'].includes(sortParam)) {
-      if (hasLocationScope) {
+      if (isWardScope) {
+        sortObj = { wardVoterSerial: 1, voterSerial: 1, name: 1 };
+      } else if (hasLocationScope) {
         sortObj = { voterSerial: 1, name: 1 };
       } else {
         sortObj = { village: 1, partNumber: 1, voterSerial: 1, name: 1 };
       }
     } else if (['house', 'housenumber', 'makan'].includes(sortParam)) {
       sortObj = { houseNumber: 1, voterSerial: 1 };
+    } else if (isWardScope) {
+      sortObj = { wardVoterSerial: 1, voterSerial: 1, name: 1 };
     } else if (hasLocationScope) {
       sortObj = { voterSerial: 1, name: 1 };
     }
 
     const listQuery = (query) => {
       let qBuilder = Member.find(query)
-        .select('contactType photo ocrCardImage cardImage name surname mobile altMobile dob estimatedDob anniversary voterId voterSerial guardianName houseNumber address location area tehsil gramPanchayat village municipality caste subCaste organizationPost organizationLevel influenceLevel occupation workplaceState workplaceCity workplaceVillage spouseName marriageState marriageCity marriageVillage education extraDetails supportLevel partyPreference isFavorite favoriteRating groups labels ward booth updatedAt age gender sectionNumber sectionName assemblyNumber assemblyName partNumber partName postOffice policeStation district pinCode verificationStatus profileCompletionStatus profileCompletedBy profileCompletedAt ocrConfidence houseNumberConfidence locationMatchConfidence locationResolution ocrReviewReasons ocrValidationPassed ocrFieldConfidence ocrValues sourceDocument hasAssemblyMembership hasMunicipalMembership municipalWardNumbers googleMapUrl')
+        .select('contactType photo ocrCardImage cardImage name surname relativeName mobile altMobile dob estimatedDob anniversary voterId voterSerial wardVoterSerial wardSerialMap wardNumber guardianName houseNumber address location area tehsil gramPanchayat village municipality caste subCaste organizationPost organizationLevel influenceLevel occupation workplaceState workplaceCity workplaceVillage spouseName marriageState marriageCity marriageVillage education extraDetails supportLevel partyPreference isFavorite favoriteRating groups labels ward booth updatedAt age gender sectionNumber sectionName assemblyNumber assemblyName partNumber partName postOffice policeStation district pinCode verificationStatus profileCompletionStatus profileCompletedBy profileCompletedAt ocrConfidence houseNumberConfidence locationMatchConfidence locationResolution ocrReviewReasons ocrValidationPassed ocrFieldConfidence ocrValues sourceDocument hasAssemblyMembership hasMunicipalMembership municipalWardNumbers googleMapUrl')
         .populate(populate)
         .sort(sortObj);
       if (hasLocationScope) {

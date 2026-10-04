@@ -1,0 +1,212 @@
+{
+  "totalGps": 29,
+  "totalWards": 238,
+  "totalVotersSynced": 82310,
+  "matchedAssembly": 79316,
+  "wardOnlyCreatedOrUpdated": 1816,
+  "details": [
+    {
+      "gp": "थला",
+      "wards": 9,
+      "totalVoters": 3218,
+      "matched": 3115,
+      "wardOnly": 49
+    },
+    {
+      "gp": "खेमाणा",
+      "wards": 7,
+      "totalVoters": 2474,
+      "matched": 2329,
+      "wardOnly": 67
+    },
+    {
+      "gp": "नाथड़ियास",
+      "wards": 7,
+      "totalVoters": 2409,
+      "matched": 2299,
+      "wardOnly": 81
+    },
+    {
+      "gp": "पानोतिया",
+      "wards": 7,
+      "totalVoters": 2701,
+      "matched": 2610,
+      "wardOnly": 63
+    },
+    {
+      "gp": "पालरा",
+      "wards": 7,
+      "totalVoters": 2157,
+      "matched": 2094,
+      "wardOnly": 35
+    },
+    {
+      "gp": "रायपुर",
+      "wards": 17,
+      "totalVoters": 6393,
+      "matched": 6143,
+      "wardOnly": 137
+    },
+    {
+      "gp": "सागरेव",
+      "wards": 9,
+      "totalVoters": 2984,
+      "matched": 2890,
+      "wardOnly": 64
+    },
+    {
+      "gp": "सुरास",
+      "wards": 7,
+      "totalVoters": 2286,
+      "matched": 2253,
+      "wardOnly": 26
+    },
+    {
+      "gp": "मोखुन्दा",
+      "wards": 9,
+      "totalVoters": 2908,
+      "matched": 2787,
+      "wardOnly": 87
+    },
+    {
+      "gp": "मासिंगपुरा",
+      "wards": 7,
+      "totalVoters": 2498,
+      "matched": 2343,
+      "wardOnly": 96
+    },
+    {
+      "gp": "नाहरी",
+      "wards": 9,
+      "totalVoters": 2502,
+      "matched": 2410,
+      "wardOnly": 38
+    },
+    {
+      "gp": "कोट",
+      "wards": 7,
+      "totalVoters": 2182,
+      "matched": 2097,
+      "wardOnly": 44
+    },
+    {
+      "gp": "चारोट",
+      "wards": 7,
+      "totalVoters": 2763,
+      "matched": 2670,
+      "wardOnly": 54
+    },
+    {
+      "gp": "गलवा",
+      "wards": 7,
+      "totalVoters": 2707,
+      "matched": 2601,
+      "wardOnly": 75
+    },
+    {
+      "gp": "गल्यावड़ी",
+      "wards": 7,
+      "totalVoters": 2237,
+      "matched": 2168,
+      "wardOnly": 35
+    },
+    {
+      "gp": "कलालखेड़ी",
+      "wards": 7,
+      "totalVoters": 2746,
+      "matched": 2567,
+      "wardOnly": 144
+    },
+    {
+      "gp": "खाखरमाला",
+      "wards": 7,
+      "totalVoters": 2679,
+      "matched": 2566,
+      "wardOnly": 90
+    },
+    {
+      "gp": "बोरियापुरा",
+      "wards": 7,
+      "totalVoters": 2076,
+      "matched": 1929,
+      "wardOnly": 56
+    },
+    {
+      "gp": "देवरिया",
+      "wards": 7,
+      "totalVoters": 2870,
+      "matched": 2763,
+      "wardOnly": 57
+    },
+    {
+      "gp": "बोराणा",
+      "wards": 11,
+      "totalVoters": 4016,
+      "matched": 3946,
+      "wardOnly": 47
+    },
+    {
+      "gp": "आशाहोली",
+      "wards": 9,
+      "totalVoters": 2758,
+      "matched": 2718,
+      "wardOnly": 35
+    },
+    {
+      "gp": "भींटा",
+      "wards": 11,
+      "totalVoters": 4283,
+      "matched": 4110,
+      "wardOnly": 85
+    },
+    {
+      "gp": "झाड़ोल",
+      "wards": 9,
+      "totalVoters": 2988,
+      "matched": 2913,
+      "wardOnly": 35
+    },
+    {
+      "gp": "नारायणखेड़ा",
+      "wards": 9,
+      "totalVoters": 2701,
+      "matched": 2573,
+      "wardOnly": 90
+    },
+    {
+      "gp": "नान्दशा जागीर",
+      "wards": 11,
+      "totalVoters": 3890,
+      "matched": 3804,
+      "wardOnly": 84
+    },
+    {
+      "gp": "बागड़",
+      "wards": 9,
+      "totalVoters": 2790,
+      "matched": 2704,
+      "wardOnly": 42
+    },
+    {
+      "gp": "बागोलिया",
+      "wards": 9,
+      "totalVoters": 2998,
+      "matched": 2895,
+      "wardOnly": 50
+    },
+    {
+      "gp": "बकाण",
+      "wards": 7,
+      "totalVoters": 2458,
+      "matched": 2415,
+      "wardOnly": 35
+    },
+    {
+      "gp": "पीथा का खेड़ा",
+      "wards": 2,
+      "totalVoters": 638,
+      "matched": 604,
+      "wardOnly": 15
+    }
+  ]
+}

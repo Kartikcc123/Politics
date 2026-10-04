@@ -16,12 +16,19 @@ const labels = {
   support: { supporter: 'समर्थक', opposite: 'विरोधी', neutral: 'तटस्थ', undecided: 'अनिर्णीत' },
 };
 
+const https = require('https');
+const http = require('http');
+
 const fields = {
   name: ['नाम', (m) => `${m.name || ''} ${m.surname || ''}`.trim()],
-  voterId: ['EPIC', (m) => m.voterId],
+  voterId: ['EPIC (वोटर ID)', (m) => m.voterId],
+  voterSerial: ['वि.स. क्रमांक', (m) => m.voterSerial || '-'],
+  partNumber: ['भाग #', (m) => m.partNumber || '-'],
+  wardNumber: ['वार्ड #', (m) => m.wardNumber || (Array.isArray(m.municipalWardNumbers) && m.municipalWardNumbers[0]) || '-'],
+  wardVoterSerial: ['वार्ड क्रमांक', (m) => m.wardVoterSerial || '-'],
+  guardianName: ['पिता/पति', (m) => m.guardianName || m.relativeName || '-'],
   mobile: ['मोबाइल', (m) => m.mobile],
   altMobile: ['वैकल्पिक मोबाइल', (m) => m.altMobile],
-  guardianName: ['पिता/पति', (m) => m.guardianName],
   relationType: ['संबंध', (m) => labels.relation[m.relationType] || m.relationType],
   age: ['उम्र', (m) => m.age],
   gender: ['लिंग', (m) => labels.gender[m.gender] || m.gender],
@@ -37,8 +44,8 @@ const fields = {
   education: ['शिक्षा', (m) => m.education],
   organizationPost: ['पद', (m) => m.organizationPost],
   supportLevel: ['समर्थन', (m) => labels.support[m.supportLevel] || m.supportLevel],
+  partyPreference: ['पार्टी रुझान', (m) => m.partyPreference || '-'],
   assembly: ['विधानसभा', (m) => [m.assemblyNumber, m.assemblyName].filter(Boolean).join(' - ')],
-  partNumber: ['भाग', (m) => m.partNumber],
   section: ['अनुभाग', (m) => [m.sectionNumber, m.sectionName].filter(Boolean).join(' - ')],
   booth: ['बूथ', (m) => m.booth?.number || m.partNumber],
   ward: ['वार्ड', (m) => m.ward?.number || m.ward?.name],
@@ -69,6 +76,13 @@ function applyPrintFilters(req, filter) {
   ]) {
     if (req.query[key]) filter[key] = req.query[key];
   }
+  if (req.query.wardNumber) {
+    const w = String(req.query.wardNumber).trim();
+    filter.$or = [
+      { wardNumber: w },
+      { municipalWardNumbers: w }
+    ];
+  }
   if (req.query.letter) {
     filter.name = new RegExp(`^${escapeRegex(String(req.query.letter).trim())}`, 'i');
   }
@@ -88,12 +102,23 @@ function applyPrintFilters(req, filter) {
   }
 }
 
-function mediaIdFromPhoto(photo) {
-  const raw = String(photo || '').trim();
-  let value = raw;
-  try { value = new URL(raw).pathname; } catch (_) {}
-  const match = value.match(/\/media\/([a-f0-9]{24})(?:$|[/?#])/i);
-  return match ? match[1] : null;
+function fetchHttpBuffer(url) {
+  return new Promise((resolve) => {
+    try {
+      const client = url.startsWith('https') ? https : http;
+      client.get(url, { timeout: 4000 }, (res) => {
+        if (res.statusCode !== 200) return resolve(null);
+        const chunks = [];
+        res.on('data', (c) => chunks.push(c));
+        res.on('end', () => {
+          const buf = Buffer.concat(chunks);
+          resolve(normalizeImageBuffer(buf));
+        });
+      }).on('error', () => resolve(null));
+    } catch (_) {
+      resolve(null);
+    }
+  });
 }
 
 function photoPath(member) {
@@ -124,7 +149,8 @@ function normalizeImageBuffer(value) {
   return isJpeg || isPng ? buffer : null;
 }
 
-async function loadPhotoSources(members) {
+async function loadPhotoSources(members, includePhoto = true) {
+  if (!includePhoto) return () => null;
   const mediaIds = [...new Set(members.map((member) => mediaIdFromPhoto(member.photo)).filter(Boolean))];
   const media = new Map();
   if (mediaIds.length) {
@@ -132,12 +158,22 @@ async function loadPhotoSources(members) {
     for (const asset of assets) {
       const buffer = normalizeImageBuffer(asset.data);
       if (buffer) media.set(String(asset._id), buffer);
-      else console.warn('Printable voter photo is not a supported JPEG/PNG media asset:', String(asset._id));
     }
   }
+
+  // Fetch S3/HTTP photos in parallel batches (up to 150 members to keep speed fast)
+  const httpMembers = members.filter(m => m.photo && /^https?:\/\//i.test(m.photo)).slice(0, 150);
+  const httpPromises = httpMembers.map(async (m) => {
+    const buf = await fetchHttpBuffer(m.photo);
+    if (buf) media.set(m.photo, buf);
+  });
+  await Promise.all(httpPromises);
+
   return (member) => {
+    if (!member.photo) return null;
+    if (media.has(member.photo)) return media.get(member.photo);
     const mediaId = mediaIdFromPhoto(member.photo);
-    if (mediaId) return media.get(mediaId) || null;
+    if (mediaId && media.has(mediaId)) return media.get(mediaId);
     return photoPath(member);
   };
 }

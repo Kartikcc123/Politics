@@ -93,7 +93,7 @@ class _VoterManagementPageState extends State<VoterManagementPage> {
   late Future<Map<String, dynamic>> dashboardFuture;
   late Future<VoterPageResult> votersFuture;
   Timer? searchDebounce;
-  static const int pageSize = 100;
+  static const int pageSize = 50;
 
   void refreshVoters() {
     votersFuture = OfflineVoterCache.loadPage(
@@ -4233,15 +4233,25 @@ class _PhoneContactTile extends StatelessWidget {
                     ],
                     const SizedBox(height: 5),
                     Wrap(spacing: 5, runSpacing: 4, children: [
-                      if ('${voter['wardVoterSerial'] ?? ''}'.trim().isNotEmpty)
+                      if ('${voter['partNumber'] ?? ''}'.trim().isNotEmpty && '${voter['partNumber']}' != '0')
                         _MembershipBadge(
-                          label: 'वार्ड क्र. #${voter['wardVoterSerial']}',
-                          color: const Color(0xff0d9488),
+                          label: 'भाग #${voter['partNumber']}',
+                          color: const Color(0xff2563eb),
                         ),
                       if ('${voter['voterSerial'] ?? ''}'.trim().isNotEmpty)
                         _MembershipBadge(
                           label: 'वि.स. क्र. #${voter['voterSerial']}',
                           color: const Color(0xff4338ca),
+                        ),
+                      if ('${voter['wardNumber'] ?? ''}'.trim().isNotEmpty || municipalWards.isNotEmpty)
+                        _MembershipBadge(
+                          label: 'वार्ड #${voter['wardNumber'] ?? municipalWards}',
+                          color: const Color(0xff059669),
+                        ),
+                      if ('${voter['wardVoterSerial'] ?? ''}'.trim().isNotEmpty)
+                        _MembershipBadge(
+                          label: 'वार्ड क्र. #${voter['wardVoterSerial']}',
+                          color: const Color(0xff0d9488),
                         ),
                       if (voter['groups'] is List && (voter['groups'] as List).isNotEmpty)
                         for (final g in (voter['groups'] as List).take(3))
@@ -4252,11 +4262,7 @@ class _PhoneContactTile extends StatelessWidget {
                       if (hasAssembly)
                         const _MembershipBadge(label: 'विधानसभा', color: blue),
                       if (hasMunicipal)
-                        _MembershipBadge(
-                            label: municipalWards.isEmpty
-                                ? 'Ward सूची'
-                                : 'Ward $municipalWards',
-                            color: green),
+                        const _MembershipBadge(label: 'वार्ड सूची', color: green),
                       if (hasAssembly && !hasMunicipal)
                         const _MembershipBadge(
                             label: 'Ward सूची में नहीं', color: muted),
@@ -4294,6 +4300,16 @@ class _PhoneContactTile extends StatelessWidget {
                   color: voter['isFavorite'] == true ? orange : muted,
                 ),
               ),
+            IconButton(
+              tooltip: 'WhatsApp पर शेयर करें',
+              onPressed: () => shareVoterDetails(context, voter),
+              style: IconButton.styleFrom(
+                backgroundColor: const Color(0xffe7f9ee),
+                foregroundColor: const Color(0xff16a34a),
+              ),
+              icon: const Icon(Icons.share_rounded, size: 18),
+            ),
+            const SizedBox(width: 4),
             IconButton(
               tooltip: 'कॉल करें',
               onPressed:
@@ -7111,6 +7127,12 @@ class _VoterDetailPageState extends State<VoterDetailPage> {
                   }
                 }
               },
+            ),
+            _ProfileAction(
+              icon: Icons.share_rounded,
+              label: 'Share',
+              color: const Color(0xff16a34a),
+              onTap: () => shareVoterDetails(context, voter),
             ),
             if (!isBoothManager)
               _ProfileAction(

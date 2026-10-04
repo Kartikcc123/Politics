@@ -6,6 +6,8 @@ import 'dart:ui' as ui;
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
+import 'package:path_provider/path_provider.dart';
 
 import '../core/theme.dart';
 
@@ -56,11 +58,21 @@ Future<PlatformFile?> pickAndCropImage(
   if (croppedBytes == null) return null;
 
   final cleanName = pickedFile.name.replaceAll(RegExp(r'\.[^.]+$'), '');
+  String? tempCroppedPath;
+  if (!kIsWeb) {
+    try {
+      final tempDir = await getTemporaryDirectory();
+      final tempFile = io.File('${tempDir.path}/${cleanName}_${DateTime.now().millisecondsSinceEpoch}_cropped.png');
+      await tempFile.writeAsBytes(croppedBytes);
+      tempCroppedPath = tempFile.path;
+    } catch (_) {}
+  }
+
   return PlatformFile(
     name: '${cleanName}_cropped.png',
     size: croppedBytes.length,
     bytes: croppedBytes,
-    path: pickedFile.path,
+    path: tempCroppedPath,
   );
 }
 
@@ -86,8 +98,10 @@ class _ImageCropDialogState extends State<ImageCropDialog> {
   ui.Image? _decodedImage;
   bool _loading = true;
   bool _processing = false;
+  bool _hideGridForCrop = false;
   int _rotationQuarterTurns = 0; // 0, 1, 2, 3
 
+  final GlobalKey _cropKey = GlobalKey();
   final TransformationController _transformController =
       TransformationController();
 
@@ -142,98 +156,34 @@ class _ImageCropDialogState extends State<ImageCropDialog> {
   }
 
   Future<void> _cropAndSave(double viewportSize) async {
-    if (_decodedImage == null || _processing) return;
-    setState(() => _processing = true);
+    if (_processing) return;
+    setState(() {
+      _processing = true;
+      _hideGridForCrop = true;
+    });
 
     try {
-      final matrix = _transformController.value;
-      final scale = matrix.getMaxScaleOnAxis();
-      final translation = matrix.getTranslation();
-
-      // Original image dimensions
-      final imgW = _decodedImage!.width.toDouble();
-      final imgH = _decodedImage!.height.toDouble();
-
-      // Base fitted size inside viewport
-      final isRotated90or270 =
-          _rotationQuarterTurns == 1 || _rotationQuarterTurns == 3;
-      final effectiveW = isRotated90or270 ? imgH : imgW;
-      final effectiveH = isRotated90or270 ? imgW : imgH;
-
-      // Calculate how base image was scaled to fit the viewport
-      final baseScale = math.max(
-        viewportSize / effectiveW,
-        viewportSize / effectiveH,
-      );
-
-      // Render onto high-res canvas (e.g. 600x600 px)
-      const outputSize = 600.0;
-      final recorder = ui.PictureRecorder();
-      final canvas = Canvas(recorder);
-
-      // Scale up from viewportSize to outputSize
-      final outputScaleRatio = outputSize / viewportSize;
-      canvas.scale(outputScaleRatio);
-
-      // Clip circle if requested
-      if (widget.circular) {
-        final path = Path()
-          ..addOval(Rect.fromLTWH(0, 0, viewportSize, viewportSize));
-        canvas.clipPath(path);
+      await Future.delayed(const Duration(milliseconds: 50));
+      final boundary =
+          _cropKey.currentContext?.findRenderObject() as RenderRepaintBoundary?;
+      if (boundary == null) {
+        throw Exception('क्रॉप फ्रेम लोड नहीं हो सका।');
       }
 
-      canvas.save();
-      // Apply translation from InteractiveViewer
-      canvas.translate(translation.x, translation.y);
-
-      // Apply zoom scale from InteractiveViewer
-      canvas.scale(scale);
-
-      // Center the image in base fitted space
-      final drawOffsetX = (viewportSize - effectiveW * baseScale) / (2 * scale);
-      final drawOffsetY = (viewportSize - effectiveH * baseScale) / (2 * scale);
-      canvas.translate(drawOffsetX, drawOffsetY);
-
-      // Apply rotation around center of effective image
-      if (_rotationQuarterTurns != 0) {
-        canvas.translate(
-          (effectiveW * baseScale) / 2,
-          (effectiveH * baseScale) / 2,
-        );
-        canvas.rotate(_rotationQuarterTurns * math.pi / 2);
-        canvas.translate(
-          -((_rotationQuarterTurns % 2 == 1 ? effectiveH : effectiveW) *
-                  baseScale) /
-              2,
-          -((_rotationQuarterTurns % 2 == 1 ? effectiveW : effectiveH) *
-                  baseScale) /
-              2,
-        );
-      }
-
-      // Draw the raw ui.Image
-      final srcRect = Rect.fromLTWH(0, 0, imgW, imgH);
-      final dstRect = Rect.fromLTWH(0, 0, imgW * baseScale, imgH * baseScale);
-      canvas.drawImageRect(
-        _decodedImage!,
-        srcRect,
-        dstRect,
-        Paint()..filterQuality = FilterQuality.high,
-      );
-
-      canvas.restore();
-
-      final picture = recorder.endRecording();
-      final resultImg =
-          await picture.toImage(outputSize.toInt(), outputSize.toInt());
-      final byteData =
-          await resultImg.toByteData(format: ui.ImageByteFormat.png);
+      final pixelRatio = math.max(2.5, 700.0 / viewportSize);
+      final ui.Image image = await boundary.toImage(pixelRatio: pixelRatio);
+      final ByteData? byteData =
+          await image.toByteData(format: ui.ImageByteFormat.png);
 
       if (byteData != null && mounted) {
-        Navigator.pop(context, byteData.buffer.asUint8List());
+        final bytes = byteData.buffer.asUint8List();
+        Navigator.pop(context, bytes);
+        return;
       }
+      throw Exception('इमेज डाटा तैयार नहीं हो सका।');
     } catch (e) {
       if (mounted) {
+        setState(() => _hideGridForCrop = false);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('क्रॉप करने में त्रुटि: $e')),
         );
@@ -310,55 +260,68 @@ class _ImageCropDialogState extends State<ImageCropDialog> {
                       children: [
                         // Viewport Container with Crop Mask
                         Center(
-                          child: ClipRRect(
-                            borderRadius: BorderRadius.circular(
-                              widget.circular ? cropBoxSize / 2 : 16,
-                            ),
-                            child: Container(
-                              width: cropBoxSize,
-                              height: cropBoxSize,
-                              decoration: BoxDecoration(
-                                color: Colors.black,
-                                border: Border.all(
-                                  color: royalBlue,
-                                  width: 2.5,
-                                ),
-                                borderRadius: BorderRadius.circular(
-                                  widget.circular ? cropBoxSize / 2 : 16,
-                                ),
+                          child: Container(
+                            width: cropBoxSize,
+                            height: cropBoxSize,
+                            decoration: BoxDecoration(
+                              color: Colors.black,
+                              border: Border.all(
+                                color: royalBlue,
+                                width: 2.5,
                               ),
-                              child: Stack(
-                                children: [
-                                  // Interactive Pan & Zoom
-                                  Positioned.fill(
-                                    child: InteractiveViewer(
-                                      transformationController:
-                                          _transformController,
-                                      minScale: 0.5,
-                                      maxScale: 4.0,
-                                      boundaryMargin: EdgeInsets.all(
-                                          cropBoxSize * 0.8),
-                                      child: Center(
-                                        child: RotatedBox(
-                                          quarterTurns: _rotationQuarterTurns,
-                                          child: RawImage(
-                                            image: _decodedImage,
-                                            fit: BoxFit.cover,
+                              borderRadius: BorderRadius.circular(
+                                widget.circular ? cropBoxSize / 2 : 16,
+                              ),
+                            ),
+                            child: ClipRRect(
+                              borderRadius: BorderRadius.circular(
+                                widget.circular ? cropBoxSize / 2 : 14,
+                              ),
+                              child: RepaintBoundary(
+                                key: _cropKey,
+                                child: Container(
+                                  width: cropBoxSize,
+                                  height: cropBoxSize,
+                                  color: Colors.black,
+                                  child: Stack(
+                                    children: [
+                                      // Interactive Pan & Zoom
+                                      Positioned.fill(
+                                        child: InteractiveViewer(
+                                          transformationController:
+                                              _transformController,
+                                          minScale: 0.3,
+                                          maxScale: 5.0,
+                                          boundaryMargin: EdgeInsets.all(
+                                              cropBoxSize * 0.8),
+                                          child: Center(
+                                            child: RotatedBox(
+                                              quarterTurns:
+                                                  _rotationQuarterTurns,
+                                              child: RawImage(
+                                                image: _decodedImage,
+                                                fit: BoxFit.cover,
+                                              ),
+                                            ),
                                           ),
                                         ),
                                       ),
-                                    ),
-                                  ),
 
-                                  // Rule-of-Thirds Grid Overlay
-                                  IgnorePointer(
-                                    child: CustomPaint(
-                                      size: Size(cropBoxSize, cropBoxSize),
-                                      painter: _GridOverlayPainter(
-                                          isCircular: widget.circular),
-                                    ),
+                                      // Rule-of-Thirds Grid Overlay
+                                      if (!_hideGridForCrop)
+                                        Positioned.fill(
+                                          child: IgnorePointer(
+                                            child: CustomPaint(
+                                              size: Size(
+                                                  cropBoxSize, cropBoxSize),
+                                              painter: _GridOverlayPainter(
+                                                  isCircular: widget.circular),
+                                            ),
+                                          ),
+                                        ),
+                                    ],
                                   ),
-                                ],
+                                ),
                               ),
                             ),
                           ),

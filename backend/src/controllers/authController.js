@@ -7,6 +7,7 @@ try {
   bcrypt = require('bcryptjs');
 }
 const jwt = require('jsonwebtoken');
+const mongoose = require('mongoose');
 const User = require('../models/User');
 const Booth = require('../models/Booth');
 const Member = require('../models/Member');
@@ -42,18 +43,25 @@ const normalizeUserPayload = async (body, existingUser) => {
   const role = data.role || existingUser?.role || 'user';
   data.role = role;
 
-  if (role === 'booth' && (data.assignedBooth || existingUser?.assignedBooth)) {
-    const booth = await requireBooth(data.assignedBooth || existingUser?.assignedBooth);
-    data.assignedBooth = booth._id;
-    data.assignedWard = booth.ward?._id || booth.ward;
-  } else if (role === 'ward_head') {
+  if (data.assignedBooth && mongoose.Types.ObjectId.isValid(data.assignedBooth)) {
+    try {
+      const booth = await Booth.findById(data.assignedBooth).populate('ward');
+      if (booth) {
+        data.assignedBooth = booth._id;
+        data.assignedWard = booth.ward?._id || booth.ward;
+      }
+    } catch (_) {}
+  } else if (!data.assignedBooth) {
     data.assignedBooth = undefined;
-  } else if (role === 'admin') {
+  }
+
+  if (role === 'admin') {
     data.assignedBooth = undefined;
     data.assignedWard = undefined;
     data.assignedGramPanchayats = [];
     data.assignedVillages = [];
     data.assignedWards = [];
+    data.assignedParts = [];
   }
 
   if (Array.isArray(data.assignedGramPanchayats)) {
@@ -64,6 +72,12 @@ const normalizeUserPayload = async (body, existingUser) => {
   }
   if (Array.isArray(data.assignedWards)) {
     data.assignedWards = data.assignedWards.filter(Boolean).map(s => String(s).trim());
+  }
+  if (Array.isArray(data.assignedParts)) {
+    data.assignedParts = data.assignedParts.filter(Boolean).map(s => String(s).trim());
+  }
+  if (data.assignedVoterId) {
+    data.assignedVoterId = String(data.assignedVoterId).trim();
   }
 
   return data;
@@ -247,3 +261,56 @@ exports.removeUser = async (req, res, next) => {
     next(error);
   }
 };
+
+exports.hierarchyOptions = async (req, res, next) => {
+  try {
+    const Member = require('../models/Member');
+    const [gps, gpBreakdown, parts] = await Promise.all([
+      Member.distinct('gramPanchayat', { gramPanchayat: { $nin: ['', null] } }),
+      Member.aggregate([
+        { $match: { gramPanchayat: { $nin: ['', null] } } },
+        {
+          $group: {
+            _id: { gp: '$gramPanchayat', ward: '$wardNumber', village: '$village' },
+            count: { $sum: 1 }
+          }
+        }
+      ]),
+      Member.distinct('partNumber', { partNumber: { $nin: ['', null] } })
+    ]);
+
+    const gpMap = {};
+    for (const gp of gps.filter(Boolean).sort()) {
+      gpMap[gp] = { name: gp, wards: new Set(), villages: new Set(), totalVoters: 0 };
+    }
+
+    for (const item of gpBreakdown) {
+      const gp = item._id.gp;
+      if (!gpMap[gp]) gpMap[gp] = { name: gp, wards: new Set(), villages: new Set(), totalVoters: 0 };
+      if (item._id.ward && item._id.ward !== 'NO_WARD') gpMap[gp].wards.add(String(item._id.ward));
+      if (item._id.village && item._id.village !== 'NO_VILLAGE') gpMap[gp].villages.add(String(item._id.village));
+      gpMap[gp].totalVoters += (item.count || 0);
+    }
+
+    const panchayats = Object.values(gpMap).map(gp => ({
+      name: gp.name,
+      totalVoters: gp.totalVoters,
+      wards: Array.from(gp.wards).sort((a, b) => (parseInt(a) || 0) - (parseInt(b) || 0)),
+      villages: Array.from(gp.villages).sort()
+    })).sort((a, b) => a.name.localeCompare(b.name, 'hi-IN'));
+
+    const sortedParts = parts
+      .filter(Boolean)
+      .map(String)
+      .sort((a, b) => (parseInt(a) || 0) - (parseInt(b) || 0));
+
+    res.json({
+      samiti: 'रायपुर (सहाड़ा विधानसभा)',
+      panchayats,
+      parts: sortedParts
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+

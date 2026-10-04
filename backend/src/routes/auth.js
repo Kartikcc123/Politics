@@ -16,6 +16,7 @@ router.post('/register', (req, res, next) => {
   body('password').isLength({ min: 6 }),
 ], controller.register);
 router.get('/me', auth, controller.me);
+router.get('/hierarchy-options', auth, controller.hierarchyOptions);
 router.get('/users', auth, role('admin'), controller.listUsers);
 router.get('/users/:id/work-summary', auth, role('admin'), controller.userWorkSummary);
 router.post('/users', auth, role('admin'), controller.register);

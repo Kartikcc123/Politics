@@ -378,6 +378,13 @@ class Api {
       return Map<String, dynamic>.from(await _send(Future.value(response)));
     }
 
+    if (bytes != null && bytes.isNotEmpty) {
+      return _withNetworkRetry(
+        () => sendRequest(byteSource: bytes),
+        attempts: 1,
+        retryConnectionReset: false,
+      );
+    }
     if (filePath != null && filePath.isNotEmpty) {
       try {
         return await _withNetworkRetry(
@@ -392,13 +399,6 @@ class Api {
             message.contains('no such file');
         if (!unreadablePath || fileStream == null) rethrow;
       }
-    }
-    if (bytes != null) {
-      return _withNetworkRetry(
-        () => sendRequest(byteSource: bytes),
-        attempts: 1,
-        retryConnectionReset: false,
-      );
     }
     if (fileStream != null) {
       return _withNetworkRetry(

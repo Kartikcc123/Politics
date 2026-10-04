@@ -6,102 +6,6 @@ const Member = require('../src/models/Member');
 
 const MONGO_URI = process.env.MONGO_URI || 'mongodb://187.127.173.42:27017/political_crm';
 
-function decodeHindiText(text) {
-  if (!text) return '';
-  let str = text;
-
-  const directWordReplacements = [
-    { pattern: /\bभपररलरल\b/g, replacement: 'भंवरलाल' },
-    { pattern: /\bभररलरल\b/g, replacement: 'भंवरलाल' },
-    { pattern: /\bभरर\b/g, replacement: 'भंवर' },
-    { pattern: /\bसरहकबलरल\b/g, replacement: 'साहेबलाल' },
-    { pattern: /\bररधकशजरम\b/g, replacement: 'राधेश्याम' },
-    { pattern: /\bररजकचमरर\b/g, replacement: 'राजकुमार' },
-    { pattern: /\bअशयक\b/g, replacement: 'अशोक' },
-    { pattern: /\bकचमरर\b/g, replacement: 'कुमार' },
-    { pattern: /\bकचमररल\b/g, replacement: 'कुमारी' },
-    { pattern: /\bसचनमतर\b/g, replacement: 'सुमित्रा' },
-    { pattern: /\bनरनयद\b/g, replacement: 'विनोद' },
-    { pattern: /\bमनलष\b/g, replacement: 'मनीष' },
-    { pattern: /\bशलतल\b/g, replacement: 'शीतल' },
-    { pattern: /\bसरलर\b/g, replacement: 'सरला' },
-    { pattern: /\bदकरललरल\b/g, replacement: 'देवीलाल' },
-    { pattern: /\bदकरल\b/g, replacement: 'देवी' },
-    { pattern: /\bकपचनबरई\b/g, replacement: 'कंचनबाई' },
-    { pattern: /\bलरललबरई\b/g, replacement: 'लालीबाई' },
-    { pattern: /\bलरललदकरल\b/g, replacement: 'लालीदेवी' },
-    { pattern: /\bररजलदकरल\b/g, replacement: 'राजीदेवी' },
-    { pattern: /\bलकमल\b/g, replacement: 'लक्ष्मी' },
-    { pattern: /\bसपगलतर\b/g, replacement: 'संगीता' },
-    { pattern: /\bनकहल\b/g, replacement: 'स्नेहल' },
-    { pattern: /\bमलनरकल\b/g, replacement: 'मीनाक्षी' },
-    { pattern: /\bकरबरर\b/g, replacement: 'कंवर' },
-    { pattern: /\bनरसबलरल\b/g, replacement: 'नारूलाल' },
-    { pattern: /\bअजचरनलरल\b/g, replacement: 'अर्जुनलाल' },
-    { pattern: /\bभकरलरल\b/g, replacement: 'भैरुलाल' },
-    { pattern: /\bहपसदरस\b/g, replacement: 'हंसदास' },
-    { pattern: /\bजगदलशचनन\b/g, replacement: 'जगदीशचन्द्र' },
-    { pattern: /\bजरारनबरई\b/g, replacement: 'जवानबाई' },
-    { pattern: /\bरमकशचनन\b/g, replacement: 'रमेशचन्द्र' },
-    { pattern: /\bनगरलररज\b/g, replacement: 'गिरिराज' },
-    { pattern: /\bमरधर\b/g, replacement: 'माधव' },
-    { pattern: /\bलरल\b/g, replacement: 'लाल' }
-  ];
-
-  for (const { pattern, replacement } of directWordReplacements) {
-    str = str.replace(pattern, replacement);
-  }
-
-  // Generic font mapping
-  str = str
-    .replace(/रर/g, 'रा')
-    .replace(/बर/g, 'बा')
-    .replace(/पर/g, 'पा')
-    .replace(/मर/g, 'मा')
-    .replace(/नर/g, 'ना')
-    .replace(/कर/g, 'का')
-    .replace(/तर/g, 'ता')
-    .replace(/सर/g, 'सा')
-    .replace(/दर/g, 'दा')
-    .replace(/धर/g, 'धा')
-    .replace(/गर/g, 'गा')
-    .replace(/चर/g, 'चा')
-    .replace(/जर/g, 'जा')
-    .replace(/झर/g, 'झा')
-    .replace(/वर/g, 'वा')
-    .replace(/हर/g, 'हा')
-    .replace(/लल/g, 'ली')
-    .replace(/दल/g, 'दी')
-    .replace(/नल/g, 'नी')
-    .replace(/मल/g, 'मी')
-    .replace(/कल/g, 'की')
-    .replace(/गल/g, 'गी')
-    .replace(/तल/g, 'ती')
-    .replace(/सल/g, 'सी')
-    .replace(/रल/g, 'री')
-    .replace(/शल/g, 'शी')
-    .replace(/कश/g, 'शे')
-    .replace(/कच/g, 'कु')
-    .replace(/कम/g, 'मे')
-    .replace(/कल/g, 'के')
-    .replace(/कद/g, 'दे')
-    .replace(/कर/g, 'रे')
-    .replace(/कब/g, 'बे')
-    .replace(/कप/g, 'पं')
-    .replace(/सप/g, 'सं')
-    .replace(/मप/g, 'मं')
-    .replace(/नप/g, 'पि')
-    .replace(/नद/g, 'दि')
-    .replace(/शज/g, 'श्या')
-    .replace(/शज/g, 'श्या')
-    .replace(/चनन/g, 'चन्द्र')
-    .replace(/चन/g, 'चन्द्र')
-    .replace(/जच/g, 'जु')
-    .replace(/सक/g, 'से');
-
-  return str.trim();
-}
-
 function cleanText(text) {
   if (!text) return '';
   return text
@@ -164,181 +68,221 @@ function parseWardPdfFull(pdfPath) {
     );
 
     const cardAnchors = [];
-    const usedWords = new Set();
+    const usedSerials = new Set();
+    const usedEpics = new Set();
 
-    epicWords.forEach(epicWord => {
-      let matchedSerialWord = serialAnchors.find(s => 
-        !usedWords.has(s) &&
-        s.xMin < epicWord.xMin && (epicWord.xMin - s.xMin) < 70 &&
-        Math.abs(s.yMin - epicWord.yMin) < 8
+    for (const sa of serialAnchors) {
+      let col = 0;
+      if (sa.xMin > 350) col = 2;
+      else if (sa.xMin > 180) col = 1;
+
+      const matchingEpic = epicWords.find(ew => 
+        !usedEpics.has(ew) &&
+        Math.abs(ew.yMin - sa.yMin) < 30 &&
+        ((col === 0 && ew.xMin < 210) ||
+         (col === 1 && ew.xMin >= 190 && ew.xMin < 390) ||
+         (col === 2 && ew.xMin >= 370))
       );
 
-      let isDeleted = false;
-      let serial = '';
+      const rawText = sa.text;
+      const isDeleted = /^[OESR]/.test(rawText);
+      const serialNum = parseInt(rawText.replace(/^[OESR]/, ''), 10);
 
-      if (matchedSerialWord) {
-        usedWords.add(matchedSerialWord);
-        const raw = matchedSerialWord.text;
-        if (/^[OESR]/.test(raw)) isDeleted = true;
-        serial = raw.replace(/^[OESR]/, '');
-      }
+      if (serialNum > 0 && serialNum < 2500) {
+        usedSerials.add(sa);
+        if (matchingEpic) usedEpics.add(matchingEpic);
 
-      const delPrefix = bodyWords.find(w => 
-        ['O', 'E', 'S', 'R'].includes(w.text) &&
-        w.xMin < epicWord.xMin && (epicWord.xMin - w.xMin) < 80 &&
-        Math.abs(w.yMin - epicWord.yMin) < 8
-      );
-      if (delPrefix) isDeleted = true;
-
-      let colLeft = 25, colRight = 205;
-      if (epicWord.xMin >= 200 && epicWord.xMin < 380) {
-        colLeft = 205; colRight = 380;
-      } else if (epicWord.xMin >= 380) {
-        colLeft = 380; colRight = 565;
-      }
-
-      cardAnchors.push({
-        anchorY: Math.min(epicWord.yMin, matchedSerialWord ? matchedSerialWord.yMin : epicWord.yMin),
-        colLeft,
-        colRight,
-        epic: epicWord.text,
-        serial,
-        isDeleted
-      });
-    });
-
-    serialAnchors.forEach(sWord => {
-      if (usedWords.has(sWord)) return;
-      const raw = sWord.text;
-      const isDel = /^[OESR]/.test(raw);
-      const sVal = raw.replace(/^[OESR]/, '');
-
-      let colLeft = 25, colRight = 205;
-      if (sWord.xMin >= 200 && sWord.xMin < 380) {
-        colLeft = 205; colRight = 380;
-      } else if (sWord.xMin >= 380) {
-        colLeft = 380; colRight = 565;
-      }
-
-      if (!cardAnchors.some(ca => Math.abs(ca.anchorY - sWord.yMin) < 15 && Math.abs(ca.colLeft - colLeft) < 10)) {
         cardAnchors.push({
-          anchorY: sWord.yMin,
-          colLeft,
-          colRight,
-          epic: '',
-          serial: sVal,
-          isDeleted: isDel
+          col,
+          yTop: sa.yMin - 12,
+          serial: serialNum,
+          epic: matchingEpic ? matchingEpic.text : null,
+          isDeleted
         });
       }
-    });
+    }
 
-    cardAnchors.forEach(card => {
-      const cardWords = bodyWords.filter(w => 
-        w.xMin >= card.colLeft - 5 && w.xMax <= card.colRight + 5 &&
-        w.yMin >= card.anchorY - 4 && w.yMin < card.anchorY + 70
-      );
+    for (const ew of epicWords) {
+      if (usedEpics.has(ew)) continue;
+      let col = 0;
+      if (ew.xMin > 350) col = 2;
+      else if (ew.xMin > 180) col = 1;
 
-      cardWords.sort((a, b) => {
-        if (Math.abs(a.yMin - b.yMin) > 4) return a.yMin - b.yMin;
-        return a.xMin - b.xMin;
+      cardAnchors.push({
+        col,
+        yTop: ew.yMin - 12,
+        serial: null,
+        epic: ew.text,
+        isDeleted: false
       });
+      usedEpics.add(ew);
+    }
 
-      const cellText = cardWords.map(w => w.text).join(' ');
+    const colBounds = [
+      { minX: 25, maxX: 205 },
+      { minX: 205, maxX: 380 },
+      { minX: 380, maxX: 565 }
+    ];
 
-      let serial = card.serial;
-      if (!serial) {
-        for (let i = 0; i < Math.min(cardWords.length, 4); i++) {
-          const m = cardWords[i].text.match(/^([OESR]?\s*(\d{1,4}))$/);
-          if (m) {
-            serial = m[2];
-            break;
+    for (let c = 0; c < 3; c++) {
+      const colCards = cardAnchors.filter(a => a.col === c);
+      colCards.sort((a, b) => a.yTop - b.yTop);
+
+      for (let i = 0; i < colCards.length; i++) {
+        const current = colCards[i];
+        const nextY = (i < colCards.length - 1) ? colCards[i + 1].yTop : 795;
+        const boxYMin = Math.max(135, current.yTop);
+        const boxYMax = Math.min(795, nextY);
+
+        const cardWords = bodyWords.filter(w => 
+          w.xMin >= colBounds[c].minX - 5 &&
+          w.xMax <= colBounds[c].maxX + 5 &&
+          w.yMin >= boxYMin - 2 &&
+          w.yMax <= boxYMax + 2
+        );
+
+        cardWords.sort((a, b) => {
+          if (Math.abs(a.yMin - b.yMin) > 4) return a.yMin - b.yMin;
+          return a.xMin - b.xMin;
+        });
+
+        const lines = [];
+        let curLine = [];
+        let curY = -1;
+        for (const w of cardWords) {
+          if (curY === -1 || Math.abs(w.yMin - curY) < 5) {
+            curLine.push(w);
+            curY = w.yMin;
+          } else {
+            lines.push(curLine);
+            curLine = [w];
+            curY = w.yMin;
           }
         }
+        if (curLine.length > 0) lines.push(curLine);
+
+        let name = '';
+        let guardianName = '';
+        let relationType = 'father';
+        let houseNumber = '';
+        let age = null;
+        let gender = 'male';
+
+        const cardText = cardWords.map(w => w.text).join(' ');
+
+        if (/\b(ववलोवपत|ववलोशपत|ननरसत|Deleted)\b/i.test(cardText)) {
+          current.isDeleted = true;
+        }
+
+        for (const line of lines) {
+          const lText = line.map(w => w.text).join(' ');
+
+          const nameM = lText.match(/(?:मतदाता\s*का\s*नाम|मतदरतर\s*कक\s*नरम|नरम|नाम)\s*[:;\-]?\s*(.+)/);
+          if (nameM && !name) {
+            name = cleanText(nameM[1]);
+          }
+
+          const relM = lText.match(/(?:वपता\s*का\s*नाम|वपतर\s*कक\s*नरम|पनत\s*का\s*नाम|पनत\s*कक\s*नरम|माता\s*का\s*नाम|अभिावक\s*का\s*नाम)\s*[:;\-]?\s*(.+)/);
+          if (relM && !guardianName) {
+            guardianName = cleanText(relM[1]);
+            if (/पनत/i.test(lText)) relationType = 'husband';
+            else if (/माता/i.test(lText)) relationType = 'mother';
+            else relationType = 'father';
+          }
+
+          const houseM = lText.match(/(?:मकान\s*संख्या|मककन\s*सपखजर|गृह\s*संख्या)\s*[:;\-]?\s*([^\s,]+)/);
+          if (houseM && !houseNumber) {
+            houseNumber = cleanText(houseM[1]);
+          }
+
+          const ageM = lText.match(/(?:उम्र|आयु|आय)\s*[:;\-]?\s*(\d{1,3})/);
+          if (ageM && !age) {
+            age = parseInt(ageM[1], 10);
+          }
+
+          if (/(?:ललग|ललंग|शलग|Gender)\s*[:;\-]?\s*(?:महिला|स्त्री|मदिला|Female|F)/i.test(lText) || /\b(महिला|स्त्री)\b/i.test(lText)) {
+            gender = 'female';
+          } else if (/(?:ललग|ललंग|शलग|Gender)\s*[:;\-]?\s*(?:पुरुष|पु|Male|M)/i.test(lText) || /\b(पुरुष)\b/i.test(lText)) {
+            gender = 'male';
+          }
+        }
+
+        if (name && !guardianName) {
+          const secondLine = lines[1] ? lines[1].map(w => w.text).join(' ') : '';
+          const relM2 = secondLine.match(/[:;\-]?\s*(.+)/);
+          if (relM2) {
+            guardianName = cleanText(relM2[1]);
+          }
+        }
+
+        allVoters.push({
+          page: pageIndex,
+          col: c,
+          serial: current.serial,
+          epic: current.epic,
+          name,
+          guardianName,
+          relationType,
+          houseNumber,
+          age,
+          gender,
+          isDeleted: current.isDeleted,
+          wardNumber,
+          villageName
+        });
       }
-
-      const numS = Number(serial);
-      if ((!numS || numS < 1 || numS > 2000) && !card.epic) {
-        return;
-      }
-
-      let name = '';
-      const nameM = cellText.match(/(?:नरम|नाम)\s*:\s*([^:]+?)(?=(?:नपतर|पिता|पनत|पति|मरतर|माता|मकरन|मकान|Photo|Available|$))/);
-      if (nameM) name = decodeHindiText(cleanText(nameM[1]));
-
-      let guardian = '';
-      let relationType = 'father';
-      const guardM = cellText.match(/(?:(नपतर|पिता|पनत|पति|मरतर|माता)\s*कर?\s*नरम|पिता|पति|माता)\s*:\s*([^:]+?)(?=(?:मकरन|मकान|आजच|आयु|Photo|$))/);
-      if (guardM) {
-        if (/(?:पनत|पति)/.test(guardM[1])) relationType = 'husband';
-        else if (/(?:मरतर|माता)/.test(guardM[1])) relationType = 'mother';
-        guardian = decodeHindiText(cleanText(guardM[2]));
-      }
-
-      let house = '';
-      const houseM = cellText.match(/(?:मकरन|मकान)\s*(?:सपखजर|संख्या)?\s*:\s*([^:]+?)(?=(?:आजच|आयु|Photo|$))/);
-      if (houseM) house = cleanText(houseM[1]);
-
-      let age = null;
-      let gender = 'male';
-      const ageM = cellText.match(/(?:आजच|आयु)\s*:\s*(\d+)/);
-      if (ageM) age = parseInt(ageM[1], 10);
-      if (/(?:सल|स्त्री|F|महिला)/i.test(cellText)) gender = 'female';
-
-      allVoters.push({
-        pageNumber: pageIndex,
-        serial: serial || '',
-        epic: card.epic,
-        name,
-        guardianName: guardian,
-        relationType,
-        houseNumber: house,
-        age,
-        gender,
-        isDeleted: card.isDeleted,
-        wardNumber,
-        villageName
-      });
-    });
+    }
   }
 
-  const uniqueBySerial = new Map();
-  allVoters.forEach(v => {
-    if (v.serial) {
-      if (!uniqueBySerial.has(v.serial) || (!uniqueBySerial.get(v.serial).epic && v.epic)) {
-        uniqueBySerial.set(v.serial, v);
-      }
-    } else if (v.epic) {
-      uniqueBySerial.set(`epic:${v.epic}`, v);
-    }
+  // Deduplicate and resolve serials
+  const uniqueVoters = [];
+  const seenKeys = new Set();
+
+  allVoters.sort((a, b) => {
+    if (a.serial && b.serial) return a.serial - b.serial;
+    if (a.serial) return -1;
+    if (b.serial) return 1;
+    return a.page - b.page;
   });
 
-  const finalVoters = Array.from(uniqueBySerial.values());
-  finalVoters.sort((a, b) => (Number(a.serial) || 0) - (Number(b.serial) || 0));
+  let maxSerial = 0;
+  for (const v of allVoters) {
+    if (v.serial && v.serial > maxSerial) maxSerial = v.serial;
+  }
+
+  let nextSerial = 1;
+  for (const v of allVoters) {
+    let key = v.serial ? `S_${v.serial}` : (v.epic ? `E_${v.epic}` : `P_${v.page}_C_${v.col}_${v.name}`);
+    if (seenKeys.has(key)) continue;
+    seenKeys.add(key);
+
+    if (!v.serial) {
+      v.serial = nextSerial;
+    }
+    nextSerial = Math.max(nextSerial, v.serial + 1);
+
+    uniqueVoters.push(v);
+  }
+
+  uniqueVoters.sort((a, b) => a.serial - b.serial);
 
   return {
     wardNumber,
     villageName,
-    voters: finalVoters
+    voters: uniqueVoters
   };
 }
 
 async function run() {
   console.log('Connecting to MongoDB:', MONGO_URI);
   await mongoose.connect(MONGO_URI);
-  console.log('MongoDB Connected successfully!');
+  console.log('Connected successfully!');
 
   const dir = 'C:\\Users\\Ashish Sharma\\Downloads\\KHEMANA-';
-  const files = fs.readdirSync(dir).filter(f => f.endsWith('.pdf')).sort((a, b) => {
-    const numA = parseInt(a.match(/\d+/)?.[0] || '0', 10);
-    const numB = parseInt(b.match(/\d+/)?.[0] || '0', 10);
-    return numA - numB;
-  });
+  const files = fs.readdirSync(dir).filter(f => f.toLowerCase().endsWith('.pdf')).sort();
 
-  console.log(`\n======================================================`);
-  console.log(`STARTING FAST BULK IMPORT OF ALL 7 WARDS OF KHEMANA`);
-  console.log(`======================================================\n`);
+  console.log(`Found ${files.length} Ward PDFs in ${dir}`);
 
-  console.log('Parsing all 7 Ward PDFs...');
   const parsedWards = [];
   const allEpics = new Set();
 
@@ -352,7 +296,7 @@ async function run() {
     });
   }
 
-  console.log(`Parsed 7 Wards, total unique EPICs: ${allEpics.size}`);
+  console.log(`Parsed ${parsedWards.length} Wards, total unique EPICs: ${allEpics.size}`);
   console.log('Loading existing matching members from MongoDB...');
 
   const epicArray = Array.from(allEpics);
@@ -458,7 +402,7 @@ async function run() {
 
   console.log(`\n======================================================`);
   console.log(`ALL 7 WARDS OF KHEMANA IMPORT FINISHED SUCCESSFULLY!`);
-  console.log(`Grand Total Voters: ${grandTotal}`);
+  console.log(`Grand Total Live Voters: ${grandTotal}`);
   console.log(`Direct Assembly Matches: ${grandMatched}`);
   console.log(`Newly Created Ward Voters: ${grandCreated}`);
   console.log(`======================================================\n`);
