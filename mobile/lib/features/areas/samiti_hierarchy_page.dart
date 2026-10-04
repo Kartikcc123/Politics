@@ -804,43 +804,43 @@ class _SamitiHierarchyPageState extends State<SamitiHierarchyPage> {
                                         // 1. पूरी पंचायत के सभी मतदाता देखें
                                         InkWell(
                                           onTap: () => _openVoters(gramPanchayat: gpName),
-                                          borderRadius: BorderRadius.circular(10),
+                                          borderRadius: BorderRadius.circular(12),
                                           child: Container(
-                                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+                                            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                                             decoration: BoxDecoration(
                                               color: softBlue,
-                                              borderRadius: BorderRadius.circular(10),
+                                              borderRadius: BorderRadius.circular(12),
                                               border: Border.all(color: blue.withValues(alpha: 0.2)),
                                             ),
                                             child: Row(
                                               children: [
-                                                const Icon(Icons.people_alt_rounded, size: 16, color: blue),
-                                                const SizedBox(width: 8),
+                                                const Icon(Icons.people_alt_rounded, size: 18, color: blue),
+                                                const SizedBox(width: 10),
                                                 Text(
                                                   'पूरी $gpName पंचायत के सभी मतदाता देखें',
                                                   style: const TextStyle(
                                                     color: blue,
-                                                    fontSize: 12,
+                                                    fontSize: 13,
                                                     fontWeight: FontWeight.w800,
                                                   ),
                                                 ),
                                                 const Spacer(),
-                                                const Icon(Icons.arrow_forward_rounded, size: 14, color: blue),
+                                                const Icon(Icons.arrow_forward_rounded, size: 16, color: blue),
                                               ],
                                             ),
                                           ),
                                         ),
-                                        const SizedBox(height: 12),
+                                        const SizedBox(height: 14),
 
-                                        // 2. भागवार / बूथ फ़िल्टर (Part/Booth Filters)
+                                        // 2. भागवार व वार्डवार क्विक चिप्स (Clean Horizontal Filter Sections)
                                         if (gpParts.isNotEmpty) ...[
                                           Row(
                                             children: [
                                               const Icon(Icons.how_to_vote_rounded, size: 14, color: orange),
-                                              const SizedBox(width: 5),
+                                              const SizedBox(width: 6),
                                               Text(
                                                 'भागवार / बूथ फ़िल्टर (${gpParts.length} भाग):',
-                                                style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: orange),
+                                                style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w800, color: orange),
                                               ),
                                             ],
                                           ),
@@ -854,37 +854,32 @@ class _SamitiHierarchyPageState extends State<SamitiHierarchyPage> {
                                                 return Padding(
                                                   padding: const EdgeInsets.only(right: 6),
                                                   child: ActionChip(
-                                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                                                     visualDensity: VisualDensity.compact,
-                                                    avatar: const CircleAvatar(
-                                                      radius: 8,
-                                                      backgroundColor: orange,
-                                                      child: Text('भ', style: TextStyle(fontSize: 8, color: Colors.white, fontWeight: FontWeight.w900)),
-                                                    ),
                                                     label: Text(
-                                                      'भाग $pNum ${vCount > 0 ? '($vCount)' : ''}',
+                                                      'भाग $pNum ${vCount > 0 ? "($vCount)" : ""}',
                                                       style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: orange),
                                                     ),
                                                     backgroundColor: const Color(0xfffff7ed),
                                                     side: const BorderSide(color: Color(0xffffedd5)),
+                                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                                                     onPressed: () => _openVoters(gramPanchayat: gpName, partNumber: pNum),
                                                   ),
                                                 );
                                               }).toList(),
                                             ),
                                           ),
-                                          const SizedBox(height: 10),
+                                          const SizedBox(height: 12),
                                         ],
 
-                                        // 3. वार्डवार फ़िल्टर (Ward Filters)
                                         if (wardCount > 0) ...[
                                           Row(
                                             children: [
-                                              const Icon(Icons.grid_view_rounded, size: 13, color: muted),
-                                              const SizedBox(width: 5),
+                                              const Icon(Icons.grid_view_rounded, size: 14, color: muted),
+                                              const SizedBox(width: 6),
                                               Text(
                                                 'वार्डवार फ़िल्टर ($wardCount वार्ड):',
-                                                style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: muted),
+                                                style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w800, color: muted),
                                               ),
                                             ],
                                           ),
@@ -897,32 +892,33 @@ class _SamitiHierarchyPageState extends State<SamitiHierarchyPage> {
                                                 return Padding(
                                                   padding: const EdgeInsets.only(right: 6),
                                                   child: ActionChip(
-                                                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                                                     visualDensity: VisualDensity.compact,
                                                     label: Text('वार्ड $wNum', style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: navy)),
                                                     backgroundColor: Colors.white,
                                                     side: const BorderSide(color: border),
+                                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                                                     onPressed: () => _openVoters(gramPanchayat: gpName, ward: wNum),
                                                   ),
                                                 );
                                               }),
                                             ),
                                           ),
-                                          const SizedBox(height: 10),
+                                          const SizedBox(height: 14),
                                         ],
 
-                                        // 4. सम्मिलित राजस्व गाँव व बूथ (Villages & Part details)
-                                        const Row(
+                                        // 3. सम्मिलित राजस्व गाँव व बूथ (Clean Spacious Village Cards)
+                                        Row(
                                           children: [
-                                            Icon(Icons.location_city_rounded, size: 13, color: muted),
-                                            SizedBox(width: 5),
+                                            const Icon(Icons.location_city_rounded, size: 14, color: navy),
+                                            const SizedBox(width: 6),
                                             Text(
-                                              'सम्मिलित राजस्व गाँव व बूथ:',
-                                              style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: muted),
+                                              'सम्मिलित राजस्व गाँव व बूथ (${villages.length}):',
+                                              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: navy),
                                             ),
                                           ],
                                         ),
-                                        const SizedBox(height: 6),
+                                        const SizedBox(height: 8),
 
                                         ...villages.map((v) {
                                           final vName = v['name'] as String;
@@ -938,76 +934,107 @@ class _SamitiHierarchyPageState extends State<SamitiHierarchyPage> {
                                           final matchedPartNums = matchedParts.map((p) => '${p['partNumber']}').toList();
 
                                           return Container(
-                                            margin: const EdgeInsets.only(bottom: 6),
+                                            margin: const EdgeInsets.only(bottom: 8),
+                                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                                             decoration: BoxDecoration(
                                               color: Colors.white,
-                                              borderRadius: BorderRadius.circular(10),
-                                              border: Border.all(color: border.withValues(alpha: 0.6)),
+                                              borderRadius: BorderRadius.circular(12),
+                                              border: Border.all(color: border.withValues(alpha: 0.8)),
+                                              boxShadow: [
+                                                BoxShadow(
+                                                  color: Colors.black.withValues(alpha: 0.02),
+                                                  blurRadius: 4,
+                                                  offset: const Offset(0, 1),
+                                                ),
+                                              ],
                                             ),
-                                            child: ListTile(
-                                              contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
-                                              leading: Container(
-                                                width: 36,
-                                                height: 36,
-                                                decoration: BoxDecoration(
-                                                  color: matchedPartNums.isNotEmpty ? const Color(0xffeff6ff) : const Color(0xfff8fafc),
-                                                  shape: BoxShape.circle,
-                                                ),
-                                                alignment: Alignment.center,
-                                                child: Icon(
-                                                  Icons.location_on_rounded,
-                                                  color: matchedPartNums.isNotEmpty ? blue : muted,
-                                                  size: 18,
-                                                ),
-                                              ),
-                                              title: Row(
-                                                children: [
-                                                  Expanded(
-                                                    child: Text(
-                                                      vName,
-                                                      style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 13, color: navy),
-                                                    ),
+                                            child: Row(
+                                              crossAxisAlignment: CrossAxisAlignment.center,
+                                              children: [
+                                                Container(
+                                                  width: 36,
+                                                  height: 36,
+                                                  decoration: BoxDecoration(
+                                                    color: matchedPartNums.isNotEmpty ? const Color(0xffeff6ff) : const Color(0xfff8fafc),
+                                                    shape: BoxShape.circle,
                                                   ),
-                                                  if (matchedPartNums.isNotEmpty)
-                                                    Container(
-                                                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                                      decoration: BoxDecoration(
-                                                        color: orange.withValues(alpha: 0.12),
-                                                        borderRadius: BorderRadius.circular(6),
-                                                        border: Border.all(color: orange.withValues(alpha: 0.3)),
+                                                  alignment: Alignment.center,
+                                                  child: Icon(
+                                                    Icons.location_on_rounded,
+                                                    color: matchedPartNums.isNotEmpty ? blue : muted,
+                                                    size: 18,
+                                                  ),
+                                                ),
+                                                const SizedBox(width: 10),
+                                                Expanded(
+                                                  child: Column(
+                                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                                    children: [
+                                                      Row(
+                                                        children: [
+                                                          Flexible(
+                                                            child: Text(
+                                                              vName,
+                                                              style: const TextStyle(
+                                                                fontWeight: FontWeight.w800,
+                                                                fontSize: 14,
+                                                                color: navy,
+                                                              ),
+                                                              overflow: TextOverflow.ellipsis,
+                                                            ),
+                                                          ),
+                                                          if (matchedPartNums.isNotEmpty) ...[
+                                                            const SizedBox(width: 6),
+                                                            Container(
+                                                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                                              decoration: BoxDecoration(
+                                                                color: orange.withValues(alpha: 0.12),
+                                                                borderRadius: BorderRadius.circular(6),
+                                                                border: Border.all(color: orange.withValues(alpha: 0.3)),
+                                                              ),
+                                                              child: Text(
+                                                                matchedPartNums.length <= 2
+                                                                    ? 'भाग ${matchedPartNums.map((n) => "#$n").join(", ")}'
+                                                                    : '${matchedPartNums.length} भाग / बूथ',
+                                                                style: const TextStyle(
+                                                                  fontSize: 10,
+                                                                  fontWeight: FontWeight.w900,
+                                                                  color: orange,
+                                                                ),
+                                                              ),
+                                                            ),
+                                                          ],
+                                                        ],
                                                       ),
-                                                      child: Text(
-                                                        'भाग ${matchedPartNums.join(', ')}',
-                                                        style: const TextStyle(
-                                                          fontSize: 10,
-                                                          fontWeight: FontWeight.w900,
-                                                          color: orange,
-                                                        ),
+                                                      const SizedBox(height: 3),
+                                                      Text(
+                                                        matchedPartNums.length > 2
+                                                            ? 'बूथ: भाग #${matchedPartNums.first} से #${matchedPartNums.last} (${matchedPartNums.length} बूथ) ${pop > 0 ? "• जनसंख्या: $pop" : ""}'
+                                                            : (matchedPartNums.isNotEmpty
+                                                                ? 'बूथ: भाग ${matchedPartNums.map((n) => "#$n").join(", ")} ${pop > 0 ? "• जनसंख्या: $pop" : ""}'
+                                                                : (pop > 0 ? 'जनसंख्या: $pop' : 'ग्राम पंचायत $gpName')),
+                                                        maxLines: 1,
+                                                        overflow: TextOverflow.ellipsis,
+                                                        style: const TextStyle(fontSize: 11, color: muted, fontWeight: FontWeight.w600),
                                                       ),
-                                                    ),
-                                                ],
-                                              ),
-                                              subtitle: Padding(
-                                                padding: const EdgeInsets.only(top: 3),
-                                                child: Text(
-                                                  matchedPartNums.isNotEmpty
-                                                      ? 'बूथ: भाग ${matchedPartNums.join(', ')} ${pop > 0 ? '• जनसंख्या: $pop' : ''}'
-                                                      : (pop > 0 ? 'जनसंख्या: $pop' : 'ग्राम पंचायत $gpName'),
-                                                  style: const TextStyle(fontSize: 11, color: muted, fontWeight: FontWeight.w600),
+                                                    ],
+                                                  ),
                                                 ),
-                                              ),
-                                              trailing: FilledButton.tonal(
-                                                style: FilledButton.styleFrom(
-                                                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                                                  visualDensity: VisualDensity.compact,
+                                                const SizedBox(width: 8),
+                                                FilledButton.tonal(
+                                                  style: FilledButton.styleFrom(
+                                                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                                                    visualDensity: VisualDensity.compact,
+                                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                                  ),
+                                                  onPressed: () => _openVoters(
+                                                    village: vName,
+                                                    gramPanchayat: gpName,
+                                                    partNumber: matchedPartNums.length == 1 ? matchedPartNums.first : null,
+                                                  ),
+                                                  child: const Text('मतदाता ➔', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800)),
                                                 ),
-                                                onPressed: () => _openVoters(
-                                                  village: vName,
-                                                  gramPanchayat: gpName,
-                                                  partNumber: matchedPartNums.length == 1 ? matchedPartNums.first : null,
-                                                ),
-                                                child: const Text('मतदाता ➔', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800)),
-                                              ),
+                                              ],
                                             ),
                                           );
                                         }),
