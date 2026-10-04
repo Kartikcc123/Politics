@@ -67,11 +67,12 @@ class VoterContactActions extends StatelessWidget {
           icon: const Icon(Icons.location_on_rounded, size: 18),
           label: const Text('मैप'),
         ),
-        OutlinedButton.icon(
-          onPressed: () => _manageGroups(context),
-          icon: const Icon(Icons.label_outline, size: 18),
-          label: const Text('ग्रुप'),
-        ),
+        if (api.user?['role'] == 'admin')
+          OutlinedButton.icon(
+            onPressed: () => _manageGroups(context),
+            icon: const Icon(Icons.label_outline, size: 18),
+            label: const Text('ग्रुप'),
+          ),
         InkWell(
           borderRadius: BorderRadius.circular(24),
           onTap: () async {
