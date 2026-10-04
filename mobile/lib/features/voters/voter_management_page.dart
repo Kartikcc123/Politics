@@ -6989,10 +6989,22 @@ class _VoterDetailPageState extends State<VoterDetailPage> {
         .where((value) => value.trim().isNotEmpty)
         .join(', ');
     final rollStatus = hasAssembly && hasMunicipal
-        ? 'Assembly + Ward list'
+        ? 'विधानसभा + वार्ड सूची'
         : hasMunicipal
-            ? 'Ward list only'
-            : 'Assembly list only';
+            ? 'केवल वार्ड सूची'
+            : 'केवल विधानसभा सूची';
+    final rawGender = '${voter['gender'] ?? ''}'.trim().toLowerCase();
+    final genderLabel = rawGender == 'male' || rawGender == 'm'
+        ? 'पुरुष'
+        : rawGender == 'female' || rawGender == 'f'
+            ? 'महिला'
+            : rawGender == 'other' || rawGender == 'o'
+                ? 'अन्य'
+                : (voter['gender'] ?? '-');
+    final rawVoterId = '${voter['voterId'] ?? ''}'.trim();
+    final displayVoterId = (rawVoterId.startsWith('WARD') && rawVoterId.contains('_'))
+        ? 'वार्ड क्रमांक ${voter['wardVoterSerial'] ?? voter['voterSerial'] ?? '-'}'
+        : rawVoterId.isEmpty ? '-' : rawVoterId;
     return Scaffold(
       backgroundColor: const Color(0xfff7f8fb),
       appBar: AppBar(
@@ -7152,19 +7164,19 @@ class _VoterDetailPageState extends State<VoterDetailPage> {
                 subtitle: 'मोबाइल नंबर'),
             _ProfileInfoRow(
                 icon: Icons.badge_outlined,
-                title: '${voter['voterId'] ?? '-'}',
+                title: displayVoterId,
                 subtitle: 'EPIC नंबर'),
             _ProfileInfoRow(
                 icon: Icons.how_to_vote_outlined,
                 title: rollStatus,
-                subtitle: 'Electoral list status'),
+                subtitle: 'नामावली स्थिति'),
             if (hasMunicipal)
               _ProfileInfoRow(
                   icon: Icons.location_city_outlined,
                   title: municipalWards.isEmpty
-                      ? 'Ward number unavailable'
-                      : 'Ward $municipalWards',
-                  subtitle: 'Municipal Ward membership'),
+                      ? 'वार्ड संख्या अनुपलब्ध'
+                      : 'वार्ड $municipalWards',
+                  subtitle: 'वार्ड सदस्यता'),
             _ProfileInfoRow(
                 icon: Icons.location_on_rounded,
                 title: place.isEmpty ? '${voter['address'] ?? '-'}' : place,
@@ -7187,7 +7199,7 @@ class _VoterDetailPageState extends State<VoterDetailPage> {
             _ProfileInfoRow(
                 icon: Icons.cake_outlined,
                 title:
-                    '${voter['age'] ?? '-'} वर्ष · ${voter['gender'] ?? '-'}',
+                    '${voter['age'] ?? '-'} वर्ष · $genderLabel',
                 subtitle: 'उम्र / लिंग'),
             _ProfileInfoRow(
                 icon: Icons.family_restroom_rounded,
