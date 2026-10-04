@@ -7,6 +7,7 @@ import 'package:share_plus/share_plus.dart';
 import '../../core/api_client.dart';
 import '../../core/contact_actions.dart';
 import '../../core/theme.dart';
+import 'bulk_message_page.dart';
 
 class WhatsAppPage extends StatefulWidget {
   const WhatsAppPage({super.key, this.initialEventType = 'general'});
@@ -307,6 +308,18 @@ class _WhatsAppPageState extends State<WhatsAppPage> with SingleTickerProviderSt
         backgroundColor: blue,
         foregroundColor: Colors.white,
         elevation: 0,
+        actions: [
+          IconButton(
+            tooltip: 'QR कनेक्ट व बल्क अभियान',
+            icon: const Icon(Icons.qr_code_scanner_rounded),
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const BulkMessagePage()),
+              );
+            },
+          ),
+        ],
         bottom: TabBar(
           controller: _tabController,
           indicatorColor: Colors.white,

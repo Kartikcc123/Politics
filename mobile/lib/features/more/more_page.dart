@@ -8,6 +8,7 @@ import '../activity/activity_page.dart';
 import '../areas/area_directory_page.dart';
 import '../areas/master_data_import_page.dart';
 import '../booths/booth_page.dart';
+import '../messages/bulk_message_page.dart';
 import '../messages/whatsapp_page.dart';
 import '../reminders/reminder_dashboard_page.dart';
 import '../uploads/admin_review_hub_page.dart';
@@ -96,8 +97,11 @@ class MorePage extends StatelessWidget {
         _Option('विस्तृत प्रिंट', 'चुने हुए मतदाता और जानकारी प्रिंट करें',
             Icons.print_rounded, blue, const ConfigurablePrintPage()),
       if (canExport)
-        _Option('WhatsApp अभियान', 'संदेश बनाएं और समूह में भेजें',
-            Icons.campaign_rounded, green, const WhatsAppPage()),
+        _Option('WhatsApp बल्क अभियान (QR कनेक्ट)', 'QR कोड से WhatsApp जोड़ें, टाइमर गैप सेट करें और ऑटो भेजें',
+            Icons.qr_code_scanner_rounded, green, const BulkMessagePage()),
+      if (canExport)
+        _Option('WhatsApp संदेश व पोस्टर शेयर', 'मतदाताओं को 1-क्लिक में पोस्टर व पर्सनलाइज़्ड संदेश भेजें',
+            Icons.campaign_rounded, blue, const WhatsAppPage()),
       if (isAdmin || canReport)
         _Option(
             'संपर्क अनुस्मारक',
