@@ -104,32 +104,82 @@ function applyPrintFilters(req, filter) {
   }
 }
 
-const httpsAgent = new https.Agent({ keepAlive: true, maxSockets: 50, maxFreeSockets: 20, timeout: 8000 });
-const httpAgent = new http.Agent({ keepAlive: true, maxSockets: 50, maxFreeSockets: 20, timeout: 8000 });
+const httpsAgent = new https.Agent({ keepAlive: true, maxSockets: 50, maxFreeSockets: 20, timeout: 12000 });
+const httpAgent = new http.Agent({ keepAlive: true, maxSockets: 50, maxFreeSockets: 20, timeout: 12000 });
+const crypto = require('crypto');
+const photoCacheDir = path.join(__dirname, '../../uploads/.photo_cache');
+try {
+  if (!fs.existsSync(photoCacheDir)) {
+    fs.mkdirSync(photoCacheDir, { recursive: true });
+  }
+} catch (_) {}
 
-function fetchHttpBuffer(url) {
+function fetchHttpBuffer(url, retries = 2) {
+  if (!url) return Promise.resolve(null);
+  const cacheKey = crypto.createHash('md5').update(url).digest('hex');
+  const cacheFilePath = path.join(photoCacheDir, `${cacheKey}.bin`);
+
+  if (fs.existsSync(cacheFilePath)) {
+    try {
+      const cached = fs.readFileSync(cacheFilePath);
+      const normalized = normalizeImageBuffer(cached);
+      if (normalized) return Promise.resolve(normalized);
+    } catch (_) {}
+  }
+
   return new Promise((resolve) => {
     try {
       const isHttps = url.startsWith('https');
       const client = isHttps ? https : http;
       const agent = isHttps ? httpsAgent : httpAgent;
 
-      const req = client.get(url, { agent, timeout: 8000 }, (res) => {
+      const req = client.get(url, { agent, timeout: 12000 }, (res) => {
+        if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+          res.resume();
+          return fetchHttpBuffer(res.headers.location, retries).then(resolve);
+        }
         if (res.statusCode !== 200) {
           res.resume();
+          if (retries > 0) {
+            return setTimeout(() => {
+              fetchHttpBuffer(url, retries - 1).then(resolve);
+            }, 300);
+          }
           return resolve(null);
         }
         const chunks = [];
         res.on('data', (c) => chunks.push(c));
         res.on('end', () => {
           const buf = Buffer.concat(chunks);
-          resolve(normalizeImageBuffer(buf));
+          const normalized = normalizeImageBuffer(buf);
+          if (normalized) {
+            try {
+              fs.writeFileSync(cacheFilePath, normalized);
+            } catch (_) {}
+            resolve(normalized);
+          } else {
+            resolve(null);
+          }
         });
       });
-      req.on('error', () => resolve(null));
+      req.on('error', () => {
+        if (retries > 0) {
+          setTimeout(() => {
+            fetchHttpBuffer(url, retries - 1).then(resolve);
+          }, 300);
+        } else {
+          resolve(null);
+        }
+      });
       req.on('timeout', () => {
         req.destroy();
-        resolve(null);
+        if (retries > 0) {
+          setTimeout(() => {
+            fetchHttpBuffer(url, retries - 1).then(resolve);
+          }, 300);
+        } else {
+          resolve(null);
+        }
       });
     } catch (_) {
       resolve(null);
@@ -140,7 +190,7 @@ function fetchHttpBuffer(url) {
 function mediaIdFromPhoto(photo) {
   if (!photo) return null;
   const str = String(photo).trim();
-  const match = str.match(/(?:api\/media\/|^)([a-fA-F0-9]{24})(?:\/|$|\?)/);
+  const match = str.match(/(?:(?:\/|^)(?:api\/)?media\/|^)([a-fA-F0-9]{24})(?:\/|$|\?)/);
   return match ? match[1] : null;
 }
 
@@ -155,6 +205,8 @@ function photoPath(member) {
     resolveUploadPublicPath(value),
     path.resolve(process.cwd(), relative),
     path.resolve(__dirname, '../../', relative),
+    path.resolve(__dirname, '../', relative),
+    path.resolve(__dirname, '../../../', relative),
   ];
   return candidates.find((candidate) => fs.existsSync(candidate)) || null;
 }
@@ -186,9 +238,9 @@ async function loadPhotoSources(members, includePhoto = true) {
     }
   }
 
-  // 2. Fetch all S3/HTTP photos in parallel concurrency batches of 35
+  // 2. Fetch all S3/HTTP photos in parallel concurrency batches of 40 with local disk caching
   const httpPhotos = [...new Set(members.map(m => m.photo).filter(p => p && /^https?:\/\//i.test(p)))];
-  const concurrency = 35;
+  const concurrency = 40;
   for (let i = 0; i < httpPhotos.length; i += concurrency) {
     const batch = httpPhotos.slice(i, i + concurrency);
     await Promise.all(batch.map(async (url) => {
@@ -417,8 +469,15 @@ exports.printMembers = async (req, res, next) => {
     const pages = doc.bufferedPageRange();
     for (let i = 0; i < pages.count; i += 1) {
       doc.switchToPage(pages.start + i);
+      const oldBottom = doc.page.margins.bottom;
+      doc.page.margins.bottom = 0;
       doc.font('Hindi').fontSize(8).fillColor('#667394')
-        .text(`पृष्ठ ${i + 1} / ${pages.count}`, margin, doc.page.height - 24, { width: usableWidth, align: 'center' });
+        .text(`पृष्ठ ${i + 1} / ${pages.count}`, margin, doc.page.height - 18, {
+          width: usableWidth,
+          align: 'center',
+          lineBreak: false,
+        });
+      doc.page.margins.bottom = oldBottom;
     }
     doc.end();
   } catch (error) { next(error); }
