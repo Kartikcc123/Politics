@@ -4582,8 +4582,9 @@ class _DatabaseFilterPicker extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final selected = value != null && value!.trim().isNotEmpty;
+    final isMobile = MediaQuery.sizeOf(context).width < 420;
     return SizedBox(
-      width: MediaQuery.sizeOf(context).width < 420 ? double.infinity : 205,
+      width: isMobile ? 175 : 205,
       child: Material(
         color: selected ? const Color(0xffedf4ff) : Colors.white,
         shape: RoundedRectangleBorder(

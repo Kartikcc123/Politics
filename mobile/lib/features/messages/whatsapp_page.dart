@@ -31,7 +31,7 @@ class _WhatsAppPageState extends State<WhatsAppPage> with SingleTickerProviderSt
   String _selectedVillage = 'all'; // 'all' or village name
   String _selectedPart = 'all'; // 'all' or part number
   String _selectedCaste = 'all'; // 'all' or caste name
-  bool _onlyWithMobile = true;
+  bool _onlyWithMobile = false;
 
   // Options from DB
   List<Map<String, dynamic>> _villageOptions = [];
@@ -807,9 +807,70 @@ class _WhatsAppPageState extends State<WhatsAppPage> with SingleTickerProviderSt
                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                   visualDensity: VisualDensity.compact,
                 ),
+              )
+            else
+              OutlinedButton.icon(
+                onPressed: () => _promptAndSend(voter),
+                icon: const Icon(Icons.send_rounded, size: 13),
+                label: const Text('भेजें', style: TextStyle(fontSize: 11)),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: blue,
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  visualDensity: VisualDensity.compact,
+                ),
               ),
           ],
         ),
+      ),
+    );
+  }
+
+  void _promptAndSend(Map<String, dynamic> voter) {
+    final phoneCtrl = TextEditingController();
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('${voter['name'] ?? 'मतदाता'} को संदेश भेजें', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('इस मतदाता का मोबाइल नंबर दर्ज करें या सीधे WhatsApp शेयर करें:', style: TextStyle(fontSize: 13, color: muted)),
+            const SizedBox(height: 12),
+            TextField(
+              controller: phoneCtrl,
+              keyboardType: TextInputType.phone,
+              decoration: InputDecoration(
+                labelText: 'मोबाइल नंबर',
+                hintText: '10 अंकों का नंबर',
+                prefixIcon: const Icon(Icons.phone_rounded),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              _shareDirectToWhatsApp();
+            },
+            child: const Text('WhatsApp शेयर'),
+          ),
+          FilledButton(
+            onPressed: () {
+              final num = phoneCtrl.text.trim();
+              if (num.length >= 10) {
+                Navigator.pop(ctx);
+                final updated = Map<String, dynamic>.from(voter);
+                updated['mobile'] = num;
+                _sendToSingleVoter(updated);
+              }
+            },
+            style: FilledButton.styleFrom(backgroundColor: green),
+            child: const Text('WhatsApp पर भेजें'),
+          ),
+        ],
       ),
     );
   }
