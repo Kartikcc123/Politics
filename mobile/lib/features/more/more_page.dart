@@ -8,7 +8,7 @@ import '../activity/activity_page.dart';
 import '../areas/area_directory_page.dart';
 import '../areas/master_data_import_page.dart';
 import '../booths/booth_page.dart';
-import '../messages/bulk_message_page.dart';
+import '../messages/whatsapp_page.dart';
 import '../reminders/reminder_dashboard_page.dart';
 import '../uploads/admin_review_hub_page.dart';
 import '../reports/reports_page.dart';
@@ -97,7 +97,7 @@ class MorePage extends StatelessWidget {
             Icons.print_rounded, blue, const ConfigurablePrintPage()),
       if (canExport)
         _Option('WhatsApp अभियान', 'संदेश बनाएं और समूह में भेजें',
-            Icons.campaign_rounded, green, const BulkMessagePage()),
+            Icons.campaign_rounded, green, const WhatsAppPage()),
       if (isAdmin || canReport)
         _Option(
             'संपर्क अनुस्मारक',

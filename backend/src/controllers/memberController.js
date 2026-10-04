@@ -364,6 +364,7 @@ exports.list = async (req, res, next) => {
       const escapedLetter = escapeRegex(String(letter).trim());
       filter.name = new RegExp(`^${escapedLetter}`, 'i');
     }
+    if (req.query.hasMobile === 'true') filter.mobile = { $nin: ['', null], $exists: true };
     if (req.query.missingMobile === 'true') filter.$and = [...(filter.$and || []), { $or: [{ mobile: '' }, { mobile: null }, { mobile: { $exists: false } }] }];
     if (req.query.missingHouse === 'true') filter.$and = [...(filter.$and || []), { $or: [{ houseNumber: '' }, { houseNumber: null }, { houseNumber: { $exists: false } }] }];
     if (booth && req.currentUser.role === 'admin') filter.booth = booth;

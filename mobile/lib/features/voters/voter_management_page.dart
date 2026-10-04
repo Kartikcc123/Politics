@@ -2333,12 +2333,25 @@ class _VoterManagementPageState extends State<VoterManagementPage> {
         onClearAll: clearFilters,
       ),
       if (api.user?['role'] == 'booth')
-        _DatabaseFilterPicker(
-          label: 'अपने गाँव का अनुभाग',
-          icon: Icons.segment_rounded,
-          value: _filterValue('section', sectionName),
-          onTap: () => openSmartFilter('section', 'अपने गाँव का अनुभाग'),
-          onClear: _clearSectionFilter,
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            _DatabaseFilterPicker(
+              label: 'अनुभाग',
+              icon: Icons.segment_rounded,
+              value: _filterValue('section', sectionName),
+              onTap: () => openSmartFilter('section', 'अनुभाग'),
+              onClear: _clearSectionFilter,
+            ),
+            _DatabaseFilterPicker(
+              label: 'जाति',
+              icon: Icons.groups_2_rounded,
+              value: _filterValue('caste', caste),
+              onTap: () => openSmartFilter('caste', 'जाति'),
+              onClear: () => _clearSmartOrText('caste', caste),
+            ),
+          ],
         ),
       _RecentFilterStrip(
         items: recentFilters,
@@ -3322,6 +3335,7 @@ class _SmartSearchPanel extends StatelessWidget {
   final VoidCallback? onClearAll;
 
   static const fields = <_SmartFilterDef>[
+    _SmartFilterDef('caste', 'जाति फ़िल्टर', Icons.groups_2_rounded),
     _SmartFilterDef('assembly', 'विधानसभा', Icons.account_balance_rounded),
     _SmartFilterDef('partVillage', 'भाग / गाँव', Icons.holiday_village_rounded),
     _SmartFilterDef(
@@ -3330,7 +3344,6 @@ class _SmartSearchPanel extends StatelessWidget {
     _SmartFilterDef('municipality', 'नगर पालिका', Icons.location_city_outlined),
     _SmartFilterDef(
         'section', 'अनुभाग / मोहल्ला', Icons.format_list_numbered_rounded),
-    _SmartFilterDef('caste', 'जाति', Icons.groups_2_rounded),
     _SmartFilterDef('occupation', 'Vyavsay', Icons.work_rounded),
     _SmartFilterDef('organizationPost', 'संगठन पद', Icons.badge_rounded),
   ];
