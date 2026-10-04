@@ -26,34 +26,64 @@ class MorePage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final user = api.user;
+    final isAdmin = role == 'admin';
+    final perms = (user?['permissions'] as Map?) ?? {};
+
+    final assignedGps = (user?['assignedGramPanchayats'] as List? ?? [])
+        .where((s) => '$s'.trim().isNotEmpty)
+        .toList();
+    final assignedVillages = (user?['assignedVillages'] as List? ?? [])
+        .where((s) => '$s'.trim().isNotEmpty)
+        .toList();
+    final assignedWards = (user?['assignedWards'] as List? ?? [])
+        .where((s) => '$s'.trim().isNotEmpty)
+        .toList();
+    final assignedParts = (user?['assignedParts'] as List? ?? [])
+        .where((s) => '$s'.trim().isNotEmpty)
+        .toList();
+
+    final hasWholeVillageAccess = isAdmin ||
+        assignedGps.isNotEmpty ||
+        assignedVillages.isNotEmpty ||
+        assignedWards.length > 1 ||
+        assignedParts.length > 1;
+
+    final canPrint = isAdmin || perms['canPrintProfiles'] == true;
+    final canExport = isAdmin || perms['canExportData'] == true;
+    final canReport = isAdmin || perms['canViewReports'] == true;
+    final canUpload = isAdmin || perms['canUploadPdf'] == true;
+    final canImport = isAdmin || perms['canImportData'] == true;
+
     final importOptions = <_Option>[
-      _Option(
-          'गाँव एवं पंचायत मास्टर',
-          'गाँव, पंचायत, PIN, जनसंख्या, वार्ड और मतदाता देखें',
-          Icons.holiday_village_outlined,
-          green,
-          const AreaDirectoryPage()),
-      if (role == 'admin')
+      if (hasWholeVillageAccess)
+        _Option(
+            'गाँव एवं पंचायत मास्टर',
+            'गाँव, पंचायत, PIN, जनसंख्या, वार्ड और मतदाता देखें',
+            Icons.holiday_village_outlined,
+            green,
+            const AreaDirectoryPage()),
+      if (isAdmin)
         _Option(
             'लोकेशन मास्टर आयात',
             'पंचायत, गाँव, जनसंख्या, वार्ड और पिन कोड master में जोड़ें',
             Icons.storage_rounded,
             blue,
             const MasterDataImportPage()),
-      if (role == 'admin')
+      if (isAdmin)
         _Option(
             'स्थान व अनुभाग बल्क सुधार',
             'गाँव, अनुभाग, भाग संख्या या वार्ड नाम एक साथ सुधारें / Merge करें',
             Icons.edit_location_alt_rounded,
             const Color(0xff0f766e),
             const BulkLocationEditPage()),
-      if (role == 'admin')
+      if (canUpload)
         _Option('PDF / Excel अपलोड', 'मतदाता सूची से एक साथ रिकॉर्ड जोड़ें',
             Icons.cloud_upload_rounded, orange, const UploadPage()),
-      if (role == 'admin')
+      if (canImport)
         _Option('Excel का विस्तृत आयात', 'कॉलम मिलाएं और रिकॉर्ड पहले जांचें',
             Icons.rule_folder_rounded, green, const SmartExcelImportPage()),
-      if (role == 'admin')
+      if (isAdmin)
         _Option(
             'Admin Review',
             'OCR, location और अधूरी survey जानकारी की pending queues देखें',
@@ -62,34 +92,39 @@ class MorePage extends StatelessWidget {
             const AdminReviewHubPage()),
     ];
     final workOptions = <_Option>[
-      _Option('विस्तृत प्रिंट', 'चुने हुए मतदाता और जानकारी प्रिंट करें',
-          Icons.print_rounded, blue, const ConfigurablePrintPage()),
-      if (role == 'admin')
+      if (canPrint)
+        _Option('विस्तृत प्रिंट', 'चुने हुए मतदाता और जानकारी प्रिंट करें',
+            Icons.print_rounded, blue, const ConfigurablePrintPage()),
+      if (canExport)
         _Option('WhatsApp अभियान', 'संदेश बनाएं और समूह में भेजें',
             Icons.campaign_rounded, green, const BulkMessagePage()),
-      _Option(
-          'संपर्क अनुस्मारक',
-          'आज के, लंबित और आने वाले काम देखें',
-          Icons.notifications_active_rounded,
-          orange,
-          const ReminderDashboardPage()),
+      if (isAdmin || canReport)
+        _Option(
+            'संपर्क अनुस्मारक',
+            'आज के, लंबित और आने वाले काम देखें',
+            Icons.notifications_active_rounded,
+            orange,
+            const ReminderDashboardPage()),
     ];
     final reportOptions = <_Option>[
-      _Option('राजनीतिक विश्लेषण', 'मजबूत, कमजोर बूथ और अनिर्णीत मतदाता देखें',
-          Icons.insights_rounded, blue, const PoliticalDashboardPage()),
-      _Option('रिपोर्ट', 'सभी रिपोर्ट देखें और डाउनलोड करें',
-          Icons.bar_chart_rounded, orange, const ReportsPage()),
-      _Option('गतिविधि लॉग', 'आयात, बदलाव और उपयोगकर्ता गतिविधि देखें',
-          Icons.history_rounded, const Color(0xff10a9a0), const ActivityPage()),
+      if (canReport)
+        _Option('राजनीतिक विश्लेषण', 'मजबूत, कमजोर बूथ और अनिर्णीत मतदाता देखें',
+            Icons.insights_rounded, blue, const PoliticalDashboardPage()),
+      if (canReport)
+        _Option('रिपोर्ट', 'सभी रिपोर्ट देखें और डाउनलोड करें',
+            Icons.bar_chart_rounded, orange, const ReportsPage()),
+      if (isAdmin)
+        _Option('गतिविधि लॉग', 'आयात, बदलाव और उपयोगकर्ता गतिविधि देखें',
+            Icons.history_rounded, const Color(0xff10a9a0), const ActivityPage()),
     ];
     final adminOptions = <_Option>[
-      if (role == 'admin')
+      if (isAdmin)
         _Option('बूथ प्रबंधन', 'बूथ की जानकारी जोड़ें और बदलें',
             Icons.how_to_vote_rounded, blue, const BoothPage()),
-      if (role == 'admin')
+      if (isAdmin)
         _Option('बूथ उपयोगकर्ता', 'उपयोगकर्ता जोड़ें और बूथ निर्धारित करें',
             Icons.supervisor_account_rounded, green, const BoothUserPage()),
-      _Option('सेटिंग्स', 'बैकअप, सिंक और ऐप की सेटिंग्स',
+      _Option('सेटिंग्स', 'पासवर्ड, सिंक और ऐप की सेटिंग्स',
           Icons.settings_rounded, purple, const SettingsPage()),
     ];
 
@@ -132,11 +167,15 @@ class MorePage extends StatelessWidget {
               ),
             ]),
           ),
-          _PhoneMoreSection(title: 'आयात और डेटा', options: importOptions),
-          _PhoneMoreSection(title: 'काम और संपर्क', options: workOptions),
-          _PhoneMoreSection(
-              title: 'रिपोर्ट और विश्लेषण', options: reportOptions),
-          _PhoneMoreSection(title: 'प्रबंधन', options: adminOptions),
+          if (importOptions.isNotEmpty)
+            _PhoneMoreSection(title: 'आयात और डेटा', options: importOptions),
+          if (workOptions.isNotEmpty)
+            _PhoneMoreSection(title: 'काम और संपर्क', options: workOptions),
+          if (reportOptions.isNotEmpty)
+            _PhoneMoreSection(
+                title: 'रिपोर्ट और विश्लेषण', options: reportOptions),
+          if (adminOptions.isNotEmpty)
+            _PhoneMoreSection(title: 'प्रबंधन', options: adminOptions),
         ],
       );
     }
@@ -145,20 +184,26 @@ class MorePage extends StatelessWidget {
         title: 'अधिक विकल्प',
         subtitle: 'सभी अतिरिक्त सुविधाएं यहां आसानी से मिलेंगी',
         icon: Icons.grid_view_rounded,
-        primaryAction: FilledButton.icon(
-          style: FilledButton.styleFrom(
-              backgroundColor: Colors.white, foregroundColor: blue),
-          onPressed: () =>
-              _open(context, const UploadPage(), 'PDF / Excel अपलोड'),
-          icon: const Icon(Icons.upload_file_rounded),
-          label: const Text('फाइल अपलोड'),
-        ),
+        primaryAction: canUpload
+            ? FilledButton.icon(
+                style: FilledButton.styleFrom(
+                    backgroundColor: Colors.white, foregroundColor: blue),
+                onPressed: () =>
+                    _open(context, const UploadPage(), 'PDF / Excel अपलोड'),
+                icon: const Icon(Icons.upload_file_rounded),
+                label: const Text('फाइल अपलोड'),
+              )
+            : null,
       ),
-      _OptionSection(
-          title: 'जानकारी का आयात और समीक्षा', options: importOptions),
-      _OptionSection(title: 'काम और संपर्क', options: workOptions),
-      _OptionSection(title: 'रिपोर्ट और विश्लेषण', options: reportOptions),
-      _OptionSection(title: 'प्रबंधन और सेटिंग्स', options: adminOptions),
+      if (importOptions.isNotEmpty)
+        _OptionSection(
+            title: 'जानकारी का आयात और समीक्षा', options: importOptions),
+      if (workOptions.isNotEmpty)
+        _OptionSection(title: 'काम और संपर्क', options: workOptions),
+      if (reportOptions.isNotEmpty)
+        _OptionSection(title: 'रिपोर्ट और विश्लेषण', options: reportOptions),
+      if (adminOptions.isNotEmpty)
+        _OptionSection(title: 'प्रबंधन और सेटिंग्स', options: adminOptions),
     ]);
   }
 

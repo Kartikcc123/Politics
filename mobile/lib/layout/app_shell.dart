@@ -61,51 +61,78 @@ class _AppShellState extends State<AppShell> {
 
   List<NavItem> get items {
     final isAdmin = widget.role == 'admin';
-    final canUploadPdf = api.user?['permissions']?['canUploadPdf'] == true ||
-        api.user?['permissions']?['canImportData'] == true;
+    final user = api.user;
+    final assignedGps = (user?['assignedGramPanchayats'] as List? ?? [])
+        .where((s) => '$s'.trim().isNotEmpty)
+        .toList();
+    final assignedVillages = (user?['assignedVillages'] as List? ?? [])
+        .where((s) => '$s'.trim().isNotEmpty)
+        .toList();
+    final assignedWards = (user?['assignedWards'] as List? ?? [])
+        .where((s) => '$s'.trim().isNotEmpty)
+        .toList();
+    final assignedParts = (user?['assignedParts'] as List? ?? [])
+        .where((s) => '$s'.trim().isNotEmpty)
+        .toList();
 
-    if (!isAdmin && !canUploadPdf) {
-      return [
+    // A non-admin user only gets the "क्षेत्र व गाँव" tab IF they have access to a whole village/GP with multiple wards
+    final hasWholeVillageAccess = isAdmin ||
+        assignedGps.isNotEmpty ||
+        assignedVillages.isNotEmpty ||
+        assignedWards.length > 1 ||
+        assignedParts.length > 1;
+
+    final navList = <NavItem>[];
+
+    // Tab 1: If user has whole village or is admin, show "क्षेत्र व गाँव"
+    if (hasWholeVillageAccess) {
+      navList.add(
         NavItem(
-          'मतदाता सूची',
-          Icons.groups_rounded,
-          VoterManagementPage(key: ValueKey('voters-$refreshVersion')),
-        ),
-        NavItem(
-          'गाँव व पंचायत',
+          isAdmin ? 'क्षेत्र व गाँव' : 'गाँव व वार्ड',
           Icons.holiday_village_rounded,
           SamitiHierarchyPage(key: ValueKey('samiti-hierarchy-$refreshVersion')),
         ),
-        NavItem(
-          'पार्टी गणना',
-          Icons.analytics_rounded,
-          PartyAnalyticsPage(key: ValueKey('party-analytics-$refreshVersion')),
-        ),
-      ];
+      );
     }
 
-    return [
+    // Tab 2: Voter List
+    navList.add(
       NavItem(
-        'क्षेत्र व गाँव',
-        Icons.holiday_village_outlined,
-        SamitiHierarchyPage(key: ValueKey('samiti-hierarchy-$refreshVersion')),
-      ),
-      NavItem(
-        'सभी मतदाता',
-        Icons.groups_outlined,
+        isAdmin ? 'सभी मतदाता' : 'मतदाता सूची',
+        Icons.groups_rounded,
         VoterManagementPage(key: ValueKey('voters-$refreshVersion')),
       ),
+    );
+
+    // Tab 3: Party Analytics
+    navList.add(
       NavItem(
         'पार्टी गणना',
-        Icons.analytics_outlined,
+        Icons.analytics_rounded,
         PartyAnalyticsPage(key: ValueKey('party-analytics-$refreshVersion')),
       ),
-      NavItem(
-        'अधिक',
-        Icons.grid_view_rounded,
-        MorePage(key: ValueKey('more-$refreshVersion'), role: widget.role),
-      ),
-    ];
+    );
+
+    // Tab 4: More / अधिक (Show if admin or if user has any permitted extra tools)
+    final permissions = user?['permissions'] as Map? ?? {};
+    final hasAnyExtraPerm = isAdmin ||
+        permissions['canPrintProfiles'] == true ||
+        permissions['canViewReports'] == true ||
+        permissions['canExportData'] == true ||
+        permissions['canUploadPdf'] == true ||
+        permissions['canImportData'] == true;
+
+    if (hasAnyExtraPerm) {
+      navList.add(
+        NavItem(
+          'अधिक',
+          Icons.grid_view_rounded,
+          MorePage(key: ValueKey('more-$refreshVersion'), role: widget.role),
+        ),
+      );
+    }
+
+    return navList;
   }
 
   @override
