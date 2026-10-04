@@ -1079,7 +1079,11 @@ exports.get = async (req, res, next) => {
 };
 
 exports.update = async (req, res, next) => {
-  try { requirePermission(req.currentUser, 'canEditVoters'); } catch (error) { return next(error); }
+  const user = req.currentUser;
+  const isUserAdmin = user.role === 'admin';
+  if (!isUserAdmin && user.permissions?.canEditVoters === false && user.permissions?.canEditPhoto === false) {
+    try { requirePermission(user, 'canEditVoters'); } catch (error) { return next(error); }
+  }
   try {
     const member = await Member.findById(req.params.id);
     if (!member) return res.status(404).json({ message: 'Member not found' });
@@ -1089,25 +1093,20 @@ exports.update = async (req, res, next) => {
     if (req.body.ward) assertWardAccess(req.currentUser, req.body.ward);
     const before = member.toObject();
     const updates = { ...req.body };
-    if (req.currentUser.role !== 'admin') delete updates.isFavorite;
-    if (req.currentUser.role === 'booth' && member.contactType !== 'personal') {
+    if (!isUserAdmin) delete updates.isFavorite;
+
+    // For non-admin managers editing an electoral voter, preserve immutable official roll fields
+    if (!isUserAdmin && member.contactType !== 'personal') {
       const protectedVoterFields = [
-        'name', 'surname', 'guardianName', 'relationType', 'gender', 'age',
+        'name', 'surname', 'guardianName', 'gender', 'age',
         'voterId', 'voterSerial', 'houseNumber', 'assemblyNumber',
         'assemblyName', 'partNumber', 'partName', 'sectionNumber',
         'sectionName', 'tehsil', 'gramPanchayat', 'village', 'district',
         'pinCode', 'verificationStatus',
       ];
-      const changedField = protectedVoterFields.find((field) =>
-        Object.prototype.hasOwnProperty.call(updates, field)
-        && String(updates[field] ?? '').trim() !== String(member[field] ?? '').trim());
-      if (changedField) {
-        return res.status(403).json({
-          message: 'PDF voter-list fields केवल admin review से बदले जा सकते हैं।',
-          field: changedField,
-        });
+      for (const field of protectedVoterFields) {
+        delete updates[field];
       }
-      for (const field of protectedVoterFields) delete updates[field];
     }
     // OCR provenance is server-owned; admins verify through the normal status field.
     delete updates.locationResolution;

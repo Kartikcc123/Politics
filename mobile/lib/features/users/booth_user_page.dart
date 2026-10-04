@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:speech_to_text/speech_to_text.dart';
 
 import '../../core/api_client.dart';
+import '../../core/contact_actions.dart';
 import '../../core/theme.dart';
 import '../../layout/app_layout.dart';
 
@@ -663,6 +664,18 @@ class _ManagerCard extends StatelessWidget {
           ),
           Text(active ? 'सक्रिय (Active)' : 'निष्क्रिय (Disabled)', style: TextStyle(color: active ? navy : muted, fontSize: 12)),
           const Spacer(),
+          if (phone.isNotEmpty) ...[
+            IconButton(
+              tooltip: 'कॉल करें ($phone)',
+              onPressed: () => callNumber(context, phone),
+              icon: const Icon(Icons.call_rounded, color: green, size: 20),
+            ),
+            IconButton(
+              tooltip: 'WhatsApp संदेश भेजें',
+              onPressed: () => openWhatsApp(context, phone, message: 'नमस्कार $name जी,'),
+              icon: const Icon(Icons.chat_rounded, color: Color(0xff25d366), size: 20),
+            ),
+          ],
           IconButton(
             tooltip: 'संपादित करें',
             onPressed: onEdit,
@@ -693,6 +706,8 @@ class _MiniUserRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final phone = '${user['phone'] ?? ''}'.trim();
+    final name = '${user['name'] ?? ''}'.trim();
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(color: const Color(0xfff8fafc), borderRadius: BorderRadius.circular(10), border: Border.all(color: border)),
@@ -700,9 +715,27 @@ class _MiniUserRow extends StatelessWidget {
         const Icon(Icons.person, size: 16, color: Color(0xff2563eb)),
         const SizedBox(width: 8),
         Expanded(
-          child: Text('${user['name']} (${user['phone'] ?? user['email']})',
+          child: Text('$name (${phone.isNotEmpty ? phone : user['email']})',
               maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: navy, fontSize: 12, fontWeight: FontWeight.bold)),
         ),
+        if (phone.isNotEmpty) ...[
+          IconButton(
+            icon: const Icon(Icons.call_rounded, size: 18, color: green),
+            tooltip: 'कॉल करें ($phone)',
+            onPressed: () => callNumber(context, phone),
+            padding: const EdgeInsets.symmetric(horizontal: 4),
+            constraints: const BoxConstraints(),
+          ),
+          const SizedBox(width: 4),
+          IconButton(
+            icon: const Icon(Icons.chat_rounded, size: 18, color: Color(0xff25d366)),
+            tooltip: 'WhatsApp',
+            onPressed: () => openWhatsApp(context, phone, message: 'नमस्कार $name जी,'),
+            padding: const EdgeInsets.symmetric(horizontal: 4),
+            constraints: const BoxConstraints(),
+          ),
+          const SizedBox(width: 6),
+        ],
         IconButton(icon: const Icon(Icons.edit, size: 16, color: Color(0xff2563eb)), onPressed: onEdit, padding: EdgeInsets.zero, constraints: const BoxConstraints()),
         const SizedBox(width: 8),
         IconButton(icon: const Icon(Icons.delete, size: 16, color: Colors.red), onPressed: onDelete, padding: EdgeInsets.zero, constraints: const BoxConstraints()),
