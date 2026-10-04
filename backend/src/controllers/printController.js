@@ -121,6 +121,13 @@ function fetchHttpBuffer(url) {
   });
 }
 
+function mediaIdFromPhoto(photo) {
+  if (!photo) return null;
+  const str = String(photo).trim();
+  const match = str.match(/(?:api\/media\/|^)([a-fA-F0-9]{24})(?:\/|$|\?)/);
+  return match ? match[1] : null;
+}
+
 function photoPath(member) {
   if (!member.photo || mediaIdFromPhoto(member.photo)) return null;
   const raw = String(member.photo).trim();

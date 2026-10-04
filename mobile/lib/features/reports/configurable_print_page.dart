@@ -4,6 +4,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 
 import '../../core/api_client.dart';
+import '../../core/hierarchy_data.dart';
 import '../../core/print_helper.dart';
 import '../../core/theme.dart';
 
@@ -15,22 +16,25 @@ class ConfigurablePrintPage extends StatefulWidget {
 }
 
 class _ConfigurablePrintPageState extends State<ConfigurablePrintPage> {
-  int currentStep = 0; // 0: Area / Hierarchy, 1: Layout & Shape, 2: Fields & Customization, 3: Preview & Print
+  int currentStep = 0; // 0: Area & Scope, 1: Layout & Shape, 2: Fields & Customization, 3: Preview & Print
   bool loading = true;
   String? errorMessage;
   bool isPrinting = false;
   bool isSharing = false;
 
-  Map<String, dynamic>? hierarchyData;
-  List<String> allGramPanchayats = [];
-  List<Map<String, dynamic>> allParts = [];
+  Map<String, dynamic>? liveHierarchyData;
+
+  // Search filter
+  final searchController = TextEditingController();
+  String gpSearchQuery = '';
 
   // Hierarchy Selection State
-  String selectedSamiti = 'रायपुर समिति';
-  String? selectedGramPanchayat;
-  String scopeType = 'all_panchayat'; // 'all_panchayat', 'all_wards', 'specific_ward', 'specific_part'
+  String selectedSamiti = 'रायपुर';
+  String? selectedGramPanchayat = 'भींटा';
+  String? selectedVillage;
   String? selectedWard;
   String? selectedPart;
+  String scopeType = 'all_panchayat'; // 'all_samiti', 'all_panchayat', 'specific_village', 'specific_ward', 'specific_part'
 
   // Layout & Shape Configuration
   String paperSize = 'A4';
@@ -57,24 +61,16 @@ class _ConfigurablePrintPageState extends State<ConfigurablePrintPage> {
     'gender',
   };
 
-  // Pre-configured Samiti to GP mapping
-  final Map<String, List<String>> samitiMapping = {
-    'रायपुर समिति': [
-      'रायपुर', 'भींटा', 'मोखुंदा', 'नाहरी', 'बोराना', 'सगरेव', 'थला',
-      'पालरा', 'पानोतिया', 'मासिंगपुरा', 'सरेवाड़ी', 'खेमाणा', 'नाथडियास',
-      'सुरस', 'बोरियापुरा', 'आसींद', 'गांगलास', 'कोटड़ी'
-    ],
-    'सहाड़ा समिति': [
-      'सहाड़ा', 'गंगापुर', 'पोटला', 'उललाई', 'लाडपुरा', 'माताजी का खेड़ा',
-      'भगवानपुरा', 'रायपुरिया', 'सोनियाना', 'कोशिथल'
-    ],
-    'समस्त / अन्य पंचायतें': [],
-  };
-
   @override
   void initState() {
     super.initState();
     _loadHierarchy();
+  }
+
+  @override
+  void dispose() {
+    searchController.dispose();
+    super.dispose();
   }
 
   Future<void> _loadHierarchy() async {
@@ -84,51 +80,80 @@ class _ConfigurablePrintPageState extends State<ConfigurablePrintPage> {
     });
     try {
       final res = await api.get('/api/auth/hierarchy-options');
-      if (res is Map<String, dynamic>) {
-        final gps = (res['gramPanchayats'] is List)
-            ? (res['gramPanchayats'] as List).map((e) => e.toString()).toList()
-            : <String>[];
-        final parts = (res['parts'] is List)
-            ? (res['parts'] as List).whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList()
-            : <Map<String, dynamic>>[];
-
+      if (mounted) {
         setState(() {
-          hierarchyData = res;
-          allGramPanchayats = gps;
-          allParts = parts;
-
-          // Fill other samiti with remainder GPs
-          final assignedGps = {...samitiMapping['रायपुर समिति']!, ...samitiMapping['सहाड़ा समिति']!};
-          samitiMapping['समस्त / अन्य पंचायतें'] = gps.where((gp) => !assignedGps.contains(gp)).toList();
-
-          if (gps.isNotEmpty && selectedGramPanchayat == null) {
-            selectedGramPanchayat = gps.contains('रायपुर') ? 'रायपुर' : gps.first;
-          }
+          liveHierarchyData = res;
           loading = false;
         });
-      } else {
-        setState(() => loading = false);
       }
     } catch (e) {
-      setState(() {
-        errorMessage = 'डेटा लोड करने में त्रुटि: $e';
-        loading = false;
-      });
+      if (mounted) {
+        setState(() {
+          // Still allow using static samitiHierarchyData if API call fails
+          loading = false;
+        });
+      }
     }
+  }
+
+  List<String> get availablePanchayats {
+    final cur = samitiHierarchyData[selectedSamiti];
+    if (cur == null) return [];
+    final panchayatsMap = cur['panchayats'] as Map<String, dynamic>? ?? {};
+    final list = panchayatsMap.keys.toList();
+    list.sort((a, b) => a.compareTo(b));
+    return list;
+  }
+
+  List<Map<String, dynamic>> get availableVillages {
+    if (selectedGramPanchayat == null) return [];
+    final cur = samitiHierarchyData[selectedSamiti];
+    if (cur == null) return [];
+    final panchayatsMap = cur['panchayats'] as Map<String, dynamic>? ?? {};
+    final gpData = panchayatsMap[selectedGramPanchayat] as Map<String, dynamic>?;
+    if (gpData == null) return [];
+    final villages = gpData['villages'] as List? ?? [];
+    return villages.map((v) => Map<String, dynamic>.from(v as Map)).toList();
   }
 
   List<String> get availableWards {
-    if (selectedGramPanchayat == null || hierarchyData == null) return [];
-    final gpWardsMap = hierarchyData?['gpWardsMap'] as Map?;
-    if (gpWardsMap != null && gpWardsMap[selectedGramPanchayat] is List) {
-      return (gpWardsMap[selectedGramPanchayat] as List).map((e) => e.toString()).toList();
-    }
-    return List.generate(25, (i) => '${i + 1}');
+    if (selectedGramPanchayat == null) return [];
+    final cur = samitiHierarchyData[selectedSamiti];
+    if (cur == null) return [];
+    final panchayatsMap = cur['panchayats'] as Map<String, dynamic>? ?? {};
+    final gpData = panchayatsMap[selectedGramPanchayat] as Map<String, dynamic>?;
+    final wardCount = gpData?['wards'] as int? ?? 11;
+    return List.generate(wardCount, (i) => '${i + 1}');
   }
 
   List<Map<String, dynamic>> get availableParts {
-    if (selectedGramPanchayat == null) return allParts;
-    return allParts.where((p) => '${p['gramPanchayat']}'.trim() == selectedGramPanchayat).toList();
+    if (liveHierarchyData == null) return [];
+    final panchayats = liveHierarchyData?['panchayats'];
+    if (panchayats is List && selectedGramPanchayat != null) {
+      final cleanGp = selectedGramPanchayat!.trim();
+      for (final p in panchayats) {
+        if (p is Map) {
+          final pName = '${p['name']}'.trim();
+          if (pName == cleanGp || cleanGp.contains(pName) || pName.contains(cleanGp)) {
+            final parts = p['parts'];
+            if (parts is List && parts.isNotEmpty) {
+              final list = parts.whereType<Map>().map((x) => Map<String, dynamic>.from(x)).toList();
+              list.sort((a, b) => (int.tryParse('${a['partNumber']}') ?? 0).compareTo(int.tryParse('${b['partNumber']}') ?? 0));
+              return list;
+            }
+          }
+        }
+      }
+    }
+    final rawParts = liveHierarchyData?['parts'];
+    if (rawParts is List) {
+      final list = rawParts.whereType<Map>().map((e) => Map<String, dynamic>.from(e)).where((p) => '${p['gramPanchayat']}'.trim() == selectedGramPanchayat).toList();
+      if (list.isNotEmpty) {
+        list.sort((a, b) => (int.tryParse('${a['partNumber']}') ?? 0).compareTo(int.tryParse('${b['partNumber']}') ?? 0));
+        return list;
+      }
+    }
+    return [];
   }
 
   Map<String, String> get printQueryParams {
@@ -139,20 +164,25 @@ class _ConfigurablePrintPageState extends State<ConfigurablePrintPage> {
       'paperSize': paperSize,
       'orientation': orientation,
       'includeCoverPage': '$includeCoverPage',
-      'limit': '5000',
+      'limit': '10000',
     };
 
-    if (selectedGramPanchayat != null && selectedGramPanchayat!.isNotEmpty) {
-      params['gramPanchayat'] = selectedGramPanchayat!;
-    }
-
-    if (scopeType == 'specific_ward' && selectedWard != null && selectedWard!.isNotEmpty) {
+    if (scopeType == 'all_samiti') {
+      params['tehsil'] = selectedSamiti;
+      params['title'] = '$selectedSamiti समिति संपूर्ण मतदाता सूची';
+    } else if (scopeType == 'specific_village' && selectedVillage != null && selectedVillage!.isNotEmpty) {
+      if (selectedGramPanchayat != null) params['gramPanchayat'] = selectedGramPanchayat!;
+      params['village'] = selectedVillage!;
+      params['title'] = '${selectedGramPanchayat ?? selectedSamiti} - $selectedVillage मतदाता सूची';
+    } else if (scopeType == 'specific_ward' && selectedWard != null && selectedWard!.isNotEmpty) {
+      if (selectedGramPanchayat != null) params['gramPanchayat'] = selectedGramPanchayat!;
       params['wardNumber'] = selectedWard!;
-      params['title'] = '$selectedGramPanchayat - वार्ड $selectedWard मतदाता सूची';
+      params['title'] = '${selectedGramPanchayat ?? selectedSamiti} - वार्ड $selectedWard मतदाता सूची';
     } else if (scopeType == 'specific_part' && selectedPart != null && selectedPart!.isNotEmpty) {
       params['partNumber'] = selectedPart!;
-      params['title'] = '$selectedGramPanchayat - भाग $selectedPart मतदाता सूची';
+      params['title'] = 'भाग #$selectedPart ${selectedGramPanchayat != null ? "($selectedGramPanchayat)" : ""} मतदाता सूची';
     } else {
+      if (selectedGramPanchayat != null) params['gramPanchayat'] = selectedGramPanchayat!;
       params['title'] = '$selectedGramPanchayat संपूर्ण पंचायत मतदाता सूची';
     }
 
@@ -160,9 +190,11 @@ class _ConfigurablePrintPageState extends State<ConfigurablePrintPage> {
   }
 
   String get printJobName {
-    final gp = selectedGramPanchayat ?? 'Voters';
+    if (scopeType == 'all_samiti') return '${selectedSamiti}_Complete_List';
+    final gp = selectedGramPanchayat ?? selectedSamiti;
+    if (scopeType == 'specific_village' && selectedVillage != null) return '${gp}_${selectedVillage}_List';
     if (scopeType == 'specific_ward' && selectedWard != null) return '${gp}_Ward_$selectedWard';
-    if (scopeType == 'specific_part' && selectedPart != null) return '${gp}_Part_$selectedPart';
+    if (scopeType == 'specific_part' && selectedPart != null) return 'Part_$selectedPart';
     return '${gp}_Complete_List';
   }
 
@@ -175,6 +207,12 @@ class _ConfigurablePrintPageState extends State<ConfigurablePrintPage> {
         jobName: printJobName,
         query: printQueryParams,
       );
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('प्रिंट करने में त्रुटि: $e'), backgroundColor: Colors.red),
+        );
+      }
     } finally {
       if (mounted) setState(() => isPrinting = false);
     }
@@ -203,7 +241,7 @@ class _ConfigurablePrintPageState extends State<ConfigurablePrintPage> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('शेयर करने में त्रुटि: $e')),
+          SnackBar(content: Text('शेयर करने में त्रुटि: $e'), backgroundColor: Colors.red),
         );
       }
     } finally {
@@ -276,7 +314,7 @@ class _ConfigurablePrintPageState extends State<ConfigurablePrintPage> {
 
   Widget _buildStepIndicator() {
     final steps = [
-      {'icon': Icons.account_balance_rounded, 'title': '1. क्षेत्र / पंचायत'},
+      {'icon': Icons.account_balance_rounded, 'title': '1. क्षेत्र व दायरा'},
       {'icon': Icons.dashboard_customize_rounded, 'title': '2. लेआउट व आकार'},
       {'icon': Icons.checklist_rtl_rounded, 'title': '3. फील्ड चयन'},
       {'icon': Icons.print_rounded, 'title': '4. प्रिंट व शेयर'},
@@ -345,47 +383,50 @@ class _ConfigurablePrintPageState extends State<ConfigurablePrintPage> {
 
   // ================= STEP 1: Area & Hierarchy =================
   Widget _buildStepAreaSelection() {
-    final currentSamitiGps = samitiMapping[selectedSamiti] ?? [];
-    final activeGps = currentSamitiGps.isNotEmpty
-        ? allGramPanchayats.where((gp) => currentSamitiGps.contains(gp)).toList()
-        : allGramPanchayats;
+    final gps = availablePanchayats;
+    final filteredGps = gpSearchQuery.trim().isEmpty
+        ? gps
+        : gps.where((g) => g.toLowerCase().contains(gpSearchQuery.toLowerCase().trim())).toList();
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // 1. Samiti Tabs
+        // 1. Samiti Selection
         const Text(
-          '1. पंचायत समिति चुनें (Select Panchayat Samiti):',
+          '1. समिति / क्षेत्र चुनें (Select Samiti / Area):',
           style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: navy),
         ),
         const SizedBox(height: 10),
         SingleChildScrollView(
           scrollDirection: Axis.horizontal,
           child: Row(
-            children: samitiMapping.keys.map((samiti) {
+            children: samitiHierarchyData.keys.map((samiti) {
               final isSel = selectedSamiti == samiti;
+              final icon = samitiHierarchyData[samiti]!['icon'] as IconData;
+              final color = samitiHierarchyData[samiti]!['color'] as Color;
+
               return Padding(
                 padding: const EdgeInsets.only(right: 8),
                 child: ChoiceChip(
-                  label: Text(
-                    samiti,
-                    style: TextStyle(
-                      fontWeight: isSel ? FontWeight.bold : FontWeight.normal,
-                      color: isSel ? Colors.white : navy,
-                    ),
-                  ),
+                  avatar: Icon(icon, size: 18, color: isSel ? Colors.white : color),
+                  label: Text(samiti),
                   selected: isSel,
-                  selectedColor: royalBlue,
+                  selectedColor: color,
                   backgroundColor: Colors.white,
+                  labelStyle: TextStyle(
+                    fontWeight: isSel ? FontWeight.bold : FontWeight.normal,
+                    color: isSel ? Colors.white : navy,
+                  ),
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                   onSelected: (val) {
                     if (val) {
                       setState(() {
                         selectedSamiti = samiti;
-                        final newGps = samitiMapping[samiti] ?? [];
-                        if (newGps.isNotEmpty) {
-                          selectedGramPanchayat = newGps.first;
-                        }
+                        final newGps = availablePanchayats;
+                        selectedGramPanchayat = newGps.isNotEmpty ? newGps.first : null;
+                        selectedVillage = null;
+                        selectedWard = null;
+                        selectedPart = null;
                       });
                     }
                   },
@@ -397,139 +438,244 @@ class _ConfigurablePrintPageState extends State<ConfigurablePrintPage> {
 
         const SizedBox(height: 20),
 
-        // 2. Gram Panchayat Cards Grid
-        Text(
-          '2. $selectedSamiti की ग्राम पंचायत चुनें:',
-          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: navy),
+        // 2. Printing Scope (Whole Samiti vs Gram Panchayat vs Village vs Ward vs Part)
+        const Text(
+          '2. प्रिंट का स्तर चुनें (Select Print Scope):',
+          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: navy),
         ),
         const SizedBox(height: 10),
-        Wrap(
-          spacing: 10,
-          runSpacing: 10,
-          children: activeGps.map((gp) {
-            final isSel = selectedGramPanchayat == gp;
-            return InkWell(
-              onTap: () => setState(() {
-                selectedGramPanchayat = gp;
-                selectedWard = null;
-                selectedPart = null;
-              }),
-              borderRadius: BorderRadius.circular(12),
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                decoration: BoxDecoration(
-                  color: isSel ? royalBlue : Colors.white,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: isSel ? royalBlue : border),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.03),
-                      blurRadius: 4,
-                      offset: const Offset(0, 2),
-                    )
-                  ],
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(
-                      Icons.location_city_rounded,
-                      size: 18,
-                      color: isSel ? Colors.white : royalBlue,
-                    ),
-                    const SizedBox(width: 8),
-                    Text(
-                      gp,
-                      style: TextStyle(
-                        fontWeight: isSel ? FontWeight.bold : FontWeight.w600,
-                        color: isSel ? Colors.white : navy,
-                        fontSize: 14,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            );
-          }).toList(),
+
+        _buildScopeCard(
+          type: 'all_samiti',
+          icon: Icons.groups_rounded,
+          title: '🌟 पूरी $selectedSamiti समिति का प्रिंट',
+          subtitle: 'इस समिति की सभी ग्राम पंचायतों, गाँवों व मतदाताओं का संयुक्त प्रिंट निकालें।',
+        ),
+        const SizedBox(height: 8),
+
+        _buildScopeCard(
+          type: 'all_panchayat',
+          icon: Icons.account_balance_rounded,
+          title: '🏛️ विशिष्ट ग्राम पंचायत का प्रिंट',
+          subtitle: 'किसी एक ग्राम पंचायत के सभी गाँवों और वार्डों की संयुक्त मतदाता सूची।',
+        ),
+        const SizedBox(height: 8),
+
+        _buildScopeCard(
+          type: 'specific_village',
+          icon: Icons.location_on_rounded,
+          title: '📍 विशिष्ट गाँव / मजरा का प्रिंट',
+          subtitle: 'पंचायत के किसी एक राजस्व गाँव या मजरे के मतदाताओं की सूची निकालें।',
+        ),
+        const SizedBox(height: 8),
+
+        _buildScopeCard(
+          type: 'specific_ward',
+          icon: Icons.grid_view_rounded,
+          title: '📋 विशिष्ट वार्ड का प्रिंट (Specific Ward)',
+          subtitle: 'ग्राम पंचायत के किसी एक वार्ड (जैसे वार्ड 1, वार्ड 2) का प्रिंट लें।',
+        ),
+        const SizedBox(height: 8),
+
+        _buildScopeCard(
+          type: 'specific_part',
+          icon: Icons.how_to_vote_rounded,
+          title: '🗳️ विशिष्ट भाग / बूथ का प्रिंट (Specific Part/Booth)',
+          subtitle: 'विशेष भाग संख्या (बूथ) के मतदाताओं की अलग सूची निकालें।',
         ),
 
-        const SizedBox(height: 24),
+        const SizedBox(height: 20),
 
-        // 3. Printing Scope (Whole Panchayat vs Ward vs Part)
-        if (selectedGramPanchayat != null) ...[
-          Text(
-            '3. "$selectedGramPanchayat" में क्या प्रिंट करना चाहते हैं?',
-            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: navy),
-          ),
-          const SizedBox(height: 12),
-
-          _buildScopeCard(
-            type: 'all_panchayat',
-            icon: Icons.public_rounded,
-            title: '🌟 संपूर्ण ग्राम पंचायत ($selectedGramPanchayat)',
-            subtitle: 'इस पंचायत के सभी वार्ड व मतदाताओं की संयुक्त पूरी पीडीएफ बनेगी।',
+        // 3. Gram Panchayat Grid & Search (shown unless whole samiti is selected)
+        if (scopeType != 'all_samiti') ...[
+          Row(
+            children: [
+              Text(
+                '3. $selectedSamiti की ग्राम पंचायत चुनें (${filteredGps.length}):',
+                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: navy),
+              ),
+            ],
           ),
           const SizedBox(height: 8),
+          TextField(
+            controller: searchController,
+            onChanged: (v) => setState(() => gpSearchQuery = v),
+            decoration: InputDecoration(
+              hintText: 'ग्राम पंचायत खोजें...',
+              prefixIcon: const Icon(Icons.search_rounded, size: 20, color: muted),
+              suffixIcon: gpSearchQuery.isNotEmpty
+                  ? IconButton(
+                      icon: const Icon(Icons.clear, size: 18),
+                      onPressed: () {
+                        searchController.clear();
+                        setState(() => gpSearchQuery = '');
+                      },
+                    )
+                  : null,
+              filled: true,
+              fillColor: Colors.white,
+              contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: border)),
+              enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: border)),
+            ),
+          ),
+          const SizedBox(height: 10),
 
-          _buildScopeCard(
-            type: 'specific_ward',
-            icon: Icons.meeting_room_rounded,
-            title: '🏛️ किसी विशिष्ट वार्ड का प्रिंट (Specific Ward)',
-            subtitle: 'चयनित वार्ड के मतदाताओं की अलग सूची तैयार करें।',
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: filteredGps.map((gp) {
+              final isSel = selectedGramPanchayat == gp;
+              return InkWell(
+                onTap: () => setState(() {
+                  selectedGramPanchayat = gp;
+                  selectedVillage = null;
+                  selectedWard = null;
+                  selectedPart = null;
+                }),
+                borderRadius: BorderRadius.circular(10),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: isSel ? royalBlue : Colors.white,
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: isSel ? royalBlue : border),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.location_city_rounded, size: 16, color: isSel ? Colors.white : royalBlue),
+                      const SizedBox(width: 6),
+                      Text(
+                        gp,
+                        style: TextStyle(
+                          fontWeight: isSel ? FontWeight.bold : FontWeight.w600,
+                          color: isSel ? Colors.white : navy,
+                          fontSize: 13,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            }).toList(),
           ),
 
-          if (scopeType == 'specific_ward') ...[
-            Padding(
-              padding: const EdgeInsets.only(left: 36, top: 10, bottom: 8),
-              child: Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: availableWards.map((w) {
-                  final isW = selectedWard == w;
-                  return ChoiceChip(
-                    label: Text('वार्ड $w'),
-                    selected: isW,
-                    selectedColor: royalBlue,
-                    labelStyle: TextStyle(color: isW ? Colors.white : navy, fontWeight: isW ? FontWeight.bold : FontWeight.normal),
-                    onSelected: (val) => setState(() => selectedWard = val ? w : null),
-                  );
-                }).toList(),
-              ),
-            ),
-          ],
-
-          const SizedBox(height: 8),
-
-          _buildScopeCard(
-            type: 'specific_part',
-            icon: Icons.how_to_vote_rounded,
-            title: '🗳️ किसी विशिष्ट भाग / बूथ का प्रिंट (Specific Part/Booth)',
-            subtitle: 'विशेष भाग संख्या (बूथ) के मतदाताओं की सूची निकालें।',
-          ),
-
-          if (scopeType == 'specific_part') ...[
-            Padding(
-              padding: const EdgeInsets.only(left: 36, top: 10, bottom: 8),
-              child: Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: availableParts.map((p) {
-                  final pNum = '${p['partNumber']}';
-                  final isP = selectedPart == pNum;
-                  return ChoiceChip(
-                    label: Text('भाग #$pNum ${p['village'] != null ? '(${p['village']})' : ''}'),
-                    selected: isP,
-                    selectedColor: royalBlue,
-                    labelStyle: TextStyle(color: isP ? Colors.white : navy, fontWeight: isP ? FontWeight.bold : FontWeight.normal),
-                    onSelected: (val) => setState(() => selectedPart = val ? pNum : null),
-                  );
-                }).toList(),
-              ),
-            ),
-          ],
+          const SizedBox(height: 20),
         ],
+
+        // 4. Sub-Options: Villages, Wards, or Parts
+        if (selectedGramPanchayat != null && scopeType == 'specific_village') ...[
+          Text(
+            '4. "$selectedGramPanchayat" का गाँव चुनें:',
+            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: navy),
+          ),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: availableVillages.map((v) {
+              final vName = v['name'] as String;
+              final isV = selectedVillage == vName;
+              return ChoiceChip(
+                label: Text(vName),
+                selected: isV,
+                selectedColor: royalBlue,
+                backgroundColor: Colors.white,
+                labelStyle: TextStyle(color: isV ? Colors.white : navy, fontWeight: isV ? FontWeight.bold : FontWeight.normal),
+                onSelected: (val) => setState(() => selectedVillage = val ? vName : null),
+              );
+            }).toList(),
+          ),
+          const SizedBox(height: 16),
+        ],
+
+        if (selectedGramPanchayat != null && scopeType == 'specific_ward') ...[
+          Text(
+            '4. "$selectedGramPanchayat" का वार्ड चुनें:',
+            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: navy),
+          ),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: availableWards.map((w) {
+              final isW = selectedWard == w;
+              return ChoiceChip(
+                label: Text('वार्ड $w'),
+                selected: isW,
+                selectedColor: royalBlue,
+                backgroundColor: Colors.white,
+                labelStyle: TextStyle(color: isW ? Colors.white : navy, fontWeight: isW ? FontWeight.bold : FontWeight.normal),
+                onSelected: (val) => setState(() => selectedWard = val ? w : null),
+              );
+            }).toList(),
+          ),
+          const SizedBox(height: 16),
+        ],
+
+        if (scopeType == 'specific_part') ...[
+          Text(
+            '4. भाग / बूथ संख्या चुनें:',
+            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: navy),
+          ),
+          const SizedBox(height: 8),
+          availableParts.isNotEmpty
+              ? Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: availableParts.map((p) {
+                    final pNum = '${p['partNumber']}';
+                    final isP = selectedPart == pNum;
+                    final vCount = p['voterCount'] as int? ?? 0;
+                    return ChoiceChip(
+                      label: Text('भाग $pNum ${vCount > 0 ? "($vCount)" : ""}'),
+                      selected: isP,
+                      selectedColor: royalBlue,
+                      backgroundColor: Colors.white,
+                      labelStyle: TextStyle(color: isP ? Colors.white : navy, fontWeight: isP ? FontWeight.bold : FontWeight.normal),
+                      onSelected: (val) => setState(() => selectedPart = val ? pNum : null),
+                    );
+                  }).toList(),
+                )
+              : const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 8),
+                  child: Text('भाग संख्या लोड हो रही है...', style: TextStyle(color: muted, fontSize: 13)),
+                ),
+          const SizedBox(height: 16),
+        ],
+
+        // Selection Summary Badge
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          decoration: BoxDecoration(
+            color: const Color(0xffeff6ff),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: royalBlue.withValues(alpha: 0.3)),
+          ),
+          child: Row(
+            children: [
+              const Icon(Icons.verified_rounded, color: royalBlue, size: 20),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  _getSelectionSummaryText(),
+                  style: const TextStyle(color: royalBlue, fontWeight: FontWeight.bold, fontSize: 13),
+                ),
+              ),
+            ],
+          ),
+        ),
       ],
     );
+  }
+
+  String _getSelectionSummaryText() {
+    if (scopeType == 'all_samiti') return '🎯 आपका चयन: पूरी $selectedSamiti समिति (समस्त ग्राम पंचायतें व गाँव)';
+    if (scopeType == 'specific_village') return '🎯 आपका चयन: $selectedSamiti > $selectedGramPanchayat > ${selectedVillage ?? "गाँव चुनें"}';
+    if (scopeType == 'specific_ward') return '🎯 आपका चयन: $selectedSamiti > $selectedGramPanchayat > ${selectedWard != null ? "वार्ड $selectedWard" : "वार्ड चुनें"}';
+    if (scopeType == 'specific_part') return '🎯 आपका चयन: भाग #${selectedPart ?? "भाग चुनें"}';
+    return '🎯 आपका चयन: $selectedSamiti > संपूर्ण $selectedGramPanchayat ग्राम पंचायत';
   }
 
   Widget _buildScopeCard({
@@ -541,12 +687,12 @@ class _ConfigurablePrintPageState extends State<ConfigurablePrintPage> {
     final isSelected = scopeType == type;
     return InkWell(
       onTap: () => setState(() => scopeType = type),
-      borderRadius: BorderRadius.circular(14),
+      borderRadius: BorderRadius.circular(12),
       child: Container(
-        padding: const EdgeInsets.all(14),
+        padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
           color: isSelected ? royalBlue.withValues(alpha: 0.05) : Colors.white,
-          borderRadius: BorderRadius.circular(14),
+          borderRadius: BorderRadius.circular(12),
           border: Border.all(color: isSelected ? royalBlue : border, width: isSelected ? 2 : 1),
         ),
         child: Row(
@@ -557,14 +703,26 @@ class _ConfigurablePrintPageState extends State<ConfigurablePrintPage> {
               activeColor: royalBlue,
               onChanged: (val) => setState(() => scopeType = val!),
             ),
-            const SizedBox(width: 8),
+            const SizedBox(width: 6),
+            Icon(icon, color: isSelected ? royalBlue : muted, size: 22),
+            const SizedBox(width: 10),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(title, style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: isSelected ? royalBlue : navy)),
+                  Text(
+                    title,
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 14,
+                      color: isSelected ? royalBlue : navy,
+                    ),
+                  ),
                   const SizedBox(height: 2),
-                  Text(subtitle, style: const TextStyle(fontSize: 12, color: muted)),
+                  Text(
+                    subtitle,
+                    style: const TextStyle(fontSize: 12, color: muted),
+                  ),
                 ],
               ),
             ),
@@ -580,172 +738,188 @@ class _ConfigurablePrintPageState extends State<ConfigurablePrintPage> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         const Text(
-          'पेज आकार और लेआउट डिज़ाइन (Page Shape & Layout):',
+          '1. पेज का आकार (Paper Size):',
           style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: navy),
         ),
-        const SizedBox(height: 16),
-
-        // 1. Orientation
-        const Text('1. पेज ओरिएंटेशन (Orientation):', style: TextStyle(fontWeight: FontWeight.w600, color: navy)),
-        const SizedBox(height: 8),
+        const SizedBox(height: 10),
         Row(
           children: [
-            Expanded(
-              child: _buildSelectCard(
-                icon: Icons.stay_current_portrait_rounded,
-                title: 'खड़ा पेज (Portrait)',
-                subtitle: 'मानक वर्टिकल पेज (A4)',
-                selected: orientation == 'portrait',
-                onTap: () => setState(() => orientation = 'portrait'),
-              ),
+            _buildSelectableCard(
+              title: 'A4 पेपर',
+              subtitle: '210 × 297 mm (मानक)',
+              icon: Icons.description_rounded,
+              isSelected: paperSize == 'A4',
+              onTap: () => setState(() => paperSize = 'A4'),
             ),
             const SizedBox(width: 12),
-            Expanded(
-              child: _buildSelectCard(
-                icon: Icons.stay_current_landscape_rounded,
-                title: 'आड़ा पेज (Landscape)',
-                subtitle: 'चौड़ा क्षैतिज पेज (Wide)',
-                selected: orientation == 'landscape',
-                onTap: () => setState(() => orientation = 'landscape'),
-              ),
+            _buildSelectableCard(
+              title: 'Legal / Letter',
+              subtitle: '216 × 356 mm (बड़ा पेज)',
+              icon: Icons.newspaper_rounded,
+              isSelected: paperSize == 'Legal',
+              onTap: () => setState(() => paperSize = 'Legal'),
             ),
           ],
         ),
 
-        const SizedBox(height: 20),
+        const SizedBox(height: 24),
 
-        // 2. Columns Grid Layout
-        const Text('2. कार्ड लेआउट व कॉलम (Grid Columns):', style: TextStyle(fontWeight: FontWeight.w600, color: navy)),
-        const SizedBox(height: 8),
+        const Text(
+          '2. पेज ओरिएंटेशन (Orientation):',
+          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: navy),
+        ),
+        const SizedBox(height: 10),
         Row(
           children: [
-            Expanded(
-              child: _buildSelectCard(
-                icon: Icons.view_column_rounded,
-                title: '2 कॉलम (मानक)',
-                subtitle: 'सबसे लोकप्रिय व पढ़ने में आसान',
-                selected: columns == 2,
-                onTap: () => setState(() => columns = 2),
-              ),
+            _buildSelectableCard(
+              title: 'पोर्ट्रेट (Portrait)',
+              subtitle: 'सीधा पेज (लंबाई अधिक)',
+              icon: Icons.crop_portrait_rounded,
+              isSelected: orientation == 'portrait',
+              onTap: () => setState(() => orientation = 'portrait'),
             ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: _buildSelectCard(
-                icon: Icons.table_chart_rounded,
-                title: '3 कॉलम (सघन)',
-                subtitle: 'कम पेजों में अधिक वोटर',
-                selected: columns == 3,
-                onTap: () => setState(() => columns = 3),
-              ),
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: _buildSelectCard(
-                icon: Icons.view_agenda_rounded,
-                title: '1 कॉलम (विस्तृत)',
-                subtitle: 'बड़ा कार्ड / पर्ची फॉर्मेट',
-                selected: columns == 1,
-                onTap: () => setState(() => columns = 1),
-              ),
+            const SizedBox(width: 12),
+            _buildSelectableCard(
+              title: 'लैंडस्केप (Landscape)',
+              subtitle: 'आड़ा पेज (चौड़ाई अधिक)',
+              icon: Icons.crop_landscape_rounded,
+              isSelected: orientation == 'landscape',
+              onTap: () => setState(() => orientation = 'landscape'),
             ),
           ],
         ),
 
-        const SizedBox(height: 20),
+        const SizedBox(height: 24),
 
-        // 3. Toggles (Photo & Cover Page)
-        Container(
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: border),
-          ),
-          child: Column(
-            children: [
-              SwitchListTile(
-                contentPadding: EdgeInsets.zero,
-                activeThumbColor: royalBlue,
-                title: const Text('🖼️ मतदाता की फोटो शामिल करें (Include Photo)', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
-                subtitle: const Text('प्रत्येक कार्ड पर वोटर की मूल फोटो प्रिंट होगी।', style: TextStyle(fontSize: 12, color: muted)),
-                value: includePhoto,
-                onChanged: (val) => setState(() => includePhoto = val),
-              ),
-              const Divider(height: 20),
-              SwitchListTile(
-                contentPadding: EdgeInsets.zero,
-                activeThumbColor: royalBlue,
-                title: const Text('📑 आधिकारिक कवर पेज व सारांश (Cover Summary Page)', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
-                subtitle: const Text('पहले पेज पर जेंडर ब्रेकडाउन, कुल संख्या व क्षेत्र का पूरा विवरण रहेगा।', style: TextStyle(fontSize: 12, color: muted)),
-                value: includeCoverPage,
-                onChanged: (val) => setState(() => includeCoverPage = val),
-              ),
-            ],
-          ),
+        const Text(
+          '3. कॉलम संख्या (Columns per Page):',
+          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: navy),
+        ),
+        const SizedBox(height: 10),
+        Row(
+          children: [
+            _buildSelectableCard(
+              title: '1 कॉलम',
+              subtitle: 'बड़ा कार्ड (विस्तृत)',
+              icon: Icons.view_agenda_rounded,
+              isSelected: columns == 1,
+              onTap: () => setState(() => columns = 1),
+            ),
+            const SizedBox(width: 10),
+            _buildSelectableCard(
+              title: '2 कॉलम (अनुशंसित)',
+              subtitle: '2 मतदाता प्रति पंक्ति',
+              icon: Icons.view_column_rounded,
+              isSelected: columns == 2,
+              onTap: () => setState(() => columns = 2),
+            ),
+            const SizedBox(width: 10),
+            _buildSelectableCard(
+              title: '3 कॉलम',
+              subtitle: 'अधिक मतदाता / कॉम्पैक्ट',
+              icon: Icons.grid_view_rounded,
+              isSelected: columns == 3,
+              onTap: () => setState(() => columns = 3),
+            ),
+          ],
+        ),
+
+        const SizedBox(height: 24),
+
+        const Text(
+          '4. अतिरिक्त विकल्प:',
+          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: navy),
+        ),
+        const SizedBox(height: 10),
+        SwitchListTile.adaptive(
+          value: includePhoto,
+          title: const Text('मतदाता की फोटो शामिल करें', style: TextStyle(fontWeight: FontWeight.w600, color: navy)),
+          subtitle: const Text('फोटो उपलब्ध होने पर कार्ड में प्रिंट होगी', style: TextStyle(color: muted, fontSize: 12)),
+          activeColor: royalBlue,
+          contentPadding: EdgeInsets.zero,
+          onChanged: (val) => setState(() => includePhoto = val),
+        ),
+        SwitchListTile.adaptive(
+          value: includeCoverPage,
+          title: const Text('प्रथम पेज पर सारांश कवर जोड़ें', style: TextStyle(fontWeight: FontWeight.w600, color: navy)),
+          subtitle: const Text('समिति, पंचायत, वार्ड व कुल मतदाता सारांश', style: TextStyle(color: muted, fontSize: 12)),
+          activeColor: royalBlue,
+          contentPadding: EdgeInsets.zero,
+          onChanged: (val) => setState(() => includeCoverPage = val),
         ),
       ],
     );
   }
 
-  Widget _buildSelectCard({
-    required IconData icon,
+  Widget _buildSelectableCard({
     required String title,
     required String subtitle,
-    required bool selected,
+    required IconData icon,
+    required bool isSelected,
     required VoidCallback onTap,
   }) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(14),
-      child: Container(
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          color: selected ? royalBlue.withValues(alpha: 0.06) : Colors.white,
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: selected ? royalBlue : border, width: selected ? 2 : 1),
-        ),
-        child: Column(
-          children: [
-            Icon(icon, size: 28, color: selected ? royalBlue : muted),
-            const SizedBox(height: 6),
-            Text(title, textAlign: TextAlign.center, style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: selected ? royalBlue : navy)),
-            const SizedBox(height: 2),
-            Text(subtitle, textAlign: TextAlign.center, style: const TextStyle(fontSize: 10, color: muted)),
-          ],
+    return Expanded(
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(14),
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 12),
+          decoration: BoxDecoration(
+            color: isSelected ? royalBlue.withValues(alpha: 0.08) : Colors.white,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: isSelected ? royalBlue : border, width: isSelected ? 2 : 1),
+          ),
+          child: Column(
+            children: [
+              Icon(icon, size: 28, color: isSelected ? royalBlue : muted),
+              const SizedBox(height: 8),
+              Text(
+                title,
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 13,
+                  color: isSelected ? royalBlue : navy,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                subtitle,
+                textAlign: TextAlign.center,
+                style: const TextStyle(fontSize: 10.5, color: muted),
+              ),
+            ],
+          ),
         ),
       ),
     );
   }
 
-  // ================= STEP 3: Field Selection =================
+  // ================= STEP 3: Fields Customization =================
   Widget _buildStepFieldCustomization() {
-    final fieldCategories = {
-      '🆔 पहचान विवरण': {
-        'name': 'मतदाता का नाम',
-        'voterId': 'EPIC (वोटर ID संख्या)',
-        'voterSerial': 'वि.स. मतदाता क्रमांक (#)',
-        'partNumber': 'भाग / बूथ संख्या (#)',
-        'wardNumber': 'वार्ड संख्या (#)',
-        'wardVoterSerial': 'वार्ड मतदाता क्रमांक (#)',
-        'guardianName': 'पिता / पति का नाम',
-        'age': 'आयु (Age)',
-        'gender': 'लिंग (Gender)',
-      },
-      '📍 संपर्क व पता': {
-        'mobile': 'मोबाइल नंबर',
-        'houseNumber': 'मकान नंबर',
-        'village': 'गाँव / मोहल्ला',
-        'gramPanchayat': 'ग्राम पंचायत',
-        'address': 'पूरा पता',
-      },
-      '🚩 सामाजिक व राजनीतिक': {
-        'caste': 'जाति (Caste)',
-        'supportLevel': 'समर्थन स्तर (Support)',
-        'partyPreference': 'पार्टी रुझान / वरीयता',
-        'occupation': 'व्यवसाय',
-        'organizationPost': 'संगठन पद',
-      }
-    };
+    final availableFieldsList = [
+      {'key': 'name', 'label': 'मतदाता का नाम', 'cat': 'मुख्य'},
+      {'key': 'voterId', 'label': 'EPIC / वोटर आईडी', 'cat': 'मुख्य'},
+      {'key': 'voterSerial', 'label': 'वि.स. मतदाता क्रमांक', 'cat': 'मुख्य'},
+      {'key': 'wardNumber', 'label': 'वार्ड संख्या', 'cat': 'मुख्य'},
+      {'key': 'wardVoterSerial', 'label': 'वार्ड क्रमांक', 'cat': 'मुख्य'},
+      {'key': 'partNumber', 'label': 'भाग संख्या (बूथ)', 'cat': 'मुख्य'},
+      {'key': 'guardianName', 'label': 'पिता / पति का नाम', 'cat': 'व्यक्तिगत'},
+      {'key': 'relationType', 'label': 'संबंध प्रकार (पिता/पति)', 'cat': 'व्यक्तिगत'},
+      {'key': 'mobile', 'label': 'मोबाइल नंबर', 'cat': 'संपर्क'},
+      {'key': 'altMobile', 'label': 'वैकल्पिक मोबाइल', 'cat': 'संपर्क'},
+      {'key': 'houseNumber', 'label': 'मकान संख्या', 'cat': 'पता'},
+      {'key': 'village', 'label': 'गाँव / मजरा', 'cat': 'पता'},
+      {'key': 'gramPanchayat', 'label': 'ग्राम पंचायत', 'cat': 'पता'},
+      {'key': 'caste', 'label': 'जाति', 'cat': 'अन्य'},
+      {'key': 'subCaste', 'label': 'उपजाति', 'cat': 'अन्य'},
+      {'key': 'age', 'label': 'उम्र', 'cat': 'व्यक्तिगत'},
+      {'key': 'gender', 'label': 'लिंग (पुरुष/महिला)', 'cat': 'व्यक्तिगत'},
+      {'key': 'occupation', 'label': 'व्यवसाय', 'cat': 'अन्य'},
+      {'key': 'organizationPost', 'label': 'संगठन पद', 'cat': 'अन्य'},
+      {'key': 'supportLevel', 'label': 'समर्थन स्तर', 'cat': 'राजनीतिक'},
+      {'key': 'partyPreference', 'label': 'पार्टी रुझान', 'cat': 'राजनीतिक'},
+    ];
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -754,77 +928,61 @@ class _ConfigurablePrintPageState extends State<ConfigurablePrintPage> {
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
             const Text(
-              'कार्ड में क्या-क्या प्रिंट करना है चुनें:',
+              'प्रिंट में शामिल फील्ड चुनें:',
               style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: navy),
             ),
-            TextButton(
+            TextButton.icon(
               onPressed: () {
                 setState(() {
-                  if (selectedFields.length > 5) {
+                  if (selectedFields.length == availableFieldsList.length) {
                     selectedFields.clear();
-                    selectedFields.addAll(['name', 'voterId', 'voterSerial', 'partNumber', 'wardNumber']);
+                    selectedFields.addAll(['name', 'voterId', 'voterSerial', 'wardNumber']);
                   } else {
-                    for (final cat in fieldCategories.values) {
-                      selectedFields.addAll(cat.keys);
-                    }
+                    selectedFields.addAll(availableFieldsList.map((f) => f['key'] as String));
                   }
                 });
               },
-              child: Text(selectedFields.length > 5 ? 'न्यूनतम रखें' : 'सभी चुनें'),
+              icon: Icon(
+                selectedFields.length == availableFieldsList.length ? Icons.deselect : Icons.select_all,
+                size: 18,
+              ),
+              label: Text(selectedFields.length == availableFieldsList.length ? 'न्यूनतम रखें' : 'सभी चुनें'),
             ),
           ],
         ),
-        const SizedBox(height: 12),
+        const SizedBox(height: 8),
 
-        ...fieldCategories.entries.map((category) {
-          return Container(
-            margin: const EdgeInsets.only(bottom: 16),
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: border),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  category.key,
-                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: navy),
-                ),
-                const Divider(height: 16),
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: category.value.entries.map((field) {
-                    final isChecked = selectedFields.contains(field.key);
-                    return FilterChip(
-                      label: Text(field.value),
-                      selected: isChecked,
-                      selectedColor: royalBlue,
-                      labelStyle: TextStyle(
-                        color: isChecked ? Colors.white : navy,
-                        fontWeight: isChecked ? FontWeight.bold : FontWeight.normal,
-                        fontSize: 12,
-                      ),
-                      onSelected: (val) {
-                        setState(() {
-                          if (val) {
-                            selectedFields.add(field.key);
-                          } else {
-                            if (selectedFields.length > 1) {
-                              selectedFields.remove(field.key);
-                            }
-                          }
-                        });
-                      },
-                    );
-                  }).toList(),
-                ),
-              ],
-            ),
-          );
-        }),
+        Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: border),
+          ),
+          child: Column(
+            children: availableFieldsList.map((f) {
+              final key = f['key'] as String;
+              final isChecked = selectedFields.contains(key);
+              return CheckboxListTile(
+                value: isChecked,
+                dense: true,
+                title: Text(f['label'] as String, style: const TextStyle(fontWeight: FontWeight.w600, color: navy, fontSize: 13.5)),
+                subtitle: Text('श्रेणी: ${f['cat']}', style: const TextStyle(fontSize: 11, color: muted)),
+                activeColor: royalBlue,
+                contentPadding: const EdgeInsets.symmetric(horizontal: 8),
+                onChanged: (val) {
+                  setState(() {
+                    if (val == true) {
+                      selectedFields.add(key);
+                    } else {
+                      if (selectedFields.length > 1) selectedFields.remove(key);
+                    }
+                  });
+                },
+              );
+            }).toList(),
+          ),
+        ),
       ],
     );
   }
@@ -834,47 +992,38 @@ class _ConfigurablePrintPageState extends State<ConfigurablePrintPage> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // Summary Card
+        const Text(
+          'प्रिंट सारांश व कन्फर्मेशन (Print Summary):',
+          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: navy),
+        ),
+        const SizedBox(height: 12),
+
         Container(
-          width: double.infinity,
-          padding: const EdgeInsets.all(20),
+          padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
-            gradient: const LinearGradient(
-              colors: [Color(0xff0f172a), Color(0xff1e293b)],
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-            ),
-            borderRadius: BorderRadius.circular(20),
-            boxShadow: const [
-              BoxShadow(color: Colors.black26, blurRadius: 10, offset: Offset(0, 4)),
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: border),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.04),
+                blurRadius: 10,
+                offset: const Offset(0, 4),
+              )
             ],
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Row(
-                children: [
-                  Icon(Icons.check_circle_rounded, color: Colors.greenAccent, size: 24),
-                  SizedBox(width: 8),
-                  Text(
-                    'प्रिंट कॉन्फ़िगरेशन तैयार है (Ready to Print)',
-                    style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 16),
-              _summaryRow('🏛️ समिति / पंचायत:', '$selectedSamiti > $selectedGramPanchayat'),
-              _summaryRow(
-                '🎯 प्रिंट स्कोप:',
-                scopeType == 'specific_ward'
-                    ? 'वार्ड $selectedWard'
-                    : (scopeType == 'specific_part' ? 'भाग #$selectedPart' : 'संपूर्ण ग्राम पंचायत ($selectedGramPanchayat)'),
-              ),
-              _summaryRow('📄 पेज ओरिएंटेशन:', orientation == 'portrait' ? 'A4 खड़ा (Portrait)' : 'A4 आड़ा (Landscape)'),
-              _summaryRow('📊 कॉलम ग्रिड:', '$columns कॉलम'),
-              _summaryRow('🖼️ फोटो स्थिति:', includePhoto ? 'हाँ (फोटो सहित)' : 'नहीं (बिना फोटो)'),
-              _summaryRow('📑 कवर पेज:', includeCoverPage ? 'हाँ (सारांश सहित)' : 'नहीं'),
-              _summaryRow('🔘 कुल चयनित फील्ड:', '${selectedFields.length} फील्ड्स'),
+              _buildSummaryRow('चुनी गई समिति:', selectedSamiti),
+              const Divider(height: 16),
+              _buildSummaryRow('प्रिंट स्तर / दायरा:', _getSelectionSummaryText()),
+              const Divider(height: 16),
+              _buildSummaryRow('पेज आकार व प्रकार:', '$paperSize • ${orientation == 'portrait' ? 'पोर्ट्रेट' : 'लैंडस्केप'} • $columns कॉलम'),
+              const Divider(height: 16),
+              _buildSummaryRow('फोटो शामिल:', includePhoto ? 'हाँ ✅' : 'नहीं ❌'),
+              const Divider(height: 16),
+              _buildSummaryRow('कुल चयनित फील्ड:', '${selectedFields.length} फील्ड्स'),
             ],
           ),
         ),
@@ -889,34 +1038,37 @@ class _ConfigurablePrintPageState extends State<ConfigurablePrintPage> {
                 style: FilledButton.styleFrom(
                   backgroundColor: royalBlue,
                   padding: const EdgeInsets.symmetric(vertical: 16),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                 ),
                 onPressed: isPrinting ? null : _handlePrint,
                 icon: isPrinting
                     ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
-                    : const Icon(Icons.print_rounded, size: 22),
+                    : const Icon(Icons.print_rounded),
                 label: Text(
-                  isPrinting ? 'PDF तैयार हो रही है...' : '🖨️ PDF प्रिंट निकालें',
+                  isPrinting ? 'प्रिंट तैयार हो रहा है...' : 'प्रिंट निकालें (Direct Print)',
                   style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
                 ),
               ),
             ),
-            const SizedBox(width: 12),
+          ],
+        ),
+        const SizedBox(height: 12),
+        Row(
+          children: [
             Expanded(
               child: OutlinedButton.icon(
                 style: OutlinedButton.styleFrom(
-                  foregroundColor: royalBlue,
-                  side: const BorderSide(color: royalBlue, width: 1.5),
                   padding: const EdgeInsets.symmetric(vertical: 16),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                  side: const BorderSide(color: royalBlue, width: 1.5),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                 ),
                 onPressed: isSharing ? null : _handleSharePdf,
                 icon: isSharing
                     ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
-                    : const Icon(Icons.share_rounded, size: 22),
+                    : const Icon(Icons.share_rounded, color: royalBlue),
                 label: Text(
-                  isSharing ? 'डाउनलोड हो रहा है...' : '📲 PDF शेयर करें',
-                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+                  isSharing ? 'PDF डाउनलोड हो रही है...' : 'PDF शेयर करें (WhatsApp / Share)',
+                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: royalBlue),
                 ),
               ),
             ),
@@ -926,33 +1078,32 @@ class _ConfigurablePrintPageState extends State<ConfigurablePrintPage> {
     );
   }
 
-  Widget _summaryRow(String label, String value) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 6),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          SizedBox(width: 140, child: Text(label, style: const TextStyle(color: Colors.white60, fontSize: 13))),
-          Expanded(child: Text(value, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 13))),
-        ],
-      ),
+  Widget _buildSummaryRow(String label, String value) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SizedBox(
+          width: 140,
+          child: Text(label, style: const TextStyle(fontWeight: FontWeight.w600, color: muted, fontSize: 13)),
+        ),
+        Expanded(
+          child: Text(value, style: const TextStyle(fontWeight: FontWeight.bold, color: navy, fontSize: 13.5)),
+        ),
+      ],
     );
   }
 
   Widget _buildBottomNavigationBar() {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        border: Border(top: BorderSide(color: border)),
-      ),
+      color: Colors.white,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
           if (currentStep > 0)
             OutlinedButton.icon(
               onPressed: () => setState(() => currentStep--),
-              icon: const Icon(Icons.arrow_back_rounded, size: 18),
+              icon: const Icon(Icons.arrow_back),
               label: const Text('पिछला'),
             )
           else
@@ -961,7 +1112,7 @@ class _ConfigurablePrintPageState extends State<ConfigurablePrintPage> {
             FilledButton.icon(
               style: FilledButton.styleFrom(backgroundColor: royalBlue),
               onPressed: () => setState(() => currentStep++),
-              icon: const Icon(Icons.arrow_forward_rounded, size: 18),
+              icon: const Icon(Icons.arrow_forward),
               label: const Text('आगे बढ़ें'),
             )
           else
