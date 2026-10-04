@@ -228,6 +228,73 @@ async function loadPhotoSources(members, includePhoto = true) {
   if (!includePhoto) return () => null;
   const media = new Map();
 
+  // Tier 1: For members without a photo, resolve candidate photo from MongoDB
+  const missingPhotoMembers = members.filter(m => !m.photo || m.photo === '');
+  if (missingPhotoMembers.length) {
+    const missingVoterIds = missingPhotoMembers.map(m => m.voterId).filter(Boolean);
+    if (missingVoterIds.length) {
+      try {
+        const candidates = await Member.find({
+          voterId: { $in: missingVoterIds },
+          photo: { $exists: true, $ne: '', $ne: null }
+        }).select('voterId photo').lean();
+
+        const voterIdToPhoto = new Map();
+        for (const c of candidates) {
+          if (c.photo) voterIdToPhoto.set(c.voterId, c.photo);
+        }
+        for (const m of missingPhotoMembers) {
+          if (!m.photo && voterIdToPhoto.has(m.voterId)) {
+            m.photo = voterIdToPhoto.get(m.voterId);
+          }
+        }
+      } catch (_) {}
+    }
+
+    // Tier 1b: For any still missing, match by village + name / father / houseNumber
+    const stillMissing = members.filter(m => !m.photo || m.photo === '');
+    for (const m of stillMissing) {
+      if (!m.village && !m.gramPanchayat) continue;
+      try {
+        const villageFilter = m.village
+          ? { village: new RegExp(`^${escapeRegex(m.village.trim())}$`, 'i') }
+          : { gramPanchayat: new RegExp(`^${escapeRegex(m.gramPanchayat.trim())}$`, 'i') };
+
+        const orConditions = [];
+        const gName = m.guardianName || m.relativeName;
+        if (m.name && gName) {
+          const nPrefix = m.name.trim().slice(0, 3);
+          const gPrefix = gName.trim().slice(0, 2);
+          orConditions.push({
+            name: new RegExp(`^${escapeRegex(nPrefix)}`, 'i'),
+            $or: [
+              { guardianName: new RegExp(`^${escapeRegex(gPrefix)}`, 'i') },
+              { relativeName: new RegExp(`^${escapeRegex(gPrefix)}`, 'i') }
+            ]
+          });
+        }
+        if (m.name && m.houseNumber) {
+          const nPrefix = m.name.trim().slice(0, 3);
+          orConditions.push({
+            name: new RegExp(`^${escapeRegex(nPrefix)}`, 'i'),
+            houseNumber: m.houseNumber
+          });
+        }
+
+        if (orConditions.length) {
+          const candidate = await Member.findOne({
+            ...villageFilter,
+            photo: { $exists: true, $ne: '', $ne: null },
+            $or: orConditions
+          }).select('photo').lean();
+          if (candidate && candidate.photo) {
+            m.photo = candidate.photo;
+          }
+        }
+      } catch (_) {}
+    }
+  }
+
   // 1. Check MongoDB MediaAssets
   const mediaIds = [...new Set(members.map((m) => mediaIdFromPhoto(m.photo)).filter(Boolean))];
   if (mediaIds.length) {
