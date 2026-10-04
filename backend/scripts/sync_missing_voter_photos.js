@@ -29,43 +29,62 @@ async function syncMissingPhotos() {
     process.exit(0);
   }
 
-  console.log('\n--- Pass 1: Syncing photos by EXACT voterId / EPIC ---');
-  // Build map of voterId -> photo from all members with photos
+  console.log('\n--- Pass 1: Syncing photos and cardImages by EXACT voterId / EPIC ---');
+  // Build map of voterId -> { photo, cardImage, ocrCardImage } from all members with photos/cards
   const membersWithPhoto = await Member.find({
-    photo: { $exists: true, $ne: '', $ne: null },
+    $or: [
+      { photo: { $exists: true, $ne: '', $ne: null } },
+      { cardImage: { $exists: true, $ne: '', $ne: null } }
+    ],
     voterId: { $exists: true, $ne: '', $ne: null }
-  }).select('voterId photo').lean();
+  }).select('voterId photo cardImage ocrCardImage partNumber voterSerial').lean();
 
-  const voterIdToPhoto = new Map();
+  const voterIdToAsset = new Map();
   for (const m of membersWithPhoto) {
-    if (m.voterId && m.photo) {
-      voterIdToPhoto.set(m.voterId.trim().toUpperCase(), m.photo);
+    if (m.voterId) {
+      voterIdToAsset.set(m.voterId.trim().toUpperCase(), {
+        photo: m.photo || '',
+        cardImage: m.cardImage || m.ocrCardImage || '',
+        ocrCardImage: m.ocrCardImage || m.cardImage || '',
+        partNumber: m.partNumber,
+        voterSerial: m.voterSerial
+      });
     }
   }
-  console.log(`Indexed ${voterIdToPhoto.size} unique voterId photos.`);
+  console.log(`Indexed ${voterIdToAsset.size} unique voterId photo/card assets.`);
 
-  // Find all missing photo members
+  // Find all missing photo or cardImage members
   const missingMembers = await Member.find({
-    $or: [{ photo: { $exists: false } }, { photo: '' }, { photo: null }]
-  }).select('_id name voterId voterSerial wardVoterSerial houseNumber guardianName relativeName village gramPanchayat').lean();
+    $or: [
+      { photo: { $exists: false } }, { photo: '' }, { photo: null },
+      { cardImage: { $exists: false } }, { cardImage: '' }, { cardImage: null }
+    ]
+  }).select('_id name voterId voterSerial wardVoterSerial houseNumber guardianName relativeName village gramPanchayat photo cardImage').lean();
 
   let pass1Updated = 0;
   const stillMissing = [];
 
   for (const m of missingMembers) {
     const epic = m.voterId ? m.voterId.trim().toUpperCase() : '';
-    if (epic && voterIdToPhoto.has(epic)) {
-      const photoUrl = voterIdToPhoto.get(epic);
-      await Member.updateOne({ _id: m._id }, { $set: { photo: photoUrl } });
-      pass1Updated++;
-    } else {
+    if (epic && voterIdToAsset.has(epic)) {
+      const asset = voterIdToAsset.get(epic);
+      const updateFields = {};
+      if (!m.photo && asset.photo) updateFields.photo = asset.photo;
+      if (!m.cardImage && asset.cardImage) updateFields.cardImage = asset.cardImage;
+      if (!m.ocrCardImage && asset.ocrCardImage) updateFields.ocrCardImage = asset.ocrCardImage;
+      
+      if (Object.keys(updateFields).length) {
+        await Member.updateOne({ _id: m._id }, { $set: updateFields });
+        pass1Updated++;
+      }
+    } else if (!m.photo) {
       stillMissing.push(m);
     }
   }
-  console.log(`Pass 1 complete: Updated ${pass1Updated} voters by voterId match!`);
-  console.log(`Remaining missing: ${stillMissing.length}`);
+  console.log(`Pass 1 complete: Updated ${pass1Updated} voters with photo/card by voterId match!`);
+  console.log(`Remaining missing photos: ${stillMissing.length}`);
 
-  console.log('\n--- Pass 2: Syncing photos by Village + Name + Father / House / Serial ---');
+  console.log('\n--- Pass 2: Syncing photos & cards by Village + Name + Father / House / Serial ---');
   let pass2Updated = 0;
   let processed = 0;
 
@@ -104,22 +123,52 @@ async function syncMissingPhotos() {
     if (orConditions.length > 0) {
       const match = await Member.findOne({
         ...villageFilter,
-        photo: { $exists: true, $ne: '', $ne: null },
-        $or: orConditions
-      }).select('photo').lean();
+        $or: [
+          { photo: { $exists: true, $ne: '', $ne: null } },
+          { cardImage: { $exists: true, $ne: '', $ne: null } }
+        ],
+        $and: [{ $or: orConditions }]
+      }).select('photo cardImage ocrCardImage').lean();
 
-      if (match && match.photo) {
-        await Member.updateOne({ _id: m._id }, { $set: { photo: match.photo } });
-        pass2Updated++;
+      if (match) {
+        const updateFields = {};
+        if (!m.photo && match.photo) updateFields.photo = match.photo;
+        if (!m.cardImage && (match.cardImage || match.ocrCardImage)) updateFields.cardImage = match.cardImage || match.ocrCardImage;
+        if (!m.ocrCardImage && (match.ocrCardImage || match.cardImage)) updateFields.ocrCardImage = match.ocrCardImage || match.cardImage;
+        
+        if (Object.keys(updateFields).length) {
+          await Member.updateOne({ _id: m._id }, { $set: updateFields });
+          pass2Updated++;
+        }
       }
     }
   }
 
   console.log(`Pass 2 complete: Updated ${pass2Updated} voters by identity matching!`);
-  console.log(`Total newly linked photos: ${pass1Updated + pass2Updated}`);
+
+  // Pass 3: For any member with photo URL containing S3 key, derive cardImage if missing
+  console.log('\n--- Pass 3: Deriving missing cardImage from photo S3 keys ---');
+  let pass3Updated = 0;
+  const needCards = await Member.find({
+    photo: { $exists: true, $ne: '', $ne: null, $regex: /photo-[A-Za-z0-9_\/]+/ },
+    $or: [{ cardImage: { $exists: false } }, { cardImage: '' }, { cardImage: null }]
+  }).select('_id photo cardImage').limit(10000).lean();
+
+  for (const m of needCards) {
+    if (m.photo && m.photo.includes('-photo-')) {
+      const cardUrl = m.photo.replace('-photo-', '-card-');
+      await Member.updateOne({ _id: m._id }, { $set: { cardImage: cardUrl, ocrCardImage: cardUrl } });
+      pass3Updated++;
+    }
+  }
+  console.log(`Pass 3 complete: Derived ${pass3Updated} missing cardImages!`);
+
+  console.log(`Total newly linked assets: ${pass1Updated + pass2Updated + pass3Updated}`);
 
   const finalWithPhoto = await Member.countDocuments({ photo: { $exists: true, $ne: '', $ne: null } });
+  const finalWithCard = await Member.countDocuments({ cardImage: { $exists: true, $ne: '', $ne: null } });
   console.log(`Final voters with photo: ${finalWithPhoto} / ${totalMembers}`);
+  console.log(`Final voters with cardImage: ${finalWithCard} / ${totalMembers}`);
 
   process.exit(0);
 }
