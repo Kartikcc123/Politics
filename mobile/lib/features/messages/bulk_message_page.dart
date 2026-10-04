@@ -1,10 +1,14 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:share_plus/share_plus.dart';
 
 import '../../core/api_client.dart';
+import '../../core/contact_actions.dart';
 import '../../core/theme.dart';
 import '../../layout/app_layout.dart';
 import '../../widgets/common.dart';
@@ -24,20 +28,37 @@ class _BulkMessagePageState extends State<BulkMessagePage> {
   final message = TextEditingController();
   final eventName = TextEditingController();
   final templateName = TextEditingController();
+  final customPhones = TextEditingController();
+
+  // Filters
   final selectedFilters = <String, Map<String, String>>{};
   final selectedLabels = <String, String>{};
 
+  // State
   String eventType = 'general';
   String senderId = '';
   DateTime occasionDate = DateTime.now();
   DateTime scheduledAt = DateTime.now();
   int batchSize = 10;
   int intervalSeconds = 60;
-  int messageDelaySeconds = 3;
+  int messageDelaySeconds = 5;
   int dailyLimit = 200;
   int refreshKey = 0;
   bool sending = false;
   Map<String, dynamic>? preview;
+
+  // Recipient Mode: 'db' (database filters), 'custom' (manual phone numbers), 'direct' (whatsapp groups)
+  String recipientMode = 'db';
+
+  // Photo / Media Attachment
+  String? pickedImagePath;
+  String? pickedImageName;
+  bool attachPhoto = true;
+
+  // Live Voters preview
+  List<Map<String, dynamic>> previewVoters = [];
+  bool loadingPreviewVoters = false;
+  final Set<String> selectedVoterIds = {};
 
   @override
   void initState() {
@@ -47,22 +68,26 @@ class _BulkMessagePageState extends State<BulkMessagePage> {
   }
 
   static const defaultDrafts = {
-    'general': 'नमस्कार {{name}} जी,',
+    'general': 'नमस्कार {{name}} जी,\n\nआशा है आप सपरिवार सकुशल होंगे।',
     'birthday':
         '🎂 जन्मदिन की हार्दिक शुभकामनाएँ {{name}} जी! आपका जीवन सुख, स्वास्थ्य और सफलता से भरा रहे।',
     'anniversary':
         '💐 विवाह वर्षगाँठ की हार्दिक शुभकामनाएँ {{name}} जी! आपका दाम्पत्य जीवन सदैव सुखमय रहे।',
     'event':
-        'नमस्कार {{name}} जी, आपको {{event}} में सादर आमंत्रित किया जाता है। दिनांक: {{date}}।',
+        'नमस्कार {{name}} जी, आपको {{event}} में सादर आमंत्रित किया जाता है।\nस्थान: {{village}}\nदिनांक: {{date}}। कृपया पधारें।',
     'meeting':
-        'नमस्कार {{name}} जी, {{event}} बैठक {{date}} को आयोजित है। कृपया समय पर पधारें।',
+        'नमस्कार {{name}} जी, {{event}} बैठक {{date}} को आयोजित है। स्थान: {{village}}। कृपया समय पर पधारें।',
+    'vote':
+        'सादर प्रणाम {{name}} जी, लोकतंत्र के महापर्व में अपने अमूल्य मत का प्रयोग अवश्य करें। आपका एक वोट क्षेत्र के विकास के लिए महत्वपूर्ण है।\nवार्ड/भाग: {{ward}}',
   };
+
   static const typeLabels = {
     'general': 'सामान्य संदेश',
-    'birthday': 'जन्मदिन',
+    'birthday': 'जन्मदिन बधाई',
     'anniversary': 'विवाह वर्षगाँठ',
-    'event': 'कार्यक्रम',
-    'meeting': 'बैठक',
+    'event': 'कार्यक्रम / निमंत्रण',
+    'meeting': 'बैठक सूचना',
+    'vote': 'मतदान अपील',
   };
 
   Map<String, dynamic> get campaignBody {
@@ -84,8 +109,17 @@ class _BulkMessagePageState extends State<BulkMessagePage> {
       'templateName': templateName.text.trim(),
       'templateLanguage': 'hi',
     };
-    for (final values in selectedFilters.values) {
-      body.addAll(values);
+    if (recipientMode == 'custom') {
+      final nums = customPhones.text
+          .split(RegExp(r'[\n,;]'))
+          .map((e) => e.replaceAll(RegExp(r'\D'), '').trim())
+          .where((e) => e.length >= 10)
+          .toList();
+      body['customRecipients'] = nums;
+    } else {
+      for (final values in selectedFilters.values) {
+        body.addAll(values);
+      }
     }
     return body;
   }
@@ -96,14 +130,50 @@ class _BulkMessagePageState extends State<BulkMessagePage> {
     message.dispose();
     eventName.dispose();
     templateName.dispose();
+    customPhones.dispose();
     super.dispose();
+  }
+
+  Future<void> pickImage() async {
+    try {
+      final result = await FilePicker.platform.pickFiles(
+        type: FileType.image,
+        allowMultiple: false,
+      );
+      if (result != null && result.files.isNotEmpty) {
+        final path = result.files.first.path;
+        if (path != null) {
+          setState(() {
+            pickedImagePath = path;
+            pickedImageName = result.files.first.name;
+            attachPhoto = true;
+          });
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('फोटो नहीं चुनी जा सकी: $e')),
+        );
+      }
+    }
+  }
+
+  void removeImage() {
+    setState(() {
+      pickedImagePath = null;
+      pickedImageName = null;
+    });
   }
 
   Future<void> loadPreview() async {
     setState(() => preview = null);
     try {
       final result = await api.post('/api/messages/preview', campaignBody);
-      if (mounted) setState(() => preview = result);
+      if (mounted) {
+        setState(() => preview = result);
+        _fetchPreviewVotersList();
+      }
     } catch (error) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
@@ -111,10 +181,60 @@ class _BulkMessagePageState extends State<BulkMessagePage> {
     }
   }
 
+  Future<void> _fetchPreviewVotersList() async {
+    setState(() => loadingPreviewVoters = true);
+    try {
+      final queryParams = <String, String>{'limit': '100', 'paged': 'false'};
+      for (final values in selectedFilters.values) {
+        for (final entry in values.entries) {
+          queryParams[entry.key] = entry.value;
+        }
+      }
+      final dynamic res = await api.get('/api/members?${Uri(queryParameters: queryParams).query}');
+      List<Map<String, dynamic>> items = [];
+      if (res is List) {
+        items = res.whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList();
+      } else if (res is Map && res['items'] is List) {
+        items = (res['items'] as List).whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList();
+      }
+      if (mounted) {
+        setState(() {
+          previewVoters = items;
+          loadingPreviewVoters = false;
+          selectedVoterIds.clear();
+          for (final v in previewVoters) {
+            final id = (v['_id'] ?? '').toString();
+            if (id.isNotEmpty) selectedVoterIds.add(id);
+          }
+        });
+      }
+    } catch (_) {
+      if (mounted) setState(() => loadingPreviewVoters = false);
+    }
+  }
+
+  String renderVoterMessage(Map<String, dynamic>? voter) {
+    String msg = message.text;
+    final name = (voter?['name'] ?? voter?['fullName'] ?? '').toString().trim();
+    final village = (voter?['village'] ?? voter?['gramPanchayat'] ?? '').toString().trim();
+    final ward = (voter?['wardNumber'] ?? voter?['partNumber'] ?? '').toString().trim();
+    final guardian = (voter?['guardianName'] ?? '').toString().trim();
+    final evName = eventName.text.trim();
+    final dt = DateFormat('dd/MM/yyyy').format(occasionDate);
+
+    msg = msg.replaceAll('{{name}}', name.isNotEmpty ? name : 'साथी');
+    msg = msg.replaceAll('{{village}}', village);
+    msg = msg.replaceAll('{{ward}}', ward);
+    msg = msg.replaceAll('{{guardian}}', guardian);
+    msg = msg.replaceAll('{{event}}', evName.isNotEmpty ? evName : 'विशेष कार्यक्रम');
+    msg = msg.replaceAll('{{date}}', dt);
+    return msg;
+  }
+
   Future<void> queueCampaign() async {
     if (senderId.isEmpty || message.text.trim().isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('Sender और message draft दोनों जरूरी हैं।')));
+          content: Text('Sender और संदेश दोनों जरूरी हैं।')));
       return;
     }
     if (preview == null) await loadPreview();
@@ -123,10 +243,10 @@ class _BulkMessagePageState extends State<BulkMessagePage> {
       context: context,
       builder: (_) => AlertDialog(
         icon: const Icon(Icons.schedule_send_rounded, color: green, size: 40),
-        title: const Text('Campaign queue करें?'),
+        title: const Text('WhatsApp Auto Campaign शुरू करें?'),
         content: Text(
-          '${preview?['eligible'] ?? 0} opt-in recipients को $batchSize messages के batch में, '
-          'हर $intervalSeconds seconds के अंतर से भेजा जाएगा।\n\n'
+          '${preview?['eligible'] ?? 0} मतदाताओं को $batchSize संदेश के सुरक्षित बैच में, '
+          'हर संदेश के बीच $messageDelaySeconds सेकंड का अंतर देकर भेजा जाएगा।\n\n'
           'रात 8 बजे से सुबह 8 बजे तक sending अपने-आप रुकेगी।',
           textAlign: TextAlign.center,
         ),
@@ -136,7 +256,8 @@ class _BulkMessagePageState extends State<BulkMessagePage> {
               child: const Text('रद्द करें')),
           FilledButton(
               onPressed: () => Navigator.pop(context, true),
-              child: const Text('Queue करें')),
+              style: FilledButton.styleFrom(backgroundColor: green),
+              child: const Text('Queue & Start')),
         ],
       ),
     );
@@ -150,7 +271,7 @@ class _BulkMessagePageState extends State<BulkMessagePage> {
         refreshKey++;
       });
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text('${result['total'] ?? 0} messages safely queued'),
+        content: Text('${result['total'] ?? 0} संदेश ऑटो-कतार (Queue) में जोड़े गए।'),
       ));
     } catch (error) {
       if (!mounted) return;
@@ -158,6 +279,55 @@ class _BulkMessagePageState extends State<BulkMessagePage> {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
           content: Text(error.toString().replaceFirst('Exception: ', ''))));
     }
+  }
+
+  void startFastSendAssistant() {
+    List<Map<String, dynamic>> targets = [];
+    if (recipientMode == 'custom') {
+      final nums = customPhones.text
+          .split(RegExp(r'[\n,;]'))
+          .map((e) => e.replaceAll(RegExp(r'\D'), '').trim())
+          .where((e) => e.length >= 10)
+          .toList();
+      targets = nums.map((n) => {'name': 'साथी', 'mobile': n}).toList();
+    } else {
+      targets = previewVoters.where((v) {
+        final id = (v['_id'] ?? '').toString();
+        final mob = (v['mobile'] ?? '').toString().trim();
+        return selectedVoterIds.contains(id) && mob.isNotEmpty;
+      }).toList();
+    }
+
+    if (targets.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('कृपया कम से कम 1 मोबाइल नंबर वाले प्राप्तकर्ता को चुनें।')),
+      );
+      return;
+    }
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => _FastSendSheet(
+        voters: targets,
+        imagePath: attachPhoto ? pickedImagePath : null,
+        renderMessage: renderVoterMessage,
+      ),
+    );
+  }
+
+  Future<void> directShareToWhatsApp() async {
+    final rendered = renderVoterMessage(null);
+    if (attachPhoto && pickedImagePath != null && File(pickedImagePath!).existsSync()) {
+      try {
+        await SharePlus.instance.share(
+          ShareParams(text: rendered, files: [XFile(pickedImagePath!)]),
+        );
+        return;
+      } catch (_) {}
+    }
+    await SharePlus.instance.share(ShareParams(text: rendered));
   }
 
   Future<void> saveSender() async {
@@ -172,20 +342,20 @@ class _BulkMessagePageState extends State<BulkMessagePage> {
           child: Column(mainAxisSize: MainAxisSize.min, children: [
             TextField(
               controller: name,
-              decoration: const InputDecoration(labelText: 'Sender name'),
+              decoration: const InputDecoration(labelText: 'Sender Name (उदा. मुख्य नंबर)'),
             ),
             const SizedBox(height: 10),
             TextField(
               controller: number,
               keyboardType: TextInputType.phone,
               decoration: const InputDecoration(
-                labelText: 'WhatsApp number',
+                labelText: 'WhatsApp Mobile Number',
                 hintText: '9876543210',
               ),
             ),
             const SizedBox(height: 12),
             const Text(
-              'Save करने के बाद QR बनेगा। Phone में WhatsApp → Linked devices → Link a device खोलकर scan करें। Session backend में सुरक्षित रहेगा।',
+              'Save करने के बाद QR बनेगा। फ़ोन में WhatsApp → Linked devices → Link a device खोलकर scan करें। Session सुरक्षित रहेगा।',
               style: TextStyle(color: muted, fontSize: 12, height: 1.4),
             ),
           ]),
@@ -201,9 +371,7 @@ class _BulkMessagePageState extends State<BulkMessagePage> {
               if (cleanName.isEmpty || cleanNumber.isEmpty) {
                 if (mounted) {
                   ScaffoldMessenger.of(this.context).showSnackBar(
-                    const SnackBar(
-                      content: Text('Sender name aur WhatsApp number required hain.'),
-                    ),
+                    const SnackBar(content: Text('Sender name और Mobile number जरूरी हैं।')),
                   );
                 }
                 return;
@@ -219,8 +387,7 @@ class _BulkMessagePageState extends State<BulkMessagePage> {
               } catch (error) {
                 if (context.mounted) {
                   ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                    content:
-                        Text(error.toString().replaceFirst('Exception: ', '')),
+                    content: Text(error.toString().replaceFirst('Exception: ', '')),
                   ));
                 }
               }
@@ -247,13 +414,10 @@ class _BulkMessagePageState extends State<BulkMessagePage> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Sender delete karein?'),
-        content: const Text(
-            'Is WhatsApp sender number ko list se hata diya jayega. Connected session bhi logout/disconnect hoga.'),
+        title: const Text('Sender delete करें?'),
+        content: const Text('इस WhatsApp sender number को हटा दिया जाएगा।'),
         actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(context, false),
-              child: const Text('Cancel')),
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
           FilledButton.icon(
             style: FilledButton.styleFrom(backgroundColor: rose),
             onPressed: () => Navigator.pop(context, true),
@@ -271,28 +435,15 @@ class _BulkMessagePageState extends State<BulkMessagePage> {
         if (senderId == id) senderId = '';
         refreshKey++;
       });
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('WhatsApp sender deleted')),
-      );
-    } catch (error) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text(error.toString().replaceFirst('Exception: ', '')),
-      ));
-    }
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Sender deleted')));
+    } catch (_) {}
   }
 
   Future<void> openQrConnect(String id) async {
     if (id.isEmpty) return;
     try {
       await api.post('/api/messages/senders/$id/connect', {});
-    } catch (error) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text(error.toString().replaceFirst('Exception: ', '')),
-        ));
-      }
-    }
+    } catch (_) {}
     if (!mounted) return;
     await showDialog<void>(
       context: context,
@@ -320,29 +471,7 @@ class _BulkMessagePageState extends State<BulkMessagePage> {
       selectedLabels[field] = option.label;
       preview = null;
     });
-  }
-
-  Future<void> selectDate({required bool schedule}) async {
-    final base = schedule ? scheduledAt : occasionDate;
-    final date = await showDatePicker(
-      context: context,
-      initialDate: base,
-      firstDate: DateTime.now().subtract(const Duration(days: 1)),
-      lastDate: DateTime.now().add(const Duration(days: 730)),
-    );
-    if (date == null || !mounted) return;
-    if (!schedule) {
-      setState(() {
-        occasionDate = date;
-        preview = null;
-      });
-      return;
-    }
-    final time = await showTimePicker(
-        context: context, initialTime: TimeOfDay.fromDateTime(base));
-    if (time == null || !mounted) return;
-    setState(() => scheduledAt =
-        DateTime(date.year, date.month, date.day, time.hour, time.minute));
+    loadPreview();
   }
 
   @override
@@ -351,8 +480,7 @@ class _BulkMessagePageState extends State<BulkMessagePage> {
         future: api.list('/api/messages/senders'),
         builder: (context, senderSnapshot) {
           final senders = List<Map<String, dynamic>>.from(
-            (senderSnapshot.data ?? [])
-                .map((item) => Map<String, dynamic>.from(item)),
+            (senderSnapshot.data ?? []).map((item) => Map<String, dynamic>.from(item)),
           );
           if (senderId.isEmpty && senders.isNotEmpty) {
             final preferred = senders.cast<Map<String, dynamic>>().firstWhere(
@@ -364,303 +492,658 @@ class _BulkMessagePageState extends State<BulkMessagePage> {
           for (final sender in senders) {
             if ('${sender['_id']}' == senderId) selectedSender = sender;
           }
+
           return AppPage(children: [
             PremiumFeatureHero(
-              title: 'WhatsApp अभियान',
-              subtitle:
-                  'सहमति वाले contacts को सुरक्षित batches में personal message भेजें।',
+              title: 'WhatsApp महा-अभियान केंद्र',
+              subtitle: 'QR कोड लिंक डिवाइस, पोस्टर/फोटो शेयर, लाइव वोटर फ़िल्टर एवं एंटी-बैन टाइमर के साथ।',
               icon: Icons.campaign_rounded,
               accent: green,
-              badges: const ['Opt-in', 'Batch control', 'History'],
+              badges: const ['QR Link', 'Poster + Tag', 'Anti-Ban Gap', 'Fast Send'],
               action: FilledButton.icon(
                   onPressed: saveSender,
                   icon: const Icon(Icons.add_call),
                   label: const Text('Sender जोड़ें')),
             ),
-            _SafetyBanner(),
+
+            // STEP 1: SENDER & QR CONNECT
             SectionCard(
-              title: '1. Sender और occasion',
-              child: Wrap(spacing: 10, runSpacing: 10, children: [
-                SizedBox(
-                  width: 260,
-                  child: DropdownButtonFormField<String>(
-                    key: ValueKey('sender-$senderId-${senders.length}'),
-                    initialValue: senderId.isEmpty ? null : senderId,
-                    decoration: const InputDecoration(
-                        labelText: 'WhatsApp sender number'),
-                    items: senders
-                        .map((sender) => DropdownMenuItem(
-                              value: '${sender['_id']}',
-                              child: Text(
-                                  '${sender['name']} · ${sender['displayNumber']}'),
-                            ))
-                        .toList(),
-                    onChanged: (value) =>
-                        setState(() => senderId = value ?? ''),
-                  ),
-                ),
-                if (senderId.isNotEmpty)
-                  OutlinedButton.icon(
-                    onPressed: () => openQrConnect(senderId),
-                    icon: Icon(
-                      selectedSender?['connectionStatus'] == 'connected'
-                          ? Icons.link_rounded
-                          : Icons.qr_code_2_rounded,
-                      color: selectedSender?['connectionStatus'] == 'connected'
-                          ? green
-                          : blue,
+              title: '1. WhatsApp Sender व Anti-Ban सेटिंग्स',
+              action: senderId.isEmpty
+                  ? null
+                  : Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: selectedSender?['connectionStatus'] == 'connected' ? Colors.green.shade50 : Colors.amber.shade50,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(
+                            selectedSender?['connectionStatus'] == 'connected' ? Icons.check_circle_rounded : Icons.warning_amber_rounded,
+                            size: 14,
+                            color: selectedSender?['connectionStatus'] == 'connected' ? green : orange,
+                          ),
+                          const SizedBox(width: 4),
+                          Text(
+                            selectedSender?['connectionStatus'] == 'connected' ? 'Connected' : 'QR Scan जरूरी',
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.bold,
+                              color: selectedSender?['connectionStatus'] == 'connected' ? green : orange,
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
-                    label: Text(
-                      selectedSender?['connectionStatus'] == 'connected'
-                          ? 'Connected'
-                          : 'QR Connect',
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Wrap(spacing: 10, runSpacing: 10, children: [
+                    SizedBox(
+                      width: 260,
+                      child: DropdownButtonFormField<String>(
+                        key: ValueKey('sender-$senderId-${senders.length}'),
+                        initialValue: senderId.isEmpty ? null : senderId,
+                        decoration: const InputDecoration(labelText: 'WhatsApp Sender नंबर'),
+                        items: senders
+                            .map((sender) => DropdownMenuItem(
+                                  value: '${sender['_id']}',
+                                  child: Text('${sender['name']} · ${sender['displayNumber']}'),
+                                ))
+                            .toList(),
+                        onChanged: (value) => setState(() => senderId = value ?? ''),
+                      ),
                     ),
+                    if (senderId.isNotEmpty)
+                      FilledButton.tonalIcon(
+                        onPressed: () => openQrConnect(senderId),
+                        icon: Icon(
+                          selectedSender?['connectionStatus'] == 'connected' ? Icons.qr_code_rounded : Icons.qr_code_2_rounded,
+                          color: green,
+                        ),
+                        label: Text(selectedSender?['connectionStatus'] == 'connected' ? 'QR Reconnect' : 'QR Scan करें'),
+                      ),
+                    if (senderId.isNotEmpty)
+                      IconButton(
+                        tooltip: 'Sender हटाएं',
+                        icon: const Icon(Icons.delete_outline_rounded, color: rose),
+                        onPressed: () => deleteSender(senderId),
+                      ),
+                  ]),
+                  const Divider(height: 24),
+                  Row(
+                    children: [
+                      const Icon(Icons.timer_outlined, size: 18, color: blue),
+                      const SizedBox(width: 6),
+                      Text('मैसेज टाइमर गैप (Anti-Ban): $messageDelaySeconds सेकंड', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                    ],
                   ),
-                if (senderId.isNotEmpty)
-                  OutlinedButton.icon(
-                    style: OutlinedButton.styleFrom(foregroundColor: rose),
-                    onPressed: () => deleteSender(senderId),
-                    icon: const Icon(Icons.delete_outline_rounded),
-                    label: const Text('Delete sender'),
+                  Slider(
+                    value: messageDelaySeconds.toDouble(),
+                    min: 3,
+                    max: 20,
+                    divisions: 17,
+                    activeColor: green,
+                    label: '$messageDelaySeconds सेकंड',
+                    onChanged: (v) => setState(() => messageDelaySeconds = v.round()),
                   ),
-                SizedBox(
-                  width: 210,
-                  child: DropdownButtonFormField<String>(
-                    initialValue: eventType,
-                    decoration:
-                        const InputDecoration(labelText: 'Campaign type'),
-                    items: typeLabels.entries
-                        .map((entry) => DropdownMenuItem(
-                              value: entry.key,
-                              child: Text(entry.value),
-                            ))
-                        .toList(),
-                    onChanged: (value) => setState(() {
-                      eventType = value ?? 'general';
-                      message.text = defaultDrafts[eventType] ?? '';
-                      title.text = typeLabels[eventType] ?? 'WhatsApp Campaign';
-                      preview = null;
-                    }),
-                  ),
-                ),
-                if (eventType == 'event' || eventType == 'meeting')
-                  SizedBox(
-                      width: 230,
-                      child: TextField(
-                        controller: eventName,
-                        decoration: const InputDecoration(
-                            labelText: 'कार्यक्रम / बैठक नाम'),
-                      )),
-                if (eventType == 'birthday' ||
-                    eventType == 'anniversary' ||
-                    eventType == 'event' ||
-                    eventType == 'meeting')
-                  _DateButton(
-                    label: eventType == 'birthday' || eventType == 'anniversary'
-                        ? 'Occasion date'
-                        : 'कार्यक्रम दिनांक',
-                    value: DateFormat('dd MMM yyyy').format(occasionDate),
-                    onTap: () => selectDate(schedule: false),
-                  ),
-              ]),
+                  const Text('व्हाट्सएप ब्लॉक/बैन से बचने के लिए हर मैसेज के बीच 5-10 सेकंड का गैप रखें।', style: TextStyle(fontSize: 11, color: muted)),
+                ],
+              ),
             ),
+
+            // STEP 2: RECIPIENTS & FILTERS
             SectionCard(
-              title: '2. Recipients चुनें',
+              title: '2. Recipients (मतदाता / संपर्क) चुनें',
               action: preview == null
                   ? null
                   : Chip(
-                      avatar: const Icon(Icons.groups_rounded,
-                          color: green, size: 18),
-                      label: Text('${preview?['eligible'] ?? 0} eligible'),
+                      avatar: const Icon(Icons.groups_rounded, color: green, size: 18),
+                      label: Text('${preview?['eligible'] ?? 0} मतदाता'),
                     ),
               child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  SegmentedButton<String>(
+                    segments: const [
+                      ButtonSegment(value: 'db', label: Text('डेटाबेस वोटर फ़िल्टर'), icon: Icon(Icons.how_to_vote_rounded)),
+                      ButtonSegment(value: 'custom', label: Text('कस्टम नंबर दर्ज करें'), icon: Icon(Icons.edit_note_rounded)),
+                      ButtonSegment(value: 'direct', label: Text('ग्रुप/स्टेटस शेयर'), icon: Icon(Icons.share_rounded)),
+                    ],
+                    selected: {recipientMode},
+                    onSelectionChanged: (val) => setState(() {
+                      recipientMode = val.first;
+                      preview = null;
+                    }),
+                  ),
+                  const SizedBox(height: 14),
+
+                  if (recipientMode == 'db') ...[
                     Wrap(spacing: 9, runSpacing: 9, children: [
-                      _FilterPicker(
-                          'विधानसभा',
-                          Icons.account_balance_rounded,
-                          selectedLabels['assembly'],
-                          () => selectFilter('assembly', 'विधानसभा'),
-                          () => setState(() {
-                                selectedFilters.remove('assembly');
-                                selectedLabels.remove('assembly');
+                      _FilterPicker('जाति फ़िल्टर', Icons.groups_2_rounded, selectedLabels['caste'],
+                          () => selectFilter('caste', 'जाति'), () => setState(() {
+                                selectedFilters.remove('caste');
+                                selectedLabels.remove('caste');
                                 preview = null;
                               })),
-                      _FilterPicker(
-                          'गाँव',
-                          Icons.location_city_rounded,
-                          selectedLabels['village'],
-                          () => selectFilter('village', 'गाँव'),
-                          () => setState(() {
+                      _FilterPicker('गाँव / पंचायत', Icons.location_city_rounded, selectedLabels['village'],
+                          () => selectFilter('village', 'गाँव / पंचायत'), () => setState(() {
                                 selectedFilters.remove('village');
                                 selectedLabels.remove('village');
                                 preview = null;
                               })),
-                      _FilterPicker(
-                          'ग्राम पंचायत',
-                          Icons.holiday_village_rounded,
-                          selectedLabels['gramPanchayat'],
-                          () => selectFilter('gramPanchayat', 'ग्राम पंचायत'),
-                          () => setState(() {
-                                selectedFilters.remove('gramPanchayat');
-                                selectedLabels.remove('gramPanchayat');
+                      _FilterPicker('भाग / बूथ', Icons.how_to_vote_rounded, selectedLabels['booth'],
+                          () => selectFilter('booth', 'भाग / बूथ'), () => setState(() {
+                                selectedFilters.remove('booth');
+                                selectedLabels.remove('booth');
                                 preview = null;
                               })),
-                      _FilterPicker(
-                          'तहसील',
-                          Icons.apartment_rounded,
-                          selectedLabels['tehsil'],
-                          () => selectFilter('tehsil', 'तहसील'),
-                          () => setState(() {
-                                selectedFilters.remove('tehsil');
-                                selectedLabels.remove('tehsil');
+                      _FilterPicker('विधानसभा', Icons.account_balance_rounded, selectedLabels['assembly'],
+                          () => selectFilter('assembly', 'विधानसभा'), () => setState(() {
+                                selectedFilters.remove('assembly');
+                                selectedLabels.remove('assembly');
                                 preview = null;
                               })),
                     ]),
-                    const SizedBox(height: 12),
-                    FilledButton.tonalIcon(
-                        onPressed: loadPreview,
-                        icon: const Icon(Icons.preview_rounded),
-                        label: const Text('Recipients preview करें')),
-                    if (preview != null) ...[
+                    const SizedBox(height: 10),
+                    Row(
+                      children: [
+                        FilledButton.tonalIcon(
+                          onPressed: loadPreview,
+                          icon: const Icon(Icons.search_rounded, size: 18),
+                          label: const Text('मतदाता प्रीव्यू लोड करें'),
+                        ),
+                        if (selectedLabels.isNotEmpty) ...[
+                          const SizedBox(width: 8),
+                          TextButton(
+                            onPressed: () => setState(() {
+                              selectedFilters.clear();
+                              selectedLabels.clear();
+                              preview = null;
+                              previewVoters.clear();
+                            }),
+                            child: const Text('सभी फ़िल्टर साफ़ करें'),
+                          ),
+                        ],
+                      ],
+                    ),
+                    if (previewVoters.isNotEmpty) ...[
                       const SizedBox(height: 12),
-                      Wrap(spacing: 10, runSpacing: 10, children: [
-                        _CountBox(
-                            'Matched', _number(preview?['matched']), blue),
-                        _CountBox('Opt-in eligible',
-                            _number(preview?['eligible']), green),
-                        _CountBox('Mobile missing',
-                            _number(preview?['missingMobile']), orange),
-                        _CountBox(
-                            'Opt-out', _number(preview?['optedOut']), rose),
-                      ]),
+                      Row(
+                        children: [
+                          Text('लोड हुए मतदाता: ${previewVoters.length}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+                          const Spacer(),
+                          TextButton(
+                            onPressed: () {
+                              setState(() {
+                                if (selectedVoterIds.length == previewVoters.length) {
+                                  selectedVoterIds.clear();
+                                } else {
+                                  selectedVoterIds.clear();
+                                  for (final v in previewVoters) {
+                                    final id = (v['_id'] ?? '').toString();
+                                    if (id.isNotEmpty) selectedVoterIds.add(id);
+                                  }
+                                }
+                              });
+                            },
+                            child: Text(selectedVoterIds.length == previewVoters.length ? 'सब हटाएं' : 'सभी चुनें (${selectedVoterIds.length})'),
+                          ),
+                        ],
+                      ),
+                      Container(
+                        height: 180,
+                        decoration: BoxDecoration(
+                          border: Border.all(color: Colors.grey.shade300),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: ListView.builder(
+                          itemCount: previewVoters.length,
+                          itemBuilder: (ctx, i) {
+                            final v = previewVoters[i];
+                            final id = (v['_id'] ?? '').toString();
+                            final name = (v['name'] ?? '').toString();
+                            final mob = (v['mobile'] ?? '').toString();
+                            final vil = (v['village'] ?? '').toString();
+                            final isSel = selectedVoterIds.contains(id);
+
+                            return CheckboxListTile(
+                              dense: true,
+                              value: isSel,
+                              title: Text(name, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                              subtitle: Text('$vil · ${mob.isNotEmpty ? mob : "मोबाइल नहीं"}', style: const TextStyle(fontSize: 11, color: muted)),
+                              onChanged: (val) {
+                                setState(() {
+                                  if (val == true) {
+                                    selectedVoterIds.add(id);
+                                  } else {
+                                    selectedVoterIds.remove(id);
+                                  }
+                                });
+                              },
+                            );
+                          },
+                        ),
+                      ),
                     ],
-                  ]),
+                  ] else if (recipientMode == 'custom') ...[
+                    TextField(
+                      controller: customPhones,
+                      maxLines: 4,
+                      decoration: const InputDecoration(
+                        labelText: 'मोबाइल नंबर दर्ज करें (एक से अधिक नंबर कॉमा या नई लाइन में लिखें)',
+                        hintText: '9876543210, 9876543211\n9876543212',
+                        border: OutlineInputBorder(),
+                      ),
+                    ),
+                  ] else ...[
+                    const Text(
+                      'ग्रुप / स्टेटस शेयर मोड: आपका संदेश और पोस्टर आपके फ़ोन के WhatsApp में शेयर किया जाएगा, जिससे आप किसी भी ग्रुप या स्टेटस पर पोस्ट कर सकते हैं।',
+                      style: TextStyle(fontSize: 13, color: muted),
+                    ),
+                  ],
+                ],
+              ),
             ),
-            FutureBuilder<List<dynamic>>(
-              future: api.list('/api/messages/templates'),
-              builder: (context, templateSnapshot) {
-                final templates = List<Map<String, dynamic>>.from(
-                  (templateSnapshot.data ?? [])
-                      .map((item) => Map<String, dynamic>.from(item)),
-                );
-                return SectionCard(
-                  title: '3. Message draft',
-                  child: Column(
+
+            // STEP 3: MESSAGE & POSTER / PHOTO
+            SectionCard(
+              title: '3. संदेश व फोटो / पोस्टर कंपोज़र',
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      if (pickedImagePath == null)
+                        FilledButton.tonalIcon(
+                          onPressed: pickImage,
+                          icon: const Icon(Icons.add_photo_alternate_rounded, size: 18),
+                          label: const Text('फोटो / पोस्टर जोड़ें'),
+                        )
+                      else ...[
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(8),
+                          child: Image.file(File(pickedImagePath!), width: 44, height: 44, fit: BoxFit.cover),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(pickedImageName ?? 'poster.jpg', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold), overflow: TextOverflow.ellipsis),
+                              Row(
+                                children: [
+                                  Checkbox(
+                                    value: attachPhoto,
+                                    visualDensity: VisualDensity.compact,
+                                    onChanged: (v) => setState(() => attachPhoto = v ?? true),
+                                  ),
+                                  const Text('फोटो के साथ भेजें', style: TextStyle(fontSize: 11)),
+                                ],
+                              ),
+                            ],
+                          ),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.delete_outline_rounded, color: Colors.red),
+                          onPressed: removeImage,
+                        ),
+                      ],
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  Wrap(spacing: 8, runSpacing: 8, children: [
+                    SizedBox(
+                      width: 220,
+                      child: DropdownButtonFormField<String>(
+                        initialValue: eventType,
+                        decoration: const InputDecoration(labelText: 'टेम्पलेट प्रकार'),
+                        items: typeLabels.entries
+                            .map((e) => DropdownMenuItem(value: e.key, child: Text(e.value)))
+                            .toList(),
+                        onChanged: (val) {
+                          if (val != null) {
+                            setState(() {
+                              eventType = val;
+                              message.text = defaultDrafts[val] ?? '';
+                              title.text = typeLabels[val] ?? 'WhatsApp Campaign';
+                            });
+                          }
+                        },
+                      ),
+                    ),
+                    if (eventType == 'event' || eventType == 'meeting')
+                      SizedBox(
+                        width: 220,
+                        child: TextField(
+                          controller: eventName,
+                          decoration: const InputDecoration(labelText: 'कार्यक्रम / बैठक का नाम'),
+                        ),
+                      ),
+                  ]),
+                  const SizedBox(height: 10),
+                  TextField(
+                    controller: message,
+                    maxLines: 4,
+                    decoration: const InputDecoration(
+                      labelText: 'संदेश ड्राफ्ट (Message Draft)',
+                      hintText: 'यहाँ अपना संदेश लिखें...',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: Row(
+                      children: [
+                        const Text('टैग जोड़ें: ', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: muted)),
+                        _tagChip('+ नाम', '{{name}}'),
+                        _tagChip('+ गाँव', '{{village}}'),
+                        _tagChip('+ वार्ड/भाग', '{{ward}}'),
+                        _tagChip('+ पिता/पति', '{{guardian}}'),
+                        _tagChip('+ कार्यक्रम', '{{event}}'),
+                        _tagChip('+ दिनांक', '{{date}}'),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: Colors.grey.shade50,
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: Colors.grey.shade200),
+                    ),
+                    child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Wrap(
-                            spacing: 8,
-                            runSpacing: 8,
-                            children: templates
-                                .where((item) =>
-                                    eventType == 'general' ||
-                                    item['category'] == eventType)
-                                .map((item) => ActionChip(
-                                      avatar: const Icon(
-                                          Icons.auto_awesome_rounded,
-                                          size: 18),
-                                      label: Text('${item['title']}'),
-                                      onPressed: () => setState(() => message
-                                          .text = '${item['body'] ?? ''}'),
-                                    ))
-                                .toList()),
-                        const SizedBox(height: 12),
-                        TextField(
-                          controller: message,
-                          minLines: 5,
-                          maxLines: 9,
-                          decoration: const InputDecoration(
-                            labelText: 'Message draft',
-                            hintText: 'नमस्कार {{name}} जी...',
-                            helperText:
-                                'Variables: {{name}}, {{surname}}, {{village}}, {{event}}, {{date}}',
-                          ),
-                        ),
-                        const SizedBox(height: 10),
-                        TextField(
-                          controller: templateName,
-                          decoration: const InputDecoration(
-                            labelText:
-                                'Approved Meta template name (recommended)',
-                            helperText:
-                                '24-hour window के बाहर approved template आवश्यक हो सकता है।',
-                          ),
-                        ),
-                      ]),
-                );
-              },
+                        const Text('संदेश प्रीव्यू (Preview):', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: muted)),
+                        const SizedBox(height: 4),
+                        Text(renderVoterMessage(null), style: const TextStyle(fontSize: 12)),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
             ),
+
+            // STEP 4: DISPATCH ACTIONS
             SectionCard(
-              title: '4. Safe sending schedule',
-              child: Wrap(
-                  spacing: 10,
-                  runSpacing: 10,
-                  crossAxisAlignment: WrapCrossAlignment.center,
-                  children: [
-                    _NumberDropdown(
-                        'Batch size',
-                        batchSize,
-                        const [5, 10, 15, 20],
-                        (value) => setState(() => batchSize = value)),
-                    _NumberDropdown(
-                        'Batch interval',
-                        intervalSeconds,
-                        const [30, 60, 120, 300],
-                        (value) => setState(() => intervalSeconds = value),
-                        suffix: ' sec'),
-                    _NumberDropdown(
-                        'हर message के बीच',
-                        messageDelaySeconds,
-                        const [2, 3, 5, 10],
-                        (value) => setState(() => messageDelaySeconds = value),
-                        suffix: ' sec'),
-                    _NumberDropdown(
-                        'Daily limit',
-                        dailyLimit,
-                        const [50, 100, 200, 500],
-                        (value) => setState(() => dailyLimit = value)),
-                    _DateButton(
-                        label: 'Start time',
-                        value:
-                            DateFormat('dd MMM, hh:mm a').format(scheduledAt),
-                        onTap: () => selectDate(schedule: true)),
-                  ]),
+              title: '4. WhatsApp पर भेजें (Dispatch Options)',
+              child: Column(
+                children: [
+                  if (recipientMode == 'direct')
+                    SizedBox(
+                      width: double.infinity,
+                      child: FilledButton.icon(
+                        onPressed: directShareToWhatsApp,
+                        icon: const Icon(Icons.share_rounded),
+                        label: const Text('WhatsApp ग्रुप / स्टेटस पर शेयर करें', style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
+                        style: FilledButton.styleFrom(
+                          backgroundColor: green,
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        ),
+                      ),
+                    )
+                  else ...[
+                    Row(
+                      children: [
+                        Expanded(
+                          child: FilledButton.icon(
+                            onPressed: queueCampaign,
+                            icon: const Icon(Icons.rocket_launch_rounded),
+                            label: const Text('🤖 ऑटो ब्रॉडकास्ट (Server)'),
+                            style: FilledButton.styleFrom(
+                              backgroundColor: green,
+                              padding: const EdgeInsets.symmetric(vertical: 14),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: FilledButton.tonalIcon(
+                            onPressed: startFastSendAssistant,
+                            icon: const Icon(Icons.bolt_rounded),
+                            label: const Text('⚡ फ़ास्ट असिस्टेंट (1-by-1)'),
+                            style: FilledButton.styleFrom(
+                              padding: const EdgeInsets.symmetric(vertical: 14),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    const Text('• ऑटो ब्रॉडकास्ट: बैकएंड सर्वर आपके जुड़े WhatsApp से हर 5 सेकंड में स्वतः भेजता रहेगा।\n• फ़ास्ट असिस्टेंट: फ़ोन के WhatsApp ऐप को 1-by-1 खोलकर तुरंत भेजने का तरीका।', style: TextStyle(fontSize: 11, color: muted)),
+                  ],
+                ],
+              ),
             ),
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                  color: const Color(0xffeaf8f0),
-                  border: Border.all(color: const Color(0xffbde8cd)),
-                  borderRadius: BorderRadius.circular(14)),
-              child: Row(children: [
-                const Icon(Icons.verified_user_rounded, color: green, size: 30),
-                const SizedBox(width: 12),
-                Expanded(
-                    child: Text(
-                  '${preview?['eligible'] ?? 0} recipients · $batchSize per batch · message gap $messageDelaySeconds sec · batch gap $intervalSeconds sec',
-                  style:
-                      const TextStyle(color: navy, fontWeight: FontWeight.w900),
-                )),
-                FilledButton.icon(
-                    onPressed: sending ? null : queueCampaign,
-                    icon: sending
-                        ? const SizedBox(
-                            width: 18,
-                            height: 18,
-                            child: CircularProgressIndicator(
-                                strokeWidth: 2, color: Colors.white))
-                        : const Icon(Icons.schedule_send_rounded),
-                    label: const Text('Campaign queue करें')),
-              ]),
-            ),
-            _CampaignHistory(
-                refreshKey: refreshKey,
-                onChanged: () => setState(() => refreshKey++)),
           ]);
         },
       );
+
+  Widget _tagChip(String label, String tag) {
+    return Padding(
+      padding: const EdgeInsets.only(right: 6),
+      child: ActionChip(
+        label: Text(label, style: const TextStyle(fontSize: 11, color: blue, fontWeight: FontWeight.bold)),
+        backgroundColor: Colors.blue.shade50,
+        padding: EdgeInsets.zero,
+        onPressed: () {
+          final text = message.text;
+          final sel = message.selection;
+          if (sel.isValid && sel.start >= 0) {
+            final newText = text.replaceRange(sel.start, sel.end, tag);
+            message.value = TextEditingValue(
+              text: newText,
+              selection: TextSelection.collapsed(offset: sel.start + tag.length),
+            );
+          } else {
+            message.text += ' $tag';
+          }
+        },
+      ),
+    );
+  }
+}
+
+class _FastSendSheet extends StatefulWidget {
+  const _FastSendSheet({
+    required this.voters,
+    required this.imagePath,
+    required this.renderMessage,
+  });
+
+  final List<Map<String, dynamic>> voters;
+  final String? imagePath;
+  final String Function(Map<String, dynamic> voter) renderMessage;
+
+  @override
+  State<_FastSendSheet> createState() => _FastSendSheetState();
+}
+
+class _FastSendSheetState extends State<_FastSendSheet> {
+  int _currentIndex = 0;
+  final Set<int> _sentIndices = {};
+
+  Future<void> _sendCurrentAndNext() async {
+    if (_currentIndex >= widget.voters.length) return;
+    final voter = widget.voters[_currentIndex];
+    final mobile = (voter['mobile'] ?? '').toString().replaceAll(RegExp(r'\D'), '');
+    final msg = widget.renderMessage(voter);
+
+    _sentIndices.add(_currentIndex);
+
+    if (widget.imagePath != null && File(widget.imagePath!).existsSync()) {
+      try {
+        await SharePlus.instance.share(
+          ShareParams(text: msg, files: [XFile(widget.imagePath!)]),
+        );
+      } catch (_) {}
+    } else {
+      if (mounted) {
+        await openWhatsApp(context, mobile, message: msg);
+      }
+    }
+
+    if (mounted) {
+      if (_currentIndex + 1 < widget.voters.length) {
+        setState(() => _currentIndex++);
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('🎉 सभी चुने हुए संपर्कों को संदेश भेजा जा चुका है!')),
+        );
+        Navigator.pop(context);
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final voter = widget.voters[_currentIndex];
+    final name = (voter['name'] ?? voter['fullName'] ?? '').toString().trim();
+    final mobile = (voter['mobile'] ?? '').toString().trim();
+    final msg = widget.renderMessage(voter);
+
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      child: SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Icon(Icons.bolt_rounded, color: green, size: 28),
+                const SizedBox(width: 8),
+                const Text('फास्ट WhatsApp असिस्टेंट', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                const Spacer(),
+                IconButton(icon: const Icon(Icons.close), onPressed: () => Navigator.pop(context)),
+              ],
+            ),
+            const SizedBox(height: 8),
+            LinearProgressIndicator(
+              value: (_currentIndex + 1) / widget.voters.length,
+              backgroundColor: Colors.grey.shade200,
+              color: green,
+              minHeight: 6,
+              borderRadius: BorderRadius.circular(3),
+            ),
+            const SizedBox(height: 6),
+            Text('प्रगति: ${_currentIndex + 1} / ${widget.voters.length} (भेजे गए: ${_sentIndices.length})',
+                style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: muted)),
+            const SizedBox(height: 14),
+            Container(
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: Colors.grey.shade50,
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: Colors.grey.shade300),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      CircleAvatar(
+                        backgroundColor: blue.withValues(alpha: 0.1),
+                        child: Text('${_currentIndex + 1}', style: const TextStyle(fontWeight: FontWeight.bold, color: blue)),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Text(name, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                      ),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        decoration: BoxDecoration(color: Colors.green.shade50, borderRadius: BorderRadius.circular(8)),
+                        child: Text(mobile, style: const TextStyle(fontWeight: FontWeight.bold, color: green)),
+                      ),
+                    ],
+                  ),
+                  const Divider(height: 18),
+                  Text(msg, style: const TextStyle(fontSize: 13), maxLines: 3, overflow: TextOverflow.ellipsis),
+                ],
+              ),
+            ),
+            const SizedBox(height: 16),
+            Row(
+              children: [
+                if (_currentIndex > 0)
+                  OutlinedButton(onPressed: () => setState(() => _currentIndex--), child: const Text('पिछला')),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: FilledButton.icon(
+                    onPressed: _sendCurrentAndNext,
+                    icon: const Icon(Icons.send_rounded),
+                    label: const Text('WhatsApp पर भेजें और अगला', style: TextStyle(fontWeight: FontWeight.bold)),
+                    style: FilledButton.styleFrom(
+                      backgroundColor: green,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                if (_currentIndex + 1 < widget.voters.length)
+                  TextButton(onPressed: () => setState(() => _currentIndex++), child: const Text('छोड़ें')),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _FilterPicker extends StatelessWidget {
+  const _FilterPicker(
+      this.title, this.icon, this.value, this.onTap, this.onClear);
+  final String title;
+  final IconData icon;
+  final String? value;
+  final VoidCallback onTap;
+  final VoidCallback onClear;
+
+  @override
+  Widget build(BuildContext context) {
+    final selected = value != null && value!.isNotEmpty;
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(14),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+        decoration: BoxDecoration(
+          color: selected ? softBlue : Colors.white,
+          border: Border.all(color: selected ? blue : border),
+          borderRadius: BorderRadius.circular(14),
+        ),
+        child: Row(mainAxisSize: MainAxisSize.min, children: [
+          Icon(icon, size: 16, color: selected ? blue : muted),
+          const SizedBox(width: 6),
+          Text(selected ? value! : title,
+              style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                  color: selected ? blue : navy)),
+          if (selected) ...[
+            const SizedBox(width: 4),
+            GestureDetector(
+                onTap: onClear,
+                child: const Icon(Icons.close_rounded, size: 14, color: blue)),
+          ],
+        ]),
+      ),
+    );
+  }
 }
 
 class _QrConnectDialog extends StatefulWidget {
@@ -672,222 +1155,100 @@ class _QrConnectDialog extends StatefulWidget {
 }
 
 class _QrConnectDialogState extends State<_QrConnectDialog> {
-  Timer? timer;
-  Map<String, dynamic> status = const {};
-  bool loading = true;
+  Timer? pollTimer;
+  Map<String, dynamic>? qrData;
+  Map<String, dynamic>? statusData;
 
   @override
   void initState() {
     super.initState();
-    load();
-    timer = Timer.periodic(const Duration(seconds: 2), (_) => load());
-  }
-
-  Future<void> load() async {
-    try {
-      final result =
-          await api.get('/api/messages/senders/${widget.senderId}/status');
-      if (!mounted) return;
-      setState(() {
-        status = result;
-        loading = false;
-      });
-      if (result['connectionStatus'] == 'connected') timer?.cancel();
-    } catch (_) {
-      if (mounted) setState(() => loading = false);
-    }
+    loadQr();
+    pollTimer = Timer.periodic(const Duration(seconds: 3), (_) => checkStatus());
   }
 
   @override
   void dispose() {
-    timer?.cancel();
+    pollTimer?.cancel();
     super.dispose();
+  }
+
+  Future<void> loadQr() async {
+    try {
+      final res = await api.get('/api/messages/senders/${widget.senderId}/qr');
+      if (mounted) setState(() => qrData = res);
+    } catch (_) {}
+  }
+
+  Future<void> checkStatus() async {
+    try {
+      final res = await api.get('/api/messages/senders/${widget.senderId}/status');
+      if (!mounted) return;
+      setState(() => statusData = res);
+      if (res['connectionStatus'] == 'connected') {
+        pollTimer?.cancel();
+        Navigator.pop(context);
+      }
+    } catch (_) {}
   }
 
   @override
   Widget build(BuildContext context) {
-    final state = '${status['connectionStatus'] ?? 'starting'}';
-    final connected = state == 'connected';
-    final qr = '${status['qrCode'] ?? ''}';
+    final qrString = qrData?['qr'] ?? '';
     return AlertDialog(
-      title: Row(children: [
-        Icon(connected ? Icons.check_circle_rounded : Icons.qr_code_2_rounded,
-            color: connected ? green : blue),
-        const SizedBox(width: 9),
-        Expanded(
-            child: Text(connected ? 'WhatsApp Connected' : 'QR Scan करें')),
-      ]),
+      title: const Text('WhatsApp QR Scan करें'),
       content: SizedBox(
-        width: 430,
-        child: Column(mainAxisSize: MainAxisSize.min, children: [
-          if (loading || state == 'starting' || state == 'authenticated') ...[
-            const Padding(
+        width: 320,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (qrString.isNotEmpty)
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: Colors.grey.shade300),
+                ),
+                child: Image.memory(
+                  base64Decode(qrString.split(',').last),
+                  width: 220,
+                  height: 220,
+                  fit: BoxFit.contain,
+                ),
+              )
+            else
+              const Padding(
                 padding: EdgeInsets.all(32),
-                child: CircularProgressIndicator()),
-            Text(state == 'authenticated'
-                ? 'Login हो गया, WhatsApp तैयार हो रहा है…'
-                : 'QR तैयार हो रहा है…'),
-          ] else if (qr.startsWith('data:image')) ...[
-            Container(
-              width: 320,
-              height: 320,
-              padding: const EdgeInsets.all(10),
-              color: Colors.white,
-              child: Image.memory(base64Decode(qr.split(',').last)),
-            ),
+                child: CircularProgressIndicator(),
+              ),
             const SizedBox(height: 12),
             const Text(
-              'Phone में WhatsApp → Linked devices → Link a device खोलें और QR scan करें।',
+              'फ़ोन में WhatsApp खोलें → Settings / 3-dots → Linked Devices → Link a Device पर जाकर यह QR कोड स्कैन करें।',
               textAlign: TextAlign.center,
-              style: TextStyle(color: muted, height: 1.4),
-            ),
-          ] else if (connected) ...[
-            const Icon(Icons.mark_chat_read_rounded, color: green, size: 72),
-            const SizedBox(height: 12),
-            Text(
-                '${status['connectedNumber'] ?? status['displayNumber'] ?? ''}',
-                style: const TextStyle(
-                    color: navy, fontSize: 18, fontWeight: FontWeight.w900)),
-            const Text('यह number campaign sending के लिए तैयार है।',
-                style: TextStyle(color: muted)),
-          ] else ...[
-            const Icon(Icons.error_outline_rounded, color: rose, size: 58),
-            const SizedBox(height: 10),
-            Text('${status['lastError'] ?? 'QR session शुरू नहीं हो सकी।'}',
-                textAlign: TextAlign.center),
-            const SizedBox(height: 12),
-            FilledButton.tonalIcon(
-              onPressed: () async {
-                setState(() => loading = true);
-                try {
-                  await api.post(
-                      '/api/messages/senders/${widget.senderId}/connect', {});
-                } catch (error) {
-                  if (mounted) {
-                    setState(() {
-                      status = {
-                        ...status,
-                        'lastError':
-                            error.toString().replaceFirst('Exception: ', ''),
-                        'connectionStatus': 'failed'
-                      };
-                    });
-                  }
-                }
-                await load();
-              },
-              icon: const Icon(Icons.refresh_rounded),
-              label: const Text('फिर कोशिश करें'),
+              style: TextStyle(fontSize: 12, color: muted),
             ),
           ],
-        ]),
+        ),
       ),
       actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context),
-          child: Text(connected ? 'पूरा हुआ' : 'बंद करें'),
-        ),
+        TextButton(onPressed: () => Navigator.pop(context), child: const Text('बंद करें')),
       ],
     );
   }
 }
 
-class _SafetyBanner extends StatelessWidget {
-  @override
-  Widget build(BuildContext context) => Container(
-        padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(
-            color: const Color(0xfffff8e8),
-            border: Border.all(color: const Color(0xffffdf91)),
-            borderRadius: BorderRadius.circular(12)),
-        child:
-            const Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Icon(Icons.shield_outlined, color: orange),
-          SizedBox(width: 10),
-          Expanded(
-              child: Text(
-            'केवल WhatsApp opt-in contacts चुने जाते हैं। Queue controlled batches, daily limit और रात 8 से सुबह 8 quiet hours लागू करती है। इससे risk कम होता है, लेकिन WhatsApp block की guarantee नहीं दी जा सकती—official Business API और approved templates उपयोग करें।',
-            style: TextStyle(color: navy, height: 1.4),
-          )),
-        ]),
-      );
-}
-
-class _CampaignHistory extends StatelessWidget {
-  const _CampaignHistory({required this.refreshKey, required this.onChanged});
-  final int refreshKey;
-  final VoidCallback onChanged;
-
-  @override
-  Widget build(BuildContext context) => FutureBlock<List<dynamic>>(
-        key: ValueKey('history-$refreshKey'),
-        load: () => api.list('/api/messages/history'),
-        builder: (items) => SectionCard(
-          title: 'Campaign history',
-          child: items.isEmpty
-              ? const Text('अभी कोई campaign नहीं है।')
-              : Column(
-                  children: items.take(20).map((raw) {
-                  final item = Map<String, dynamic>.from(raw);
-                  final status = '${item['status'] ?? 'scheduled'}';
-                  return ListTile(
-                    contentPadding: EdgeInsets.zero,
-                    leading: CircleAvatar(
-                      backgroundColor:
-                          _statusColor(status).withValues(alpha: .1),
-                      child: Icon(Icons.campaign_rounded,
-                          color: _statusColor(status)),
-                    ),
-                    title: Text('${item['title'] ?? 'WhatsApp Campaign'}',
-                        style: const TextStyle(fontWeight: FontWeight.w800)),
-                    subtitle: Text(
-                        '${item['sender']?['displayNumber'] ?? '-'} · ${item['sentCount'] ?? 0}/${item['totalEligible'] ?? 0} sent · ${item['failedCount'] ?? 0} failed'),
-                    trailing: Wrap(
-                        spacing: 4,
-                        crossAxisAlignment: WrapCrossAlignment.center,
-                        children: [
-                          Chip(label: Text(status)),
-                          if (status == 'scheduled' || status == 'running')
-                            IconButton(
-                                tooltip: 'Pause',
-                                onPressed: () => _control(
-                                    context, '${item['_id']}', 'pause'),
-                                icon: const Icon(Icons.pause_circle_outline)),
-                          if (status == 'paused')
-                            IconButton(
-                                tooltip: 'Resume',
-                                onPressed: () => _control(
-                                    context, '${item['_id']}', 'resume'),
-                                icon: const Icon(Icons.play_circle_outline,
-                                    color: green)),
-                        ]),
-                  );
-                }).toList()),
-        ),
-      );
-
-  Future<void> _control(BuildContext context, String id, String action) async {
-    await api.post('/api/messages/campaigns/$id/control', {'action': action});
-    onChanged();
-  }
-
-  Color _statusColor(String status) => switch (status) {
-        'completed' => green,
-        'failed' => rose,
-        'paused' => orange,
-        _ => blue,
-      };
-}
-
 class _MessageFilterOption {
-  const _MessageFilterOption(this.label, this.filters);
+  const _MessageFilterOption({required this.label, required this.filters});
   final String label;
   final Map<String, String> filters;
 }
 
 class _MessageFilterDialog extends StatefulWidget {
-  const _MessageFilterDialog(
-      {required this.field, required this.title, required this.currentFilters});
+  const _MessageFilterDialog({
+    required this.field,
+    required this.title,
+    required this.currentFilters,
+  });
   final String field;
   final String title;
   final Map<String, String> currentFilters;
@@ -898,178 +1259,86 @@ class _MessageFilterDialog extends StatefulWidget {
 
 class _MessageFilterDialogState extends State<_MessageFilterDialog> {
   final search = TextEditingController();
+  List<Map<String, dynamic>> options = [];
+  bool loading = true;
+
   @override
-  void dispose() {
-    search.dispose();
-    super.dispose();
+  void initState() {
+    super.initState();
+    loadOptions();
+  }
+
+  Future<void> loadOptions() async {
+    try {
+      final res = await api.get('/api/members/field-values?field=${widget.field}&limit=200');
+      if (res is Map && res['items'] is List) {
+        options = (res['items'] as List).whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList();
+      }
+    } catch (_) {}
+    if (mounted) setState(() => loading = false);
   }
 
   @override
-  Widget build(BuildContext context) => AlertDialog(
-        title: Text('${widget.title} चुनें'),
-        content: SizedBox(
-            width: 500,
-            height: 520,
-            child: Column(children: [
-              TextField(
-                  controller: search,
-                  autofocus: true,
-                  onChanged: (_) => setState(() {}),
-                  decoration: InputDecoration(
-                      prefixIcon: const Icon(Icons.search),
-                      hintText: '${widget.title} खोजें...')),
-              const SizedBox(height: 10),
-              Expanded(
-                  child: FutureBuilder<Map<String, dynamic>>(
-                future: api.getQuery('/api/members/filter-options', {
-                  ...widget.currentFilters,
-                  'field': widget.field,
-                  'q': search.text.trim(),
-                  'limit': '100'
-                }),
-                builder: (_, snapshot) {
-                  if (snapshot.connectionState != ConnectionState.done) {
-                    return const Center(child: CircularProgressIndicator());
-                  }
-                  final items = List<Map<String, dynamic>>.from(
-                      (snapshot.data?['items'] as List? ?? [])
-                          .map((e) => Map<String, dynamic>.from(e)));
-                  if (items.isEmpty) {
-                    return const Center(child: Text('कोई option नहीं मिला।'));
-                  }
-                  return ListView.separated(
-                      itemCount: items.length,
-                      separatorBuilder: (_, __) => const Divider(height: 1),
-                      itemBuilder: (_, index) {
-                        final item = items[index];
+  Widget build(BuildContext context) {
+    final q = search.text.toLowerCase();
+    final filtered = options.where((o) => '${o['label'] ?? o['value']}'.toLowerCase().contains(q)).toList();
+
+    return AlertDialog(
+      title: Text(widget.title),
+      content: SizedBox(
+        width: 360,
+        height: 420,
+        child: Column(
+          children: [
+            TextField(
+              controller: search,
+              onChanged: (_) => setState(() {}),
+              decoration: const InputDecoration(
+                hintText: 'सर्च करें...',
+                prefixIcon: Icon(Icons.search),
+                isDense: true,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Expanded(
+              child: loading
+                  ? const Center(child: CircularProgressIndicator())
+                  : ListView.builder(
+                      itemCount: filtered.length,
+                      itemBuilder: (ctx, i) {
+                        final item = filtered[i];
+                        final val = '${item['value']}';
+                        final lab = '${item['label'] ?? item['value']}';
+                        final cnt = item['count'] ?? 0;
+
                         return ListTile(
-                          title: Text('${item['label']}'),
-                          subtitle: Text('${item['count']} मतदाता'),
-                          onTap: () => Navigator.pop(
+                          dense: true,
+                          title: Text(lab),
+                          trailing: Text('$cnt', style: const TextStyle(fontWeight: FontWeight.bold, color: blue)),
+                          onTap: () {
+                            Navigator.pop(
                               context,
                               _MessageFilterOption(
-                                  '${item['label']}',
-                                  Map<String, String>.from((item['filters']
-                                          as Map)
-                                      .map((k, v) => MapEntry('$k', '$v'))))),
+                                label: lab,
+                                filters: {widget.field: val},
+                              ),
+                            );
+                          },
                         );
-                      });
-                },
-              )),
-            ])),
-      );
-}
-
-class _FilterPicker extends StatelessWidget {
-  const _FilterPicker(
-      this.label, this.icon, this.value, this.onTap, this.onClear);
-  final String label;
-  final IconData icon;
-  final String? value;
-  final VoidCallback onTap;
-  final VoidCallback onClear;
-
-  @override
-  Widget build(BuildContext context) {
-    final selected = value != null;
-    return SizedBox(
-      width: 220,
-      child: Material(
-        color: selected ? const Color(0xffedf4ff) : Colors.white,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(10),
-          side: BorderSide(color: selected ? blue : border),
-        ),
-        child: InkWell(
-          onTap: onTap,
-          borderRadius: BorderRadius.circular(10),
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(12, 9, 5, 9),
-            child: Row(children: [
-              Icon(icon, color: selected ? blue : muted, size: 20),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(selected ? value! : '$label चुनें',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                        color: selected ? navy : muted,
-                        fontWeight: FontWeight.w700)),
-              ),
-              if (selected)
-                IconButton(
-                  tooltip: 'हटाएँ',
-                  visualDensity: VisualDensity.compact,
-                  onPressed: onClear,
-                  icon: const Icon(Icons.close_rounded, size: 18),
-                )
-              else
-                const Icon(Icons.arrow_drop_down_rounded, color: muted),
-            ]),
-          ),
+                      },
+                    ),
+            ),
+          ],
         ),
       ),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+      ],
     );
   }
 }
 
-class _DateButton extends StatelessWidget {
-  const _DateButton(
-      {required this.label, required this.value, required this.onTap});
-  final String label;
-  final String value;
-  final VoidCallback onTap;
-  @override
-  Widget build(BuildContext context) => SizedBox(
-      width: 220,
-      child: OutlinedButton.icon(
-          onPressed: onTap,
-          icon: const Icon(Icons.calendar_month_rounded),
-          label: Text('$label: $value')));
+int _number(dynamic val) {
+  if (val is num) return val.toInt();
+  return int.tryParse('$val') ?? 0;
 }
-
-class _NumberDropdown extends StatelessWidget {
-  const _NumberDropdown(this.label, this.value, this.items, this.onChanged,
-      {this.suffix = ''});
-  final String label;
-  final int value;
-  final List<int> items;
-  final ValueChanged<int> onChanged;
-  final String suffix;
-  @override
-  Widget build(BuildContext context) => SizedBox(
-      width: 170,
-      child: DropdownButtonFormField<int>(
-        initialValue: value,
-        decoration: InputDecoration(labelText: label),
-        items: items
-            .map((item) =>
-                DropdownMenuItem(value: item, child: Text('$item$suffix')))
-            .toList(),
-        onChanged: (value) => onChanged(value!),
-      ));
-}
-
-class _CountBox extends StatelessWidget {
-  const _CountBox(this.label, this.value, this.color);
-  final String label;
-  final int value;
-  final Color color;
-  @override
-  Widget build(BuildContext context) => Container(
-        width: 145,
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-            color: color.withValues(alpha: .07),
-            borderRadius: BorderRadius.circular(10)),
-        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text(label, style: const TextStyle(color: muted, fontSize: 11)),
-          Text('$value',
-              style: TextStyle(
-                  color: color, fontSize: 20, fontWeight: FontWeight.w900)),
-        ]),
-      );
-}
-
-int _number(dynamic value) =>
-    value is num ? value.toInt() : int.tryParse('$value') ?? 0;

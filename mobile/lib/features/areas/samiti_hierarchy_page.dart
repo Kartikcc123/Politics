@@ -368,9 +368,122 @@ class _SamitiHierarchyPageState extends State<SamitiHierarchyPage> {
     'सहाड़ा': {
       'icon': Icons.location_city_rounded,
       'color': Color(0xff059669),
-      'gpCount': 0,
-      'villageCount': 0,
-      'panchayats': {}
+      'gpCount': 22,
+      'villageCount': 85,
+      'panchayats': {
+        'पोटलां': {
+          'wards': 11,
+          'pop': 5459,
+          'villages': [
+            {'name': 'पोटलां', 'parts': '158, 159, 160, 161, 162, 163, 164', 'pop': 5459}
+          ]
+        },
+        'लाखोला': {
+          'wards': 9,
+          'pop': 3763,
+          'villages': [
+            {'name': 'लाखोला', 'parts': '165, 166, 167, 168, 169, 170, 171', 'pop': 3763}
+          ]
+        },
+        'सहाड़ा': {
+          'wards': 9,
+          'pop': 3576,
+          'villages': [
+            {'name': 'सहाड़ा', 'parts': '172, 173, 174, 175, 176, 177', 'pop': 3576}
+          ]
+        },
+        'खांखला': {
+          'wards': 9,
+          'pop': 2462,
+          'villages': [
+            {'name': 'खांखला', 'parts': '126, 127, 128, 129', 'pop': 2462}
+          ]
+        },
+        'अरनिया': {
+          'wards': 9,
+          'pop': 2420,
+          'villages': [
+            {'name': 'अरनिया', 'parts': '130, 131, 132, 133, 134', 'pop': 2420}
+          ]
+        },
+        'उल्लाई': {
+          'wards': 9,
+          'pop': 2279,
+          'villages': [
+            {'name': 'उल्लाई', 'parts': '135, 136, 137, 138', 'pop': 2279}
+          ]
+        },
+        'भूणास': {
+          'wards': 9,
+          'pop': 2263,
+          'villages': [
+            {'name': 'भूणास', 'parts': '195, 196, 197, 198, 199', 'pop': 2263}
+          ]
+        },
+        'महेन्द्र गढ़': {
+          'wards': 9,
+          'pop': 2113,
+          'villages': [
+            {'name': 'महेन्द्र गढ़', 'parts': '143, 144, 145, 146, 147', 'pop': 2113}
+          ]
+        },
+        'रायथलियास': {
+          'wards': 7,
+          'pop': 1435,
+          'villages': [
+            {'name': 'रायथलियास', 'parts': '148, 149, 150', 'pop': 1435}
+          ]
+        },
+        'गलोदिया': {
+          'wards': 9,
+          'pop': 1850,
+          'villages': [
+            {'name': 'गलोदिया', 'parts': '208, 209, 210, 211, 212', 'pop': 1850}
+          ]
+        },
+        'सांगवा': {
+          'wards': 9,
+          'pop': 1750,
+          'villages': [
+            {'name': 'सांगवा', 'parts': '205, 206, 207', 'pop': 1750}
+          ]
+        },
+        'समोडी': {
+          'wards': 9,
+          'pop': 1600,
+          'villages': [
+            {'name': 'समोडी', 'parts': '230, 231, 232', 'pop': 1600}
+          ]
+        },
+        'बांसड़ा': {
+          'wards': 7,
+          'pop': 1400,
+          'villages': [
+            {'name': 'बांसड़ा', 'parts': '223, 224, 225', 'pop': 1400}
+          ]
+        },
+        'सुन्दरपुरा': {
+          'wards': 7,
+          'pop': 1350,
+          'villages': [
+            {'name': 'सुन्दरपुरा', 'parts': '233, 234, 235', 'pop': 1350}
+          ]
+        },
+        'जवासिया': {
+          'wards': 7,
+          'pop': 1300,
+          'villages': [
+            {'name': 'जवासिया', 'parts': '242, 243, 244', 'pop': 1300}
+          ]
+        },
+        'दुदिया': {
+          'wards': 7,
+          'pop': 1250,
+          'villages': [
+            {'name': 'दुदिया', 'parts': '239, 240, 241', 'pop': 1250}
+          ]
+        },
+      }
     },
     'सुवाणा': {
       'icon': Icons.nature_people_rounded,
