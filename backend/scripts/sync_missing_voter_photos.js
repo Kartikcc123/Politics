@@ -53,8 +53,9 @@ async function syncMissingPhotos() {
   }
   console.log(`Indexed ${voterIdToAsset.size} unique voterId photo/card assets.`);
 
-  // Find all missing photo or cardImage members
+  // Find all missing photo or cardImage members (only Assembly voters have photos)
   const missingMembers = await Member.find({
+    hasAssemblyMembership: true,
     $or: [
       { photo: { $exists: false } }, { photo: '' }, { photo: null },
       { cardImage: { $exists: false } }, { cardImage: '' }, { cardImage: null }
