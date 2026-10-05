@@ -347,12 +347,53 @@ exports.printMembers = async (req, res, next) => {
     const filter = applyMemberScope(req.currentUser, {});
     applyPrintFilters(req, filter);
     const limit = Math.min(Math.max(Number(req.query.limit) || 10000, 1), 10000);
+    const isWardPrint = Boolean(
+      req.query.wardNumber ||
+      req.query.scope === 'specific_ward' ||
+      req.query.electoralListType === 'municipal' ||
+      req.query.sortBy === 'wardVoterSerial'
+    );
+
     const members = await Member.find(filter)
       .populate('booth ward')
-      .sort({ village: 1, houseNumber: 1, voterSerial: 1, name: 1 })
-      .collation({ locale: 'en', numericOrdering: true, strength: 1 })
       .limit(limit)
       .lean();
+
+    const parseNum = (v) => {
+      if (v === null || v === undefined || v === '') return 99999999;
+      const parsed = parseInt(String(v).replace(/[^\d]/g, ''), 10);
+      return isNaN(parsed) ? 99999999 : parsed;
+    };
+
+    if (isWardPrint) {
+      // Sort strictly by Ward Serial Number 1, 2, 3, 4, 5...
+      members.sort((a, b) => {
+        const sA = parseNum(a.wardVoterSerial);
+        const sB = parseNum(b.wardVoterSerial);
+        if (sA !== sB) return sA - sB;
+        const vA = parseNum(a.voterSerial);
+        const vB = parseNum(b.voterSerial);
+        if (vA !== vB) return vA - vB;
+        const hA = parseNum(a.houseNumber);
+        const hB = parseNum(b.houseNumber);
+        if (hA !== hB) return hA - hB;
+        return (a.name || '').localeCompare(b.name || '', 'hi');
+      });
+    } else {
+      // Sort strictly by Vidhan Sabha Serial Number 1, 2, 3, 4, 5...
+      members.sort((a, b) => {
+        const sA = parseNum(a.voterSerial);
+        const sB = parseNum(b.voterSerial);
+        if (sA !== sB) return sA - sB;
+        const wA = parseNum(a.wardVoterSerial);
+        const wB = parseNum(b.wardVoterSerial);
+        if (wA !== wB) return wA - wB;
+        const hA = parseNum(a.houseNumber);
+        const hB = parseNum(b.houseNumber);
+        if (hA !== hB) return hA - hB;
+        return (a.name || '').localeCompare(b.name || '', 'hi');
+      });
+    }
 
     const getPhotoSource = await loadPhotoSources(members, req.query.photo !== 'false');
 
