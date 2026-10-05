@@ -29,6 +29,8 @@ class _BulkMessagePageState extends State<BulkMessagePage> {
   final eventName = TextEditingController();
   final templateName = TextEditingController();
   final customPhones = TextEditingController();
+  final voterSearch = TextEditingController();
+  bool onlyWithMobile = false;
 
   // Filters
   final selectedFilters = <String, Map<String, String>>{};
@@ -131,6 +133,7 @@ class _BulkMessagePageState extends State<BulkMessagePage> {
     eventName.dispose();
     templateName.dispose();
     customPhones.dispose();
+    voterSearch.dispose();
     super.dispose();
   }
 
@@ -184,7 +187,8 @@ class _BulkMessagePageState extends State<BulkMessagePage> {
   Future<void> _fetchPreviewVotersList() async {
     setState(() => loadingPreviewVoters = true);
     try {
-      final queryParams = <String, String>{'limit': '100', 'paged': 'false'};
+      final queryParams = <String, String>{'limit': '500', 'paged': 'false'};
+      if (onlyWithMobile) queryParams['hasMobile'] = 'true';
       for (final values in selectedFilters.values) {
         for (final entry in values.entries) {
           queryParams[entry.key] = entry.value;
@@ -204,7 +208,10 @@ class _BulkMessagePageState extends State<BulkMessagePage> {
           selectedVoterIds.clear();
           for (final v in previewVoters) {
             final id = (v['_id'] ?? '').toString();
-            if (id.isNotEmpty) selectedVoterIds.add(id);
+            final mob = (v['mobile'] ?? '').toString().trim();
+            if (id.isNotEmpty && (!onlyWithMobile || mob.isNotEmpty)) {
+              selectedVoterIds.add(id);
+            }
           }
         });
       }
@@ -576,7 +583,12 @@ class _BulkMessagePageState extends State<BulkMessagePage> {
                     children: [
                       const Icon(Icons.timer_outlined, size: 18, color: blue),
                       const SizedBox(width: 6),
-                      Text('मैसेज टाइमर गैप (Anti-Ban): $messageDelaySeconds सेकंड', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                      Expanded(
+                        child: Text(
+                          'मैसेज टाइमर गैप (Anti-Ban): $messageDelaySeconds से ${messageDelaySeconds + 5} सेकंड (डायनामिक रैंडम अंतराल)',
+                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                        ),
+                      ),
                     ],
                   ),
                   Slider(
@@ -585,10 +597,13 @@ class _BulkMessagePageState extends State<BulkMessagePage> {
                     max: 20,
                     divisions: 17,
                     activeColor: green,
-                    label: '$messageDelaySeconds सेकंड',
+                    label: '$messageDelaySeconds-${messageDelaySeconds + 5} सेकंड रैंडम',
                     onChanged: (v) => setState(() => messageDelaySeconds = v.round()),
                   ),
-                  const Text('व्हाट्सएप ब्लॉक/बैन से बचने के लिए हर मैसेज के बीच 5-10 सेकंड का गैप रखें।', style: TextStyle(fontSize: 11, color: muted)),
+                  const Text(
+                    'व्हाट्सएप ब्लॉक/बैन से बचने के लिए हर मैसेज के बीच 5, 8, 10 सेकंड का अलग-अलग रैंडम गैप रहेगा।',
+                    style: TextStyle(fontSize: 11, color: muted),
+                  ),
                 ],
               ),
             ),
@@ -600,7 +615,7 @@ class _BulkMessagePageState extends State<BulkMessagePage> {
                   ? null
                   : Chip(
                       avatar: const Icon(Icons.groups_rounded, color: green, size: 18),
-                      label: Text('${preview?['eligible'] ?? 0} मतदाता'),
+                      label: Text('${preview?['eligible'] ?? 0} मतदाता पात्र'),
                     ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -620,59 +635,89 @@ class _BulkMessagePageState extends State<BulkMessagePage> {
                   const SizedBox(height: 14),
 
                   if (recipientMode == 'db') ...[
-                    Wrap(spacing: 9, runSpacing: 9, children: [
-                      _FilterPicker('जाति फ़िल्टर', Icons.groups_2_rounded, selectedLabels['caste'],
-                          () => selectFilter('caste', 'जाति'), () => setState(() {
-                                selectedFilters.remove('caste');
-                                selectedLabels.remove('caste');
+                    Wrap(spacing: 8, runSpacing: 8, children: [
+                      _FilterPicker('समिति / ब्लॉक', Icons.account_balance_rounded, selectedLabels['samiti'],
+                          () => selectFilter('samiti', 'समिति / ब्लॉक'), () => setState(() {
+                                selectedFilters.remove('samiti');
+                                selectedLabels.remove('samiti');
                                 preview = null;
+                                loadPreview();
                               })),
-                      _FilterPicker('गाँव / पंचायत', Icons.location_city_rounded, selectedLabels['village'],
-                          () => selectFilter('village', 'गाँव / पंचायत'), () => setState(() {
+                      _FilterPicker('ग्राम पंचायत', Icons.holiday_village_rounded, selectedLabels['gramPanchayat'],
+                          () => selectFilter('gramPanchayat', 'ग्राम पंचायत'), () => setState(() {
+                                selectedFilters.remove('gramPanchayat');
+                                selectedLabels.remove('gramPanchayat');
+                                preview = null;
+                                loadPreview();
+                              })),
+                      _FilterPicker('गाँव', Icons.location_city_rounded, selectedLabels['village'],
+                          () => selectFilter('village', 'गाँव'), () => setState(() {
                                 selectedFilters.remove('village');
                                 selectedLabels.remove('village');
                                 preview = null;
+                                loadPreview();
                               })),
                       _FilterPicker('भाग / बूथ', Icons.how_to_vote_rounded, selectedLabels['booth'],
                           () => selectFilter('booth', 'भाग / बूथ'), () => setState(() {
                                 selectedFilters.remove('booth');
                                 selectedLabels.remove('booth');
                                 preview = null;
+                                loadPreview();
                               })),
-                      _FilterPicker('विधानसभा', Icons.account_balance_rounded, selectedLabels['assembly'],
-                          () => selectFilter('assembly', 'विधानसभा'), () => setState(() {
-                                selectedFilters.remove('assembly');
-                                selectedLabels.remove('assembly');
+                      _FilterPicker('जाति फ़िल्टर', Icons.groups_2_rounded, selectedLabels['caste'],
+                          () => selectFilter('caste', 'जाति'), () => setState(() {
+                                selectedFilters.remove('caste');
+                                selectedLabels.remove('caste');
                                 preview = null;
+                                loadPreview();
                               })),
                     ]),
                     const SizedBox(height: 10),
                     Row(
                       children: [
-                        FilledButton.tonalIcon(
-                          onPressed: loadPreview,
-                          icon: const Icon(Icons.search_rounded, size: 18),
-                          label: const Text('मतदाता प्रीव्यू लोड करें'),
+                        Checkbox(
+                          value: onlyWithMobile,
+                          activeColor: green,
+                          visualDensity: VisualDensity.compact,
+                          onChanged: (val) {
+                            setState(() => onlyWithMobile = val ?? false);
+                            loadPreview();
+                          },
                         ),
-                        if (selectedLabels.isNotEmpty) ...[
-                          const SizedBox(width: 8),
-                          TextButton(
+                        const Text('केवल मोबाइल नंबर वाले मतदाता', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                        const Spacer(),
+                        if (selectedLabels.isNotEmpty)
+                          TextButton.icon(
                             onPressed: () => setState(() {
                               selectedFilters.clear();
                               selectedLabels.clear();
                               preview = null;
                               previewVoters.clear();
+                              selectedVoterIds.clear();
                             }),
-                            child: const Text('सभी फ़िल्टर साफ़ करें'),
+                            icon: const Icon(Icons.clear_all_rounded, size: 16),
+                            label: const Text('फ़िल्टर साफ़ करें'),
                           ),
-                        ],
+                        FilledButton.tonalIcon(
+                          onPressed: loadPreview,
+                          icon: const Icon(Icons.search_rounded, size: 18),
+                          label: const Text('मतदाता लोड करें'),
+                        ),
                       ],
                     ),
-                    if (previewVoters.isNotEmpty) ...[
-                      const SizedBox(height: 12),
+                    if (loadingPreviewVoters)
+                      const Padding(
+                        padding: EdgeInsets.symmetric(vertical: 20),
+                        child: Center(child: CircularProgressIndicator()),
+                      )
+                    else if (previewVoters.isNotEmpty) ...[
+                      const Divider(height: 20),
                       Row(
                         children: [
-                          Text('लोड हुए मतदाता: ${previewVoters.length}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+                          Text(
+                            'कुल लोड हुए: ${previewVoters.length} (चुने गए: ${selectedVoterIds.length})',
+                            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                          ),
                           const Spacer(),
                           TextButton(
                             onPressed: () {
@@ -683,44 +728,126 @@ class _BulkMessagePageState extends State<BulkMessagePage> {
                                   selectedVoterIds.clear();
                                   for (final v in previewVoters) {
                                     final id = (v['_id'] ?? '').toString();
-                                    if (id.isNotEmpty) selectedVoterIds.add(id);
+                                    final mob = (v['mobile'] ?? '').toString().trim();
+                                    if (id.isNotEmpty && (!onlyWithMobile || mob.isNotEmpty)) {
+                                      selectedVoterIds.add(id);
+                                    }
                                   }
                                 }
                               });
                             },
-                            child: Text(selectedVoterIds.length == previewVoters.length ? 'सब हटाएं' : 'सभी चुनें (${selectedVoterIds.length})'),
+                            child: Text(selectedVoterIds.length == previewVoters.length ? 'सब हटाएं' : 'सभी चुनें (${previewVoters.length})'),
                           ),
                         ],
                       ),
+                      const SizedBox(height: 6),
+                      TextField(
+                        controller: voterSearch,
+                        onChanged: (_) => setState(() {}),
+                        decoration: InputDecoration(
+                          hintText: 'इस सूची में नाम, मोबाइल या गाँव से खोजें...',
+                          hintStyle: const TextStyle(fontSize: 12),
+                          prefixIcon: const Icon(Icons.search, size: 18),
+                          isDense: true,
+                          contentPadding: const EdgeInsets.symmetric(vertical: 8, horizontal: 10),
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                          filled: true,
+                          fillColor: Colors.grey.shade50,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
                       Container(
-                        height: 180,
+                        height: 320,
                         decoration: BoxDecoration(
                           border: Border.all(color: Colors.grey.shade300),
                           borderRadius: BorderRadius.circular(12),
+                          color: Colors.white,
                         ),
-                        child: ListView.builder(
-                          itemCount: previewVoters.length,
-                          itemBuilder: (ctx, i) {
-                            final v = previewVoters[i];
-                            final id = (v['_id'] ?? '').toString();
-                            final name = (v['name'] ?? '').toString();
-                            final mob = (v['mobile'] ?? '').toString();
-                            final vil = (v['village'] ?? '').toString();
-                            final isSel = selectedVoterIds.contains(id);
+                        child: Builder(
+                          builder: (ctx) {
+                            final sq = voterSearch.text.trim().toLowerCase();
+                            final displayList = sq.isEmpty
+                                ? previewVoters
+                                : previewVoters.where((v) {
+                                    final nm = '${v['name'] ?? ''} ${v['surname'] ?? ''}'.toLowerCase();
+                                    final mb = '${v['mobile'] ?? ''}'.toLowerCase();
+                                    final vil = '${v['village'] ?? ''}'.toLowerCase();
+                                    final gd = '${v['guardianName'] ?? ''}'.toLowerCase();
+                                    return nm.contains(sq) || mb.contains(sq) || vil.contains(sq) || gd.contains(sq);
+                                  }).toList();
 
-                            return CheckboxListTile(
-                              dense: true,
-                              value: isSel,
-                              title: Text(name, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
-                              subtitle: Text('$vil · ${mob.isNotEmpty ? mob : "मोबाइल नहीं"}', style: const TextStyle(fontSize: 11, color: muted)),
-                              onChanged: (val) {
-                                setState(() {
-                                  if (val == true) {
-                                    selectedVoterIds.add(id);
-                                  } else {
-                                    selectedVoterIds.remove(id);
-                                  }
-                                });
+                            if (displayList.isEmpty) {
+                              return const Center(child: Text('कोई मतदाता नहीं मिला।', style: TextStyle(fontSize: 12, color: muted)));
+                            }
+
+                            return ListView.separated(
+                              itemCount: displayList.length,
+                              separatorBuilder: (_, __) => Divider(height: 1, color: Colors.grey.shade200),
+                              itemBuilder: (ctx, i) {
+                                final v = displayList[i];
+                                final id = (v['_id'] ?? '').toString();
+                                final name = (v['name'] ?? v['fullName'] ?? '').toString();
+                                final guardian = (v['guardianName'] ?? '').toString();
+                                final mob = (v['mobile'] ?? '').toString().trim();
+                                final vil = (v['village'] ?? v['gramPanchayat'] ?? '').toString();
+                                final ward = (v['wardNumber'] ?? v['partNumber'] ?? '').toString();
+                                final isSel = selectedVoterIds.contains(id);
+
+                                return CheckboxListTile(
+                                  dense: true,
+                                  value: isSel,
+                                  secondary: IconButton(
+                                    icon: const Icon(Icons.message_rounded, color: green, size: 20),
+                                    tooltip: 'व्यक्तिगत WhatsApp संदेश भेजें',
+                                    onPressed: () {
+                                      if (mob.isEmpty) {
+                                        ScaffoldMessenger.of(context).showSnackBar(
+                                          const SnackBar(content: Text('इस मतदाता का मोबाइल नंबर नहीं है।')),
+                                        );
+                                        return;
+                                      }
+                                      final msg = renderVoterMessage(v);
+                                      openWhatsApp(context, mob, message: msg);
+                                    },
+                                  ),
+                                  title: Row(
+                                    children: [
+                                      Expanded(
+                                        child: Text(
+                                          name,
+                                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ),
+                                      if (mob.isNotEmpty)
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                          decoration: BoxDecoration(color: Colors.green.shade50, borderRadius: BorderRadius.circular(6)),
+                                          child: Text(mob, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: green)),
+                                        )
+                                      else
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                          decoration: BoxDecoration(color: Colors.amber.shade50, borderRadius: BorderRadius.circular(6)),
+                                          child: const Text('मोबाइल नहीं', style: TextStyle(fontSize: 10, color: orange)),
+                                        ),
+                                    ],
+                                  ),
+                                  subtitle: Text(
+                                    '${guardian.isNotEmpty ? "पिता/पति: $guardian · " : ""}$vil${ward.isNotEmpty ? " · वार्ड/भाग: $ward" : ""}',
+                                    style: const TextStyle(fontSize: 11, color: muted),
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                  onChanged: (val) {
+                                    setState(() {
+                                      if (val == true) {
+                                        selectedVoterIds.add(id);
+                                      } else {
+                                        selectedVoterIds.remove(id);
+                                      }
+                                    });
+                                  },
+                                );
                               },
                             );
                           },
@@ -1270,12 +1397,29 @@ class _MessageFilterDialogState extends State<_MessageFilterDialog> {
 
   Future<void> loadOptions() async {
     try {
-      final res = await api.get('/api/members/field-values?field=${widget.field}&limit=200');
+      final q = <String, String>{
+        'field': widget.field,
+        'limit': '300',
+        ...widget.currentFilters,
+      };
+      final dynamic res = await api.get('/api/members/field-values?${Uri(queryParameters: q).query}');
       if (res is Map && res['items'] is List) {
         options = (res['items'] as List).whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList();
+      } else if (res is List) {
+        options = res.whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList();
       }
     } catch (_) {}
     if (mounted) setState(() => loading = false);
+  }
+
+  Map<String, String> _getFilterParam(String field, String val) {
+    if (field == 'samiti') return {'tehsil': val};
+    if (field == 'gramPanchayat') return {'gramPanchayat': val};
+    if (field == 'village') return {'village': val};
+    if (field == 'booth') return {'partNumber': val};
+    if (field == 'caste') return {'caste': val};
+    if (field == 'assembly') return {'assemblyName': val};
+    return {field: val};
   }
 
   @override
@@ -1303,30 +1447,34 @@ class _MessageFilterDialogState extends State<_MessageFilterDialog> {
             Expanded(
               child: loading
                   ? const Center(child: CircularProgressIndicator())
-                  : ListView.builder(
-                      itemCount: filtered.length,
-                      itemBuilder: (ctx, i) {
-                        final item = filtered[i];
-                        final val = '${item['value']}';
-                        final lab = '${item['label'] ?? item['value']}';
-                        final cnt = item['count'] ?? 0;
+                  : options.isEmpty
+                      ? const Center(child: Text('कोई विकल्प नहीं मिला', style: TextStyle(color: muted)))
+                      : ListView.builder(
+                          itemCount: filtered.length,
+                          itemBuilder: (ctx, i) {
+                            final item = filtered[i];
+                            final val = '${item['value']}';
+                            final lab = '${item['label'] ?? item['value']}';
+                            final cnt = item['count'] ?? 0;
+                            final mobCnt = item['mobileCount'];
 
-                        return ListTile(
-                          dense: true,
-                          title: Text(lab),
-                          trailing: Text('$cnt', style: const TextStyle(fontWeight: FontWeight.bold, color: blue)),
-                          onTap: () {
-                            Navigator.pop(
-                              context,
-                              _MessageFilterOption(
-                                label: lab,
-                                filters: {widget.field: val},
-                              ),
+                            return ListTile(
+                              dense: true,
+                              title: Text(lab, style: const TextStyle(fontWeight: FontWeight.bold)),
+                              subtitle: mobCnt != null ? Text('मोबाइल वाले: $mobCnt', style: const TextStyle(fontSize: 11, color: green)) : null,
+                              trailing: Text('$cnt', style: const TextStyle(fontWeight: FontWeight.bold, color: blue)),
+                              onTap: () {
+                                Navigator.pop(
+                                  context,
+                                  _MessageFilterOption(
+                                    label: lab,
+                                    filters: _getFilterParam(widget.field, val),
+                                  ),
+                                );
+                              },
                             );
                           },
-                        );
-                      },
-                    ),
+                        ),
             ),
           ],
         ),

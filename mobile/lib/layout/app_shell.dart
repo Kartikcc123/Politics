@@ -75,16 +75,23 @@ class _AppShellState extends State<AppShell> {
         .where((s) => '$s'.trim().isNotEmpty)
         .toList();
 
-    // A non-admin user only gets the "क्षेत्र व गाँव" tab IF they have access to a whole village/GP with multiple wards
+    // Strict check: if user has any ward or part/booth restrictions, they are a ward/booth manager
+    // and MUST NOT see the "क्षेत्र व गाँव" page!
+    final hasWardOrPartRestriction = assignedWards.isNotEmpty ||
+        assignedParts.isNotEmpty ||
+        user?['assignedBooth'] != null ||
+        user?['assignedWard'] != null ||
+        widget.role == 'booth' ||
+        widget.role == 'ward_head';
+
+    // A non-admin user only gets the "क्षेत्र व गाँव" tab IF they are NOT ward/booth restricted
+    // and have full GP access.
     final hasWholeVillageAccess = isAdmin ||
-        assignedGps.isNotEmpty ||
-        assignedVillages.isNotEmpty ||
-        assignedWards.length > 1 ||
-        assignedParts.length > 1;
+        (!hasWardOrPartRestriction && assignedGps.isNotEmpty && assignedWards.isEmpty && assignedParts.isEmpty);
 
     final navList = <NavItem>[];
 
-    // Tab 1: If user has whole village or is admin, show "क्षेत्र व गाँव"
+    // Tab 1: Only show "क्षेत्र व गाँव" if user is admin or has full GP access without ward restriction
     if (hasWholeVillageAccess) {
       navList.add(
         NavItem(

@@ -1,4 +1,4 @@
-﻿const MessageCampaign = require('../models/MessageCampaign');
+const MessageCampaign = require('../models/MessageCampaign');
 const { sendWebMessage } = require('./whatsappWeb');
 
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -122,7 +122,11 @@ async function processCampaign(campaign) {
       }
     }
     if (index < batch.length - 1) {
-      await wait(campaign.messageDelaySeconds * 1000);
+      const baseSeconds = Math.max(3, campaign.messageDelaySeconds || 5);
+      // Anti-Ban: Dynamic random jitter between messages (e.g., 5s, 8s, 10s)
+      const randomJitter = Math.floor(Math.random() * 6);
+      const totalDelayMs = (baseSeconds + randomJitter) * 1000;
+      await wait(totalDelayMs);
     }
   }
   campaign.nextBatchAt = new Date(Date.now() + campaign.intervalSeconds * 1000);

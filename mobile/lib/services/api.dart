@@ -248,21 +248,30 @@ class Api {
         )));
   }
 
-  Future<Map<String, dynamic>> get(String path) async =>
-      Map<String, dynamic>.from(await _withNetworkRetry<dynamic>(
-          () => _send(http.get(Uri.parse('$baseUrl$path'), headers: headers))));
-  Future<Map<String, dynamic>> getQuery(String path,
+  Future<dynamic> get(String path) async {
+    final raw = await _withNetworkRetry<dynamic>(
+        () => _send(http.get(Uri.parse('$baseUrl$path'), headers: headers)));
+    if (raw is Map) return Map<String, dynamic>.from(raw);
+    if (raw is List) return List<dynamic>.from(raw);
+    return raw;
+  }
+
+  Future<dynamic> getQuery(String path,
       [Map<String, String?> query = const {}]) async {
     final clean = <String, String>{};
     for (final entry in query.entries) {
       final value = entry.value;
       if (value != null && value.isNotEmpty) clean[entry.key] = value;
     }
-    return Map<String, dynamic>.from(await _withNetworkRetry<dynamic>(() =>
+    final raw = await _withNetworkRetry<dynamic>(() =>
         _send(http.get(
             Uri.parse('$baseUrl$path').replace(queryParameters: clean),
-            headers: headers))));
+            headers: headers)));
+    if (raw is Map) return Map<String, dynamic>.from(raw);
+    if (raw is List) return List<dynamic>.from(raw);
+    return raw;
   }
+
 
   Future<Map<String, dynamic>> post(String path, Map data) async =>
       Map<String, dynamic>.from(await _withNetworkRetry<dynamic>(

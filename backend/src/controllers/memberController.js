@@ -2179,5 +2179,149 @@ exports.bulkVoteStatus = async (req, res, next) => {
   } catch (error) { next(error); }
 };
 
+exports.fieldValues = async (req, res, next) => {
+  try {
+    const { field, limit, tehsil, samiti, simiti, gramPanchayat, panchayat, village, caste } = req.query;
+    const maxLimit = Math.min(Number(limit) || 300, 1000);
+    const filter = applyMemberScope(req.currentUser, {});
+
+    const samitiVal = (samiti || simiti || tehsil || '').trim();
+    const gpVal = (gramPanchayat || panchayat || '').trim();
+    const vilVal = (village || '').trim();
+    const casteVal = (caste || '').trim();
+
+    if (samitiVal && samitiVal !== 'all') {
+      filter.$and = [...(filter.$and || []), { tehsil: new RegExp(`^${escapeRegex(samitiVal)}$`, 'i') }];
+    }
+    if (gpVal && gpVal !== 'all') {
+      filter.$and = [...(filter.$and || []), { gramPanchayat: new RegExp(`^${escapeRegex(gpVal)}$`, 'i') }];
+    }
+    if (vilVal && vilVal !== 'all') {
+      filter.$and = [...(filter.$and || []), { village: new RegExp(`^${escapeRegex(vilVal)}$`, 'i') }];
+    }
+    if (casteVal && casteVal !== 'all') {
+      filter.$and = [...(filter.$and || []), { caste: new RegExp(`^${escapeRegex(casteVal)}$`, 'i') }];
+    }
+
+    let targetField = String(field || 'village').trim();
+    if (['samiti', 'simiti', 'block', 'tehsil'].includes(targetField.toLowerCase())) {
+      targetField = 'tehsil';
+    } else if (['panchayat', 'gp', 'grampanchayat'].includes(targetField.toLowerCase())) {
+      targetField = 'gramPanchayat';
+    } else if (['village', 'gaav', 'gram'].includes(targetField.toLowerCase())) {
+      targetField = 'village';
+    } else if (['booth', 'part', 'partnumber'].includes(targetField.toLowerCase())) {
+      targetField = 'partNumber';
+    } else if (['ward', 'wardnumber'].includes(targetField.toLowerCase())) {
+      targetField = 'wardNumber';
+    } else if (['assembly', 'assemblyname'].includes(targetField.toLowerCase())) {
+      targetField = 'assemblyName';
+    } else if (['caste', 'jati'].includes(targetField.toLowerCase())) {
+      targetField = 'caste';
+    }
+
+    const pipeline = [
+      {
+        $match: {
+          ...filter,
+          [targetField]: { $nin: ['', null, undefined], $exists: true }
+        }
+      },
+      {
+        $group: {
+          _id: `$${targetField}`,
+          count: { $sum: 1 },
+          mobileCount: {
+            $sum: {
+              $cond: [
+                { $gt: [{ $strLenCP: { $ifNull: ['$mobile', ''] } }, 0] },
+                1,
+                0
+              ]
+            }
+          }
+        }
+      },
+      { $sort: { count: -1, _id: 1 } },
+      { $limit: maxLimit }
+    ];
+
+    const results = await Member.aggregate(pipeline);
+    const items = results.map(r => ({
+      value: String(r._id).trim(),
+      label: String(r._id).trim(),
+      count: r.count,
+      mobileCount: r.mobileCount
+    })).filter(i => i.value.length > 0);
+
+    res.json({ items, count: items.length });
+  } catch (error) { next(error); }
+};
+
+exports.filterOptions = async (req, res, next) => {
+  try {
+    const filter = applyMemberScope(req.currentUser, {});
+    const [samitis, panchayats, villages, parts, castes] = await Promise.all([
+      Member.distinct('tehsil', { ...filter, tehsil: { $nin: ['', null] } }),
+      Member.distinct('gramPanchayat', { ...filter, gramPanchayat: { $nin: ['', null] } }),
+      Member.distinct('village', { ...filter, village: { $nin: ['', null] } }),
+      Member.distinct('partNumber', { ...filter, partNumber: { $nin: ['', null] } }),
+      Member.distinct('caste', { ...filter, caste: { $nin: ['', null] } }),
+    ]);
+
+    res.json({
+      samitis: samitis.filter(Boolean).sort(),
+      panchayats: panchayats.filter(Boolean).sort(),
+      villages: villages.filter(Boolean).sort(),
+      parts: parts.filter(Boolean).sort((a, b) => (Number(a) || 0) - (Number(b) || 0)),
+      castes: castes.filter(Boolean).sort(),
+    });
+  } catch (error) { next(error); }
+};
+
+exports.locationGroups = async (req, res, next) => {
+  try {
+    const filter = applyMemberScope(req.currentUser, {});
+    const groups = await Member.aggregate([
+      { $match: filter },
+      {
+        $group: {
+          _id: {
+            samiti: { $ifNull: ['$tehsil', ''] },
+            gramPanchayat: { $ifNull: ['$gramPanchayat', ''] },
+            village: { $ifNull: ['$village', ''] },
+          },
+          totalVoters: { $sum: 1 },
+          mobileCount: {
+            $sum: {
+              $cond: [
+                { $and: [{ $ne: ['$mobile', ''] }, { $ne: ['$mobile', null] }] },
+                1,
+                0
+              ]
+            }
+          },
+          partNumbers: { $addToSet: '$partNumber' },
+          wardNumbers: { $addToSet: '$wardNumber' },
+        }
+      },
+      { $sort: { '_id.samiti': 1, '_id.gramPanchayat': 1, '_id.village': 1 } }
+    ]);
+
+    res.json({
+      groups: groups.map(g => ({
+        samiti: g._id.samiti,
+        gramPanchayat: g._id.gramPanchayat,
+        village: g._id.village,
+        totalVoters: g.totalVoters,
+        mobileCount: g.mobileCount,
+        partNumbers: (g.partNumbers || []).filter(Boolean).sort((a,b) => (Number(a)||0) - (Number(b)||0)),
+        wardNumbers: (g.wardNumbers || []).filter(Boolean).sort((a,b) => (Number(a)||0) - (Number(b)||0)),
+      }))
+    });
+  } catch (error) { next(error); }
+};
+
+
 
 

@@ -10,6 +10,7 @@ router.get('/birthdays', controller.birthdays);
 router.get('/duplicates', controller.duplicates);
 router.get('/suggestions', controller.suggestions);
 router.get('/filter-options', controller.filterOptions);
+router.get('/field-values', controller.fieldValues);
 router.get('/location-groups', controller.locationGroups);
 router.get('/location-reviews', allowRoles('admin'), controller.locationReviews);
 router.post('/location-reviews/:id/resolve', allowRoles('admin'), controller.resolveLocationReview);
