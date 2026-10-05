@@ -157,7 +157,7 @@ class _WhatsAppPageState extends State<WhatsAppPage> with SingleTickerProviderSt
 
   Future<void> _loadCasteOptions() async {
     try {
-      final dynamic res = await api.get('/api/members/field-values?field=caste&limit=150');
+      final dynamic res = await api.get('/api/members/field-values?field=caste&limit=500');
       if (res is Map && res['items'] is List) {
         _casteOptions = (res['items'] as List)
             .whereType<Map>()
@@ -221,6 +221,22 @@ class _WhatsAppPageState extends State<WhatsAppPage> with SingleTickerProviderSt
           SnackBar(content: Text('Voters लोड नहीं हो सके: $e')),
         );
       }
+    }
+  }
+
+  Future<void> _openCastePicker() async {
+    final selected = await showModalBottomSheet<String>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => _SearchableCasteBottomSheet(
+        casteOptions: _casteOptions,
+        selectedCaste: _selectedCaste,
+      ),
+    );
+    if (selected != null && mounted) {
+      setState(() => _selectedCaste = selected);
+      _fetchVoters();
     }
   }
 
@@ -710,27 +726,63 @@ class _WhatsAppPageState extends State<WhatsAppPage> with SingleTickerProviderSt
             Row(
               children: [
                 Expanded(
-                  child: DropdownButtonFormField<String>(
-                    value: _casteOptions.any((c) => c['value'] == _selectedCaste) ? _selectedCaste : 'all',
-                    decoration: InputDecoration(
-                      labelText: 'जाति फ़िल्टर',
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                      isDense: true,
+                  child: InkWell(
+                    onTap: _openCastePicker,
+                    borderRadius: BorderRadius.circular(8),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+                      decoration: BoxDecoration(
+                        border: Border.all(color: _selectedCaste != 'all' ? blue : Colors.grey.shade400),
+                        borderRadius: BorderRadius.circular(8),
+                        color: _selectedCaste != 'all' ? const Color(0xffeff6ff) : Colors.white,
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(
+                            Icons.groups_2_rounded,
+                            size: 18,
+                            color: _selectedCaste != 'all' ? blue : Colors.grey.shade600,
+                          ),
+                          const SizedBox(width: 6),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(
+                                  'जाति फ़िल्टर',
+                                  style: TextStyle(
+                                    fontSize: 9.5,
+                                    color: _selectedCaste != 'all' ? blue : Colors.grey.shade600,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                                Text(
+                                  _selectedCaste == 'all' ? 'सभी जातियाँ' : _selectedCaste,
+                                  style: TextStyle(
+                                    fontSize: 12.5,
+                                    fontWeight: _selectedCaste != 'all' ? FontWeight.bold : FontWeight.normal,
+                                    color: _selectedCaste != 'all' ? blue : Colors.black87,
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ],
+                            ),
+                          ),
+                          if (_selectedCaste != 'all')
+                            GestureDetector(
+                              onTap: () {
+                                setState(() => _selectedCaste = 'all');
+                                _fetchVoters();
+                              },
+                              child: const Icon(Icons.cancel, size: 16, color: Colors.grey),
+                            )
+                          else
+                            const Icon(Icons.arrow_drop_down, size: 20, color: Colors.grey),
+                        ],
+                      ),
                     ),
-                    items: [
-                      const DropdownMenuItem(value: 'all', child: Text('सभी जातियाँ', style: TextStyle(fontSize: 13))),
-                      ..._casteOptions.map((c) => DropdownMenuItem(
-                            value: '${c['value']}',
-                            child: Text('${c['label'] ?? c['value']} (${c['count'] ?? ''})', style: const TextStyle(fontSize: 13)),
-                          )),
-                    ],
-                    onChanged: (val) {
-                      if (val != null) {
-                        setState(() => _selectedCaste = val);
-                        _fetchVoters();
-                      }
-                    },
                   ),
                 ),
                 const SizedBox(width: 8),
@@ -1368,3 +1420,195 @@ class _AssistedDispatchSheetState extends State<_AssistedDispatchSheet> {
     );
   }
 }
+
+class _SearchableCasteBottomSheet extends StatefulWidget {
+  const _SearchableCasteBottomSheet({
+    required this.casteOptions,
+    required this.selectedCaste,
+  });
+
+  final List<Map<String, dynamic>> casteOptions;
+  final String selectedCaste;
+
+  @override
+  State<_SearchableCasteBottomSheet> createState() => _SearchableCasteBottomSheetState();
+}
+
+class _SearchableCasteBottomSheetState extends State<_SearchableCasteBottomSheet> {
+  final _searchController = TextEditingController();
+  String _query = '';
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final filtered = widget.casteOptions.where((c) {
+      final val = (c['value'] ?? '').toString().toLowerCase();
+      final lbl = (c['label'] ?? '').toString().toLowerCase();
+      final q = _query.toLowerCase().trim();
+      if (q.isEmpty) return true;
+      return val.contains(q) || lbl.contains(q);
+    }).toList();
+
+    return Container(
+      height: MediaQuery.of(context).size.height * 0.75,
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      child: Column(
+        children: [
+          Container(
+            margin: const EdgeInsets.only(top: 10, bottom: 6),
+            width: 40,
+            height: 4,
+            decoration: BoxDecoration(
+              color: Colors.grey.shade300,
+              borderRadius: BorderRadius.circular(2),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            child: Row(
+              children: [
+                const Icon(Icons.groups_2_rounded, color: blue),
+                const SizedBox(width: 8),
+                const Text(
+                  'जाति चुनें (Caste Filter)',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: navy),
+                ),
+                const Spacer(),
+                IconButton(
+                  icon: const Icon(Icons.close_rounded),
+                  onPressed: () => Navigator.pop(context),
+                ),
+              ],
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+            child: TextField(
+              controller: _searchController,
+              autofocus: true,
+              decoration: InputDecoration(
+                hintText: 'जाति का नाम लिखें (Type caste name)...',
+                prefixIcon: const Icon(Icons.search_rounded, color: blue),
+                suffixIcon: _query.isNotEmpty
+                    ? IconButton(
+                        icon: const Icon(Icons.clear, size: 18),
+                        onPressed: () {
+                          _searchController.clear();
+                          setState(() => _query = '');
+                        },
+                      )
+                    : null,
+                contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                filled: true,
+                fillColor: const Color(0xfff8fafc),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: const BorderSide(color: Color(0xffcbd5e1)),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: const BorderSide(color: blue, width: 1.5),
+                ),
+              ),
+              onChanged: (val) => setState(() => _query = val),
+            ),
+          ),
+          const Divider(height: 16),
+          Expanded(
+            child: ListView(
+              children: [
+                ListTile(
+                  leading: CircleAvatar(
+                    backgroundColor: widget.selectedCaste == 'all' ? blue : const Color(0xfff1f5f9),
+                    child: Icon(
+                      Icons.all_inclusive_rounded,
+                      color: widget.selectedCaste == 'all' ? Colors.white : Colors.grey.shade700,
+                      size: 20,
+                    ),
+                  ),
+                  title: const Text('सभी जातियाँ (All Castes)', style: TextStyle(fontWeight: FontWeight.w700)),
+                  trailing: widget.selectedCaste == 'all'
+                      ? const Icon(Icons.check_circle_rounded, color: blue)
+                      : null,
+                  onTap: () => Navigator.pop(context, 'all'),
+                ),
+                const Divider(height: 1),
+                if (filtered.isEmpty)
+                  Padding(
+                    padding: const EdgeInsets.all(24),
+                    child: Center(
+                      child: Column(
+                        children: [
+                          Icon(Icons.search_off_rounded, size: 40, color: Colors.grey.shade400),
+                          const SizedBox(height: 8),
+                          Text(
+                            '"$_query" से मिलती कोई जाति नहीं मिली',
+                            style: TextStyle(color: Colors.grey.shade600),
+                          ),
+                        ],
+                      ),
+                    ),
+                  )
+                else
+                  ...filtered.map((c) {
+                    final val = '${c['value']}';
+                    final label = '${c['label'] ?? c['value']}';
+                    final count = c['count'] != null ? '${c['count']}' : '';
+                    final isSelected = widget.selectedCaste == val;
+                    return ListTile(
+                      leading: CircleAvatar(
+                        backgroundColor: isSelected ? blue : const Color(0xfff1f5f9),
+                        child: Text(
+                          label.isNotEmpty ? label.characters.first : '?',
+                          style: TextStyle(
+                            color: isSelected ? Colors.white : blue,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                      title: Text(label, style: TextStyle(fontWeight: isSelected ? FontWeight.bold : FontWeight.w500)),
+                      trailing: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          if (count.isNotEmpty)
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                              decoration: BoxDecoration(
+                                color: isSelected ? blue.withValues(alpha: 0.12) : const Color(0xfff1f5f9),
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              child: Text(
+                                '$count मतदाता',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w600,
+                                  color: isSelected ? blue : Colors.grey.shade700,
+                                ),
+                              ),
+                            ),
+                          if (isSelected) ...[
+                            const SizedBox(width: 8),
+                            const Icon(Icons.check_circle_rounded, color: blue, size: 20),
+                          ],
+                        ],
+                      ),
+                      onTap: () => Navigator.pop(context, val),
+                    );
+                  }),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
