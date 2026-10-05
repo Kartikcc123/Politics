@@ -1842,7 +1842,7 @@ const runWardPdfImport = async ({ file, body, currentUser }, uploadId) => {
           village: header.village || header.gramPanchayat || header.municipality || '',
           ward: header.wardNumber || '',
           wardNumber: header.wardNumber || '',
-          voterSerial: item.voterSerial || '',
+          wardVoterSerial: item.voterSerial || '',
           hasAssemblyMembership: false, hasMunicipalMembership: true,
           municipalWardNumbers: [header.wardNumber],
           verificationStatus: item.ocrNeedsReview || !hasValidEpic ? 'needs_review' : 'pending',
