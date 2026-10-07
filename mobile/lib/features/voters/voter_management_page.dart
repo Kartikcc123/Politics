@@ -2202,7 +2202,6 @@ class _VoterManagementPageState extends State<VoterManagementPage> {
       );
 
   @override
-  @override
   Widget build(BuildContext context) {
     return Center(
       child: ConstrainedBox(
@@ -3695,75 +3694,85 @@ class _PhoneContactTile extends StatelessWidget {
           decoration: const BoxDecoration(
             border: Border(bottom: BorderSide(color: Color(0xffedf0f5))),
           ),
-          child: Row(children: [
-            if (selectionMode || selected) ...[
-              Checkbox(
-                value: selected,
-                onChanged: (value) => onSelected(value ?? false),
-                visualDensity: VisualDensity.compact,
-              ),
-            ],
-            _VoterPhoto(photo: voter, radius: 25),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                if (selectionMode || selected) ...[
+                  Checkbox(
+                    value: selected,
+                    onChanged: (value) => onSelected(value ?? false),
+                    visualDensity: VisualDensity.compact,
+                  ),
+                ],
+                _VoterPhoto(photo: voter, radius: 25),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Expanded(
-                          child: Text('${voter['name'] ?? '-'}',
+                        Row(
+                          children: [
+                            Expanded(
+                              child: Text('${voter['name'] ?? '-'}',
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                      color: navy,
+                                      fontSize: 15,
+                                      fontWeight: FontWeight.w900)),
+                            ),
+                            if ((int.tryParse('${voter['favoriteRating']}') ?? (voter['isFavorite'] == true ? 1 : 0)) > 0)
+                              Padding(
+                                padding: const EdgeInsets.only(left: 4),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    const Icon(Icons.star, color: Colors.amber, size: 15),
+                                    if ((int.tryParse('${voter['favoriteRating']}') ?? 1) > 1)
+                                      Text(
+                                        '${int.tryParse('${voter['favoriteRating']}') ?? 1}',
+                                        style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.amber),
+                                      ),
+                                  ],
+                                ),
+                              ),
+                          ],
+                        ),
+                        const SizedBox(height: 3),
+                        Text(
+                            mobile.isEmpty
+                                ? 'EPIC: ${voter['voterId'] ?? '-'}'
+                                : mobile,
+                            style: const TextStyle(color: muted, fontSize: 12)),
+                        if ('${voter['guardianName'] ?? ''}'.trim().isNotEmpty || ('${voter['houseNumber'] ?? ''}'.trim().isNotEmpty && '${voter['houseNumber']}' != '0')) ...[
+                          const SizedBox(height: 2),
+                          Text(
+                            [
+                              if ('${voter['guardianName'] ?? ''}'.trim().isNotEmpty) 'पिता/पति: ${voter['guardianName']}',
+                              if ('${voter['houseNumber'] ?? ''}'.trim().isNotEmpty && '${voter['houseNumber']}' != '0') 'म.नं.: ${voter['houseNumber']}',
+                            ].join(' · '),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(color: navy, fontSize: 11, fontWeight: FontWeight.w600),
+                          ),
+                        ],
+                        if (place.isNotEmpty) ...[
+                          const SizedBox(height: 2),
+                          Text(place,
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                  color: navy,
-                                  fontSize: 15,
-                                  fontWeight: FontWeight.w900)),
-                        ),
-                        if ((int.tryParse('${voter['favoriteRating']}') ?? (voter['isFavorite'] == true ? 1 : 0)) > 0)
-                          Padding(
-                            padding: const EdgeInsets.only(left: 4),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                const Icon(Icons.star, color: Colors.amber, size: 15),
-                                if ((int.tryParse('${voter['favoriteRating']}') ?? 1) > 1)
-                                  Text(
-                                    '${int.tryParse('${voter['favoriteRating']}') ?? 1}',
-                                    style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.amber),
-                                  ),
-                              ],
-                            ),
-                          ),
-                      ],
-                    ),
-                    const SizedBox(height: 3),
-                    Text(
-                        mobile.isEmpty
-                            ? 'EPIC: ${voter['voterId'] ?? '-'}'
-                            : mobile,
-                        style: const TextStyle(color: muted, fontSize: 12)),
-                    if ('${voter['guardianName'] ?? ''}'.trim().isNotEmpty || ('${voter['houseNumber'] ?? ''}'.trim().isNotEmpty && '${voter['houseNumber']}' != '0')) ...[
-                      const SizedBox(height: 2),
-                      Text(
-                        [
-                          if ('${voter['guardianName'] ?? ''}'.trim().isNotEmpty) 'पिता/पति: ${voter['guardianName']}',
-                          if ('${voter['houseNumber'] ?? ''}'.trim().isNotEmpty && '${voter['houseNumber']}' != '0') 'म.नं.: ${voter['houseNumber']}',
-                        ].join(' · '),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(color: navy, fontSize: 11, fontWeight: FontWeight.w600),
-                      ),
-                    ],
-                    if (place.isNotEmpty) ...[
-                      const SizedBox(height: 2),
-                      Text(place,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(color: muted, fontSize: 11)),
-                    ],
-                    const SizedBox(height: 5),
-                    Wrap(spacing: 5, runSpacing: 4, children: [
+                              style: const TextStyle(color: muted, fontSize: 11)),
+                        ],
+                      ]),
+                ),
+              ]),
+              const SizedBox(height: 6),
+              // Badges and action buttons row
+              Row(
+                children: [
+                  Expanded(
+                    child: Wrap(spacing: 5, runSpacing: 4, children: [
                       if (hasAssembly && '${voter['partNumber'] ?? ''}'.trim().isNotEmpty && '${voter['partNumber']}' != '0')
                         _MembershipBadge(
                           label: 'भाग #${voter['partNumber']}',
@@ -3797,61 +3806,65 @@ class _PhoneContactTile extends StatelessWidget {
                       if (hasAssembly && !hasMunicipal)
                         const _MembershipBadge(
                             label: 'Ward सूची में नहीं', color: muted),
-                    ]),
-                    if (!['', 'undecided'].contains(
-                        '${voter['partyPreference'] ?? 'undecided'}')) ...[
-                      const SizedBox(height: 6),
-                      Align(
-                        alignment: Alignment.centerLeft,
-                        child: PartyPreferenceChip(
+                      if (!['', 'undecided'].contains(
+                          '${voter['partyPreference'] ?? 'undecided'}'))
+                        PartyPreferenceChip(
                           value: '${voter['partyPreference'] ?? 'undecided'}',
                         ),
+                    ]),
+                  ),
+                  // Action buttons
+                  Row(mainAxisSize: MainAxisSize.min, children: [
+                    if (api.user?['role'] == 'admin')
+                      IconButton(
+                        tooltip: voter['isFavorite'] == true
+                            ? 'Favorites से हटाएं'
+                            : 'Favorites में जोड़ें',
+                        onPressed: () async {
+                          final updated =
+                              await api.put('/api/members/${voter['_id']}', {
+                            'isFavorite': voter['isFavorite'] != true,
+                          });
+                          voter['isFavorite'] = updated['isFavorite'] == true;
+                          await OfflineVoterCache.merge([updated]);
+                          onChanged();
+                        },
+                        icon: Icon(
+                          voter['isFavorite'] == true
+                              ? Icons.star_rounded
+                              : Icons.star_border_rounded,
+                          color: voter['isFavorite'] == true ? orange : muted,
+                          size: 20,
+                        ),
+                        visualDensity: VisualDensity.compact,
                       ),
-                    ],
+                    IconButton(
+                      tooltip: 'WhatsApp पर शेयर करें',
+                      onPressed: () => shareVoterDetails(context, voter),
+                      style: IconButton.styleFrom(
+                        backgroundColor: const Color(0xffe7f9ee),
+                        foregroundColor: const Color(0xff16a34a),
+                      ),
+                      icon: const Icon(Icons.share_rounded, size: 18),
+                      visualDensity: VisualDensity.compact,
+                    ),
+                    const SizedBox(width: 4),
+                    IconButton(
+                      tooltip: 'कॉल करें',
+                      onPressed:
+                          mobile.isEmpty ? null : () => callNumber(context, mobile),
+                      style: IconButton.styleFrom(
+                        backgroundColor: const Color(0xffeaf8f0),
+                        foregroundColor: green,
+                      ),
+                      icon: const Icon(Icons.call_rounded, size: 20),
+                      visualDensity: VisualDensity.compact,
+                    ),
                   ]),
-            ),
-            if (api.user?['role'] == 'admin')
-              IconButton(
-                tooltip: voter['isFavorite'] == true
-                    ? 'Favorites से हटाएं'
-                    : 'Favorites में जोड़ें',
-                onPressed: () async {
-                  final updated =
-                      await api.put('/api/members/${voter['_id']}', {
-                    'isFavorite': voter['isFavorite'] != true,
-                  });
-                  voter['isFavorite'] = updated['isFavorite'] == true;
-                  await OfflineVoterCache.merge([updated]);
-                  onChanged();
-                },
-                icon: Icon(
-                  voter['isFavorite'] == true
-                      ? Icons.star_rounded
-                      : Icons.star_border_rounded,
-                  color: voter['isFavorite'] == true ? orange : muted,
-                ),
+                ],
               ),
-            IconButton(
-              tooltip: 'WhatsApp पर शेयर करें',
-              onPressed: () => shareVoterDetails(context, voter),
-              style: IconButton.styleFrom(
-                backgroundColor: const Color(0xffe7f9ee),
-                foregroundColor: const Color(0xff16a34a),
-              ),
-              icon: const Icon(Icons.share_rounded, size: 18),
-            ),
-            const SizedBox(width: 4),
-            IconButton(
-              tooltip: 'कॉल करें',
-              onPressed:
-                  mobile.isEmpty ? null : () => callNumber(context, mobile),
-              style: IconButton.styleFrom(
-                backgroundColor: const Color(0xffeaf8f0),
-                foregroundColor: green,
-              ),
-              icon: const Icon(Icons.call_rounded, size: 20),
-            ),
-          ]),
+            ],
+          ),
         ),
       ),
     );
