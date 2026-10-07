@@ -4230,9 +4230,56 @@ class _FilterOptionDialogState extends State<_FilterOptionDialog> {
   final selectedForMerge = <String>{};
   bool mergeMode = false;
   bool merging = false;
+  Timer? _searchDebounce;
+  late Future<Map<String, dynamic>> _optionsFuture;
+
+  // Keys that are irrelevant to filter-options and should not be sent
+  static const _stripKeys = {
+    'q', 'qMode', 'voterSerial', 'supportLevel', 'partyPreference',
+    'gender', 'verificationStatus', 'profileCompletionStatus',
+    'favorite', 'favoriteRating', 'groupId', 'letter', 'area',
+  };
+
+  Map<String, String?> get _cleanFilters {
+    final cleaned = <String, String?>{};
+    for (final entry in widget.currentFilters.entries) {
+      if (_stripKeys.contains(entry.key)) continue;
+      final val = entry.value?.trim() ?? '';
+      if (val.isNotEmpty) cleaned[entry.key] = val;
+    }
+    return cleaned;
+  }
+
+  Future<Map<String, dynamic>> _fetchOptions(String q) =>
+      api.getQuery('/api/members/filter-options', {
+        ..._cleanFilters,
+        'field': widget.field,
+        'q': q,
+        'limit': '160',
+      });
+
+  @override
+  void initState() {
+    super.initState();
+    _optionsFuture = _fetchOptions('');
+    search.addListener(_onSearchChanged);
+  }
+
+  void _onSearchChanged() {
+    _searchDebounce?.cancel();
+    _searchDebounce = Timer(const Duration(milliseconds: 300), () {
+      if (mounted) {
+        setState(() {
+          _optionsFuture = _fetchOptions(search.text.trim());
+        });
+      }
+    });
+  }
 
   @override
   void dispose() {
+    _searchDebounce?.cancel();
+    search.removeListener(_onSearchChanged);
     search.dispose();
     super.dispose();
   }
@@ -4518,7 +4565,6 @@ class _FilterOptionDialogState extends State<_FilterOptionDialog> {
             TextField(
               controller: search,
               autofocus: true,
-              onChanged: (_) => setState(() {}),
               decoration: InputDecoration(
                 prefixIcon: const Icon(Icons.search_rounded),
                 hintText: '${widget.title} search करें...',
@@ -4527,7 +4573,9 @@ class _FilterOptionDialogState extends State<_FilterOptionDialog> {
                     : IconButton(
                         onPressed: () {
                           search.clear();
-                          setState(() {});
+                          setState(() {
+                            _optionsFuture = _fetchOptions('');
+                          });
                         },
                         icon: const Icon(Icons.close_rounded),
                       ),
@@ -4536,12 +4584,7 @@ class _FilterOptionDialogState extends State<_FilterOptionDialog> {
             const SizedBox(height: 10),
             Expanded(
               child: FutureBuilder<Map<String, dynamic>>(
-                future: api.getQuery('/api/members/filter-options', {
-                  ...widget.currentFilters,
-                  'field': widget.field,
-                  'q': search.text.trim(),
-                  'limit': '160',
-                }),
+                future: _optionsFuture,
                 builder: (context, snapshot) {
                   if (snapshot.connectionState != ConnectionState.done) {
                     return const Center(child: CircularProgressIndicator());
