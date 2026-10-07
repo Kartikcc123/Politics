@@ -272,7 +272,7 @@ class _VoterEditPageState extends State<VoterEditPage> {
       };
       if (body['age'] == '') body['age'] = null;
       for (final dateKey in ['dob', 'anniversary']) {
-        final original = widget.voter[dateKey];
+        final original = currentVoter[dateKey];
         final originalText = original == null ? '' : '$original'.trim();
         if ('${body[dateKey] ?? ''}'.trim().isEmpty && originalText.isEmpty) {
           body.remove(dateKey);
@@ -417,7 +417,7 @@ class _VoterEditPageState extends State<VoterEditPage> {
       ),
     );
     if (yes != true) return;
-    final voterId = '${widget.voter['_id']}';
+    final voterId = '${currentVoter['_id']}';
     await api.delete('/api/members/$voterId');
     await OfflineVoterCache.removeByIds([voterId]);
     api.notifyDataChanged();
@@ -685,16 +685,16 @@ class _VoterEditPageState extends State<VoterEditPage> {
       );
 
   Widget _ocrCardReview() {
-    final source = widget.voter['sourceDocument'];
+    final source = currentVoter['sourceDocument'];
     final rawPath =
         source is Map ? '${source['ocrCardImage'] ?? ''}'.trim() : '';
     final path = rawPath.isNotEmpty
         ? rawPath
-        : '${widget.voter['ocrCardImage'] ?? widget.voter['cardImage'] ?? ''}'
+        : '${currentVoter['ocrCardImage'] ?? currentVoter['cardImage'] ?? ''}'
             .trim();
     if (path.isEmpty) return const SizedBox.shrink();
     final url = voterPhotoUrl(path);
-    final reasons = (widget.voter['ocrReviewReasons'] as List?)
+    final reasons = (currentVoter['ocrReviewReasons'] as List?)
             ?.map((value) => '$value')
             .where((value) => value.isNotEmpty)
             .toList() ??
@@ -765,10 +765,10 @@ class _VoterEditPageState extends State<VoterEditPage> {
 
   Widget _profile() {
     final mobile =
-        fields['mobile']?.text.trim() ?? '${widget.voter['mobile'] ?? ''}';
+        fields['mobile']?.text.trim() ?? '${currentVoter['mobile'] ?? ''}';
     final name = fields['name']?.text.trim().isNotEmpty == true
         ? fields['name']!.text.trim()
-        : '${widget.voter['name'] ?? '-'}';
+        : '${currentVoter['name'] ?? '-'}';
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
       padding: const EdgeInsets.all(18),
@@ -855,7 +855,7 @@ class _VoterEditPageState extends State<VoterEditPage> {
                         : fields['voterSerial']!.text),
                 const SizedBox(height: 8),
                 Text(
-                    'अंतिम अपडेट: ${_formattedDate(widget.voter['updatedAt'])}',
+                    'अंतिम अपडेट: ${_formattedDate(currentVoter['updatedAt'])}',
                     style: const TextStyle(color: muted, fontSize: 12)),
               ])),
         ]),
@@ -905,7 +905,7 @@ class _VoterEditPageState extends State<VoterEditPage> {
   }
 
   Future<void> _sendSms() async {
-    final mobile = (fields['mobile']?.text ?? '${widget.voter['mobile'] ?? ''}')
+    final mobile = (fields['mobile']?.text ?? '${currentVoter['mobile'] ?? ''}')
         .replaceAll(RegExp(r'\D'), '');
     if (mobile.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
@@ -1021,7 +1021,7 @@ class _VoterEditPageState extends State<VoterEditPage> {
         return Image.file(io.File(path), fit: BoxFit.contain);
       }
     }
-    final photo = '${currentVoter['photo'] ?? widget.voter['photo'] ?? ''}'.trim();
+    final photo = '${currentVoter['photo'] ?? currentVoter['photo'] ?? ''}'.trim();
     if (photo.isNotEmpty) {
       final url = photo.startsWith('http') ? photo : '${api.baseUrl}$photo';
       return Image.network(

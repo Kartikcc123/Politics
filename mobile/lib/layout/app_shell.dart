@@ -2,11 +2,27 @@ import 'package:flutter/material.dart';
 
 import '../core/api_client.dart';
 import '../core/theme.dart';
+import '../features/activity/activity_page.dart';
 import '../features/analytics/party_analytics_page.dart';
+import '../features/areas/area_directory_page.dart';
+import '../features/areas/master_data_import_page.dart';
 import '../features/areas/samiti_hierarchy_page.dart';
-import '../features/more/more_page.dart';
-import '../features/voters/voter_management_page.dart';
 import '../features/auth/login_page.dart';
+import '../features/booths/booth_page.dart';
+import '../features/members/bulk_location_edit_page.dart';
+import '../features/messages/bulk_message_page.dart';
+import '../features/messages/whatsapp_page.dart';
+import '../features/more/more_page.dart';
+import '../features/reminders/reminder_dashboard_page.dart';
+import '../features/reports/configurable_print_page.dart';
+import '../features/reports/political_dashboard_page.dart';
+import '../features/reports/reports_page.dart';
+import '../features/settings/settings_page.dart';
+import '../features/uploads/admin_review_hub_page.dart';
+import '../features/uploads/smart_excel_import_page.dart';
+import '../features/uploads/upload_page.dart';
+import '../features/users/booth_user_page.dart';
+import '../features/voters/voter_management_page.dart';
 import 'app_layout.dart';
 
 class AppShell extends StatefulWidget {
@@ -19,6 +35,7 @@ class AppShell extends StatefulWidget {
 
 class _AppShellState extends State<AppShell> {
   int selected = 0;
+  int desktopSelected = 0;
   int refreshVersion = 0;
   final pageController = PageController();
 
@@ -32,6 +49,11 @@ class _AppShellState extends State<AppShell> {
         curve: Curves.easeOutCubic,
       );
     }
+  }
+
+  void selectDesktop(int index) {
+    if (index == desktopSelected) return;
+    setState(() => desktopSelected = index);
   }
 
   void logout() {
@@ -59,7 +81,7 @@ class _AppShellState extends State<AppShell> {
     if (mounted) setState(() => refreshVersion = api.dataVersion.value);
   }
 
-  List<NavItem> get items {
+  List<NavItem> get mobileItems {
     final isAdmin = widget.role == 'admin';
     final user = api.user;
     final assignedGps = (user?['assignedGramPanchayats'] as List? ?? [])
@@ -75,8 +97,6 @@ class _AppShellState extends State<AppShell> {
         .where((s) => '$s'.trim().isNotEmpty)
         .toList();
 
-    // Strict check: if user has any ward or part/booth restrictions, they are a ward/booth manager
-    // and MUST NOT see the "क्षेत्र व गाँव" page!
     final hasWardOrPartRestriction = assignedWards.isNotEmpty ||
         assignedParts.isNotEmpty ||
         user?['assignedBooth'] != null ||
@@ -84,14 +104,14 @@ class _AppShellState extends State<AppShell> {
         widget.role == 'booth' ||
         widget.role == 'ward_head';
 
-    // A non-admin user only gets the "क्षेत्र व गाँव" tab IF they are NOT ward/booth restricted
-    // and have full GP access.
     final hasWholeVillageAccess = isAdmin ||
-        (!hasWardOrPartRestriction && assignedGps.isNotEmpty && assignedWards.isEmpty && assignedParts.isEmpty);
+        (!hasWardOrPartRestriction &&
+            (assignedGps.isNotEmpty || assignedVillages.isNotEmpty) &&
+            assignedWards.isEmpty &&
+            assignedParts.isEmpty);
 
     final navList = <NavItem>[];
 
-    // Tab 1: Only show "क्षेत्र व गाँव" if user is admin or has full GP access without ward restriction
     if (hasWholeVillageAccess) {
       navList.add(
         NavItem(
@@ -102,7 +122,6 @@ class _AppShellState extends State<AppShell> {
       );
     }
 
-    // Tab 2: Voter List
     navList.add(
       NavItem(
         isAdmin ? 'सभी मतदाता' : 'मतदाता सूची',
@@ -111,7 +130,6 @@ class _AppShellState extends State<AppShell> {
       ),
     );
 
-    // Tab 3: Party Analytics
     navList.add(
       NavItem(
         'पार्टी गणना',
@@ -120,7 +138,6 @@ class _AppShellState extends State<AppShell> {
       ),
     );
 
-    // Tab 4: More / अधिक (Show if admin or if user has any permitted extra tools)
     final permissions = user?['permissions'] as Map? ?? {};
     final hasAnyExtraPerm = isAdmin ||
         permissions['canPrintProfiles'] == true ||
@@ -142,61 +159,299 @@ class _AppShellState extends State<AppShell> {
     return navList;
   }
 
+  List<DesktopNavSection> get desktopSections {
+    final isAdmin = widget.role == 'admin';
+    final user = api.user;
+    final perms = (user?['permissions'] as Map?) ?? {};
+
+    final assignedGps = (user?['assignedGramPanchayats'] as List? ?? [])
+        .where((s) => '$s'.trim().isNotEmpty)
+        .toList();
+    final assignedVillages = (user?['assignedVillages'] as List? ?? [])
+        .where((s) => '$s'.trim().isNotEmpty)
+        .toList();
+    final assignedWards = (user?['assignedWards'] as List? ?? [])
+        .where((s) => '$s'.trim().isNotEmpty)
+        .toList();
+    final assignedParts = (user?['assignedParts'] as List? ?? [])
+        .where((s) => '$s'.trim().isNotEmpty)
+        .toList();
+
+    final hasWholeVillageAccess = isAdmin ||
+        assignedGps.isNotEmpty ||
+        assignedVillages.isNotEmpty ||
+        assignedWards.length > 1 ||
+        assignedParts.length > 1;
+
+    final canPrint = isAdmin || perms['canPrintProfiles'] == true;
+    final canExport = isAdmin || perms['canExportData'] == true;
+    final canReport = isAdmin || perms['canViewReports'] == true;
+    final canUpload = isAdmin || perms['canUploadPdf'] == true;
+    final canImport = isAdmin || perms['canImportData'] == true;
+
+    final sections = <DesktopNavSection>[];
+
+    // 1. मुख्य कार्यक्षेत्र (Core)
+    final coreItems = <NavItem>[
+      if (hasWholeVillageAccess)
+        NavItem(
+          isAdmin ? 'क्षेत्र व गाँव' : 'गाँव व वार्ड',
+          Icons.holiday_village_rounded,
+          SamitiHierarchyPage(key: ValueKey('desktop-samiti-$refreshVersion')),
+        ),
+      NavItem(
+        isAdmin ? 'सभी मतदाता' : 'मतदाता सूची',
+        Icons.groups_rounded,
+        VoterManagementPage(key: ValueKey('desktop-voters-$refreshVersion')),
+      ),
+      NavItem(
+        'पार्टी गणना',
+        Icons.analytics_rounded,
+        PartyAnalyticsPage(key: ValueKey('desktop-party-$refreshVersion')),
+      ),
+      if (canReport)
+        NavItem(
+          'राजनीतिक विश्लेषण',
+          Icons.insights_rounded,
+          PoliticalDashboardPage(key: ValueKey('desktop-pol-dash-$refreshVersion')),
+        ),
+    ];
+    if (coreItems.isNotEmpty) {
+      sections.add(DesktopNavSection(title: 'मुख्य कार्यक्षेत्र', items: coreItems));
+    }
+
+    // 2. अभियान व संपर्क (Campaigns & Outreach)
+    final campaignItems = <NavItem>[
+      if (canExport)
+        NavItem(
+          'WhatsApp बल्क अभियान',
+          Icons.qr_code_scanner_rounded,
+          BulkMessagePage(key: ValueKey('desktop-bulk-msg-$refreshVersion')),
+        ),
+      if (canExport)
+        NavItem(
+          'WhatsApp संदेश व पोस्टर',
+          Icons.campaign_rounded,
+          WhatsAppPage(key: ValueKey('desktop-whatsapp-$refreshVersion')),
+        ),
+      if (canPrint)
+        NavItem(
+          'विस्तृत प्रिंट',
+          Icons.print_rounded,
+          ConfigurablePrintPage(key: ValueKey('desktop-print-$refreshVersion')),
+        ),
+      if (isAdmin || canReport)
+        NavItem(
+          'संपर्क अनुस्मारक',
+          Icons.notifications_active_rounded,
+          ReminderDashboardPage(key: ValueKey('desktop-reminders-$refreshVersion')),
+        ),
+    ];
+    if (campaignItems.isNotEmpty) {
+      sections.add(DesktopNavSection(title: 'अभियान व संपर्क', items: campaignItems));
+    }
+
+    // 3. डेटा व आयात (Data Management)
+    final dataItems = <NavItem>[
+      if (hasWholeVillageAccess)
+        NavItem(
+          'गाँव एवं पंचायत मास्टर',
+          Icons.holiday_village_outlined,
+          AreaDirectoryPage(key: ValueKey('desktop-area-dir-$refreshVersion')),
+        ),
+      if (canUpload)
+        NavItem(
+          'PDF / Excel अपलोड',
+          Icons.cloud_upload_rounded,
+          UploadPage(key: ValueKey('desktop-upload-$refreshVersion')),
+        ),
+      if (canImport)
+        NavItem(
+          'स्मार्ट Excel आयात',
+          Icons.rule_folder_rounded,
+          SmartExcelImportPage(key: ValueKey('desktop-smart-excel-$refreshVersion')),
+        ),
+      if (isAdmin)
+        NavItem(
+          'स्थान व अनुभाग सुधार',
+          Icons.edit_location_alt_rounded,
+          BulkLocationEditPage(key: ValueKey('desktop-bulk-loc-$refreshVersion')),
+        ),
+      if (isAdmin)
+        NavItem(
+          'लोकेशन मास्टर आयात',
+          Icons.storage_rounded,
+          MasterDataImportPage(key: ValueKey('desktop-master-import-$refreshVersion')),
+        ),
+      if (isAdmin)
+        NavItem(
+          'Admin Review Hub',
+          Icons.fact_check_rounded,
+          AdminReviewHubPage(key: ValueKey('desktop-admin-review-$refreshVersion')),
+        ),
+    ];
+    if (dataItems.isNotEmpty) {
+      sections.add(DesktopNavSection(title: 'डेटा व मास्टर आयात', items: dataItems));
+    }
+
+    // 4. प्रशासन व सेटिंग्स (Admin & Settings)
+    final adminItems = <NavItem>[
+      if (isAdmin)
+        NavItem(
+          'बूथ प्रबंधन',
+          Icons.how_to_vote_rounded,
+          BoothPage(key: ValueKey('desktop-booth-$refreshVersion')),
+        ),
+      if (isAdmin)
+        NavItem(
+          'बूथ उपयोगकर्ता',
+          Icons.supervisor_account_rounded,
+          BoothUserPage(key: ValueKey('desktop-booth-user-$refreshVersion')),
+        ),
+      if (canReport)
+        NavItem(
+          'रिपोर्ट और डाउनलोड',
+          Icons.bar_chart_rounded,
+          ReportsPage(key: ValueKey('desktop-reports-$refreshVersion')),
+        ),
+      if (isAdmin)
+        NavItem(
+          'गतिविधि ऑडिट लॉग',
+          Icons.history_rounded,
+          ActivityPage(key: ValueKey('desktop-activity-$refreshVersion')),
+        ),
+      NavItem(
+        'सिस्टम सेटिंग्स',
+        Icons.settings_rounded,
+        SettingsPage(key: ValueKey('desktop-settings-$refreshVersion')),
+      ),
+    ];
+    if (adminItems.isNotEmpty) {
+      sections.add(DesktopNavSection(title: 'सिस्टम व प्रबंधन', items: adminItems));
+    }
+
+    return sections;
+  }
+
+  List<NavItem> get flatDesktopItems {
+    final list = <NavItem>[];
+    for (final sec in desktopSections) {
+      list.addAll(sec.items);
+    }
+    return list;
+  }
+
   @override
   Widget build(BuildContext context) {
     final wide = MediaQuery.sizeOf(context).width >= 900;
-    final currentItems = items;
+    
+    if (wide) {
+      final sections = desktopSections;
+      final flatItems = flatDesktopItems;
+      final safeIdx = (desktopSelected >= 0 && desktopSelected < flatItems.length)
+          ? desktopSelected
+          : 0;
+      final currentItem = flatItems[safeIdx];
+
+      return Scaffold(
+        body: Row(
+          children: [
+            DesktopSidebar(
+              sections: sections,
+              selectedIndex: safeIdx,
+              onSelect: selectDesktop,
+              onLogout: logout,
+            ),
+            Expanded(
+              child: Column(
+                children: [
+                  DesktopHeader(
+                    title: currentItem.label,
+                    icon: currentItem.icon,
+                    onRefresh: () => setState(() => refreshVersion++),
+                    onLogout: logout,
+                    showNotifications: widget.role != 'booth',
+                  ),
+                  Expanded(
+                    child: IndexedStack(
+                      index: safeIdx,
+                      children: flatItems.map((e) => e.page).toList(),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    // Phone & Tablet Layout (< 900px)
+    final currentItems = mobileItems;
+    final safeSelected = (selected >= 0 && selected < currentItems.length) ? selected : 0;
+
     return Scaffold(
-      drawer: wide || widget.role == 'booth'
+      drawer: widget.role == 'booth'
           ? null
           : AppDrawer(
               role: widget.role,
               onLogout: logout,
             ),
-      body: Row(children: [
-        if (wide)
-          DesktopSidebar(
-              items: currentItems, selected: selected, onSelect: select),
-        Expanded(
-          child: Column(children: [
-            MobileHeader(
-              title: currentItems[selected].label,
-              onSearch: () => select(widget.role == 'booth' ? 0 : 1),
-              onLogout: widget.role == 'booth' ? logout : null,
-              showNotifications: widget.role != 'booth',
+      body: Column(
+        children: [
+          MobileHeader(
+            title: currentItems[safeSelected].label,
+            onSearch: () => select(widget.role == 'booth' ? 0 : 1),
+            onLogout: widget.role == 'booth' ? logout : null,
+            showNotifications: widget.role != 'booth',
+          ),
+          Expanded(
+            child: PageView(
+              controller: pageController,
+              onPageChanged: (index) {
+                if (index != selected) {
+                  setState(() => selected = index);
+                }
+              },
+              physics: const PageScrollPhysics(),
+              children: currentItems.map((e) => e.page).toList(),
             ),
-            Expanded(
-              child: wide
-                  ? IndexedStack(
-                      index: selected,
-                      children: currentItems.map((e) => e.page).toList(),
-                    )
-                  : PageView(
-                      controller: pageController,
-                      onPageChanged: (index) {
-                        if (index != selected) {
-                          setState(() => selected = index);
-                        }
-                      },
-                      physics: const PageScrollPhysics(),
-                      children: currentItems.map((e) => e.page).toList(),
-                    ),
-            ),
-          ]),
-        ),
-      ]),
-      bottomNavigationBar: wide || widget.role == 'booth'
+          ),
+        ],
+      ),
+      bottomNavigationBar: widget.role == 'booth'
           ? null
-          : _PhoneBottomBar(selected: selected, onSelect: select),
+          : _PhoneBottomBar(
+              items: currentItems,
+              selected: safeSelected,
+              onSelect: select,
+            ),
     );
   }
 }
 
 class _PhoneBottomBar extends StatelessWidget {
-  const _PhoneBottomBar({required this.selected, required this.onSelect});
+  const _PhoneBottomBar({
+    required this.items,
+    required this.selected,
+    required this.onSelect,
+  });
 
+  final List<NavItem> items;
   final int selected;
   final ValueChanged<int> onSelect;
+
+  static IconData _filledIcon(IconData icon) {
+    // Return a filled variant for selected state where possible
+    // Note: cannot be const because IconData overrides ==
+    final Map<IconData, IconData> filledVariants = {
+      Icons.holiday_village_outlined: Icons.holiday_village_rounded,
+      Icons.groups_outlined: Icons.groups_rounded,
+      Icons.grid_view_outlined: Icons.grid_view_rounded,
+      Icons.analytics_outlined: Icons.analytics_rounded,
+    };
+    return filledVariants[icon] ?? icon;
+  }
 
   @override
   Widget build(BuildContext context) => Container(
@@ -216,24 +471,15 @@ class _PhoneBottomBar extends StatelessWidget {
           top: false,
           child: Row(
             children: [
-              _PhoneNavButton(
-                label: 'क्षेत्र व गाँव',
-                icon: selected == 0 ? Icons.holiday_village_rounded : Icons.holiday_village_outlined,
-                selected: selected == 0,
-                onTap: () => onSelect(0),
-              ),
-              _PhoneNavButton(
-                label: 'सभी मतदाता',
-                icon: selected == 1 ? Icons.groups_rounded : Icons.groups_outlined,
-                selected: selected == 1,
-                onTap: () => onSelect(1),
-              ),
-              _PhoneNavButton(
-                label: 'अधिक',
-                icon: selected == 2 ? Icons.grid_view_rounded : Icons.grid_view_outlined,
-                selected: selected == 2,
-                onTap: () => onSelect(2),
-              ),
+              for (int i = 0; i < items.length; i++)
+                _PhoneNavButton(
+                  label: items[i].label,
+                  icon: selected == i
+                      ? _filledIcon(items[i].icon)
+                      : items[i].icon,
+                  selected: selected == i,
+                  onTap: () => onSelect(i),
+                ),
             ],
           ),
         ),

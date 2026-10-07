@@ -299,12 +299,16 @@ exports.list = async (req, res, next) => {
     if (area) filter.area = area;
     if (village) {
       const vRegex = hindiFlexibleRegex(village);
-      addOrClause([
-        { village: vRegex },
-        { gramPanchayat: vRegex },
-        { sectionName: vRegex },
-        { location: vRegex }
-      ]);
+      if (gramPanchayat) {
+        addOrClause([
+          { village: vRegex }
+        ]);
+      } else {
+        addOrClause([
+          { village: vRegex },
+          { village: { $in: ['', null] }, sectionName: vRegex }
+        ]);
+      }
     }
     if (pinCode) {
       const normalizedPin = String(pinCode).replace(/\D/g, '');
@@ -314,9 +318,7 @@ exports.list = async (req, res, next) => {
       const gpRegex = hindiFlexibleRegex(gramPanchayat);
       addOrClause([
         { gramPanchayat: gpRegex },
-        { village: gpRegex },
-        { sectionName: gpRegex },
-        { location: gpRegex }
+        { gramPanchayat: { $in: ['', null] }, village: gpRegex }
       ]);
     }
     if (tehsil) filter.tehsil = hindiFlexibleRegex(tehsil);
@@ -339,10 +341,7 @@ exports.list = async (req, res, next) => {
     if (assemblyName) filter.assemblyName = searchRegex(assemblyName);
     if (partNumber) filter.partNumber = partNumber;
     if (voterSerial) {
-      if (!village && !partNumber && !booth && !sectionName && !gramPanchayat) {
-        return res.status(400).json({ message: 'क्रम संख्या खोजने से पहले भाग / गाँव या अनुभाग चुनें।' });
-      }
-      const serial = String(voterSerial).replace(/[०-९]/g, (digit) => String('०१२३४५६७८९'.indexOf(digit))).replace(/\D/g, '');
+      const serial = String(voterSerial).replace(/[\u0966-\u096f]/g, (digit) => String('\u0966\u0967\u0968\u0969\u096a\u096b\u096c\u096d\u096e\u096f'.indexOf(digit))).replace(/\D/g, '');
       if (serial) filter.voterSerial = new RegExp(`^${escapeRegex(serial)}$`, 'i');
     }
     if (verificationStatus) {
@@ -359,6 +358,13 @@ exports.list = async (req, res, next) => {
         filter.verificationStatus = verificationStatus;
       }
     }
+    if (gender) {
+      // Support short codes (m/f) and full words (male/female)
+      const genderMap = { 'm': 'male', 'f': 'female', 'o': 'other' };
+      const normalizedGender = genderMap[String(gender).toLowerCase()] || String(gender).toLowerCase();
+      filter.gender = new RegExp(`^${escapeRegex(normalizedGender)}`, 'i');
+    }
+    if (location) filter.location = searchRegex(location);
     if (profileCompletionStatus) filter.profileCompletionStatus = profileCompletionStatus;
     if (letter) {
       const escapedLetter = escapeRegex(String(letter).trim());
@@ -1082,7 +1088,12 @@ exports.get = async (req, res, next) => {
 exports.update = async (req, res, next) => {
   const user = req.currentUser;
   const isUserAdmin = user.role === 'admin';
-  if (!isUserAdmin && user.permissions?.canEditVoters === false && user.permissions?.canEditPhoto === false) {
+  // Allow update if user has at least one relevant permission (voters, photo, or party)
+  const canDoAnyEdit = isUserAdmin ||
+    user.permissions?.canEditVoters !== false ||
+    user.permissions?.canEditPhoto !== false ||
+    user.permissions?.canEditParty !== false;
+  if (!canDoAnyEdit) {
     try { requirePermission(user, 'canEditVoters'); } catch (error) { return next(error); }
   }
   try {
@@ -1107,6 +1118,17 @@ exports.update = async (req, res, next) => {
       ];
       for (const field of protectedVoterFields) {
         delete updates[field];
+      }
+      // Allow partyPreference update only if canEditParty/canEditVoters is not explicitly denied
+      if (user.permissions?.canEditParty === false && user.permissions?.canEditVoters === false) {
+        delete updates.partyPreference;
+      }
+      // Allow photo update only if canEditPhoto is not explicitly denied
+      if (user.permissions?.canEditPhoto === false) {
+        delete updates.photo;
+        if (req.file) {
+          return res.status(403).json({ message: 'Photo upload permission denied.' });
+        }
       }
     }
     // OCR provenance is server-owned; admins verify through the normal status field.
