@@ -4251,6 +4251,8 @@ class _FilterOptionDialogState extends State<_FilterOptionDialog> {
     'q', 'qMode', 'voterSerial', 'supportLevel', 'partyPreference',
     'gender', 'verificationStatus', 'profileCompletionStatus',
     'favorite', 'favoriteRating', 'groupId', 'letter', 'area',
+    'contactType', 'rollType', 'matchStatus', 'municipalWard',
+    'occupation', 'organizationPost', 'missingMobile', 'missingHouse',
   };
 
   Map<String, String?> get _cleanFilters {
@@ -4263,13 +4265,16 @@ class _FilterOptionDialogState extends State<_FilterOptionDialog> {
     return cleaned;
   }
 
-  Future<Map<String, dynamic>> _fetchOptions(String q) =>
-      api.getQuery('/api/members/filter-options', {
+  Future<Map<String, dynamic>> _fetchOptions(String q) {
+      final params = <String, String?>{
         ..._cleanFilters,
         'field': widget.field,
         'q': q,
         'limit': '160',
-      });
+      };
+      debugPrint('[FilterDialog] field=${widget.field} cleanFilters=$params');
+      return api.getQuery('/api/members/filter-options', params);
+  }
 
   @override
   void initState() {
