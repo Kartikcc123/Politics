@@ -4246,14 +4246,9 @@ class _FilterOptionDialogState extends State<_FilterOptionDialog> {
   Timer? _searchDebounce;
   late Future<Map<String, dynamic>> _optionsFuture;
 
-  // Keys that are irrelevant to filter-options and should not be sent
-  static const _stripKeys = {
-    'q', 'qMode', 'voterSerial', 'supportLevel', 'partyPreference',
-    'gender', 'verificationStatus', 'profileCompletionStatus',
-    'favorite', 'favoriteRating', 'groupId', 'letter', 'area',
-    'contactType', 'rollType', 'matchStatus', 'municipalWard',
-    'occupation', 'organizationPost', 'missingMobile', 'missingHouse',
-  };
+  // The backend applies these active filters when building the option list.
+  // Only free-text search is reserved for searching option labels.
+  static const _stripKeys = {'q', 'qMode'};
 
   Map<String, String?> get _cleanFilters {
     final cleaned = <String, String?>{};

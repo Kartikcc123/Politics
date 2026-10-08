@@ -180,6 +180,7 @@ exports.create = async (req, res, next) => {
   try { requirePermission(req.currentUser, 'canCreateVoters'); } catch (error) { return next(error); }
   try {
     const data = { ...req.body };
+    normalizeMemberDates(data);
     data.contactType = data.contactType === 'personal' ? 'personal' : 'voter';
     removeBlankObjectRefs(data);
     assertPersonalContactAllowed(req.currentUser, data);
@@ -614,10 +615,12 @@ const optionDefinitions = {
 
 function addOptionFilter(filter, key, value) {
   if (!value) return;
-  if (['assemblyNumber', 'partNumber', 'sectionNumber', 'pinCode', 'supportLevel', 'verificationStatus', 'gender', 'booth'].includes(key)) {
-    filter[key] = value;
+  if (['assemblyNumber', 'partNumber', 'sectionNumber', 'pinCode', 'supportLevel', 'verificationStatus', 'gender', 'booth', 'area'].includes(key)) {
+    filter.$and = [...(filter.$and || []), { [key]: value }];
   } else if (['assemblyName', 'sectionName', 'partName', 'village', 'gramPanchayat', 'tehsil', 'municipality', 'caste', 'occupation', 'organizationPost'].includes(key)) {
-    filter[key] = new RegExp(String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
+    filter.$and = [...(filter.$and || []), {
+      [key]: new RegExp(String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i'),
+    }];
   }
 }
 
@@ -887,7 +890,10 @@ exports.bulkLocationCorrection = async (req, res, next) => {
 
 exports.filterOptions = async (req, res, next) => {
   try {
-    const { rollType, contactType, matchStatus, municipalWard } = req.query;
+    const {
+      rollType, contactType, matchStatus, municipalWard, favorite, favoriteRating,
+      partyPreference, profileCompletionStatus, groupId: selectedGroupId, letter, voterSerial,
+    } = req.query;
     let field = req.query.field;
     if (field === 'gav' || field === 'gaon' || field === 'gaw') field = 'village';
     if (field === 'part' || field === 'boothNumber') field = 'booth';
@@ -895,6 +901,11 @@ exports.filterOptions = async (req, res, next) => {
 
     const filter = applyMemberScope(req.currentUser, {});
     const selectedRoll = String(rollType || "").toLowerCase();
+    if (contactType === 'personal') {
+      filter.$and = [...(filter.$and || []), { contactType: 'personal' }];
+    } else if (contactType === 'voter') {
+      filter.$and = [...(filter.$and || []), { contactType: { $ne: 'personal' } }];
+    }
     if (contactType !== "personal") {
       if (selectedRoll === "assembly") {
         filter.$and = [...(filter.$and || []), { $or: [
@@ -921,7 +932,42 @@ exports.filterOptions = async (req, res, next) => {
       'assemblyNumber', 'assemblyName', 'partNumber', 'sectionNumber', 'sectionName',
       'village', 'gramPanchayat', 'tehsil', 'municipality', 'caste',
       'occupation', 'organizationPost', 'supportLevel', 'verificationStatus', 'gender',
-    ]) addOptionFilter(filter, key, req.query[key]);
+      'pinCode', 'area',
+    ]) {
+      const value = key === 'area' && mongoose.Types.ObjectId.isValid(req.query[key])
+        ? new mongoose.Types.ObjectId(req.query[key])
+        : req.query[key];
+      addOptionFilter(filter, key, value);
+    }
+    if (partyPreference) filter.$and = [...(filter.$and || []), { partyPreference }];
+    if (profileCompletionStatus) filter.$and = [...(filter.$and || []), { profileCompletionStatus }];
+    if (favorite === 'true') filter.$and = [...(filter.$and || []), { isFavorite: true }];
+    if (favoriteRating !== undefined && favoriteRating !== '') {
+      const rating = Number(favoriteRating);
+      if (Number.isInteger(rating) && rating >= 0 && rating <= 3) {
+        filter.$and = [...(filter.$and || []), { favoriteRating: rating }];
+      }
+    }
+    if (selectedGroupId) {
+      const group = mongoose.Types.ObjectId.isValid(selectedGroupId)
+        ? new mongoose.Types.ObjectId(selectedGroupId)
+        : selectedGroupId;
+      filter.$and = [...(filter.$and || []), { groups: group }];
+    }
+    if (letter) filter.$and = [...(filter.$and || []), { name: new RegExp(`^${escapeRegex(String(letter).trim())}`, 'i') }];
+    if (voterSerial) filter.$and = [...(filter.$and || []), { voterSerial: new RegExp(`^${escapeRegex(String(voterSerial).trim())}$`, 'i') }];
+    if (municipalWard) {
+      const rawWard = String(municipalWard).replace(/\D/g, '');
+      if (rawWard) {
+        const wardRegex = new RegExp(`^(वॉर्ड\\s*)?0*${rawWard}$`, 'i');
+        filter.$and = [...(filter.$and || []), {
+          $or: [
+            { wardNumber: rawWard }, { wardNumber: wardRegex },
+            { municipalWardNumbers: rawWard }, { municipalWardNumbers: wardRegex },
+          ],
+        }];
+      }
+    }
     if (req.query.missingMobile === 'true') filter.$and = [...(filter.$and || []), { $or: [{ mobile: '' }, { mobile: null }, { mobile: { $exists: false } }] }];
     if (req.query.missingHouse === 'true') filter.$and = [...(filter.$and || []), { $or: [{ houseNumber: '' }, { houseNumber: null }, { houseNumber: { $exists: false } }] }];
 
@@ -939,7 +985,7 @@ exports.filterOptions = async (req, res, next) => {
         const gId = def.group || `$${def.field}`;
         const nonE = def.match || { [def.field]: { $nin: ['', null] } };
         const rows = await Member.aggregate([
-          { $match: { ...filter, ...nonE } },
+          { $match: { $and: [filter, nonE] } },
           { $group: { _id: gId, count: { $sum: 1 } } },
           { $sort: { count: -1, _id: 1 } },
           { $limit: 200 },
@@ -952,6 +998,22 @@ exports.filterOptions = async (req, res, next) => {
         allItems = allItems.concat(opts);
       }
       result.items = allItems;
+      // The bulk section editor still consumes these legacy keys.
+      const [samitis, panchayats, villages, parts, sections, castes] = await Promise.all([
+        Member.distinct('tehsil', { $and: [filter, { tehsil: { $nin: ['', null] } }] }),
+        Member.distinct('gramPanchayat', { $and: [filter, { gramPanchayat: { $nin: ['', null] } }] }),
+        Member.distinct('village', { $and: [filter, { village: { $nin: ['', null] } }] }),
+        Member.distinct('partNumber', { $and: [filter, { partNumber: { $nin: ['', null] } }] }),
+        Member.distinct('sectionName', { $and: [filter, { sectionName: { $nin: ['', null] } }] }),
+        Member.distinct('caste', { $and: [filter, { caste: { $nin: ['', null] } }] }),
+      ]);
+      result.samitis = samitis.filter(Boolean).sort();
+      result.panchayats = panchayats.filter(Boolean).sort();
+      result.villages = villages.filter(Boolean).sort();
+      result.parts = parts.filter(Boolean).sort((a, b) => (Number(a) || 0) - (Number(b) || 0));
+      result.partNumbers = result.parts;
+      result.sectionNames = sections.filter(Boolean).sort();
+      result.castes = castes.filter(Boolean).sort();
       return res.json(result);
     }
 
@@ -961,10 +1023,10 @@ exports.filterOptions = async (req, res, next) => {
     const groupId = definition.group || `$${definition.field}`;
     const nonEmpty = definition.match || { [definition.field]: { $nin: ['', null] } };
     const rows = await Member.aggregate([
-      { $match: { ...filter, ...nonEmpty } },
+      { $match: { $and: [filter, nonEmpty] } },
       { $group: { _id: groupId, count: { $sum: 1 } } },
       { $sort: { count: -1, _id: 1 } },
-      { $limit: 500 },
+      { $limit: 5000 },
     ]);
     const items = rows.map((row) => definition.option
       ? definition.option(row._id || {}, row.count)
@@ -1131,6 +1193,7 @@ exports.update = async (req, res, next) => {
         }
       }
     }
+    normalizeMemberDates(updates);
     // OCR provenance is server-owned; admins verify through the normal status field.
     delete updates.locationResolution;
     delete updates.ocrValues;
@@ -1207,10 +1270,11 @@ exports.update = async (req, res, next) => {
         verifiedAt: new Date(),
       };
     }
+    const submittedPhoto = updates.photo;
     if (req.file) {
       member.photo = await persistLocalImage(req.file.path, req.currentUser._id, true);
-    } else if (updates.photo && updates.photo !== member.photo) {
-      member.photo = await persistLocalImage(updates.photo, req.currentUser._id, false);
+    } else if (submittedPhoto && submittedPhoto !== before.photo) {
+      member.photo = await persistLocalImage(submittedPhoto, req.currentUser._id, false);
     }
     member.updatedBy = req.currentUser._id;
     member.duplicateWarnings = await duplicateWarnings(member, member._id);
@@ -2245,8 +2309,10 @@ exports.fieldValues = async (req, res, next) => {
     const pipeline = [
       {
         $match: {
-          ...filter,
-          [targetField]: { $nin: ['', null, undefined], $exists: true }
+          $and: [
+            filter,
+            { [targetField]: { $nin: ['', null, undefined], $exists: true } },
+          ],
         }
       },
       {
@@ -2277,27 +2343,6 @@ exports.fieldValues = async (req, res, next) => {
     })).filter(i => i.value.length > 0);
 
     res.json({ items, count: items.length });
-  } catch (error) { next(error); }
-};
-
-exports.filterOptions = async (req, res, next) => {
-  try {
-    const filter = applyMemberScope(req.currentUser, {});
-    const [samitis, panchayats, villages, parts, castes] = await Promise.all([
-      Member.distinct('tehsil', { ...filter, tehsil: { $nin: ['', null] } }),
-      Member.distinct('gramPanchayat', { ...filter, gramPanchayat: { $nin: ['', null] } }),
-      Member.distinct('village', { ...filter, village: { $nin: ['', null] } }),
-      Member.distinct('partNumber', { ...filter, partNumber: { $nin: ['', null] } }),
-      Member.distinct('caste', { ...filter, caste: { $nin: ['', null] } }),
-    ]);
-
-    res.json({
-      samitis: samitis.filter(Boolean).sort(),
-      panchayats: panchayats.filter(Boolean).sort(),
-      villages: villages.filter(Boolean).sort(),
-      parts: parts.filter(Boolean).sort((a, b) => (Number(a) || 0) - (Number(b) || 0)),
-      castes: castes.filter(Boolean).sort(),
-    });
   } catch (error) { next(error); }
 };
 

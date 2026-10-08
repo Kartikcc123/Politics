@@ -17,6 +17,7 @@ router.post('/templates', canManageMessages, c.createTemplate);
 router.get('/senders', canManageMessages, c.senders);
 router.post('/senders', canManageMessages, c.saveSender);
 router.post('/senders/:id/connect', canManageMessages, c.connectSender);
+router.get('/senders/:id/qr', canManageMessages, c.senderQr);
 router.get('/senders/:id/status', canManageMessages, c.senderStatus);
 router.post('/senders/:id/logout', canManageMessages, c.logoutSender);
 router.delete('/senders/:id', canManageMessages, c.removeSender);

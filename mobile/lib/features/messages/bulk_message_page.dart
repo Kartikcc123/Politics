@@ -1310,7 +1310,11 @@ class _QrConnectDialogState extends State<_QrConnectDialog> {
     try {
       final res = await api.get('/api/messages/senders/${widget.senderId}/status');
       if (!mounted) return;
-      setState(() => statusData = res);
+      setState(() {
+        statusData = res;
+        final code = '${res['qrCode'] ?? ''}';
+        if (code.isNotEmpty) qrData = {'qr': code};
+      });
       if (res['connectionStatus'] == 'connected') {
         pollTimer?.cancel();
         Navigator.pop(context);
@@ -1343,11 +1347,33 @@ class _QrConnectDialogState extends State<_QrConnectDialog> {
                   fit: BoxFit.contain,
                 ),
               )
+            else if (statusData?['connectionStatus'] == 'failed')
+              const Padding(
+                padding: EdgeInsets.all(32),
+                child: Icon(Icons.error_outline_rounded,
+                    color: Colors.red, size: 56),
+              )
             else
               const Padding(
                 padding: EdgeInsets.all(32),
                 child: CircularProgressIndicator(),
               ),
+            if (statusData?['connectionStatus'] == 'failed' &&
+                '${statusData?['lastError'] ?? ''}'.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              Text(
+                'WhatsApp QR start nahi hua: ${statusData?['lastError']}',
+                textAlign: TextAlign.center,
+                style: const TextStyle(color: Colors.red, fontSize: 12),
+              ),
+            ] else if (statusData?['connectionStatus'] == 'starting') ...[
+              const SizedBox(height: 8),
+              const Text(
+                'WhatsApp Web start ho raha hai. QR aate hi yahan dikhega.',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: muted, fontSize: 12),
+              ),
+            ],
             const SizedBox(height: 12),
             const Text(
               'फ़ोन में WhatsApp खोलें → Settings / 3-dots → Linked Devices → Link a Device पर जाकर यह QR कोड स्कैन करें।',

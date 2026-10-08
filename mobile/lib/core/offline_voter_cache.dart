@@ -158,6 +158,50 @@ class OfflineVoterCache {
         q.split(' ').where((token) => token.isNotEmpty).toList();
     final filtered = items.where((raw) {
       final item = Map<String, dynamic>.from(raw);
+      final personal = item['contactType'] == 'personal';
+      final contactType = query['contactType'] ?? '';
+      if (contactType == 'personal' && !personal) return false;
+      if (contactType == 'voter' && personal) return false;
+
+      if (!personal) {
+        final rollType = query['rollType'] ?? '';
+        final hasAssembly = item['hasAssemblyMembership'] == true ||
+            (item['hasAssemblyMembership'] == null &&
+                '${item['assemblyNumber'] ?? ''}'.trim().isNotEmpty);
+        final hasMunicipal = item['hasMunicipalMembership'] == true;
+        if (rollType == 'assembly' && !hasAssembly) return false;
+        if ((rollType == 'municipal' || rollType == 'ward') && !hasMunicipal) {
+          return false;
+        }
+        final matchStatus = query['matchStatus'];
+        if (matchStatus == 'both' && (!hasAssembly || !hasMunicipal)) {
+          return false;
+        }
+        if (matchStatus == 'assembly_only' && (!hasAssembly || hasMunicipal)) {
+          return false;
+        }
+        if ((matchStatus == 'municipal_only' || matchStatus == 'ward_only') &&
+            (!hasMunicipal || hasAssembly)) {
+          return false;
+        }
+      }
+      final wardQuery = (query['municipalWard'] ?? '').replaceAll(RegExp(r'\D'), '');
+      if (wardQuery.isNotEmpty) {
+        final wards = [
+          item['wardNumber'],
+          ...(item['municipalWardNumbers'] as List? ?? const []),
+        ].map((value) => '$value'.replaceAll(RegExp(r'\D'), '')).toSet();
+        if (!wards.contains(wardQuery)) return false;
+      }
+      final rating = int.tryParse(query['favoriteRating'] ?? '');
+      if (rating != null && (item['favoriteRating'] as num?)?.toInt() != rating) {
+        return false;
+      }
+      final letter = (query['letter'] ?? '').trim().toLowerCase();
+      if (letter.isNotEmpty &&
+          !'${item['name'] ?? ''}'.trim().toLowerCase().startsWith(letter)) {
+        return false;
+      }
       if (queryTokens.isNotEmpty) {
         final mode = (query['qMode'] ?? '').trim().toLowerCase();
         final details = List<dynamic>.from(item['extraDetails'] as List? ?? []);
@@ -195,6 +239,11 @@ class OfflineVoterCache {
       if (query['favorite'] == 'true' && item['isFavorite'] != true) {
         return false;
       }
+      final groupId = query['groupId'] ?? '';
+      if (groupId.isNotEmpty) {
+        final groups = item['groups'] as List? ?? const [];
+        if (!groups.any((group) => _itemId(group) == groupId)) return false;
+      }
       for (final key in [
         'supportLevel',
         'partyPreference',
@@ -202,7 +251,9 @@ class OfflineVoterCache {
         'verificationStatus',
         'profileCompletionStatus',
         'assemblyNumber',
+        'assemblyName',
         'partNumber',
+        'area',
         'voterSerial',
         'pinCode',
         'sectionNumber',
@@ -231,8 +282,21 @@ class OfflineVoterCache {
               continue;
             }
           }
-          if (key == 'pinCode' || key == 'voterSerial') {
-            if (_normalize(actual) != _normalize(expected)) return false;
+          if (key == 'pinCode' ||
+              key == 'voterSerial' ||
+              key == 'assemblyNumber' ||
+              key == 'partNumber' ||
+              key == 'sectionNumber' ||
+              key == 'supportLevel' ||
+              key == 'partyPreference' ||
+              key == 'profileCompletionStatus' ||
+              key == 'area') {
+            final compared = key == 'area' ? _itemId(item[key]) : actual;
+            if (_normalize(compared) != _normalize(expected)) return false;
+            continue;
+          }
+          if (key == 'gender') {
+            if (!actual.startsWith(expected.toLowerCase())) return false;
             continue;
           }
           if (!actual.contains(expected.toLowerCase())) return false;
@@ -264,7 +328,9 @@ class OfflineVoterCache {
     for (final entry in query.entries) {
       final k = entry.key;
       if (k == 'rollType' || k == 'paged' || k == 'page' || k == 'limit' || k == 'qMode') {
-        continue;
+        if (k != 'rollType' || entry.value == null || entry.value!.isEmpty || entry.value == 'all') {
+          continue;
+        }
       }
       if (entry.value != null && entry.value!.trim().isNotEmpty) {
         return true;

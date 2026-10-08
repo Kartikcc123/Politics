@@ -317,6 +317,12 @@ class _VoterEditPageState extends State<VoterEditPage> {
             const SnackBar(content: Text('मतदाता जानकारी सहेज दी गई')));
         Navigator.pop(context);
       }
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('$error'.replaceFirst('Exception: ', ''))),
+        );
+      }
     } finally {
       if (mounted) setState(() => saving = false);
     }

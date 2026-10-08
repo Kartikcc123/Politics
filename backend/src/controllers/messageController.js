@@ -164,6 +164,20 @@ exports.senderStatus = async (req, res, next) => {
   } catch (error) { next(error); }
 };
 
+exports.senderQr = async (req, res, next) => {
+  try {
+    const sender = await MessageSender.findById(req.params.id)
+      .select('connectionStatus qrCode lastError lastSeenAt');
+    if (!sender) return res.status(404).json({ message: 'Sender नहीं मिला।' });
+    res.json({
+      qr: sender.qrCode || '',
+      connectionStatus: sender.connectionStatus,
+      lastError: sender.lastError || '',
+      lastSeenAt: sender.lastSeenAt,
+    });
+  } catch (error) { next(error); }
+};
+
 exports.logoutSender = async (req, res, next) => {
   try {
     await disconnectSender(req.params.id, true);

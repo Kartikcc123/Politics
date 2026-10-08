@@ -48,11 +48,17 @@ async function connectSender(senderOrId) {
   clients.set(id, client);
 
   client.on('qr', async (qr) => {
-    const dataUrl = await QRCode.toDataURL(qr, { width: 360, margin: 2 });
-    await updateSender(id, {
-      connectionStatus: 'qr_ready', qrCode: dataUrl,
-      lastError: '', lastSeenAt: new Date(),
-    });
+    try {
+      const dataUrl = await QRCode.toDataURL(qr, { width: 360, margin: 2 });
+      await updateSender(id, {
+        connectionStatus: 'qr_ready', qrCode: dataUrl,
+        lastError: '', lastSeenAt: new Date(),
+      });
+    } catch (error) {
+      await updateSender(id, {
+        connectionStatus: 'failed', qrCode: '', lastError: error.message,
+      }).catch(() => {});
+    }
   });
   client.on('authenticated', () => updateSender(id, {
     connectionStatus: 'authenticated', qrCode: '', lastSeenAt: new Date(),
@@ -67,6 +73,7 @@ async function connectSender(senderOrId) {
   });
   client.on('auth_failure', async (message) => {
     ready.delete(id);
+    clients.delete(id);
     await updateSender(id, { connectionStatus: 'failed', lastError: String(message), qrCode: '' });
   });
   client.on('disconnected', async (reason) => {
