@@ -177,23 +177,71 @@ const deletionKeys = (
   return [...keys];
 };
 
-const fieldSearchData = (member) => ({
-  searchNameKeys: [normalizeSearchValue(member?.name), normalizeSearchValue(member?.surname)].filter(Boolean),
-  searchGuardianKeys: [normalizeSearchValue(member?.guardianName)].filter(Boolean),
-  searchEpicKeys: [canonicalEpic(member?.voterId)].filter(Boolean),
-  searchHouseKeys: [normalizeSearchValue(member?.houseNumber)].filter(Boolean),
-  searchMobileKeys: [compactDigits(member?.mobile), compactDigits(member?.altMobile)].filter(Boolean),
-  searchVillageKeys: [normalizeSearchValue(member?.village)].filter(Boolean),
-  searchPinKeys: [compactDigits(member?.pinCode)].filter(Boolean),
-});
+const fieldSearchData = (member) => {
+  const nameValues = [member?.name, member?.surname].filter(Boolean);
+  const guardianValues = [member?.guardianName].filter(Boolean);
+  const epicValue = canonicalEpic(member?.voterId);
+  const houseValue = member?.houseNumber;
+  const mobileValues = [member?.mobile, member?.altMobile].filter(Boolean);
+  const villageValue = member?.village;
+  const pinValue = member?.pinCode;
+
+  const buildFieldKeys = (values, { digitsOnly = false, includePhonetic = true } = {}) => {
+    const keys = new Set();
+    for (const val of values) {
+      if (!val) continue;
+      const normalized = digitsOnly ? compactDigits(val) : normalizeSearchValue(val);
+      if (normalized) {
+        keys.add(normalized);
+        if (!digitsOnly) {
+          keys.add(normalized.replace(/\s+/g, ''));
+          normalized.split(' ').forEach((t) => keys.add(t));
+          const loose = looseHindiToken(normalized);
+          if (loose) keys.add('~' + loose);
+        }
+      }
+      for (const k of deletionKeys(val, { digitsOnly, includePhonetic, phoneticPrefixes: true })) {
+        keys.add(k);
+      }
+    }
+    return [...keys];
+  };
+
+  return {
+    searchNameKeys: buildFieldKeys(nameValues, { includePhonetic: true }),
+    searchGuardianKeys: buildFieldKeys(guardianValues, { includePhonetic: true }),
+    searchEpicKeys: buildFieldKeys([epicValue], { digitsOnly: false, includePhonetic: false }),
+    searchHouseKeys: buildFieldKeys([houseValue], { digitsOnly: false, includePhonetic: false }),
+    searchMobileKeys: buildFieldKeys(mobileValues, { digitsOnly: true, includePhonetic: false }),
+    searchVillageKeys: buildFieldKeys([villageValue], { digitsOnly: false, includePhonetic: true }),
+    searchPinKeys: buildFieldKeys([pinValue], { digitsOnly: true, includePhonetic: false }),
+  };
+};
 
 const buildMemberSearchData = (member) => {
   const values = sourceValues(member);
   const normalizedValues = values.map(normalizeSearchValue).filter(Boolean);
   const exact = new Set(normalizedValues);
+
+  for (const val of normalizedValues) {
+    addPrefixes(exact, val);
+    addLoosePrefixes(exact, val);
+    addPersonSubstrings(exact, val);
+    for (const token of val.split(' ')) {
+      addPrefixes(exact, token);
+      addLoosePrefixes(exact, token);
+      addPersonSubstrings(exact, token);
+    }
+  }
+
   for (const field of ['mobile', 'altMobile']) {
     const digits = compactDigits(member?.[field]);
-    if (digits) exact.add(digits);
+    if (digits) {
+      exact.add(digits);
+      if (digits.length >= 5) {
+        exact.add(digits.slice(-5));
+      }
+    }
   }
   const epic = canonicalEpic(member?.voterId);
   if (epic) exact.add(epic.toLowerCase());
@@ -201,7 +249,7 @@ const buildMemberSearchData = (member) => {
   return {
     searchVersion: SEARCH_VERSION,
     searchText: normalizedValues.join(' '),
-    searchKeys: [...exact].slice(0, 30),
+    searchKeys: [...exact],
     searchExact: [...exact].slice(0, 20),
     ...fieldSearchData(member),
   };

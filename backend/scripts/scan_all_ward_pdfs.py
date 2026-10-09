@@ -1,26 +1,51 @@
 import os
+import glob
+import pypdf
 import re
+import json
 
-downloads = r'C:\Users\Ashish Sharma\Downloads'
-all_pdfs = {}
+folders = [
+    r"C:\Users\Ashish Sharma\Downloads\Masinghpura_Wards",
+    r"C:\Users\Ashish Sharma\Downloads\Nahri_Wards",
+    r"C:\Users\Ashish Sharma\Downloads\narayankhera",
+    r"C:\Users\Ashish Sharma\Downloads\c",
+    r"C:\Users\Ashish Sharma\Downloads\o",
+    r"C:\Users\Ashish Sharma\Downloads\Borana",
+    r"C:\Users\Ashish Sharma\Downloads\w",
+    r"C:\Users\Ashish Sharma\Downloads\boriyapur",
+    r"C:\Users\Ashish Sharma\Downloads\5",
+    r"C:\Users\Ashish Sharma\Downloads\Nahri",
+    r"C:\Users\Ashish Sharma\Downloads\Masinghpur",
+    r"C:\Users\Ashish Sharma\Downloads\mokhunda",
+    r"C:\Users\Ashish Sharma\Downloads\suras",
+    r"C:\Users\Ashish Sharma\Downloads\sagrev",
+    r"C:\Users\Ashish Sharma\Downloads\Raipur",
+    r"C:\Users\Ashish Sharma\Downloads\palra",
+    r"C:\Users\Ashish Sharma\Downloads\panotiya",
+    r"C:\Users\Ashish Sharma\Downloads\Nathdiyas",
+    r"C:\Users\Ashish Sharma\Downloads\KHEMANA-",
+    r"C:\Users\Ashish Sharma\Downloads\THALA",
+    r"C:\Users\Ashish Sharma\Downloads\nandasa",
+    r"C:\Users\Ashish Sharma\Downloads"
+]
 
-for root, dirs, files in os.walk(downloads):
-    for f in files:
-        if f.lower().endswith('.pdf') and ('ward' in f.lower() or 'no-' in f.lower()):
-            full_path = os.path.join(root, f)
-            # Extract GP prefix and Ward Number
-            # e.g. "CHAROT-Ward No-001.pdf" or "AASHAHOLI-Ward No-001.pdf"
-            m = re.match(r'([A-Za-z\s-]+?)-Ward\s*No-?0*(\d+)\.pdf', f, re.I)
-            if m:
-                gp_name = m.group(1).strip().upper()
-                ward_no = int(m.group(2))
-                if gp_name not in all_pdfs:
-                    all_pdfs[gp_name] = {}
-                all_pdfs[gp_name][ward_no] = full_path
-            else:
-                print(f"Other PDF: {f} at {full_path}")
+all_pdf_files = []
+for folder in folders:
+    if os.path.exists(folder):
+        for root, dirs, files in os.walk(folder):
+            for f in files:
+                if f.lower().endswith(".pdf") and not f.startswith("2026-EROLLGEN"):
+                    full_p = os.path.join(root, f)
+                    if full_p not in all_pdf_files:
+                        all_pdf_files.append(full_p)
 
-print(f"\nTotal Gram Panchayats with Ward PDFs found: {len(all_pdfs)}\n")
-for gp, wards in sorted(all_pdfs.items()):
-    sorted_ward_nos = sorted(wards.keys())
-    print(f"GP: {gp:25} | Wards: {len(wards):2} (W{sorted_ward_nos[0]}..W{sorted_ward_nos[-1]}) | Sample Path: {list(wards.values())[0]}")
+print(f"Total unique Ward PDF files found: {len(all_pdf_files)}")
+
+# Sample list of files
+for p in all_pdf_files[:25]:
+    print("  ", p)
+
+with open(r"d:\Users\Ashish Sharma\OneDrive\Documents\Downloads\Politics-main\Politics-main\backend\scripts\all_ward_pdf_paths.json", "w", encoding="utf-8") as out:
+    json.dump(all_pdf_files, out, ensure_ascii=False, indent=2)
+
+print(f"\nSaved all {len(all_pdf_files)} PDF paths to all_ward_pdf_paths.json")

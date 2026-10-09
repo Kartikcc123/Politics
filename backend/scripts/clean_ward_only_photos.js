@@ -2,32 +2,25 @@ const mongoose = require('mongoose');
 
 const URI = process.env.MONGO_URI || 'mongodb://187.127.173.42:27017/political_crm';
 
-async function fixWardOnlyPhotos() {
-  console.log('Connecting to MongoDB at', URI);
+async function fixAllWardOnlyPhotos() {
   await mongoose.connect(URI);
-  const Member = mongoose.model('Member', new mongoose.Schema({}, { strict: false }));
+  const col = mongoose.connection.db.collection('members');
 
-  console.log('\n--- Checking Ward-Only voters with photos ---');
-  const countWithPhoto = await Member.countDocuments({
-    hasAssemblyMembership: false,
+  const filter = {
+    hasAssemblyMembership: { $ne: true },
     $or: [
       { photo: { $exists: true, $ne: '', $ne: null } },
       { cardImage: { $exists: true, $ne: '', $ne: null } },
       { ocrCardImage: { $exists: true, $ne: '', $ne: null } }
     ]
-  });
-  console.log(`Found ${countWithPhoto} Ward-only voters that have false/borrowed photos or card images.`);
+  };
 
-  if (countWithPhoto > 0) {
-    const res = await Member.updateMany(
-      {
-        hasAssemblyMembership: false,
-        $or: [
-          { photo: { $exists: true, $ne: '', $ne: null } },
-          { cardImage: { $exists: true, $ne: '', $ne: null } },
-          { ocrCardImage: { $exists: true, $ne: '', $ne: null } }
-        ]
-      },
+  const count = await col.countDocuments(filter);
+  console.log(`Remaining ward-only voters with photo/card: ${count}`);
+
+  if (count > 0) {
+    const res = await col.updateMany(
+      filter,
       {
         $set: {
           photo: '',
@@ -36,25 +29,16 @@ async function fixWardOnlyPhotos() {
         }
       }
     );
-    console.log(`Successfully cleared false photos/cards from ${res.modifiedCount} Ward-only voters!`);
+    console.log(`Updated ${res.modifiedCount} records in native collection!`);
   }
 
-  // Also verify Rameshwar Lal
-  const rameshwar = await Member.findOne({ voterId: 'SNE0894899' }).lean();
-  console.log('\nRameshwar Lal (SNE0894899) after cleanup:', {
-    name: rameshwar?.name,
-    voterId: rameshwar?.voterId,
-    hasAssemblyMembership: rameshwar?.hasAssemblyMembership,
-    hasMunicipalMembership: rameshwar?.hasMunicipalMembership,
-    wardNumber: rameshwar?.wardNumber,
-    photo: rameshwar?.photo,
-    cardImage: rameshwar?.cardImage
-  });
+  const finalCheck = await col.countDocuments(filter);
+  console.log(`Final count of ward-only voters with photo/card: ${finalCheck}`);
 
   process.exit(0);
 }
 
-fixWardOnlyPhotos().catch(err => {
+fixAllWardOnlyPhotos().catch(err => {
   console.error(err);
   process.exit(1);
 });

@@ -49,15 +49,15 @@ const hindiFlexibleRegex = (value) => {
     const char = clean[i];
     if (/[ँं़]/.test(char)) continue;
     if (/[डड़ड़]/.test(char)) {
-      tokens.push('[डड़ड़][ँं़]?');
+      tokens.push('[डड़ड़]ा?[ँं़]?');
     } else if (/[ढढ़ढ़]/.test(char)) {
-      tokens.push('[ढढ़ढ़][ँं़]?');
+      tokens.push('[ढढ़ढ़]ा?[ँं़]?');
     } else if (/[नण]/.test(char)) {
-      tokens.push('[नण][ँं़]?');
+      tokens.push('[नण]ा?[ँं़]?');
     } else if (/[शषस]/.test(char)) {
-      tokens.push('[शषस][ँं़]?');
+      tokens.push('[शषस]ा?[ँं़]?');
     } else if (/[बव]/.test(char)) {
-      tokens.push('[बव][ँं़]?');
+      tokens.push('[बव]ा?[ँं़]?');
     } else if (/[इईिी]/.test(char)) {
       tokens.push('[इईिी]?[ँं़]?');
     } else if (/[उऊुू]/.test(char)) {
@@ -65,11 +65,13 @@ const hindiFlexibleRegex = (value) => {
     } else if (/[एऐेै]/.test(char)) {
       tokens.push('[एऐेै]?[ँं़]?');
     } else if (/[दधथ]/.test(char)) {
-      tokens.push('[दधथ][ँं़]?');
+      tokens.push('[दधथ]ा?[ँं़]?');
+    } else if (char === 'ा') {
+      tokens.push('ा?');
     } else if (char === ' ') {
       // space handled between tokens
     } else {
-      tokens.push(char.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '[ँं़]?');
+      tokens.push(char.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + 'ा?[ँं़]?');
     }
   }
   return new RegExp(tokens.join('\\s*'), 'i');
@@ -230,8 +232,9 @@ exports.list = async (req, res, next) => {
     const paged = String(req.query.paged || '').toLowerCase() === 'true' || req.query.page !== undefined;
     const filter = applyMemberScope(req.currentUser, {});
     const selectedRoll = String(rollType || "").toLowerCase();
+    const hasWardFilter = Boolean(ward || req.query.municipalWard || req.query.municipalWardNumber);
     if (contactType !== "personal") {
-      if (selectedRoll === "assembly") {
+      if (selectedRoll === "assembly" && !hasWardFilter) {
         filter.$and = [...(filter.$and || []), { $or: [
           { hasAssemblyMembership: true },
           { hasAssemblyMembership: { $exists: false }, assemblyNumber: { $nin: ["", null] } },
@@ -281,10 +284,10 @@ exports.list = async (req, res, next) => {
       }
     };
 
-    if (ward || req.query.municipalWard || req.query.municipalWardNumber) {
-      const rawWard = String(ward || req.query.municipalWard || req.query.municipalWardNumber || '').replace(/\D/g, '').trim();
+    if (ward || req.query.wardNumber || req.query.municipalWard || req.query.municipalWardNumber) {
+      const rawWard = String(ward || req.query.wardNumber || req.query.municipalWard || req.query.municipalWardNumber || '').replace(/\D/g, '').trim();
       if (rawWard) {
-        const wardRegex = new RegExp(`^(वार्ड\\s*)?0*${rawWard}$`, 'i');
+        const wardRegex = new RegExp(`^(वार्ड|वॉर्ड)\\s*0*${rawWard}$`, 'i');
         const wardConditions = [
           { wardNumber: rawWard },
           { wardNumber: wardRegex },
@@ -322,7 +325,8 @@ exports.list = async (req, res, next) => {
         { gramPanchayat: { $in: ['', null] }, village: gpRegex }
       ]);
     }
-    if (tehsil) filter.tehsil = hindiFlexibleRegex(tehsil);
+    const tehsilParam = tehsil || req.query.samiti || req.query.simiti || req.query.panchayatSamiti;
+    if (tehsilParam) filter.tehsil = hindiFlexibleRegex(tehsilParam);
     if (municipality) filter.municipality = hindiFlexibleRegex(municipality);
     if (caste) filter.caste = hindiFlexibleRegex(caste);
     if (organizationPost) filter.organizationPost = searchRegex(organizationPost);
@@ -340,7 +344,14 @@ exports.list = async (req, res, next) => {
     }
     if (sectionName && !filter.sectionName) filter.sectionName = searchRegex(sectionName);    if (assemblyNumber) filter.assemblyNumber = assemblyNumber;
     if (assemblyName) filter.assemblyName = searchRegex(assemblyName);
-    if (partNumber) filter.partNumber = partNumber;
+    if (partNumber) {
+      const parts = String(partNumber).split(',').map((p) => p.trim()).filter(Boolean);
+      if (parts.length > 1) {
+        filter.partNumber = { $in: parts };
+      } else if (parts.length === 1) {
+        filter.partNumber = parts[0];
+      }
+    }
     if (voterSerial) {
       const serial = String(voterSerial).replace(/[\u0966-\u096f]/g, (digit) => String('\u0966\u0967\u0968\u0969\u096a\u096b\u096c\u096d\u096e\u096f'.indexOf(digit))).replace(/\D/g, '');
       if (serial) filter.voterSerial = new RegExp(`^${escapeRegex(serial)}$`, 'i');
@@ -611,11 +622,33 @@ const optionDefinitions = {
   caste: { field: 'caste' },
   occupation: { field: 'occupation' },
   organizationPost: { field: 'organizationPost' },
+  wardNumber: {
+    field: 'wardNumber',
+    group: '$wardNumber',
+    match: { wardNumber: { $nin: ['', null] } },
+    option: (id, count) => ({
+      value: String(id),
+      label: `वार्ड ${id}`,
+      count,
+      filters: { wardNumber: String(id) },
+    }),
+  },
+  ward: {
+    field: 'wardNumber',
+    group: '$wardNumber',
+    match: { wardNumber: { $nin: ['', null] } },
+    option: (id, count) => ({
+      value: String(id),
+      label: `वार्ड ${id}`,
+      count,
+      filters: { wardNumber: String(id) },
+    }),
+  },
 };
 
 function addOptionFilter(filter, key, value) {
   if (!value) return;
-  if (['assemblyNumber', 'partNumber', 'sectionNumber', 'pinCode', 'supportLevel', 'verificationStatus', 'gender', 'booth', 'area'].includes(key)) {
+  if (['assemblyNumber', 'partNumber', 'sectionNumber', 'pinCode', 'supportLevel', 'verificationStatus', 'gender', 'booth', 'area', 'wardNumber', 'ward'].includes(key)) {
     filter.$and = [...(filter.$and || []), { [key]: value }];
   } else if (['assemblyName', 'sectionName', 'partName', 'village', 'gramPanchayat', 'tehsil', 'municipality', 'caste', 'occupation', 'organizationPost'].includes(key)) {
     filter.$and = [...(filter.$and || []), {
@@ -928,9 +961,53 @@ exports.filterOptions = async (req, res, next) => {
         filter.hasAssemblyMembership = { $ne: true };
       }
     }
+    // 1. Part Number (support single or comma-separated)
+    const partVal = req.query.partNumber || req.query.part || req.query.boothNumber;
+    if (partVal) {
+      const parts = String(partVal).split(',').map((p) => p.trim()).filter(Boolean);
+      if (parts.length > 1) {
+        filter.$and = [...(filter.$and || []), { partNumber: { $in: parts } }];
+      } else if (parts.length === 1) {
+        filter.$and = [...(filter.$and || []), { partNumber: parts[0] }];
+      }
+    }
+
+    // 2. Samiti / Tehsil
+    const tehsilParam = req.query.tehsil || req.query.samiti || req.query.simiti || req.query.panchayatSamiti;
+    if (tehsilParam) {
+      filter.$and = [...(filter.$and || []), { tehsil: new RegExp(`^${escapeRegex(String(tehsilParam).trim())}$`, 'i') }];
+    }
+
+    // 3. Gram Panchayat
+    const gpParam = req.query.gramPanchayat || req.query.panchayat;
+    if (gpParam) {
+      filter.$and = [...(filter.$and || []), { gramPanchayat: new RegExp(`^${escapeRegex(String(gpParam).trim())}$`, 'i') }];
+    }
+
+    // 4. Village
+    const vilParam = req.query.village || req.query.gaon || req.query.gav;
+    if (vilParam) {
+      filter.$and = [...(filter.$and || []), { village: new RegExp(`^${escapeRegex(String(vilParam).trim())}$`, 'i') }];
+    }
+
+    // 5. Ward Number
+    const wardParam = municipalWard || req.query.ward || req.query.wardNumber || req.query.municipalWardNumber;
+    if (wardParam) {
+      const rawWard = String(wardParam).replace(/\D/g, '').trim();
+      if (rawWard) {
+        const wardRegex = new RegExp(`^(वॉर्ड|वार्ड)\\s*0*${rawWard}$`, 'i');
+        filter.$and = [...(filter.$and || []), {
+          $or: [
+            { wardNumber: rawWard }, { wardNumber: wardRegex },
+            { municipalWardNumbers: rawWard }, { municipalWardNumbers: wardRegex },
+          ],
+        }];
+      }
+    }
+
     for (const key of [
-      'assemblyNumber', 'assemblyName', 'partNumber', 'sectionNumber', 'sectionName',
-      'village', 'gramPanchayat', 'tehsil', 'municipality', 'caste',
+      'assemblyNumber', 'assemblyName', 'sectionNumber', 'sectionName',
+      'municipality', 'caste',
       'occupation', 'organizationPost', 'supportLevel', 'verificationStatus', 'gender',
       'pinCode', 'area',
     ]) {
@@ -956,18 +1033,6 @@ exports.filterOptions = async (req, res, next) => {
     }
     if (letter) filter.$and = [...(filter.$and || []), { name: new RegExp(`^${escapeRegex(String(letter).trim())}`, 'i') }];
     if (voterSerial) filter.$and = [...(filter.$and || []), { voterSerial: new RegExp(`^${escapeRegex(String(voterSerial).trim())}$`, 'i') }];
-    if (municipalWard) {
-      const rawWard = String(municipalWard).replace(/\D/g, '');
-      if (rawWard) {
-        const wardRegex = new RegExp(`^(वॉर्ड\\s*)?0*${rawWard}$`, 'i');
-        filter.$and = [...(filter.$and || []), {
-          $or: [
-            { wardNumber: rawWard }, { wardNumber: wardRegex },
-            { municipalWardNumbers: rawWard }, { municipalWardNumbers: wardRegex },
-          ],
-        }];
-      }
-    }
     if (req.query.missingMobile === 'true') filter.$and = [...(filter.$and || []), { $or: [{ mobile: '' }, { mobile: null }, { mobile: { $exists: false } }] }];
     if (req.query.missingHouse === 'true') filter.$and = [...(filter.$and || []), { $or: [{ houseNumber: '' }, { houseNumber: null }, { houseNumber: { $exists: false } }] }];
 
@@ -2267,7 +2332,7 @@ exports.bulkVoteStatus = async (req, res, next) => {
 
 exports.fieldValues = async (req, res, next) => {
   try {
-    const { field, limit, tehsil, samiti, simiti, gramPanchayat, panchayat, village, caste } = req.query;
+    const { field, limit, tehsil, samiti, simiti, gramPanchayat, panchayat, village, caste, partNumber, part, booth, boothNumber, ward, wardNumber, municipalWard } = req.query;
     const maxLimit = Math.min(Number(limit) || 300, 1000);
     const filter = applyMemberScope(req.currentUser, {});
 
@@ -2275,6 +2340,8 @@ exports.fieldValues = async (req, res, next) => {
     const gpVal = (gramPanchayat || panchayat || '').trim();
     const vilVal = (village || '').trim();
     const casteVal = (caste || '').trim();
+    const partVal = (partNumber || part || booth || boothNumber || '').trim();
+    const wardVal = (wardNumber || ward || municipalWard || '').trim();
 
     if (samitiVal && samitiVal !== 'all') {
       filter.$and = [...(filter.$and || []), { tehsil: new RegExp(`^${escapeRegex(samitiVal)}$`, 'i') }];
@@ -2284,6 +2351,26 @@ exports.fieldValues = async (req, res, next) => {
     }
     if (vilVal && vilVal !== 'all') {
       filter.$and = [...(filter.$and || []), { village: new RegExp(`^${escapeRegex(vilVal)}$`, 'i') }];
+    }
+    if (partVal && partVal !== 'all') {
+      const parts = partVal.split(',').map((p) => p.trim()).filter(Boolean);
+      if (parts.length > 1) {
+        filter.$and = [...(filter.$and || []), { partNumber: { $in: parts } }];
+      } else if (parts.length === 1) {
+        filter.$and = [...(filter.$and || []), { partNumber: parts[0] }];
+      }
+    }
+    if (wardVal && wardVal !== 'all') {
+      const rawWard = wardVal.replace(/\D/g, '').trim();
+      if (rawWard) {
+        const wardRegex = new RegExp(`^(वॉर्ड|वार्ड)\\s*0*${rawWard}$`, 'i');
+        filter.$and = [...(filter.$and || []), {
+          $or: [
+            { wardNumber: rawWard }, { wardNumber: wardRegex },
+            { municipalWardNumbers: rawWard }, { municipalWardNumbers: wardRegex },
+          ],
+        }];
+      }
     }
     if (casteVal && casteVal !== 'all') {
       filter.$and = [...(filter.$and || []), { caste: new RegExp(`^${escapeRegex(casteVal)}$`, 'i') }];

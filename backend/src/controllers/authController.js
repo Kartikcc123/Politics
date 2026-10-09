@@ -281,13 +281,19 @@ exports.hierarchyOptions = async (req, res, next) => {
 
     const gpMap = {};
     for (const gp of gps.filter(Boolean).sort()) {
-      gpMap[gp] = { name: gp, wards: new Set(), villages: new Set(), parts: new Map(), totalVoters: 0 };
+      gpMap[gp] = { name: gp, wards: new Set(), wardCounts: {}, villages: new Set(), parts: new Map(), totalVoters: 0 };
     }
 
     for (const item of gpBreakdown) {
       const gp = item._id.gp;
-      if (!gpMap[gp]) gpMap[gp] = { name: gp, wards: new Set(), villages: new Set(), parts: new Map(), totalVoters: 0 };
-      if (item._id.ward && item._id.ward !== 'NO_WARD') gpMap[gp].wards.add(String(item._id.ward));
+      if (!gpMap[gp]) gpMap[gp] = { name: gp, wards: new Set(), wardCounts: {}, villages: new Set(), parts: new Map(), totalVoters: 0 };
+      if (item._id.ward && item._id.ward !== 'NO_WARD') {
+        const wStr = String(item._id.ward).trim();
+        if (wStr) {
+          gpMap[gp].wards.add(wStr);
+          gpMap[gp].wardCounts[wStr] = (gpMap[gp].wardCounts[wStr] || 0) + (item.count || 0);
+        }
+      }
       if (item._id.village && item._id.village !== 'NO_VILLAGE') gpMap[gp].villages.add(String(item._id.village));
       if (item._id.part) {
         const pStr = String(item._id.part);
@@ -303,6 +309,7 @@ exports.hierarchyOptions = async (req, res, next) => {
       name: gp.name,
       totalVoters: gp.totalVoters,
       wards: Array.from(gp.wards).sort((a, b) => (parseInt(a) || 0) - (parseInt(b) || 0)),
+      wardCounts: gp.wardCounts || {},
       villages: Array.from(gp.villages).sort(),
       parts: Array.from(gp.parts.values()).map(p => ({
         partNumber: p.partNumber,

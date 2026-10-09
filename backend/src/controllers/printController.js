@@ -72,18 +72,38 @@ function applyPrintFilters(req, filter) {
   ]) {
     if (req.query[key]) filter[key] = new RegExp(escapeRegex(req.query[key]), 'i');
   }
+  const samitiParam = req.query.tehsil || req.query.samiti || req.query.simiti;
+  if (samitiParam) {
+    filter.tehsil = new RegExp(`^${escapeRegex(String(samitiParam).trim())}$`, 'i');
+  }
   for (const key of [
     'supportLevel', 'area', 'gender', 'verificationStatus', 'assemblyNumber',
-    'partNumber', 'sectionNumber',
+    'sectionNumber',
   ]) {
     if (req.query[key]) filter[key] = req.query[key];
   }
-  if (req.query.wardNumber) {
-    const w = String(req.query.wardNumber).trim();
-    filter.$or = [
-      { wardNumber: w },
-      { municipalWardNumbers: w }
-    ];
+  if (req.query.partNumber) {
+    const parts = String(req.query.partNumber).split(',').map((p) => p.trim()).filter(Boolean);
+    if (parts.length > 1) {
+      filter.partNumber = { $in: parts };
+    } else if (parts.length === 1) {
+      filter.partNumber = parts[0];
+    }
+  }
+  const wardParam = req.query.wardNumber || req.query.ward || req.query.municipalWard;
+  if (wardParam) {
+    const w = String(wardParam).replace(/\D/g, '').trim();
+    if (w) {
+      const wardRegex = new RegExp(`^(वॉर्ड|वार्ड)\\s*0*${w}$`, 'i');
+      filter.$and = [...(filter.$and || []), {
+        $or: [
+          { wardNumber: w },
+          { wardNumber: wardRegex },
+          { municipalWardNumbers: w },
+          { municipalWardNumbers: wardRegex }
+        ]
+      }];
+    }
   }
   if (req.query.letter) {
     filter.name = new RegExp(`^${escapeRegex(String(req.query.letter).trim())}`, 'i');

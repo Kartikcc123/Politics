@@ -76,11 +76,6 @@ const canonicalizeExcelRow = (row = {}) => {
     // If existing value is empty, set it
     if (!existingVal) {
       result[field] = value;
-    } else if (/[\u0900-\u097F]/.test(valStr) && !/[\u0900-\u097F]/.test(existingVal)) {
-      // HINDI TEXT ALWAYS OVERRIDES ENGLISH TEXT!
-      result[field] = value;
-    } else if (normalizeHeader(header).includes('hin') || normalizeHeader(header).includes('हिंदी') || normalizeHeader(header).includes('hindi')) {
-      if (valStr) result[field] = value;
     }
   }
   return result;
@@ -162,6 +157,7 @@ const buildSafeExcelMerge = (existing, incoming, { confidenceThreshold = 75, cas
 
     // STRICT PROTECTION: If existing field has Hindi text and incoming has NO Hindi text, NEVER overwrite with English!
     if (hasHindiCharacters(currentValue) && !hasHindiCharacters(incomingValue)) {
+      conflicts.push({ field, existing: currentValue, incoming: incomingValue });
       continue;
     }
 
@@ -170,6 +166,8 @@ const buildSafeExcelMerge = (existing, incoming, { confidenceThreshold = 75, cas
       if (isBlank(currentValue)) {
         updates[field] = incomingValue;
         filled.push(field);
+      } else if (!valuesEqual(currentValue, incomingValue)) {
+        conflicts.push({ field, existing: currentValue, incoming: incomingValue });
       }
       continue;
     }
@@ -180,11 +178,6 @@ const buildSafeExcelMerge = (existing, incoming, { confidenceThreshold = 75, cas
       continue;
     }
     if (valuesEqual(currentValue, incomingValue)) continue;
-    if (field === 'caste' || field === 'subCaste' || field === 'mobile' || field === 'altMobile') {
-      updates[field] = incomingValue;
-      filled.push(field);
-      continue;
-    }
     if (ocrFields.has(field) && canCorrectOcrField(existing, field, confidenceThreshold)) {
       updates[field] = incomingValue;
       corrected.push(field);
