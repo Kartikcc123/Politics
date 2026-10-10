@@ -51,8 +51,32 @@ class _VoterEditPageState extends State<VoterEditPage> {
   late Map<String, dynamic> currentVoter;
   late int currentIndex;
 
-  bool get _isBoothVoter =>
-      api.user?['role'] == 'booth' && currentVoter['contactType'] != 'personal';
+  bool get _isAdmin => api.user?['role'] == 'admin';
+
+  bool get _canEditVoters =>
+      _isAdmin || api.user?['permissions']?['canEditVoters'] != false;
+
+  bool get _canEditEpic =>
+      _isAdmin || api.user?['permissions']?['canEditEpic'] == true;
+
+  bool get _canEditPhoto =>
+      _isAdmin || api.user?['permissions']?['canEditPhoto'] != false;
+
+  bool get _canEditParty =>
+      _isAdmin || api.user?['permissions']?['canEditParty'] != false;
+
+  bool get _canDeleteVoter =>
+      _isAdmin || api.user?['permissions']?['canDeleteVoters'] == true;
+
+  bool _isFieldLocked(String key) {
+    if (key == 'voterId') {
+      return !_canEditEpic;
+    }
+    if (_sourceLockedFields.contains(key)) {
+      return !_canEditVoters;
+    }
+    return false;
+  }
 
   static const _sourceLockedFields = {
     'name',
@@ -573,7 +597,7 @@ class _VoterEditPageState extends State<VoterEditPage> {
           _profile(),
           _ocrCardReview(),
           _section('व्यक्तिगत जानकारी', Icons.person_outline, [
-            if (_isBoothVoter)
+            if (!_canEditVoters && currentVoter['contactType'] != 'personal')
               const _FullWidth(Text(
                 'मतदाता सूची से प्राप्त जानकारी केवल Admin Review में बदली जा सकती है।',
                 style: TextStyle(color: muted, fontWeight: FontWeight.w700),
@@ -593,7 +617,7 @@ class _VoterEditPageState extends State<VoterEditPage> {
                   'other': 'अन्य'
                 },
                 (v) => relationType = v,
-                enabled: !_isBoothVoter),
+                enabled: _canEditVoters),
             _field('age', 'उम्र', icon: Icons.cake_rounded, number: true),
             _dateField('dob', 'जन्म तिथि'),
             _genderCards(),
@@ -634,7 +658,8 @@ class _VoterEditPageState extends State<VoterEditPage> {
                   'nota': 'NOTA',
                   'other': 'अन्य पार्टी'
                 },
-                (v) => partyPreference = v),
+                (v) => partyPreference = v,
+                enabled: _canEditParty),
             _dropdown(
                 'सत्यापन स्थिति',
                 verificationStatus,
@@ -645,7 +670,7 @@ class _VoterEditPageState extends State<VoterEditPage> {
                   'duplicate': 'डुप्लीकेट'
                 },
                 (v) => verificationStatus = v,
-                enabled: !_isBoothVoter),
+                enabled: _canEditVoters),
             _field('organizationPost', 'राजनीतिक / सामाजिक पद'),
             _field('organizationLevel', 'पद स्तर (गाँव/मंडल/ब्लॉक/जिला)'),
             _field('caste', 'जाति'),
@@ -680,7 +705,7 @@ class _VoterEditPageState extends State<VoterEditPage> {
                 },
                 (v) => profileCompletionStatus = v),
           ]),
-          if (!_isBoothVoter) _dangerActions(),
+          if (_canDeleteVoter) _dangerActions(),
         ]),
       ];
 
@@ -793,7 +818,7 @@ class _VoterEditPageState extends State<VoterEditPage> {
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
           InkWell(
-            onTap: _pickPhoto,
+            onTap: _canEditPhoto ? _pickPhoto : null,
             borderRadius: BorderRadius.circular(24),
             child: Stack(clipBehavior: Clip.none, children: [
               Container(
@@ -936,13 +961,13 @@ class _VoterEditPageState extends State<VoterEditPage> {
               icon: Icons.male_rounded,
               label: 'पुरुष',
               onTap:
-                  _isBoothVoter ? null : () => setState(() => gender = 'male'),
+                  !_canEditVoters ? null : () => setState(() => gender = 'male'),
             ),
             _ChoiceCard(
               selected: gender == 'female',
               icon: Icons.female_rounded,
               label: 'महिला',
-              onTap: _isBoothVoter
+              onTap: !_canEditVoters
                   ? null
                   : () => setState(() => gender = 'female'),
             ),
@@ -951,7 +976,7 @@ class _VoterEditPageState extends State<VoterEditPage> {
               icon: Icons.person_outline_rounded,
               label: 'अन्य',
               onTap:
-                  _isBoothVoter ? null : () => setState(() => gender = 'other'),
+                  !_canEditVoters ? null : () => setState(() => gender = 'other'),
             ),
           ]),
         ]),
@@ -1095,8 +1120,7 @@ class _VoterEditPageState extends State<VoterEditPage> {
       bool full = false,
       bool readOnly = false,
       IconData? icon}) {
-    final locked =
-        readOnly || (_isBoothVoter && _sourceLockedFields.contains(key));
+    final locked = readOnly || _isFieldLocked(key);
     final field = TextFormField(
       controller: fields[key],
       readOnly: locked,
@@ -1596,7 +1620,7 @@ class _VoterEditPageState extends State<VoterEditPage> {
   Widget _statePickerField(String key, String label,
       {ValueChanged<String>? onStateChanged}) {
     final controller = fields[key]!;
-    final locked = _isBoothVoter && _sourceLockedFields.contains(key);
+    final locked = _isFieldLocked(key);
     return InkWell(
       onTap: locked ? null : () => _showStatePicker(key, label, onStateChanged),
       borderRadius: BorderRadius.circular(10),
@@ -1628,7 +1652,7 @@ class _VoterEditPageState extends State<VoterEditPage> {
   Widget _cityPickerField(String key, String label,
       {required String stateKey}) {
     final controller = fields[key]!;
-    final locked = _isBoothVoter && _sourceLockedFields.contains(key);
+    final locked = _isFieldLocked(key);
     return InkWell(
       onTap: locked ? null : () => _showCityPicker(key, label, stateKey),
       borderRadius: BorderRadius.circular(10),

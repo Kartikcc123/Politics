@@ -9,7 +9,7 @@ const Party = require('../models/Party');
 const Ward = require('../models/Ward');
 const Area = require('../models/Area');
 const User = require('../models/User');
-const { applyMemberScope, assertBoothAccess, assertWardAccess, requirePermission } = require('../utils/boothAccess');
+const { applyMemberScope, assertBoothAccess, assertWardAccess, assertMemberAccess, requirePermission } = require('../utils/boothAccess');
 const { writeActivity } = require('../middleware/activityLogger');
 const { requireValidEpic, isValidEpic, normalizeEpic } = require('../utils/epic');
 const { syncMemberFamily, removeMemberFromFamilies } = require('../utils/familySync');
@@ -1199,6 +1199,7 @@ exports.get = async (req, res, next) => {
   try {
     const member = await Member.findById(req.params.id).populate(populate);
     if (!member) return res.status(404).json({ message: 'Member not found' });
+    assertMemberAccess(req.currentUser, member);
     assertBoothAccess(req.currentUser, member.booth?._id || member.booth);
     assertWardAccess(req.currentUser, member.ward?._id || member.ward);
     const memberships = await ElectoralMembership.find({ member: member._id })
@@ -1215,17 +1216,21 @@ exports.get = async (req, res, next) => {
 exports.update = async (req, res, next) => {
   const user = req.currentUser;
   const isUserAdmin = user.role === 'admin';
-  // Allow update if user has at least one relevant permission (voters, photo, or party)
-  const canDoAnyEdit = isUserAdmin ||
-    user.permissions?.canEditVoters !== false ||
-    user.permissions?.canEditPhoto !== false ||
-    user.permissions?.canEditParty !== false;
+  const canEditVoters = isUserAdmin || user.permissions?.canEditVoters !== false;
+  const canEditPhoto = isUserAdmin || user.permissions?.canEditPhoto !== false;
+  const canEditParty = isUserAdmin || user.permissions?.canEditParty !== false;
+  const canEditAnubhag = isUserAdmin || user.permissions?.canEditAnubhag !== false;
+  const canEditEpic = isUserAdmin || user.permissions?.canEditEpic === true;
+
+  // Allow update if user has at least one relevant permission (voters, photo, party, or anubhag)
+  const canDoAnyEdit = canEditVoters || canEditPhoto || canEditParty || canEditAnubhag;
   if (!canDoAnyEdit) {
     try { requirePermission(user, 'canEditVoters'); } catch (error) { return next(error); }
   }
   try {
     const member = await Member.findById(req.params.id);
     if (!member) return res.status(404).json({ message: 'Member not found' });
+    assertMemberAccess(req.currentUser, member);
     assertBoothAccess(req.currentUser, member.booth);
     assertWardAccess(req.currentUser, member.ward);
     if (req.body.booth) assertBoothAccess(req.currentUser, req.body.booth);
@@ -1234,29 +1239,36 @@ exports.update = async (req, res, next) => {
     const updates = { ...req.body };
     if (!isUserAdmin) delete updates.isFavorite;
 
-    // For non-admin managers editing an electoral voter, preserve immutable official roll fields
-    if (!isUserAdmin && member.contactType !== 'personal') {
+    // Only if canEditVoters is explicitly false, protect demographic fields
+    if (!canEditVoters && member.contactType !== 'personal') {
       const protectedVoterFields = [
-        'name', 'surname', 'guardianName', 'gender', 'age',
-        'voterId', 'voterSerial', 'houseNumber', 'assemblyNumber',
-        'assemblyName', 'partNumber', 'partName', 'sectionNumber',
+        'name', 'surname', 'guardianName', 'gender', 'age', 'dob',
+        'relationType', 'voterSerial', 'houseNumber', 'address', 'location',
+        'assemblyNumber', 'assemblyName', 'partNumber', 'partName', 'sectionNumber',
         'sectionName', 'tehsil', 'gramPanchayat', 'village', 'district',
-        'pinCode', 'verificationStatus',
+        'pinCode', 'verificationStatus', 'caste', 'subCaste', 'occupation',
+        'education', 'workplaceVillage', 'workplaceState', 'workplaceCity',
+        'spouseName', 'marriageVillage', 'marriageState', 'marriageCity',
       ];
       for (const field of protectedVoterFields) {
         delete updates[field];
       }
-      // Allow partyPreference update only if canEditParty/canEditVoters is not explicitly denied
-      if (user.permissions?.canEditParty === false && user.permissions?.canEditVoters === false) {
-        delete updates.partyPreference;
+    }
+    // Allow partyPreference update only if canEditParty is allowed
+    if (!canEditParty) {
+      delete updates.partyPreference;
+    }
+    // Allow photo update only if canEditPhoto is allowed
+    if (!canEditPhoto) {
+      delete updates.photo;
+      if (req.file) {
+        return res.status(403).json({ message: 'Photo upload permission denied.' });
       }
-      // Allow photo update only if canEditPhoto is not explicitly denied
-      if (user.permissions?.canEditPhoto === false) {
-        delete updates.photo;
-        if (req.file) {
-          return res.status(403).json({ message: 'Photo upload permission denied.' });
-        }
-      }
+    }
+    // Allow section/anubhag update only if canEditAnubhag or canEditVoters
+    if (!canEditAnubhag && !canEditVoters) {
+      delete updates.sectionNumber;
+      delete updates.sectionName;
     }
     normalizeMemberDates(updates);
     // OCR provenance is server-owned; admins verify through the normal status field.
@@ -1279,8 +1291,8 @@ exports.update = async (req, res, next) => {
     if (updates.voterId) {
       const cleanEpic = requireValidEpic(updates.voterId);
       if (cleanEpic !== member.voterId) {
-        if (req.currentUser.role !== 'admin') {
-          return res.status(403).json({ message: 'EPIC नंबर केवल admin बदल सकते हैं।' });
+        if (!canEditEpic) {
+          return res.status(403).json({ message: 'EPIC नंबर केवल admin या विशेष अनुमति वाले बदल सकते हैं।' });
         }
         const existingWithEpic = await Member.findOne({ voterId: cleanEpic, _id: { $ne: member._id } });
         if (existingWithEpic) {
@@ -1361,6 +1373,7 @@ exports.remove = async (req, res, next) => {
     if (!member) return res.status(404).json({ message: 'Member not found' });
     const isOwner = String(member.createdBy) === String(req.currentUser._id);
     if (!isOwner) {
+      assertMemberAccess(req.currentUser, member);
       assertBoothAccess(req.currentUser, member.booth);
       assertWardAccess(req.currentUser, member.ward);
     }

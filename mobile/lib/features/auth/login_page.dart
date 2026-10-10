@@ -18,6 +18,8 @@ class _LoginPageState extends State<LoginPage> {
   bool loading = false;
   String error = '';
 
+  bool showPassword = false;
+
   Future<void> login() async {
     setState(() {
       loading = true;
@@ -86,10 +88,17 @@ class _LoginPageState extends State<LoginPage> {
                             const SizedBox(height: 12),
                             TextField(
                                 controller: password,
-                                obscureText: true,
-                                decoration: const InputDecoration(
+                                obscureText: !showPassword,
+                                decoration: InputDecoration(
                                     labelText: 'पासवर्ड',
-                                    prefixIcon: Icon(Icons.lock_outline))),
+                                    prefixIcon: const Icon(Icons.lock_outline),
+                                    suffixIcon: IconButton(
+                                      icon: Icon(showPassword
+                                          ? Icons.visibility_off
+                                          : Icons.visibility),
+                                      onPressed: () => setState(() =>
+                                          showPassword = !showPassword),
+                                    ))),
                             Align(
                                 alignment: Alignment.centerRight,
                                 child: TextButton(

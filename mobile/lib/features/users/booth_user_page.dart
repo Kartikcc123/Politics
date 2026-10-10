@@ -60,7 +60,7 @@ class _BoothUserPageState extends State<BoothUserPage> with SingleTickerProvider
 
       if (mounted) {
         setState(() {
-          hierarchyData = hierarchyRes is Map<String, dynamic> ? hierarchyRes : {};
+          hierarchyData = hierarchyRes;
           allUsers = usersRes.whereType<Map>().map((u) => Map<String, dynamic>.from(u)).toList();
           loading = false;
         });
@@ -803,6 +803,7 @@ class _AddEditManagerDialogState extends State<_AddEditManagerDialog> {
   bool canViewReports = true;
 
   bool saving = false;
+  bool showPassword = false;
 
   @override
   void initState() {
@@ -918,9 +919,13 @@ class _AddEditManagerDialogState extends State<_AddEditManagerDialog> {
       nameController.text = '${v['name'] ?? ''}'.trim();
       final mobile = '${v['mobile'] ?? ''}'.replaceAll(RegExp(r'\D'), '');
       if (mobile.length == 10) phoneController.text = mobile;
-      final epic = '${v['voterId'] ?? ''}'.trim().toLowerCase().replaceAll('/', '_');
-      if (emailController.text.isEmpty && epic.isNotEmpty) {
-        emailController.text = '$epic@crm.com';
+      if (mobile.length == 10 && (emailController.text.isEmpty || emailController.text.endsWith('@crm.com'))) {
+        emailController.text = '$mobile@crm.com';
+      } else {
+        final epic = '${v['voterId'] ?? ''}'.trim().toLowerCase().replaceAll('/', '_');
+        if (emailController.text.isEmpty && epic.isNotEmpty) {
+          emailController.text = '$epic@crm.com';
+        }
       }
       if (passwordController.text.isEmpty) {
         passwordController.text = '123456';
@@ -992,9 +997,45 @@ class _AddEditManagerDialogState extends State<_AddEditManagerDialog> {
       widget.onSaved();
       if (mounted) {
         Navigator.pop(context);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(widget.user != null ? 'प्रभारी अपडेट हो गया।' : 'नया प्रभारी सफलतापूर्वक बनाया गया।')),
-        );
+        if (widget.user == null) {
+          showDialog(
+            context: context,
+            builder: (ctx) => AlertDialog(
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+              title: const Row(children: [
+                Icon(Icons.check_circle_rounded, color: Colors.green, size: 28),
+                SizedBox(width: 10),
+                Text('प्रभारी बनाया गया!', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+              ]),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('नाम: $name', style: const TextStyle(fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 8),
+                  Text('लॉगिन: ${phone.isNotEmpty ? phone : email}'),
+                  Text('ईमेल: $email'),
+                  Text('पासवर्ड: $password', style: const TextStyle(fontWeight: FontWeight.bold, color: Color(0xff2563eb))),
+                  const SizedBox(height: 12),
+                  const Text(
+                    'नोट: यूजर अपने 10-अंकों के मोबाइल नंबर या ईमेल और इसी पासवर्ड से ऐप में लॉगिन कर सकते हैं।',
+                    style: TextStyle(color: Colors.blueGrey, fontSize: 12),
+                  ),
+                ],
+              ),
+              actions: [
+                FilledButton(
+                  onPressed: () => Navigator.pop(ctx),
+                  child: const Text('समझ गया (OK)'),
+                ),
+              ],
+            ),
+          );
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('प्रभारी अपडेट हो गया।')),
+          );
+        }
       }
     } catch (e) {
       if (mounted) {
@@ -1184,6 +1225,14 @@ class _AddEditManagerDialogState extends State<_AddEditManagerDialog> {
                 child: TextField(
                   controller: phoneController,
                   keyboardType: TextInputType.phone,
+                  onChanged: (val) {
+                    final digits = val.replaceAll(RegExp(r'\D'), '');
+                    if (widget.user == null && (emailController.text.isEmpty || emailController.text.endsWith('@crm.com'))) {
+                      setState(() {
+                        emailController.text = digits.isNotEmpty ? '$digits@crm.com' : '';
+                      });
+                    }
+                  },
                   decoration: const InputDecoration(labelText: 'मोबाइल नंबर', prefixIcon: Icon(Icons.phone)),
                 ),
               ),
@@ -1191,10 +1240,14 @@ class _AddEditManagerDialogState extends State<_AddEditManagerDialog> {
               Expanded(
                 child: TextField(
                   controller: passwordController,
-                  obscureText: true,
+                  obscureText: !showPassword,
                   decoration: InputDecoration(
                     labelText: widget.user != null ? 'नया पासवर्ड (ऐच्छिक)' : 'पासवर्ड (कम से कम 6 अक्षर) *',
                     prefixIcon: const Icon(Icons.lock),
+                    suffixIcon: IconButton(
+                      icon: Icon(showPassword ? Icons.visibility_off : Icons.visibility, color: const Color(0xff2563eb), size: 20),
+                      onPressed: () => setState(() => showPassword = !showPassword),
+                    ),
                   ),
                 ),
               ),
@@ -1202,7 +1255,11 @@ class _AddEditManagerDialogState extends State<_AddEditManagerDialog> {
             const SizedBox(height: 10),
             TextField(
               controller: emailController,
-              decoration: const InputDecoration(labelText: 'लॉगिन ईमेल / यूजरनेम', prefixIcon: Icon(Icons.email)),
+              decoration: const InputDecoration(
+                labelText: 'लॉगिन ईमेल / यूजरनेम',
+                prefixIcon: Icon(Icons.email),
+                helperText: 'यूजर मोबाइल नंबर या इस ईमेल से लॉगिन कर सकते हैं',
+              ),
             ),
 
             const Divider(color: border, height: 24),

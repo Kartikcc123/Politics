@@ -40,8 +40,13 @@ const requireBooth = async (assignedBooth) => {
 
 const normalizeUserPayload = async (body, existingUser) => {
   const data = { ...body };
+  delete data.password;
   const role = data.role || existingUser?.role || 'user';
   data.role = role;
+
+  if (data.email) data.email = String(data.email).trim().toLowerCase();
+  if (data.phone) data.phone = String(data.phone).trim();
+  if (data.name) data.name = String(data.name).trim();
 
   if (data.assignedBooth && mongoose.Types.ObjectId.isValid(data.assignedBooth)) {
     try {
@@ -156,10 +161,18 @@ exports.register = async (req, res, next) => {
   try {
     const errors = validationResult(req);
     if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
-    const { name, email, password } = req.body;
-    if (!password || String(password).length < 6) {
-      return res.status(400).json({ message: 'Password must be at least 6 characters' });
+    
+    const rawPassword = String(req.body.password || '').trim();
+    if (!rawPassword || rawPassword.length < 6) {
+      return res.status(400).json({ message: 'पासवर्ड कम से कम 6 अक्षरों का होना चाहिए (Password must be at least 6 characters)' });
     }
+
+    const name = String(req.body.name || '').trim();
+    const email = String(req.body.email || '').trim().toLowerCase();
+    const phone = String(req.body.phone || '').trim();
+
+    if (!name) return res.status(400).json({ message: 'नाम आवश्यक है (Name is required)' });
+    if (!email) return res.status(400).json({ message: 'ईमेल / यूजरनेम आवश्यक है (Email is required)' });
 
     const data = await normalizeUserPayload(req.body);
     if (data.role === 'admin' && req.currentUser && req.currentUser.role !== 'admin') {
@@ -167,10 +180,16 @@ exports.register = async (req, res, next) => {
     }
 
     const exists = await User.findOne({ email });
-    if (exists) return res.status(409).json({ message: 'User already exists' });
+    if (exists) return res.status(409).json({ message: `उपयोगकर्ता '${email}' पहले से मौजूद है (User already exists)` });
 
-    const hash = await bcrypt.hash(password, 12);
-    const user = await User.create({ ...data, name, email, password: hash });
+    const hash = await bcrypt.hash(rawPassword, 12);
+    const user = await User.create({
+      ...data,
+      name,
+      email,
+      phone,
+      password: hash,
+    });
     const populated = await User.findById(user._id).populate('assignedWard assignedBooth');
     res.status(201).json({ token: sign(user), user: publicUser(populated) });
   } catch (error) {
@@ -180,11 +199,40 @@ exports.register = async (req, res, next) => {
 
 exports.login = async (req, res, next) => {
   try {
-    const { email, password } = req.body;
-    const user = await User.findOne({ email }).select('+password').populate('assignedWard assignedBooth');
-    if (!user || !user.active) return res.status(400).json({ message: 'Invalid credentials' });
+    const loginInput = String(req.body.email || req.body.username || req.body.phone || '').trim();
+    const password = String(req.body.password || '').trim();
+    if (!loginInput || !password) {
+      return res.status(400).json({ message: 'लॉगिन आईडी और पासवर्ड आवश्यक हैं।' });
+    }
+
+    const cleanPhone = loginInput.replace(/\D/g, '');
+    const lower = loginInput.toLowerCase();
+
+    const queryConditions = [
+      { email: lower },
+      { phone: loginInput },
+    ];
+
+    if (cleanPhone.length >= 10) {
+      const ten = cleanPhone.slice(-10);
+      queryConditions.push(
+        { phone: ten },
+        { phone: cleanPhone },
+        { email: `${ten}@crm.com` },
+        { email: `${cleanPhone}@crm.com` }
+      );
+    } else if (!lower.includes('@')) {
+      queryConditions.push({ email: `${lower}@crm.com` });
+      queryConditions.push({ assignedVoterId: loginInput.toUpperCase() });
+    }
+
+    const user = await User.findOne({ $or: queryConditions })
+      .select('+password')
+      .populate('assignedWard assignedBooth');
+
+    if (!user || !user.active) return res.status(400).json({ message: 'गलत लॉगिन विवरण (Invalid credentials)' });
     const ok = await bcrypt.compare(password, user.password);
-    if (!ok) return res.status(400).json({ message: 'Invalid credentials' });
+    if (!ok) return res.status(400).json({ message: 'गलत पासवर्ड (Invalid credentials)' });
     res.json({ token: sign(user), user: publicUser(user) });
   } catch (error) {
     next(error);
@@ -220,7 +268,18 @@ exports.updateUser = async (req, res, next) => {
     const existing = await User.findById(req.params.id);
     if (!existing) return res.status(404).json({ message: 'User not found' });
     const data = await normalizeUserPayload(req.body, existing);
-    if (data.password) data.password = await bcrypt.hash(data.password, 12);
+    
+    const rawPassword = req.body.password != null ? String(req.body.password).trim() : '';
+    if (rawPassword.length >= 6) {
+      data.password = await bcrypt.hash(rawPassword, 12);
+    } else {
+      delete data.password;
+    }
+
+    if (data.email) {
+      data.email = String(data.email).trim().toLowerCase();
+    }
+
     const user = await User.findByIdAndUpdate(req.params.id, data, { new: true, runValidators: true })
       .populate('assignedWard assignedBooth');
     if (!user) return res.status(404).json({ message: 'User not found' });
