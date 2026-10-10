@@ -193,10 +193,15 @@ exports.create = async (req, res, next) => {
         err.status = 400;
         throw err;
       }
-      if (!String(data.voterId || '').trim()) delete data.voterId;
+    }
+    const rawVoterId = String(data.voterId || '').trim();
+    if (!rawVoterId) {
+      delete data.voterId;
     } else {
-      if (data.voterId) {
-        data.voterId = requireValidEpic(data.voterId);
+      data.voterId = requireValidEpic(rawVoterId);
+      const existingWithEpic = await Member.findOne({ voterId: data.voterId });
+      if (existingWithEpic) {
+        return res.status(409).json({ message: `EPIC नंबर ${data.voterId} पहले से किसी अन्य मतदाता (${existingWithEpic.name}) में दर्ज है।` });
       }
     }
 
@@ -1288,20 +1293,34 @@ exports.update = async (req, res, next) => {
     await attachBoothWard(updates, req.currentUser);
     if (updates.booth) assertBoothAccess(req.currentUser, updates.booth);
     if (updates.ward) assertWardAccess(req.currentUser, updates.ward);
-    if (updates.voterId) {
-      const cleanEpic = requireValidEpic(updates.voterId);
-      if (cleanEpic !== member.voterId) {
-        if (!canEditEpic) {
-          return res.status(403).json({ message: 'EPIC नंबर केवल admin या विशेष अनुमति वाले बदल सकते हैं।' });
+    if (updates.voterId !== undefined) {
+      const rawEpic = String(updates.voterId || '').trim();
+      if (!rawEpic) {
+        if (!member.voterId || canEditEpic || isUserAdmin) {
+          member.voterId = undefined;
         }
-        const existingWithEpic = await Member.findOne({ voterId: cleanEpic, _id: { $ne: member._id } });
-        if (existingWithEpic) {
-          return res.status(409).json({ message: `EPIC नंबर ${cleanEpic} पहले से किसी अन्य मतदाता (${existingWithEpic.name}) में दर्ज है।` });
+      } else {
+        const cleanEpic = normalizeEpic(rawEpic);
+        if (!isValidEpic(cleanEpic)) {
+          return res.status(400).json({ message: 'अमान्य EPIC नंबर (उदा. ABC1234567 या RJ/...)' });
         }
-        member.voterId = cleanEpic;
+        if (cleanEpic !== member.voterId) {
+          const wasEmpty = !member.voterId || !String(member.voterId).trim();
+          if (!wasEmpty && !canEditEpic) {
+            return res.status(403).json({ message: 'EPIC नंबर केवल admin या विशेष अनुमति वाले बदल सकते हैं।' });
+          }
+          if (wasEmpty && !canEditVoters && !canEditEpic) {
+            return res.status(403).json({ message: 'मतदाता संपादित करने की अनुमति नहीं है।' });
+          }
+          const existingWithEpic = await Member.findOne({ voterId: cleanEpic, _id: { $ne: member._id } });
+          if (existingWithEpic) {
+            return res.status(409).json({ message: `EPIC नंबर ${cleanEpic} पहले से किसी अन्य मतदाता (${existingWithEpic.name}) में दर्ज है।` });
+          }
+          member.voterId = cleanEpic;
+        }
       }
+      delete updates.voterId;
     }
-    delete updates.voterId;
     Object.assign(member, updates);
     if (Object.prototype.hasOwnProperty.call(updates, 'profileCompletionStatus')) {
       if (updates.profileCompletionStatus === 'complete') {

@@ -249,7 +249,7 @@ MemberSchema.pre('validate', function updateSearchData(next) {
   } else if (this.isModified('isFavorite')) {
     this.favoriteRating = this.isFavorite ? Math.max(1, Number(this.favoriteRating) || 0) : 0;
   }
-  if (!String(this.voterId || '').trim() && (this.contactType === 'personal' || this.hasMunicipalMembership)) {
+  if (!String(this.voterId || '').trim()) {
     this.voterId = undefined;
   }
   Object.assign(this, buildMemberSearchData(this));

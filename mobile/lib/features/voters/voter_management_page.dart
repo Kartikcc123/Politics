@@ -1,24 +1,27 @@
 import 'dart:async';
+import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:share_plus/share_plus.dart';
 import 'package:speech_to_text/speech_to_text.dart';
 
 import '../../core/api_client.dart';
 import '../../core/contact_actions.dart';
-import '../../core/download_helper.dart';
+import '../../core/file_saver.dart';
 import '../../core/offline_voter_cache.dart';
 import '../../core/picked_file_source.dart';
 import '../../core/print_helper.dart';
 import '../../core/theme.dart';
-import '../../layout/app_layout.dart';
+import '../../utils/excel_generator.dart';
 import '../../widgets/image_crop_dialog.dart';
 import '../../widgets/mobile_components.dart';
 import '../../widgets/voter_phonebook.dart'
     show voterPhotoHeaders, voterPhotoUrl;
 import '../families/family_members.dart';
-import '../reports/configurable_print_page.dart';
 import 'voter_contact_actions.dart';
 import 'voter_edit_page.dart';
 import 'bulk_anubhag_editor_page.dart';
@@ -34,6 +37,7 @@ class VoterManagementPage extends StatefulWidget {
     this.initialPartNumber,
     this.initialTehsil,
     this.initialWard,
+    this.initialMunicipality,
   });
 
   final String? initialAreaId;
@@ -44,6 +48,7 @@ class VoterManagementPage extends StatefulWidget {
   final String? initialPartNumber;
   final String? initialTehsil;
   final String? initialWard;
+  final String? initialMunicipality;
 
   @override
   State<VoterManagementPage> createState() => _VoterManagementPageState();
@@ -137,6 +142,9 @@ class _VoterManagementPageState extends State<VoterManagementPage> {
     if (widget.initialTehsil != null && widget.initialTehsil!.isNotEmpty) {
       tehsil.text = widget.initialTehsil!;
     }
+    if (widget.initialMunicipality != null && widget.initialMunicipality!.isNotEmpty) {
+      municipality.text = widget.initialMunicipality!;
+    }
     if (widget.initialWard != null && widget.initialWard!.isNotEmpty) {
       municipalWardNumber.text = widget.initialWard!;
       rollType = 'all';
@@ -182,10 +190,12 @@ class _VoterManagementPageState extends State<VoterManagementPage> {
       'voterSerial': voterSerial.text.trim(),
       'gramPanchayat': gramPanchayat.text.trim(),
       'tehsil': tehsil.text.trim(),
+      'samiti': tehsil.text.trim(),
       'municipality': municipality.text.trim(),
       'rollType': rollType,
       'matchStatus': matchStatus,
       'municipalWard': municipalWardNumber.text.trim(),
+      'wardNumber': municipalWardNumber.text.trim(),
       'caste': caste.text.trim(),
       'occupation': occupation.text.trim(),
       'organizationPost': organizationPost.text.trim(),
@@ -717,6 +727,121 @@ class _VoterManagementPageState extends State<VoterManagementPage> {
         'orientation': options.orientation,
       },
     );
+  }
+
+  String _activeFiltersSummary() {
+    final list = <String>[];
+    if (gramPanchayat.text.trim().isNotEmpty) list.add('पंचायत: ${gramPanchayat.text.trim()}');
+    if (municipalWardNumber.text.trim().isNotEmpty) list.add('वार्ड: ${municipalWardNumber.text.trim()}');
+    if (boothNumber.text.trim().isNotEmpty) list.add('भाग: ${boothNumber.text.trim()}');
+    if (village.text.trim().isNotEmpty) list.add('गाँव: ${village.text.trim()}');
+    if (caste.text.trim().isNotEmpty) list.add('जाति: ${caste.text.trim()}');
+    if (search.text.trim().isNotEmpty) list.add('खोज: "${search.text.trim()}"');
+    if (list.isEmpty) return 'संपूर्ण सूची';
+    return list.join(' • ');
+  }
+
+  Future<void> openExcelExport() async {
+    final result = await showDialog<Map<String, dynamic>>(
+      context: context,
+      builder: (_) => _ExcelExportDialog(
+        selectedCount: selectedIds.length,
+        filterSummary: _activeFiltersSummary(),
+      ),
+    );
+    if (result == null || !mounted) return;
+
+    final selectedColumns = (result['columns'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? [];
+    if (selectedColumns.isEmpty) return;
+    final action = result['action'] as String? ?? 'download';
+
+    final titlePrefix = selectedIds.isNotEmpty
+        ? 'Selected_Voters_${selectedIds.length}'
+        : 'Voters_${gramPanchayat.text.isNotEmpty ? gramPanchayat.text.trim() : "List"}';
+    final fallbackFilename = '$titlePrefix.xlsx';
+
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('एक्सेल तैयार किया जा रहा है...'),
+          duration: Duration(seconds: 2),
+        ),
+      );
+    }
+
+    try {
+      final baseQuery = <String, String?>{
+        ...filterQuery,
+        'limit': '3000',
+        'paged': 'true',
+      };
+
+      final allMembers = <Map<String, dynamic>>[];
+      int page = 1;
+      final selectedSet = selectedIds.toSet();
+
+      while (true) {
+        final q = Map<String, String?>.from(baseQuery);
+        q['page'] = '$page';
+        final res = await api.getQuery('/api/members', q);
+        final dynamic rawItems = res['items'] ?? res['data'];
+        final List<dynamic> rawList = rawItems is List ? rawItems : (res is List ? (res as List) : const []);
+        var chunk = rawList.whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList();
+        if (chunk.isEmpty) break;
+
+        if (selectedSet.isNotEmpty) {
+          chunk = chunk.where((m) => selectedSet.contains(m['_id']?.toString())).toList();
+        }
+        allMembers.addAll(chunk);
+
+        if (selectedSet.isNotEmpty && allMembers.length >= selectedSet.length) {
+          break;
+        }
+
+        final totalPages = res['pages'] is num ? (res['pages'] as num).toInt() : 1;
+        if (page >= totalPages) break;
+        page++;
+      }
+
+      if (allMembers.isEmpty) {
+        throw 'कोई मतदाता रिकॉर्ड नहीं मिला';
+      }
+
+      final bytes = ExcelGenerator.createXlsx(
+        members: allMembers,
+        fieldKeys: selectedColumns,
+        sheetName: gramPanchayat.text.isNotEmpty ? gramPanchayat.text.trim() : 'मतदाता सूची',
+      );
+
+      if (action == 'share') {
+        final tempDir = await getTemporaryDirectory();
+        final file = File('${tempDir.path}/$fallbackFilename');
+        await file.writeAsBytes(bytes);
+        await SharePlus.instance.share(
+          ShareParams(
+            text: '📊 मतदाता सूची एक्सेल फ़ाइल (.xlsx)',
+            files: [XFile(file.path)],
+            subject: 'Voter List Excel',
+          ),
+        );
+      } else {
+        final savedPath = await saveBytes(fallbackFilename, Uint8List.fromList(bytes));
+        if (savedPath != null && mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('✅ एक्सेल फ़ाइल सुरक्षित हो गई: $fallbackFilename'),
+              backgroundColor: const Color(0xff16a34a),
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('एक्सेल निर्यात करने में त्रुटि: $e'), backgroundColor: Colors.red),
+        );
+      }
+    }
   }
 
   bool _isMemberAlreadyMissing(Object error) {
@@ -2113,6 +2238,11 @@ class _VoterManagementPageState extends State<VoterManagementPage> {
                 ),
                 icon: const Icon(Icons.sort_by_alpha_rounded, color: navy),
               ),
+              IconButton(
+                tooltip: 'एक्सेल फ़ाइल डाउनलोड करें (Export Excel)',
+                onPressed: openExcelExport,
+                icon: const Icon(Icons.table_view_rounded, color: Color(0xff16a34a)),
+              ),
             ]),
             _ActiveFilterChips(
               items: activeFilterChips,
@@ -2150,13 +2280,17 @@ class _VoterManagementPageState extends State<VoterManagementPage> {
                 }
                 final result = snapshot.data!;
                 if (result.items.isEmpty) {
+                  final hasWard = municipalWardNumber.text.trim().isNotEmpty;
+                  final wVal = municipalWardNumber.text.trim();
+                  final gpVal = gramPanchayat.text.trim();
                   return Column(
                     children: [
                       _PhoneMessage(
                         icon: Icons.person_search_rounded,
                         title: 'कोई मतदाता नहीं मिला',
-                        subtitle:
-                            'नाम की spelling बदलें या फ़िल्टर हटाकर खोजें।',
+                        subtitle: hasWard
+                            ? 'वार्ड $wVal में कोई मतदाता नहीं मिला। ${gpVal.isNotEmpty ? '$gpVal के सभी मतदाता देखने के लिए फ़िल्टर हटाएं।' : 'कृपया फ़िल्टर हटाकर खोजें।'}'
+                            : 'नाम की spelling बदलें या फ़िल्टर हटाकर खोजें।',
                         onRetry: clearFilters,
                       ),
                     ],
@@ -5879,6 +6013,247 @@ class _PrintOptionsDialogState extends State<_PrintOptionsDialog> {
       );
 }
 
+class _ExcelExportDialog extends StatefulWidget {
+  const _ExcelExportDialog({
+    required this.selectedCount,
+    required this.filterSummary,
+  });
+
+  final int selectedCount;
+  final String filterSummary;
+
+  @override
+  State<_ExcelExportDialog> createState() => _ExcelExportDialogState();
+}
+
+class _ExcelExportDialogState extends State<_ExcelExportDialog> {
+  static const availableFields = <String, Map<String, String>>{
+    'voterSerial': {'label': 'वि.स. क्रमांक (Serial)', 'cat': 'मुख्य'},
+    'wardVoterSerial': {'label': 'वार्ड क्रमांक (Ward Serial)', 'cat': 'मुख्य'},
+    'voterId': {'label': 'EPIC / वोटर आईडी', 'cat': 'मुख्य'},
+    'name': {'label': 'मतदाता का नाम (Name)', 'cat': 'मुख्य'},
+    'guardianName': {'label': 'पिता / पति का नाम (Guardian)', 'cat': 'व्यक्तिगत'},
+    'relationType': {'label': 'संबंध (Relation)', 'cat': 'व्यक्तिगत'},
+    'age': {'label': 'उम्र (Age)', 'cat': 'व्यक्तिगत'},
+    'gender': {'label': 'लिंग (Gender)', 'cat': 'व्यक्तिगत'},
+    'mobile': {'label': 'मोबाइल नंबर (Mobile)', 'cat': 'संपर्क'},
+    'altMobile': {'label': 'वैकल्पिक मोबाइल', 'cat': 'संपर्क'},
+    'houseNumber': {'label': 'मकान संख्या (House No)', 'cat': 'पता'},
+    'village': {'label': 'गाँव / मजरा (Village)', 'cat': 'पता'},
+    'wardNumber': {'label': 'वार्ड संख्या (Ward No)', 'cat': 'पता'},
+    'partNumber': {'label': 'भाग संख्या (Part/Booth)', 'cat': 'पता'},
+    'gramPanchayat': {'label': 'ग्राम पंचायत (Panchayat)', 'cat': 'पता'},
+    'tehsil': {'label': 'तहसील / समिति', 'cat': 'पता'},
+    'municipality': {'label': 'नगर पालिका', 'cat': 'पता'},
+    'caste': {'label': 'जाति (Caste)', 'cat': 'विवरण'},
+    'subCaste': {'label': 'उपजाति (Sub-Caste)', 'cat': 'विवरण'},
+    'occupation': {'label': 'व्यवसाय (Occupation)', 'cat': 'विवरण'},
+    'education': {'label': 'शिक्षा (Education)', 'cat': 'विवरण'},
+    'organizationPost': {'label': 'संगठन पद (Post)', 'cat': 'विवरण'},
+    'supportLevel': {'label': 'समर्थन स्तर (Support)', 'cat': 'राजनीतिक'},
+    'partyPreference': {'label': 'पार्टी रुझान (Party)', 'cat': 'राजनीतिक'},
+    'sectionName': {'label': 'अनुभाग (Section)', 'cat': 'पता'},
+    'address': {'label': 'पता (Address)', 'cat': 'पता'},
+  };
+
+  static const defaultSelected = <String>{
+    'voterSerial',
+    'wardVoterSerial',
+    'voterId',
+    'name',
+    'guardianName',
+    'relationType',
+    'age',
+    'gender',
+    'houseNumber',
+    'village',
+    'wardNumber',
+    'partNumber',
+    'gramPanchayat',
+    'mobile',
+    'caste',
+    'supportLevel',
+  };
+
+  late final Set<String> selectedFields;
+  String currentCat = 'सभी';
+
+  @override
+  void initState() {
+    super.initState();
+    selectedFields = Set<String>.from(defaultSelected);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final categories = ['सभी', 'मुख्य', 'व्यक्तिगत', 'संपर्क', 'पता', 'विवरण', 'राजनीतिक'];
+    final displayedEntries = availableFields.entries.where((e) {
+      if (currentCat == 'सभी') return true;
+      return e.value['cat'] == currentCat;
+    }).toList();
+
+    return AlertDialog(
+      title: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(6),
+            decoration: BoxDecoration(
+              color: const Color(0xff16a34a).withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: const Icon(Icons.table_view_rounded, color: Color(0xff16a34a), size: 24),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  widget.selectedCount > 0
+                      ? 'चयनित ${widget.selectedCount} मतदाताओं का Excel'
+                      : 'मतदाता सूची Excel डाउनलोड (.xlsx)',
+                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                ),
+                Text(
+                  widget.filterSummary,
+                  style: const TextStyle(fontSize: 11, color: muted, fontWeight: FontWeight.normal),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+      content: SizedBox(
+        width: 650,
+        child: SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    'कॉलम चुनें (${selectedFields.length}/${availableFields.length}):',
+                    style: const TextStyle(fontWeight: FontWeight.w700, color: navy, fontSize: 13),
+                  ),
+                  Row(
+                    children: [
+                      TextButton(
+                        onPressed: () {
+                          setState(() {
+                            if (selectedFields.length == availableFields.length) {
+                              selectedFields.clear();
+                              selectedFields.addAll(['name', 'voterId', 'voterSerial', 'wardNumber']);
+                            } else {
+                              selectedFields.addAll(availableFields.keys);
+                            }
+                          });
+                        },
+                        style: TextButton.styleFrom(visualDensity: VisualDensity.compact),
+                        child: Text(selectedFields.length == availableFields.length ? 'न्यूनतम रखें' : 'सभी चुनें'),
+                      ),
+                      TextButton(
+                        onPressed: () {
+                          setState(() {
+                            selectedFields.clear();
+                            selectedFields.addAll(defaultSelected);
+                          });
+                        },
+                        style: TextButton.styleFrom(visualDensity: VisualDensity.compact),
+                        child: const Text('डिफ़ॉल्ट'),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+              const SizedBox(height: 6),
+              SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: Row(
+                  children: categories.map((cat) {
+                    final isSel = currentCat == cat;
+                    return Padding(
+                      padding: const EdgeInsets.only(right: 6),
+                      child: ChoiceChip(
+                        label: Text(cat),
+                        selected: isSel,
+                        visualDensity: VisualDensity.compact,
+                        onSelected: (_) => setState(() => currentCat = cat),
+                      ),
+                    );
+                  }).toList(),
+                ),
+              ),
+              const SizedBox(height: 10),
+              Container(
+                decoration: BoxDecoration(
+                  color: const Color(0xfff8fafc),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: border),
+                ),
+                constraints: const BoxConstraints(maxHeight: 280),
+                child: ListView.builder(
+                  shrinkWrap: true,
+                  itemCount: displayedEntries.length,
+                  itemBuilder: (ctx, i) {
+                    final entry = displayedEntries[i];
+                    final key = entry.key;
+                    final isChecked = selectedFields.contains(key);
+                    return CheckboxListTile(
+                      dense: true,
+                      value: isChecked,
+                      activeColor: const Color(0xff16a34a),
+                      title: Text(entry.value['label'] ?? key, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+                      subtitle: Text('श्रेणी: ${entry.value['cat']}', style: const TextStyle(fontSize: 10, color: muted)),
+                      onChanged: (val) {
+                        setState(() {
+                          if (val == true) {
+                            selectedFields.add(key);
+                          } else {
+                            if (selectedFields.length > 1) selectedFields.remove(key);
+                          }
+                        });
+                      },
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('रद्द करें'),
+        ),
+        OutlinedButton.icon(
+          style: OutlinedButton.styleFrom(
+            foregroundColor: const Color(0xff16a34a),
+            side: const BorderSide(color: Color(0xff16a34a)),
+          ),
+          onPressed: selectedFields.isEmpty
+              ? null
+              : () => Navigator.pop(context, {'columns': selectedFields.toList(), 'action': 'share'}),
+          icon: const Icon(Icons.share_rounded, size: 18),
+          label: const Text('शेयर करें'),
+        ),
+        FilledButton.icon(
+          style: FilledButton.styleFrom(backgroundColor: const Color(0xff16a34a)),
+          onPressed: selectedFields.isEmpty
+              ? null
+              : () => Navigator.pop(context, {'columns': selectedFields.toList(), 'action': 'download'}),
+          icon: const Icon(Icons.file_download_rounded),
+          label: const Text('Excel डाउनलोड करें'),
+        ),
+      ],
+    );
+  }
+}
+
 class VoterTable extends StatelessWidget {
   const VoterTable({
     super.key,
@@ -7158,10 +7533,6 @@ class _VoterFormState extends State<VoterForm> {
       showError('Name is required.');
       return;
     }
-    if (!isPersonal && ctrls['voterId']!.text.trim().isEmpty) {
-      showError('EPIC is required for Matdata contact.');
-      return;
-    }
     if (isPersonal &&
         ctrls['mobile']!.text.trim().isEmpty &&
         ctrls['address']!.text.trim().isEmpty) {
@@ -7185,7 +7556,7 @@ class _VoterFormState extends State<VoterForm> {
         body.remove(dateKey);
       }
     }
-    if (isPersonal && ctrls['voterId']!.text.trim().isEmpty) {
+    if (ctrls['voterId']!.text.trim().isEmpty) {
       body.remove('voterId');
     }
     try {
@@ -7582,8 +7953,8 @@ class _VoterFormState extends State<VoterForm> {
         const SizedBox(height: 12),
         formField('voterId',
             icon: isPersonal ? Icons.badge_outlined : Icons.badge_rounded,
-            required: !isPersonal,
-            helperText: isPersonal ? 'Optional for personal contacts' : null),
+            required: false,
+            helperText: 'यदि उपलब्ध हो तो EPIC दर्ज करें (उदा. ABC1234567)'),
         const SizedBox(height: 12),
         formField('address', icon: Icons.location_on_outlined),
         const SizedBox(height: 12),

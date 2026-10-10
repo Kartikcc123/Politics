@@ -70,6 +70,10 @@ class _VoterEditPageState extends State<VoterEditPage> {
 
   bool _isFieldLocked(String key) {
     if (key == 'voterId') {
+      final existingEpic = '${currentVoter['voterId'] ?? ''}'.trim();
+      if (existingEpic.isEmpty || existingEpic == '-' || existingEpic == 'null') {
+        return !_canEditVoters;
+      }
       return !_canEditEpic;
     }
     if (_sourceLockedFields.contains(key)) {
