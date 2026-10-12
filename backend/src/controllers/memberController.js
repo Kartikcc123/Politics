@@ -297,8 +297,8 @@ exports.list = async (req, res, next) => {
         const wardConditions = [
           { wardNumber: rawWard },
           { wardNumber: wardRegex },
-          { municipalWardNumbers: rawWard },
-          { municipalWardNumbers: wardRegex }
+          { wardNumber: { $in: ['', null, 'NO_WARD'] }, municipalWardNumbers: rawWard },
+          { wardNumber: { $in: ['', null, 'NO_WARD'] }, municipalWardNumbers: wardRegex }
         ];
         if (ward && mongoose.Types.ObjectId.isValid(ward)) {
           wardConditions.push({ ward: ward });

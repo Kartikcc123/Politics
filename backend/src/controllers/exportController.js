@@ -298,9 +298,9 @@ const buildFilter = (req) => {
         { wardNumber: wardNum },
         ...(rawW ? [{ wardNumber: rawW }] : []),
         ...(wardRegex ? [{ wardNumber: wardRegex }] : []),
-        { municipalWardNumbers: wardNum },
-        ...(rawW ? [{ municipalWardNumbers: rawW }] : []),
-        ...(wardRegex ? [{ municipalWardNumbers: wardRegex }] : []),
+        { wardNumber: { $in: ['', null, 'NO_WARD'] }, municipalWardNumbers: wardNum },
+        ...(rawW ? [{ wardNumber: { $in: ['', null, 'NO_WARD'] }, municipalWardNumbers: rawW }] : []),
+        ...(wardRegex ? [{ wardNumber: { $in: ['', null, 'NO_WARD'] }, municipalWardNumbers: wardRegex }] : []),
       ],
     });
   }
