@@ -3890,18 +3890,21 @@ class _PhoneContactTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final mobile = '${voter['mobile'] ?? ''}'.trim();
     final village = '${voter['village'] ?? ''}'.trim();
-    final ward = voter['ward'] is Map
-        ? '${voter['ward']['number'] ?? ''}'
-        : '${voter['wardNumber'] ?? ''}'.trim();
+    final canonicalWard = '${voter['wardNumber'] ?? ''}'.trim();
+    final municipalWards = (voter['municipalWardNumbers'] as List? ?? const [])
+        .map((value) => '$value')
+        .join(', ');
+    final ward = canonicalWard.isNotEmpty
+        ? canonicalWard
+        : (municipalWards.isNotEmpty
+            ? municipalWards
+            : (voter['ward'] is Map ? '${voter['ward']['number'] ?? ''}'.trim() : ''));
     final mukhyaGram = '${voter['mukhyaGram'] ?? ''}'.trim();
     final wardSerial = '${voter['wardVoterSerial'] ?? ''}'.trim();
     final asmSerial = '${voter['voterSerial'] ?? ''}'.trim();
     final partNo = '${voter['partNumber'] ?? ''}'.trim();
     final hasAssembly = voter['hasAssemblyMembership'] == true;
     final hasMunicipal = voter['hasMunicipalMembership'] == true;
-    final municipalWards = (voter['municipalWardNumbers'] as List? ?? const [])
-        .map((value) => '$value')
-        .join(', ');
     final place = [
       if (ward.isNotEmpty) 'वार्ड $ward',
       if (village.isNotEmpty) village,
@@ -7106,10 +7109,14 @@ class _VoterDetailPageState extends State<VoterDetailPage> {
     ].where((value) => value.isNotEmpty).join(', ');
     final hasAssembly = voter['hasAssemblyMembership'] == true;
     final hasMunicipal = voter['hasMunicipalMembership'] == true;
-    final municipalWards = (voter['municipalWardNumbers'] as List? ?? const [])
+    final rawWards = (voter['municipalWardNumbers'] as List? ?? const [])
         .map((value) => '$value')
         .where((value) => value.trim().isNotEmpty)
-        .join(', ');
+        .toList();
+    if (rawWards.isEmpty && '${voter['wardNumber'] ?? ''}'.trim().isNotEmpty) {
+      rawWards.add('${voter['wardNumber']}'.trim());
+    }
+    final municipalWards = rawWards.join(', ');
     final rollStatus = hasAssembly && hasMunicipal
         ? 'विधानसभा + वार्ड सूची'
         : hasMunicipal
@@ -7577,8 +7584,14 @@ class DetailList extends StatelessWidget {
                 voter['sectionName']
               ])),
         ],
-        if (voter['hasMunicipalMembership'] == true || voter['ward'] != null)
-          info('वार्ड', voter['ward'] is Map ? '${voter['ward']?['number'] ?? ''}' : '${voter['wardNumber'] ?? ''}'),
+        if (voter['hasMunicipalMembership'] == true || voter['ward'] != null || voter['wardNumber'] != null)
+          info(
+              'वार्ड',
+              '${voter['wardNumber'] ?? ''}'.trim().isNotEmpty
+                  ? '${voter['wardNumber']}'.trim()
+                  : ((voter['municipalWardNumbers'] as List? ?? const []).isNotEmpty
+                      ? (voter['municipalWardNumbers'] as List).join(', ')
+                      : (voter['ward'] is Map ? '${voter['ward']?['number'] ?? ''}'.trim() : ''))),
         info(
             'सर्वे स्थिति',
             voter['profileCompletionStatus'] == 'complete'

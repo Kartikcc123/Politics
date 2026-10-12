@@ -71,7 +71,12 @@ class _VoterEditPageState extends State<VoterEditPage> {
   bool _isFieldLocked(String key) {
     if (key == 'voterId') {
       final existingEpic = '${currentVoter['voterId'] ?? ''}'.trim();
-      if (existingEpic.isEmpty || existingEpic == '-' || existingEpic == 'null') {
+      if (existingEpic.isEmpty ||
+          existingEpic == '-' ||
+          existingEpic == 'null' ||
+          existingEpic.startsWith('WARD') ||
+          existingEpic.startsWith('TMP') ||
+          existingEpic.startsWith('REV')) {
         return !_canEditVoters;
       }
       return !_canEditEpic;
@@ -319,6 +324,9 @@ class _VoterEditPageState extends State<VoterEditPage> {
         body['hasAssemblyMembership'] = currentVoter['hasAssemblyMembership'];
       }
       if (body['age'] == '') body['age'] = null;
+      if (body['voterId'] == '-' || body['voterId'] == 'null') {
+        body['voterId'] = '';
+      }
       for (final dateKey in ['dob', 'anniversary']) {
         final original = currentVoter[dateKey];
         final originalText = original == null ? '' : '$original'.trim();

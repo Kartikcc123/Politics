@@ -1313,21 +1313,27 @@ exports.update = async (req, res, next) => {
     if (updates.ward) assertWardAccess(req.currentUser, updates.ward);
     if (updates.voterId !== undefined) {
       const rawEpic = String(updates.voterId || '').trim();
-      if (!rawEpic) {
-        if (!member.voterId || canEditEpic || isUserAdmin) {
+      const currentEpic = String(member.voterId || '').trim();
+      const isCurrentSynthetic = !currentEpic || currentEpic.startsWith('WARD') || currentEpic.startsWith('TMP') || currentEpic.startsWith('REV');
+
+      if (!rawEpic || rawEpic === '-' || rawEpic === 'null' || rawEpic === 'undefined') {
+        if (!isCurrentSynthetic && (canEditEpic || isUserAdmin)) {
+          member.voterId = undefined;
+        } else if (isCurrentSynthetic && (canEditEpic || isUserAdmin)) {
           member.voterId = undefined;
         }
+      } else if (rawEpic === currentEpic || (isCurrentSynthetic && rawEpic.startsWith('WARD'))) {
+        // Unchanged or keeping synthetic Ward ID -> Do not re-validate or error
       } else {
         const cleanEpic = normalizeEpic(rawEpic);
         if (!isValidEpic(cleanEpic)) {
           return res.status(400).json({ message: 'अमान्य EPIC नंबर (उदा. ABC1234567 या RJ/...)' });
         }
         if (cleanEpic !== member.voterId) {
-          const wasEmpty = !member.voterId || !String(member.voterId).trim();
-          if (!wasEmpty && !canEditEpic) {
+          if (!isCurrentSynthetic && !canEditEpic && !isUserAdmin) {
             return res.status(403).json({ message: 'EPIC नंबर केवल admin या विशेष अनुमति वाले बदल सकते हैं।' });
           }
-          if (wasEmpty && !canEditVoters && !canEditEpic) {
+          if (isCurrentSynthetic && !canEditVoters && !canEditEpic && !isUserAdmin) {
             return res.status(403).json({ message: 'मतदाता संपादित करने की अनुमति नहीं है।' });
           }
           const existingWithEpic = await Member.findOne({ voterId: cleanEpic, _id: { $ne: member._id } });
