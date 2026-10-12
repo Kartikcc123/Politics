@@ -336,7 +336,7 @@ const buildFilter = (req) => {
 
   if (tehsil) filter.tehsil = hindiFlexibleRegex(tehsil);
   if (municipality) filter.municipality = hindiFlexibleRegex(municipality);
-  if (caste && caste !== 'all') filter.caste = hindiFlexibleRegex(caste);
+  if (caste && caste !== 'all') filter.caste = new RegExp(`^${escapeRegex(String(caste).trim())}$`, 'i');
 
   if (gender && gender !== 'all') {
     const genderMap = { m: 'male', f: 'female', o: 'other' };
@@ -344,8 +344,15 @@ const buildFilter = (req) => {
     filter.gender = new RegExp(`^${escapeRegex(normalizedGender)}`, 'i');
   }
 
-  if (party) filter.party = party;
-  if (supportLevel && supportLevel !== 'all') filter.supportLevel = supportLevel;
+  if (params.hasMobile === 'true' || params.withMobileOnly === 'true') {
+    andConditions.push({ mobile: { $nin: ['', null], $exists: true } });
+  }
+  if (params.favorite === 'true' || params.favoritesOnly === 'true' || params.isFavorite === 'true') {
+    filter.isFavorite = true;
+  }
+  if (params.verified === 'true' || params.verifiedOnly === 'true') {
+    filter.verificationStatus = 'verified';
+  }
 
   const searchQuery = String(q || search || '').trim();
   if (searchQuery) {

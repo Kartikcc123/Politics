@@ -24,6 +24,7 @@ const {
   buildStrictFieldSearchConditions,
   searchExactCandidates,
 } = require('../utils/memberSearch');
+const { getCanonicalLabelForBooth, getCanonicalVillageForBooth } = require('../config/boothToVillageMaster');
 
 const populate = 'party ward booth area createdBy updatedBy groups';
 const maskMobile = (value) => {
@@ -308,16 +309,18 @@ exports.list = async (req, res, next) => {
     if (area) filter.area = area;
     if (village) {
       const vRegex = hindiFlexibleRegex(village);
-      if (gramPanchayat) {
-        addOrClause([
-          { village: vRegex }
-        ]);
-      } else {
-        addOrClause([
-          { village: vRegex },
-          { village: { $in: ['', null] }, sectionName: vRegex }
-        ]);
-      }
+      addOrClause([
+        { village: vRegex },
+        { mukhyaGram: vRegex }
+      ]);
+    }
+    const mukhyaGram = req.query.mukhyaGram;
+    if (mukhyaGram) {
+      const mgRegex = hindiFlexibleRegex(mukhyaGram);
+      addOrClause([
+        { mukhyaGram: mgRegex },
+        { village: mgRegex }
+      ]);
     }
     if (pinCode) {
       const normalizedPin = String(pinCode).replace(/\D/g, '');
@@ -333,7 +336,7 @@ exports.list = async (req, res, next) => {
     const tehsilParam = tehsil || req.query.samiti || req.query.simiti || req.query.panchayatSamiti;
     if (tehsilParam) filter.tehsil = hindiFlexibleRegex(tehsilParam);
     if (municipality) filter.municipality = hindiFlexibleRegex(municipality);
-    if (caste) filter.caste = hindiFlexibleRegex(caste);
+    if (caste && caste !== 'all') filter.caste = new RegExp(`^${escapeRegex(String(caste).trim())}$`, 'i');
     if (organizationPost) filter.organizationPost = searchRegex(organizationPost);
     if (occupation) filter.occupation = searchRegex(occupation);
     if (contactType === 'personal') filter.contactType = 'personal';
@@ -407,8 +410,17 @@ exports.list = async (req, res, next) => {
       filter.$and = [...(filter.$and || []), ...conditions];
     }
 
-    const sortParam = String(req.query.sortBy || req.query.sort || '').toLowerCase();
-    const isWardScope = Boolean(ward || req.query.municipalWardNumber || req.query.wardNumber || req.query.municipalWard || req.query.ward);
+    const isWardScope = Boolean(
+      ward ||
+      req.query.municipalWardNumber ||
+      req.query.wardNumber ||
+      req.query.municipalWard ||
+      req.query.ward ||
+      selectedRoll === 'municipal' ||
+      selectedRoll === 'ward' ||
+      req.currentUser?.allowedRollType === 'municipal' ||
+      (Array.isArray(req.currentUser?.assignedWards) && req.currentUser.assignedWards.length > 0)
+    );
     const hasLocationScope = Boolean(village || partNumber || booth || sectionName || gramPanchayat || isWardScope);
     let sortObj = { _id: -1 };
 
@@ -538,71 +550,64 @@ const optionDefinitions = {
     }),
   },
   partVillage: {
-    group: { village: '$village', partNumber: '$partNumber' },
+    group: { village: { $ifNull: ['$village', '$mukhyaGram'] }, partNumber: '$partNumber' },
     match: {
       $or: [
         { village: { $nin: ['', null] } },
+        { mukhyaGram: { $nin: ['', null] } },
         { partNumber: { $nin: ['', null] } },
       ],
     },
     option: (id, count) => {
-      const vLabel = id.village && id.village !== 'गाँव उपलब्ध नहीं' ? id.village : '';
-      const pLabel = id.partNumber ? `भाग ${id.partNumber}` : '';
-      const labelText = [vLabel, pLabel].filter(Boolean).join(' · ') || vLabel || pLabel || 'भाग / गाँव';
+      let vLabel = id.village && id.village !== 'गाँव उपलब्ध नहीं' ? id.village : '';
+      if (id.partNumber) {
+        const canVil = getCanonicalVillageForBooth(id.partNumber);
+        if (canVil) {
+          vLabel = canVil;
+        }
+      }
+      const pLabel = id.partNumber ? `भाग ${id.partNumber}` : (vLabel ? 'वार्ड केवल' : '');
+      const labelText = [vLabel, pLabel].filter(Boolean).join(' • ') || vLabel || pLabel || 'भाग / गाँव';
       return {
-        value: [id.village, id.partNumber].filter(Boolean).join('|'),
+        value: [vLabel || id.village, id.partNumber].filter(Boolean).join('|'),
         label: labelText,
         count,
         filters: {
-          ...(id.village ? { village: id.village } : {}),
+          ...(vLabel || id.village ? { village: vLabel || id.village } : {}),
           ...(id.partNumber ? { partNumber: id.partNumber } : {}),
         },
       };
     },
   },
-  booth: {
-    group: { number: '$partNumber', name: '$partName', village: '$village' },
-    match: {
-      $or: [
-        { partNumber: { $nin: ['', null] } },
-        { partName: { $nin: ['', null] } },
-        { village: { $nin: ['', null] } },
-      ],
-    },
+  mukhyaGram: {
+    field: 'mukhyaGram',
+    group: '$mukhyaGram',
+    match: { mukhyaGram: { $nin: ['', null] } },
     option: (id, count) => ({
-      value: id.number || id.village || id.name || '',
-      label: [
-        id.number ? `भाग ${id.number}` : '',
-        id.village || id.name || '',
-      ].filter(Boolean).join(' - ') || 'भाग / गाँव',
+      value: String(id),
+      label: String(id),
       count,
-      filters: {
-        ...(id.number ? { partNumber: id.number } : {}),
-        ...(id.village ? { village: id.village } : {}),
-        ...(id.name ? { partName: id.name } : {}),
-      },
+      filters: { mukhyaGram: String(id) },
+    }),
+  },
+  booth: {
+    group: '$partNumber',
+    match: { partNumber: { $nin: ['', null] } },
+    option: (id, count) => ({
+      value: String(id),
+      label: getCanonicalLabelForBooth(id) || `भाग ${id}`,
+      count,
+      filters: { partNumber: String(id) },
     }),
   },
   part: {
-    group: { number: '$partNumber', name: '$partName', village: '$village' },
-    match: {
-      $or: [
-        { partNumber: { $nin: ['', null] } },
-        { partName: { $nin: ['', null] } },
-        { village: { $nin: ['', null] } },
-      ],
-    },
+    group: '$partNumber',
+    match: { partNumber: { $nin: ['', null] } },
     option: (id, count) => ({
-      value: id.number || id.village || id.name || '',
-      label: [
-        id.number ? `भाग ${id.number}` : '',
-        id.village || id.name || '',
-      ].filter(Boolean).join(' - ') || 'भाग / गाँव',
+      value: String(id),
+      label: getCanonicalLabelForBooth(id) || `भाग ${id}`,
       count,
-      filters: {
-        ...(id.number ? { partNumber: id.number } : {}),
-        ...(id.village ? { village: id.village } : {}),
-      },
+      filters: { partNumber: String(id) },
     }),
   },
   partName: { field: 'partName' },
@@ -612,16 +617,13 @@ const optionDefinitions = {
   tehsil: { field: 'tehsil' },
   municipality: { field: 'municipality' },
   partNumber: {
-    group: { number: '$partNumber', name: '$sectionName', village: '$village' },
+    group: '$partNumber',
     match: { partNumber: { $nin: ['', null] } },
     option: (id, count) => ({
-      value: id.number || id.village || id.name,
-      label: [
-        id.number ? `भाग ${id.number}` : '',
-        id.village || id.name || '',
-      ].filter(Boolean).join(' - ') || `Part ${id.number || '-'}`,
+      value: String(id),
+      label: getCanonicalLabelForBooth(id) || `भाग ${id}`,
       count,
-      filters: id.number ? { partNumber: id.number } : { sectionName: id.name },
+      filters: { partNumber: String(id) },
     }),
   },
   caste: { field: 'caste' },
@@ -655,7 +657,7 @@ function addOptionFilter(filter, key, value) {
   if (!value) return;
   if (['assemblyNumber', 'partNumber', 'sectionNumber', 'pinCode', 'supportLevel', 'verificationStatus', 'gender', 'booth', 'area', 'wardNumber', 'ward'].includes(key)) {
     filter.$and = [...(filter.$and || []), { [key]: value }];
-  } else if (['assemblyName', 'sectionName', 'partName', 'village', 'gramPanchayat', 'tehsil', 'municipality', 'caste', 'occupation', 'organizationPost'].includes(key)) {
+  } else if (['assemblyName', 'sectionName', 'partName', 'village', 'mukhyaGram', 'gramPanchayat', 'tehsil', 'municipality', 'caste', 'occupation', 'organizationPost'].includes(key)) {
     filter.$and = [...(filter.$and || []), {
       [key]: new RegExp(String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i'),
     }];
@@ -738,7 +740,7 @@ exports.locationGroups = async (req, res, next) => {
   try {
     const { rollType, contactType, matchStatus, municipalWard } = req.query;
     const filter = applyMemberScope(req.currentUser, {});
-    const selectedRoll = String(rollType || "assembly").toLowerCase();
+    const selectedRoll = String(rollType || "").toLowerCase();
     if (contactType !== "personal") {
       if (selectedRoll === "assembly") {
         filter.$and = [...(filter.$and || []), { $or: [
@@ -938,6 +940,10 @@ exports.filterOptions = async (req, res, next) => {
     if (field === 'section') field = 'sectionName';
 
     const filter = applyMemberScope(req.currentUser, {});
+    if (filter.$or) {
+      filter.$and = [...(filter.$and || []), { $or: filter.$or }];
+      delete filter.$or;
+    }
     const selectedRoll = String(rollType || "").toLowerCase();
     if (contactType === 'personal') {
       filter.$and = [...(filter.$and || []), { contactType: 'personal' }];
@@ -1012,7 +1018,7 @@ exports.filterOptions = async (req, res, next) => {
 
     for (const key of [
       'assemblyNumber', 'assemblyName', 'sectionNumber', 'sectionName',
-      'municipality', 'caste',
+      'municipality', 'caste', 'mukhyaGram',
       'occupation', 'organizationPost', 'supportLevel', 'verificationStatus', 'gender',
       'pinCode', 'area',
     ]) {
@@ -1098,10 +1104,21 @@ exports.filterOptions = async (req, res, next) => {
       { $sort: { count: -1, _id: 1 } },
       { $limit: 5000 },
     ]);
-    const items = rows.map((row) => definition.option
+    const rawItems = rows.map((row) => definition.option
       ? definition.option(row._id || {}, row.count)
       : ({ value: String(row._id), label: String(row._id), count: row.count, filters: { [definition.field]: String(row._id) } }))
-      .filter((item) => item.value && (!normalizedSearch || item.label.toLocaleLowerCase('hi-IN').includes(normalizedSearch)))
+      .filter((item) => item.value && (!normalizedSearch || item.label.toLocaleLowerCase('hi-IN').includes(normalizedSearch)));
+
+    const consolidatedMap = new Map();
+    for (const item of rawItems) {
+      if (consolidatedMap.has(item.value)) {
+        const existing = consolidatedMap.get(item.value);
+        existing.count += item.count;
+      } else {
+        consolidatedMap.set(item.value, { ...item });
+      }
+    }
+    const items = Array.from(consolidatedMap.values())
       .sort((a, b) => {
         if (!normalizedSearch) return compareLabels(a, b);
         const aStarts = a.label.toLocaleLowerCase('hi-IN').startsWith(normalizedSearch);
@@ -1109,7 +1126,7 @@ exports.filterOptions = async (req, res, next) => {
         if (aStarts !== bStarts) return aStarts ? -1 : 1;
         return compareLabels(a, b);
       })
-      .slice(0, Math.min(Math.max(Number(req.query.limit) || 80, 1), 200));
+      .slice(0, Math.min(Math.max(Number(req.query.limit) || 100, 1), 500));
     res.json({ items, [field]: items });
   } catch (error) { next(error); }
 };
@@ -1621,6 +1638,13 @@ exports.toggleFavorite = async (req, res, next) => {
     member.isFavorite = member.favoriteRating > 0;
     member.updatedBy = req.currentUser._id;
     await member.save();
+    await writeActivity({
+      req,
+      action: 'member.favorite',
+      module: 'members',
+      entityId: member._id,
+      after: { isFavorite: member.isFavorite, favoriteRating: member.favoriteRating },
+    });
     invalidateMemberData();
 
     const starDesc = member.favoriteRating === 0 ? 'हटाया गया' : `${member.favoriteRating} स्टार`;
@@ -2367,6 +2391,10 @@ exports.fieldValues = async (req, res, next) => {
     const { field, limit, tehsil, samiti, simiti, gramPanchayat, panchayat, village, caste, partNumber, part, booth, boothNumber, ward, wardNumber, municipalWard } = req.query;
     const maxLimit = Math.min(Number(limit) || 300, 1000);
     const filter = applyMemberScope(req.currentUser, {});
+    if (filter.$or) {
+      filter.$and = [...(filter.$and || []), { $or: filter.$or }];
+      delete filter.$or;
+    }
 
     const samitiVal = (samiti || simiti || tehsil || '').trim();
     const gpVal = (gramPanchayat || panchayat || '').trim();

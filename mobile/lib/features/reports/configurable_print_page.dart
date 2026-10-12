@@ -1,12 +1,15 @@
 import 'dart:io';
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 
 import '../../core/api_client.dart';
+import '../../core/file_saver.dart';
 import '../../core/hierarchy_data.dart';
 import '../../core/print_helper.dart';
 import '../../core/theme.dart';
+import '../../utils/excel_generator.dart';
 
 class ConfigurablePrintPage extends StatefulWidget {
   const ConfigurablePrintPage({super.key});
@@ -21,6 +24,8 @@ class _ConfigurablePrintPageState extends State<ConfigurablePrintPage> {
   String? errorMessage;
   bool isPrinting = false;
   bool isSharing = false;
+  bool isDownloadingExcel = false;
+  bool isSharingExcel = false;
 
   Map<String, dynamic>? liveHierarchyData;
 
@@ -35,6 +40,17 @@ class _ConfigurablePrintPageState extends State<ConfigurablePrintPage> {
   String? selectedWard;
   String? selectedPart;
   String scopeType = 'all_panchayat'; // 'all_samiti', 'all_panchayat', 'specific_village', 'specific_ward', 'specific_part'
+
+  // Quick Print Filters
+  bool withMobileOnly = false;
+  bool favoritesOnly = false;
+  bool verifiedOnly = false;
+
+  // Caste Analysis & Filter State
+  String? selectedCaste;
+  List<Map<String, dynamic>> casteBreakdown = [];
+  bool loadingCaste = false;
+  bool showCasteAnalysis = false;
 
   // Layout & Shape Configuration
   String paperSize = 'A4';
@@ -65,12 +81,53 @@ class _ConfigurablePrintPageState extends State<ConfigurablePrintPage> {
   void initState() {
     super.initState();
     _loadHierarchy();
+    _loadCasteBreakdown();
   }
 
   @override
   void dispose() {
     searchController.dispose();
     super.dispose();
+  }
+
+  void _onScopeSelectionChanged() {
+    selectedCaste = null;
+    _loadCasteBreakdown();
+  }
+
+  Future<void> _loadCasteBreakdown() async {
+    setState(() => loadingCaste = true);
+    try {
+      final qParams = <String, String>{
+        'field': 'caste',
+        'tehsil': selectedSamiti,
+        'limit': '200',
+      };
+      if (scopeType != 'all_samiti' && selectedGramPanchayat != null && selectedGramPanchayat!.isNotEmpty) {
+        qParams['gramPanchayat'] = selectedGramPanchayat!;
+      }
+      if (scopeType == 'specific_village' && selectedVillage != null && selectedVillage!.isNotEmpty) {
+        qParams['village'] = selectedVillage!;
+      }
+      if (scopeType == 'specific_ward' && selectedWard != null && selectedWard!.isNotEmpty) {
+        qParams['wardNumber'] = selectedWard!;
+      }
+      if (scopeType == 'specific_part' && selectedPart != null && selectedPart!.isNotEmpty) {
+        qParams['partNumber'] = selectedPart!;
+      }
+      final res = await api.getQuery('/api/members/field-values', qParams);
+      final items = List<Map<String, dynamic>>.from(
+        (res['items'] as List? ?? []).map((x) => Map<String, dynamic>.from(x as Map)),
+      );
+      if (mounted) {
+        setState(() {
+          casteBreakdown = items;
+          loadingCaste = false;
+        });
+      }
+    } catch (_) {
+      if (mounted) setState(() => loadingCaste = false);
+    }
   }
 
   Future<void> _loadHierarchy() async {
@@ -97,6 +154,22 @@ class _ConfigurablePrintPageState extends State<ConfigurablePrintPage> {
   }
 
   List<String> get availablePanchayats {
+    if (liveHierarchyData != null && liveHierarchyData!['panchayats'] is List) {
+      final list = <String>[];
+      for (final p in (liveHierarchyData!['panchayats'] as List)) {
+        if (p is Map) {
+          final s = (p['samiti'] ?? '').toString();
+          if (s.isEmpty || s == selectedSamiti) {
+            final name = '${p['name']}'.trim();
+            if (name.isNotEmpty && !list.contains(name)) list.add(name);
+          }
+        }
+      }
+      if (list.isNotEmpty) {
+        list.sort((a, b) => a.compareTo(b));
+        return list;
+      }
+    }
     final cur = samitiHierarchyData[selectedSamiti];
     if (cur == null) return [];
     final panchayatsMap = cur['panchayats'] as Map<String, dynamic>? ?? {};
@@ -107,6 +180,20 @@ class _ConfigurablePrintPageState extends State<ConfigurablePrintPage> {
 
   List<Map<String, dynamic>> get availableVillages {
     if (selectedGramPanchayat == null) return [];
+    if (liveHierarchyData != null && liveHierarchyData!['panchayats'] is List) {
+      final cleanGp = selectedGramPanchayat!.trim();
+      for (final p in (liveHierarchyData!['panchayats'] as List)) {
+        if (p is Map && '${p['name']}'.trim() == cleanGp) {
+          final vList = p['villages'] as List? ?? [];
+          if (vList.isNotEmpty) {
+            return vList.map((v) {
+              if (v is Map) return Map<String, dynamic>.from(v);
+              return <String, dynamic>{'name': v.toString()};
+            }).toList();
+          }
+        }
+      }
+    }
     final cur = samitiHierarchyData[selectedSamiti];
     if (cur == null) return [];
     final panchayatsMap = cur['panchayats'] as Map<String, dynamic>? ?? {};
@@ -118,6 +205,23 @@ class _ConfigurablePrintPageState extends State<ConfigurablePrintPage> {
 
   List<String> get availableWards {
     if (selectedGramPanchayat == null) return [];
+    if (liveHierarchyData != null && liveHierarchyData!['panchayats'] is List) {
+      final cleanGp = selectedGramPanchayat!.trim();
+      for (final p in (liveHierarchyData!['panchayats'] as List)) {
+        if (p is Map && '${p['name']}'.trim() == cleanGp) {
+          final wList = p['wards'] as List? ?? [];
+          if (wList.isNotEmpty) {
+            final wards = wList.map((w) => w.toString().trim()).where((w) => w.isNotEmpty).toList();
+            wards.sort((a, b) {
+              final na = int.tryParse(a) ?? 999;
+              final nb = int.tryParse(b) ?? 999;
+              return na.compareTo(nb);
+            });
+            return wards;
+          }
+        }
+      }
+    }
     final cur = samitiHierarchyData[selectedSamiti];
     if (cur == null) return [];
     final panchayatsMap = cur['panchayats'] as Map<String, dynamic>? ?? {};
@@ -186,16 +290,47 @@ class _ConfigurablePrintPageState extends State<ConfigurablePrintPage> {
       params['title'] = '$selectedGramPanchayat संपूर्ण पंचायत मतदाता सूची';
     }
 
+    if (selectedCaste != null && selectedCaste!.isNotEmpty && selectedCaste != 'all') {
+      params['caste'] = selectedCaste!;
+      params['title'] = '${params['title']} - $selectedCaste जाति';
+    }
+
+    if (withMobileOnly) {
+      params['withMobileOnly'] = 'true';
+      params['title'] = '${params['title']} (केवल मोबाइल)';
+    }
+    if (favoritesOnly) {
+      params['favoritesOnly'] = 'true';
+      params['title'] = '${params['title']} (केवल फ़ेवरेट)';
+    }
+    if (verifiedOnly) {
+      params['verifiedOnly'] = 'true';
+      params['title'] = '${params['title']} (केवल वेरिफाइड)';
+    }
+
     return params;
   }
 
   String get printJobName {
-    if (scopeType == 'all_samiti') return '${selectedSamiti}_Complete_List';
-    final gp = selectedGramPanchayat ?? selectedSamiti;
-    if (scopeType == 'specific_village' && selectedVillage != null) return '${gp}_${selectedVillage}_List';
-    if (scopeType == 'specific_ward' && selectedWard != null) return '${gp}_Ward_$selectedWard';
-    if (scopeType == 'specific_part' && selectedPart != null) return 'Part_$selectedPart';
-    return '${gp}_Complete_List';
+    String base;
+    if (scopeType == 'all_samiti') {
+      base = '${selectedSamiti}_Complete_List';
+    } else {
+      final gp = selectedGramPanchayat ?? selectedSamiti;
+      if (scopeType == 'specific_village' && selectedVillage != null) {
+        base = '${gp}_${selectedVillage}_List';
+      } else if (scopeType == 'specific_ward' && selectedWard != null) {
+        base = '${gp}_Ward_$selectedWard';
+      } else if (scopeType == 'specific_part' && selectedPart != null) {
+        base = 'Part_$selectedPart';
+      } else {
+        base = '${gp}_Complete_List';
+      }
+    }
+    if (selectedCaste != null && selectedCaste!.isNotEmpty && selectedCaste != 'all') {
+      base = '${base}_$selectedCaste';
+    }
+    return base;
   }
 
   Future<void> _handlePrint() async {
@@ -249,16 +384,135 @@ class _ConfigurablePrintPageState extends State<ConfigurablePrintPage> {
     }
   }
 
+  Future<List<int>> _buildClientExcel() async {
+    final baseQuery = <String, String>{
+      if (selectedGramPanchayat != null && selectedGramPanchayat!.isNotEmpty)
+        'gramPanchayat': selectedGramPanchayat!,
+      if (scopeType == 'specific_ward' && selectedWard != null && selectedWard!.isNotEmpty)
+        'wardNumber': selectedWard!,
+      if (scopeType == 'specific_village' && selectedVillage != null && selectedVillage!.isNotEmpty)
+        'village': selectedVillage!,
+      if (scopeType == 'specific_part' && selectedPart != null && selectedPart!.isNotEmpty)
+        'partNumber': selectedPart!,
+      if (scopeType == 'all_samiti' && selectedSamiti.isNotEmpty)
+        'tehsil': selectedSamiti,
+      if (selectedCaste != null && selectedCaste!.isNotEmpty && selectedCaste != 'all')
+        'caste': selectedCaste!,
+      if (withMobileOnly) 'hasMobile': 'true',
+      if (favoritesOnly) 'favorite': 'true',
+      if (verifiedOnly) 'verified': 'true',
+      'limit': '3000',
+      'paged': 'true',
+    };
+
+    final allMembers = <Map<String, dynamic>>[];
+    int page = 1;
+
+    while (true) {
+      final query = Map<String, String>.from(baseQuery);
+      query['page'] = '$page';
+      final res = await api.getQuery('/api/members', query);
+      final dynamic rawItems = res['items'] ?? res['data'];
+      final List<dynamic> rawList = rawItems is List ? rawItems : (res is List ? (res as List) : const []);
+      final chunk = rawList.whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList();
+      if (chunk.isEmpty) break;
+      allMembers.addAll(chunk);
+
+      final totalPages = res['pages'] is num ? (res['pages'] as num).toInt() : 1;
+      if (page >= totalPages) break;
+      page++;
+    }
+
+    if (allMembers.isEmpty) {
+      throw 'चयनित दायरे में कोई मतदाता रिकॉर्ड नहीं मिला';
+    }
+
+    String sheetName = 'मतदाता सूची';
+    if (selectedWard != null && selectedWard!.isNotEmpty) {
+      sheetName = 'वार्ड $selectedWard';
+    } else if (selectedVillage != null && selectedVillage!.isNotEmpty) {
+      sheetName = selectedVillage!;
+    } else if (selectedGramPanchayat != null && selectedGramPanchayat!.isNotEmpty) {
+      sheetName = selectedGramPanchayat!;
+    }
+
+    return ExcelGenerator.createXlsx(
+      members: allMembers,
+      fieldKeys: selectedFields.toList(),
+      sheetName: sheetName,
+    );
+  }
+
+  Future<void> _handleDownloadExcel() async {
+    setState(() => isDownloadingExcel = true);
+    try {
+      final bytes = await _buildClientExcel();
+      final filename = '$printJobName.xlsx';
+      final savedPath = await saveBytes(filename, Uint8List.fromList(bytes));
+      if (savedPath != null && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('✅ एक्सेल फ़ाइल सुरक्षित हो गई: $filename'),
+            backgroundColor: const Color(0xff16a34a),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('एक्सेल डाउनलोड करने में त्रुटि: $e'), backgroundColor: Colors.red),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => isDownloadingExcel = false);
+    }
+  }
+
+  Future<void> _handleShareExcel() async {
+    setState(() => isSharingExcel = true);
+    try {
+      final bytes = await _buildClientExcel();
+      final filename = '$printJobName.xlsx';
+
+      final tempDir = await getTemporaryDirectory();
+      final file = File('${tempDir.path}/$filename');
+      await file.writeAsBytes(bytes);
+
+      await SharePlus.instance.share(
+        ShareParams(
+          text: '📊 $printJobName - मतदाता सूची एक्सेल फाइल (.xlsx)',
+          files: [XFile(file.path)],
+          subject: '$printJobName Excel',
+        ),
+      );
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('एक्सेल शेयर करने में त्रुटि: $e'), backgroundColor: Colors.red),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => isSharingExcel = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color(0xfff8fafc),
       appBar: AppBar(
-        title: const Text('स्मार्ट PDF प्रिंट व एक्सपोर्ट', style: TextStyle(fontWeight: FontWeight.bold)),
+        title: const Text('स्मार्ट PDF व Excel एक्सपोर्ट', style: TextStyle(fontWeight: FontWeight.bold)),
         backgroundColor: Colors.white,
         foregroundColor: navy,
         elevation: 0.5,
         actions: [
+          IconButton(
+            icon: isDownloadingExcel
+                ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xff16a34a)))
+                : const Icon(Icons.table_view_rounded, color: Color(0xff16a34a)),
+            tooltip: 'Excel डाउनलोड करें',
+            onPressed: isDownloadingExcel ? null : _handleDownloadExcel,
+          ),
           IconButton(
             icon: const Icon(Icons.refresh_rounded),
             tooltip: 'रिफ्रेश करें',
@@ -427,6 +681,7 @@ class _ConfigurablePrintPageState extends State<ConfigurablePrintPage> {
                         selectedVillage = null;
                         selectedWard = null;
                         selectedPart = null;
+                        _onScopeSelectionChanged();
                       });
                     }
                   },
@@ -532,6 +787,7 @@ class _ConfigurablePrintPageState extends State<ConfigurablePrintPage> {
                   selectedVillage = null;
                   selectedWard = null;
                   selectedPart = null;
+                  _onScopeSelectionChanged();
                 }),
                 borderRadius: BorderRadius.circular(10),
                 child: Container(
@@ -583,7 +839,10 @@ class _ConfigurablePrintPageState extends State<ConfigurablePrintPage> {
                 selectedColor: royalBlue,
                 backgroundColor: Colors.white,
                 labelStyle: TextStyle(color: isV ? Colors.white : navy, fontWeight: isV ? FontWeight.bold : FontWeight.normal),
-                onSelected: (val) => setState(() => selectedVillage = val ? vName : null),
+                onSelected: (val) => setState(() {
+                  selectedVillage = val ? vName : null;
+                  _onScopeSelectionChanged();
+                }),
               );
             }).toList(),
           ),
@@ -607,7 +866,10 @@ class _ConfigurablePrintPageState extends State<ConfigurablePrintPage> {
                 selectedColor: royalBlue,
                 backgroundColor: Colors.white,
                 labelStyle: TextStyle(color: isW ? Colors.white : navy, fontWeight: isW ? FontWeight.bold : FontWeight.normal),
-                onSelected: (val) => setState(() => selectedWard = val ? w : null),
+                onSelected: (val) => setState(() {
+                  selectedWard = val ? w : null;
+                  _onScopeSelectionChanged();
+                }),
               );
             }).toList(),
           ),
@@ -634,7 +896,10 @@ class _ConfigurablePrintPageState extends State<ConfigurablePrintPage> {
                       selectedColor: royalBlue,
                       backgroundColor: Colors.white,
                       labelStyle: TextStyle(color: isP ? Colors.white : navy, fontWeight: isP ? FontWeight.bold : FontWeight.normal),
-                      onSelected: (val) => setState(() => selectedPart = val ? pNum : null),
+                      onSelected: (val) => setState(() {
+                        selectedPart = val ? pNum : null;
+                        _onScopeSelectionChanged();
+                      }),
                     );
                   }).toList(),
                 )
@@ -644,6 +909,14 @@ class _ConfigurablePrintPageState extends State<ConfigurablePrintPage> {
                 ),
           const SizedBox(height: 16),
         ],
+
+        // 5. Caste Analysis & Caste Filter Section
+        _buildCasteAnalysisAndFilterCard(),
+        const SizedBox(height: 16),
+
+        // 6. Quick Print Filters
+        _buildQuickFiltersCard(),
+        const SizedBox(height: 16),
 
         // Selection Summary Badge
         Container(
@@ -670,12 +943,347 @@ class _ConfigurablePrintPageState extends State<ConfigurablePrintPage> {
     );
   }
 
+  Widget _buildCasteAnalysisAndFilterCard() {
+    final hasCasteFilter = selectedCaste != null && selectedCaste!.isNotEmpty && selectedCaste != 'all';
+    final totalVotersInCastes = casteBreakdown.fold<int>(0, (sum, item) => sum + ((item['count'] as num?)?.toInt() ?? 0));
+
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: hasCasteFilter ? const Color(0xff7c3aed) : border,
+          width: hasCasteFilter ? 1.8 : 1,
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          InkWell(
+            onTap: () {
+              setState(() => showCasteAnalysis = !showCasteAnalysis);
+              if (casteBreakdown.isEmpty) _loadCasteBreakdown();
+            },
+            borderRadius: BorderRadius.circular(14),
+            child: Padding(
+              padding: const EdgeInsets.all(14),
+              child: Row(
+                children: [
+                  Container(
+                    width: 38,
+                    height: 38,
+                    decoration: BoxDecoration(
+                      color: const Color(0xfff5f3ff),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: const Icon(Icons.diversity_3_rounded, color: Color(0xff7c3aed), size: 22),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            const Text(
+                              '📊 जाति विश्लेषण व जाति फ़िल्टर',
+                              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: navy),
+                            ),
+                            const SizedBox(width: 6),
+                            if (casteBreakdown.isNotEmpty)
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xfff3e8ff),
+                                  borderRadius: BorderRadius.circular(6),
+                                ),
+                                child: Text(
+                                  '${casteBreakdown.length} जातियां',
+                                  style: const TextStyle(color: Color(0xff7c3aed), fontSize: 11, fontWeight: FontWeight.bold),
+                                ),
+                              ),
+                          ],
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          hasCasteFilter
+                              ? '🎯 चयनित जाति: "$selectedCaste" (केवल इसी जाति का प्रिंट निकलेगा)'
+                              : 'जाति अनुसार मतदाता संख्या देखें एवं किसी एक जाति का अलग प्रिंट निकालें',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: hasCasteFilter ? const Color(0xff7c3aed) : muted,
+                            fontWeight: hasCasteFilter ? FontWeight.bold : FontWeight.normal,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Icon(
+                    showCasteAnalysis ? Icons.expand_less_rounded : Icons.expand_more_rounded,
+                    color: muted,
+                  ),
+                ],
+              ),
+            ),
+          ),
+          if (showCasteAnalysis) ...[
+            const Divider(height: 1),
+            Padding(
+              padding: const EdgeInsets.all(14),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Text(
+                        'कुल विश्लेषण मतदाता: $totalVotersInCastes',
+                        style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: navy),
+                      ),
+                      const Spacer(),
+                      IconButton(
+                        tooltip: 'रिफ्रेश जाति डेटा',
+                        visualDensity: VisualDensity.compact,
+                        icon: const Icon(Icons.refresh_rounded, size: 18),
+                        onPressed: _loadCasteBreakdown,
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  if (loadingCaste)
+                    const Center(
+                      child: Padding(
+                        padding: EdgeInsets.all(16),
+                        child: CircularProgressIndicator(),
+                      ),
+                    )
+                  else if (casteBreakdown.isEmpty)
+                    const Padding(
+                      padding: EdgeInsets.all(12),
+                      child: Text('इस क्षेत्र में जाति डेटा उपलब्ध नहीं है।', style: TextStyle(color: muted, fontSize: 13)),
+                    )
+                  else ...[
+                    // Caste Quick Chips
+                    SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      child: Row(
+                        children: [
+                          ChoiceChip(
+                            label: const Text('सभी जातियां (All)'),
+                            selected: selectedCaste == null || selectedCaste == '' || selectedCaste == 'all',
+                            selectedColor: const Color(0xff7c3aed),
+                            backgroundColor: Colors.white,
+                            labelStyle: TextStyle(
+                              color: (selectedCaste == null || selectedCaste == '' || selectedCaste == 'all')
+                                  ? Colors.white
+                                  : navy,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 12,
+                            ),
+                            onSelected: (val) {
+                              if (val) setState(() => selectedCaste = null);
+                            },
+                          ),
+                          const SizedBox(width: 8),
+                          for (final item in casteBreakdown.take(15)) ...[
+                            ChoiceChip(
+                              label: Text('${item['label']} (${item['count']})'),
+                              selected: selectedCaste == '${item['label']}',
+                              selectedColor: const Color(0xff7c3aed),
+                              backgroundColor: Colors.white,
+                              labelStyle: TextStyle(
+                                color: selectedCaste == '${item['label']}' ? Colors.white : navy,
+                                fontWeight: FontWeight.bold,
+                                fontSize: 12,
+                              ),
+                              onSelected: (val) {
+                                setState(() => selectedCaste = val ? '${item['label']}' : null);
+                              },
+                            ),
+                            const SizedBox(width: 8),
+                          ],
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    // Caste Detailed Breakdown Bars
+                    Container(
+                      constraints: const BoxConstraints(maxHeight: 240),
+                      child: ListView.separated(
+                        shrinkWrap: true,
+                        itemCount: casteBreakdown.take(12).length,
+                        separatorBuilder: (_, __) => const SizedBox(height: 8),
+                        itemBuilder: (context, idx) {
+                          final item = casteBreakdown[idx];
+                          final cName = '${item['label']}';
+                          final count = (item['count'] as num?)?.toInt() ?? 0;
+                          final mobileCount = (item['mobileCount'] as num?)?.toInt() ?? 0;
+                          final percent = totalVotersInCastes > 0 ? (count / totalVotersInCastes) : 0.0;
+                          final isSel = selectedCaste == cName;
+
+                          return InkWell(
+                            onTap: () {
+                              setState(() {
+                                selectedCaste = isSel ? null : cName;
+                              });
+                            },
+                            borderRadius: BorderRadius.circular(8),
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                              decoration: BoxDecoration(
+                                color: isSel ? const Color(0xfff5f3ff) : const Color(0xfff8fafc),
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border.all(
+                                  color: isSel ? const Color(0xff7c3aed) : const Color(0xffe2e8f0),
+                                ),
+                              ),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Row(
+                                    children: [
+                                      Text(
+                                        '#${idx + 1} $cName',
+                                        style: TextStyle(
+                                          fontWeight: FontWeight.bold,
+                                          fontSize: 13,
+                                          color: isSel ? const Color(0xff7c3aed) : navy,
+                                        ),
+                                      ),
+                                      const Spacer(),
+                                      Text(
+                                        '$count मतदाता (${(percent * 100).toStringAsFixed(1)}%)',
+                                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: navy),
+                                      ),
+                                      if (mobileCount > 0) ...[
+                                        const SizedBox(width: 6),
+                                        Text('• 📱 $mobileCount', style: const TextStyle(fontSize: 11, color: muted)),
+                                      ],
+                                      const SizedBox(width: 8),
+                                      Icon(
+                                        isSel ? Icons.check_circle_rounded : Icons.radio_button_unchecked_rounded,
+                                        size: 18,
+                                        color: isSel ? const Color(0xff7c3aed) : muted,
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 4),
+                                  ClipRRect(
+                                    borderRadius: BorderRadius.circular(3),
+                                    child: LinearProgressIndicator(
+                                      value: percent,
+                                      minHeight: 5,
+                                      backgroundColor: const Color(0xffe2e8f0),
+                                      valueColor: AlwaysStoppedAnimation<Color>(
+                                        isSel ? const Color(0xff7c3aed) : royalBlue,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
   String _getSelectionSummaryText() {
-    if (scopeType == 'all_samiti') return '🎯 आपका चयन: पूरी $selectedSamiti समिति (समस्त ग्राम पंचायतें व गाँव)';
-    if (scopeType == 'specific_village') return '🎯 आपका चयन: $selectedSamiti > $selectedGramPanchayat > ${selectedVillage ?? "गाँव चुनें"}';
-    if (scopeType == 'specific_ward') return '🎯 आपका चयन: $selectedSamiti > $selectedGramPanchayat > ${selectedWard != null ? "वार्ड $selectedWard" : "वार्ड चुनें"}';
-    if (scopeType == 'specific_part') return '🎯 आपका चयन: भाग #${selectedPart ?? "भाग चुनें"}';
-    return '🎯 आपका चयन: $selectedSamiti > संपूर्ण $selectedGramPanchayat ग्राम पंचायत';
+    String base;
+    if (scopeType == 'all_samiti') {
+      base = '🎯 आपका चयन: पूरी $selectedSamiti समिति (समस्त ग्राम पंचायतें व गाँव)';
+    } else if (scopeType == 'specific_village') {
+      base = '🎯 आपका चयन: $selectedSamiti > $selectedGramPanchayat > ${selectedVillage ?? "गाँव चुनें"}';
+    } else if (scopeType == 'specific_ward') {
+      base = '🎯 आपका चयन: $selectedSamiti > $selectedGramPanchayat > ${selectedWard != null ? "वार्ड $selectedWard" : "वार्ड चुनें"}';
+    } else if (scopeType == 'specific_part') {
+      base = '🎯 आपका चयन: भाग #${selectedPart ?? "भाग चुनें"}';
+    } else {
+      base = '🎯 आपका चयन: $selectedSamiti > संपूर्ण $selectedGramPanchayat ग्राम पंचायत';
+    }
+    if (selectedCaste != null && selectedCaste!.isNotEmpty && selectedCaste != 'all') {
+      base += ' | 🏷️ जाति फ़िल्टर: "$selectedCaste"';
+    }
+    if (withMobileOnly) base += ' | 📱 केवल मोबाइल';
+    if (favoritesOnly) base += ' | ⭐ केवल फ़ेवरेट';
+    if (verifiedOnly) base += ' | ✅ केवल वेरिफाइड';
+    return base;
+  }
+
+  Widget _buildQuickFiltersCard() {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Row(
+            children: [
+              Icon(Icons.tune_rounded, color: Color(0xff2563eb), size: 20),
+              SizedBox(width: 8),
+              Text(
+                '⚡ त्वरित प्रिंट फ़िल्टर (Quick Print Filters)',
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: navy),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              FilterChip(
+                avatar: const Icon(Icons.phone_android_rounded, size: 16),
+                label: const Text('📱 केवल मोबाइल नंबर वाले'),
+                selected: withMobileOnly,
+                selectedColor: const Color(0xffdcfce7),
+                checkmarkColor: const Color(0xff16a34a),
+                labelStyle: TextStyle(
+                  color: withMobileOnly ? const Color(0xff166534) : navy,
+                  fontWeight: withMobileOnly ? FontWeight.bold : FontWeight.normal,
+                ),
+                onSelected: (val) => setState(() => withMobileOnly = val),
+              ),
+              FilterChip(
+                avatar: const Icon(Icons.star_rounded, size: 16),
+                label: const Text('⭐ केवल फ़ेवरेट'),
+                selected: favoritesOnly,
+                selectedColor: const Color(0xfffef3c7),
+                checkmarkColor: const Color(0xffd97706),
+                labelStyle: TextStyle(
+                  color: favoritesOnly ? const Color(0xffb45309) : navy,
+                  fontWeight: favoritesOnly ? FontWeight.bold : FontWeight.normal,
+                ),
+                onSelected: (val) => setState(() => favoritesOnly = val),
+              ),
+              FilterChip(
+                avatar: const Icon(Icons.verified_rounded, size: 16),
+                label: const Text('✅ केवल वेरिफाइड'),
+                selected: verifiedOnly,
+                selectedColor: const Color(0xffdbeafe),
+                checkmarkColor: const Color(0xff2563eb),
+                labelStyle: TextStyle(
+                  color: verifiedOnly ? const Color(0xff1e40af) : navy,
+                  fontWeight: verifiedOnly ? FontWeight.bold : FontWeight.normal,
+                ),
+                onSelected: (val) => setState(() => verifiedOnly = val),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
   }
 
   Widget _buildScopeCard({
@@ -686,7 +1294,10 @@ class _ConfigurablePrintPageState extends State<ConfigurablePrintPage> {
   }) {
     final isSelected = scopeType == type;
     return InkWell(
-      onTap: () => setState(() => scopeType = type),
+      onTap: () => setState(() {
+        scopeType = type;
+        _onScopeSelectionChanged();
+      }),
       borderRadius: BorderRadius.circular(12),
       child: Container(
         padding: const EdgeInsets.all(12),
@@ -1069,6 +1680,66 @@ class _ConfigurablePrintPageState extends State<ConfigurablePrintPage> {
                 label: Text(
                   isSharing ? 'PDF डाउनलोड हो रही है...' : 'PDF शेयर करें (WhatsApp / Share)',
                   style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: royalBlue),
+                ),
+              ),
+            ),
+          ],
+        ),
+
+        const SizedBox(height: 20),
+        const Row(
+          children: [
+            Expanded(child: Divider()),
+            Padding(
+              padding: EdgeInsets.symmetric(horizontal: 12),
+              child: Text(
+                'एक्सेल (Excel) विकल्प',
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: muted),
+              ),
+            ),
+            Expanded(child: Divider()),
+          ],
+        ),
+        const SizedBox(height: 16),
+
+        Row(
+          children: [
+            Expanded(
+              child: FilledButton.icon(
+                style: FilledButton.styleFrom(
+                  backgroundColor: const Color(0xff16a34a),
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                ),
+                onPressed: isDownloadingExcel ? null : _handleDownloadExcel,
+                icon: isDownloadingExcel
+                    ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                    : const Icon(Icons.table_view_rounded),
+                label: Text(
+                  isDownloadingExcel ? 'एक्सेल तैयार हो रहा है...' : 'Excel फ़ाइल डाउनलोड करें (.xlsx)',
+                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+                ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        Row(
+          children: [
+            Expanded(
+              child: OutlinedButton.icon(
+                style: OutlinedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  side: const BorderSide(color: Color(0xff16a34a), width: 1.5),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                ),
+                onPressed: isSharingExcel ? null : _handleShareExcel,
+                icon: isSharingExcel
+                    ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xff16a34a)))
+                    : const Icon(Icons.share_rounded, color: Color(0xff16a34a)),
+                label: Text(
+                  isSharingExcel ? 'एक्सेल भेजा जा रहा है...' : 'Excel शेयर करें (WhatsApp / Share)',
+                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: Color(0xff16a34a)),
                 ),
               ),
             ),

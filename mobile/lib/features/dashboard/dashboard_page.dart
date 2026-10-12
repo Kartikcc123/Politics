@@ -298,6 +298,7 @@ class _PhoneDashboard extends StatelessWidget {
                 ]),
           ),
           const SizedBox(height: 14),
+          if (api.user != null) _PanchayatWardsCard(user: api.user!),
           const HierarchicalLocationNavigator(),
           const SizedBox(height: 14),
           Row(children: [
@@ -552,6 +553,7 @@ class _BoothManagerHome extends StatelessWidget {
                     caption: 'मोबाइल / घर संख्या')),
           ]);
         }),
+        if (api.user != null) _PanchayatWardsCard(user: api.user!),
         _SectionHeading(
             title: 'जरूरी काम', subtitle: 'अपना काम सीधे यहां से खोलें'),
         _ActionGrid(actions: [
@@ -1104,3 +1106,204 @@ String _activityDescription(Map item) {
   if (action.contains('update')) return (Icons.edit_note_rounded, blue);
   return (Icons.history_rounded, purple);
 }
+
+class _PanchayatWardsCard extends StatefulWidget {
+  const _PanchayatWardsCard({required this.user});
+  final Map<String, dynamic> user;
+
+  @override
+  State<_PanchayatWardsCard> createState() => _PanchayatWardsCardState();
+}
+
+class _PanchayatWardsCardState extends State<_PanchayatWardsCard> {
+  List<String> _wards = [];
+  bool _loading = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _initWards();
+  }
+
+  void _initWards() async {
+    final assigned = (widget.user['assignedWards'] as List? ?? [])
+        .map((w) => w.toString().trim())
+        .where((w) => w.isNotEmpty)
+        .toList();
+    if (assigned.isNotEmpty) {
+      assigned.sort((a, b) {
+        final na = int.tryParse(a) ?? 999;
+        final nb = int.tryParse(b) ?? 999;
+        return na.compareTo(nb);
+      });
+      setState(() => _wards = assigned);
+    } else {
+      final gps = (widget.user['assignedGramPanchayats'] as List? ?? [])
+          .map((e) => e.toString().trim())
+          .where((e) => e.isNotEmpty)
+          .toList();
+      if (gps.isNotEmpty) {
+        setState(() => _loading = true);
+        try {
+          final res = await api.get('/api/auth/hierarchy-options');
+          if (res is Map && res['panchayats'] is List) {
+            final gpDoc = (res['panchayats'] as List).firstWhere(
+              (p) => '${p['name']}'.trim() == gps.first,
+              orElse: () => null,
+            );
+            if (gpDoc != null && gpDoc['wards'] is List) {
+              final wList = (gpDoc['wards'] as List)
+                  .map((w) => w.toString().trim())
+                  .where((w) => w.isNotEmpty)
+                  .toList();
+              wList.sort((a, b) {
+                final na = int.tryParse(a) ?? 999;
+                final nb = int.tryParse(b) ?? 999;
+                return na.compareTo(nb);
+              });
+              if (mounted) {
+                setState(() {
+                  _wards = wList;
+                  _loading = false;
+                });
+              }
+              return;
+            }
+          }
+        } catch (_) {}
+        if (mounted) setState(() => _loading = false);
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final gps = (widget.user['assignedGramPanchayats'] as List? ?? [])
+        .map((e) => e.toString().trim())
+        .where((e) => e.isNotEmpty)
+        .toList();
+    if (gps.isEmpty && _wards.isEmpty) return const SizedBox.shrink();
+
+    final gpName = gps.isNotEmpty ? gps.first : 'पंचायत';
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 16),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: const Color(0xff059669).withValues(alpha: 0.3)),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x0a059669),
+            blurRadius: 12,
+            offset: Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: const Color(0xffecfdf5),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: const Icon(Icons.location_city_rounded, color: Color(0xff059669), size: 20),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('ग्राम पंचायत: $gpName',
+                        style: const TextStyle(color: navy, fontSize: 16, fontWeight: FontWeight.bold)),
+                    const Text('वार्ड अनुसार मतदाता सूची (वार्ड चुनें)',
+                        style: TextStyle(color: muted, fontSize: 11)),
+                  ],
+                ),
+              ),
+              TextButton.icon(
+                style: TextButton.styleFrom(
+                  foregroundColor: const Color(0xff059669),
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                ),
+                onPressed: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => VoterManagementPage(initialGramPanchayat: gpName),
+                    ),
+                  );
+                },
+                icon: const Icon(Icons.groups_rounded, size: 16),
+                label: const Text('सभी वार्ड', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          const Divider(height: 1, color: border),
+          const SizedBox(height: 12),
+          if (_loading)
+            const Center(child: Padding(padding: EdgeInsets.all(12), child: CircularProgressIndicator(strokeWidth: 2)))
+          else if (_wards.isEmpty)
+            const Text('वार्ड सूची उपलब्ध नहीं है।', style: TextStyle(color: muted, fontSize: 12))
+          else
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: _wards.map((w) {
+                return InkWell(
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => VoterManagementPage(
+                          initialGramPanchayat: gpName,
+                          initialWard: w,
+                        ),
+                      ),
+                    );
+                  },
+                  borderRadius: BorderRadius.circular(12),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                    decoration: BoxDecoration(
+                      gradient: const LinearGradient(
+                        colors: [Color(0xfff0fdf4), Color(0xffdcfce7)],
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                      ),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: const Color(0xff86efac)),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.how_to_vote_rounded, size: 16, color: Color(0xff059669)),
+                        const SizedBox(width: 6),
+                        Text(
+                          'वार्ड $w',
+                          style: const TextStyle(
+                            color: Color(0xff166534),
+                            fontWeight: FontWeight.bold,
+                            fontSize: 13,
+                          ),
+                        ),
+                        const SizedBox(width: 4),
+                        const Icon(Icons.arrow_forward_ios_rounded, size: 10, color: Color(0xff059669)),
+                      ],
+                    ),
+                  ),
+                );
+              }).toList(),
+            ),
+        ],
+      ),
+    );
+  }
+}
+

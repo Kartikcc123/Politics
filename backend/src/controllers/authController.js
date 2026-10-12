@@ -67,6 +67,18 @@ const normalizeUserPayload = async (body, existingUser) => {
     data.assignedVillages = [];
     data.assignedWards = [];
     data.assignedParts = [];
+    data.allowedRollType = 'all';
+  } else {
+    if (data.allowedRollType && ['municipal', 'assembly', 'all'].includes(data.allowedRollType)) {
+      data.allowedRollType = String(data.allowedRollType);
+    } else if (existingUser?.allowedRollType) {
+      data.allowedRollType = existingUser.allowedRollType;
+    } else {
+      // Default to assembly if booth-part user, otherwise municipal
+      const hasParts = Array.isArray(data.assignedParts) && data.assignedParts.length > 0;
+      const hasGps = Array.isArray(data.assignedGramPanchayats) && data.assignedGramPanchayats.length > 0;
+      data.allowedRollType = (hasParts && !hasGps) ? 'assembly' : 'municipal';
+    }
   }
 
   if (Array.isArray(data.assignedGramPanchayats)) {
@@ -85,6 +97,19 @@ const normalizeUserPayload = async (body, existingUser) => {
     data.assignedVoterId = String(data.assignedVoterId).trim();
   }
 
+  // If municipal Panchayat manager has empty assignedWards, populate all wards of those GPs
+  if (role !== 'admin' && data.allowedRollType === 'municipal') {
+    if (Array.isArray(data.assignedGramPanchayats) && data.assignedGramPanchayats.length > 0) {
+      if (!Array.isArray(data.assignedWards) || data.assignedWards.length === 0) {
+        const wardsInGps = await Member.distinct('wardNumber', {
+          gramPanchayat: { $in: data.assignedGramPanchayats },
+          wardNumber: { $nin: ['', null, 'NO_WARD'] }
+        });
+        data.assignedWards = wardsInGps.map(String).sort((a,b) => (Number(a)||0) - (Number(b)||0));
+      }
+    }
+  }
+
   return data;
 };
 
@@ -93,6 +118,9 @@ const defaultStats = () => ({
   votersCreated: 0,
   votersUpdated: 0,
   votersDeleted: 0,
+  mobilesAdded: 0,
+  voteStatusMarked: 0,
+  favoritesMarked: 0,
   createdByCount: 0,
   updatedByCount: 0,
   boothVoterCount: 0,
@@ -107,8 +135,11 @@ const userWorkStats = async () => {
           _id: '$actor',
           totalActivities: { $sum: 1 },
           votersCreated: { $sum: { $cond: [{ $eq: ['$action', 'member.created'] }, 1, 0] } },
-          votersUpdated: { $sum: { $cond: [{ $eq: ['$action', 'member.updated'] }, 1, 0] } },
+          votersUpdated: { $sum: { $cond: [{ $in: ['$action', ['member.updated', 'member.edit']] }, 1, 0] } },
           votersDeleted: { $sum: { $cond: [{ $eq: ['$action', 'member.deleted'] }, 1, 0] } },
+          mobilesAdded: { $sum: { $cond: [{ $in: ['$action', ['member.mobile', 'member.mobile_added']] }, 1, 0] } },
+          voteStatusMarked: { $sum: { $cond: [{ $in: ['$action', ['member.voted', 'member.vote_status', 'member.bulk_vote_status']] }, 1, 0] } },
+          favoritesMarked: { $sum: { $cond: [{ $eq: ['$action', 'member.favorite'] }, 1, 0] } },
           lastActivityAt: { $max: '$createdAt' },
         },
       },
@@ -330,7 +361,7 @@ exports.hierarchyOptions = async (req, res, next) => {
         { $match: { gramPanchayat: { $nin: ['', null] } } },
         {
           $group: {
-            _id: { gp: '$gramPanchayat', ward: '$wardNumber', village: '$village', part: '$partNumber' },
+            _id: { gp: '$gramPanchayat', ward: '$wardNumber', village: '$village', part: '$partNumber', tehsil: '$tehsil' },
             count: { $sum: 1 }
           }
         }
@@ -340,12 +371,16 @@ exports.hierarchyOptions = async (req, res, next) => {
 
     const gpMap = {};
     for (const gp of gps.filter(Boolean).sort()) {
-      gpMap[gp] = { name: gp, wards: new Set(), wardCounts: {}, villages: new Set(), parts: new Map(), totalVoters: 0 };
+      gpMap[gp] = { name: gp, tehsils: {}, wards: new Set(), wardCounts: {}, villages: new Set(), parts: new Map(), totalVoters: 0 };
     }
 
     for (const item of gpBreakdown) {
       const gp = item._id.gp;
-      if (!gpMap[gp]) gpMap[gp] = { name: gp, wards: new Set(), wardCounts: {}, villages: new Set(), parts: new Map(), totalVoters: 0 };
+      if (!gpMap[gp]) gpMap[gp] = { name: gp, tehsils: {}, wards: new Set(), wardCounts: {}, villages: new Set(), parts: new Map(), totalVoters: 0 };
+      if (item._id.tehsil && item._id.tehsil.trim()) {
+        const t = item._id.tehsil.trim();
+        gpMap[gp].tehsils[t] = (gpMap[gp].tehsils[t] || 0) + (item.count || 0);
+      }
       if (item._id.ward && item._id.ward !== 'NO_WARD') {
         const wStr = String(item._id.ward).trim();
         if (wStr) {
@@ -364,27 +399,77 @@ exports.hierarchyOptions = async (req, res, next) => {
       gpMap[gp].totalVoters += (item.count || 0);
     }
 
-    const panchayats = Object.values(gpMap).map(gp => ({
-      name: gp.name,
-      totalVoters: gp.totalVoters,
-      wards: Array.from(gp.wards).sort((a, b) => (parseInt(a) || 0) - (parseInt(b) || 0)),
-      wardCounts: gp.wardCounts || {},
-      villages: Array.from(gp.villages).sort(),
-      parts: Array.from(gp.parts.values()).map(p => ({
-        partNumber: p.partNumber,
-        voterCount: p.voterCount,
-        villages: Array.from(p.villages)
-      })).sort((a, b) => (parseInt(a.partNumber) || 0) - (parseInt(b.partNumber) || 0))
-    })).sort((a, b) => a.name.localeCompare(b.name, 'hi-IN'));
+    // Known Sahara Samiti Gram Panchayats fallback
+    const sahadaGps = new Set([
+      'सहाड़ा', 'सांगवा', 'सुन्दरपुरा', 'लाखोला', 'पोटलां', 'बांसड़ा',
+      'अरनिया', 'समोडी', 'दुदिया', 'गलोदिया', 'महेन्द्र गढ़', 'भूणास',
+      'खांखला', 'उल्लाई', 'जवासिया', 'रायथलियास'
+    ]);
 
-    const sortedParts = parts
-      .filter(Boolean)
-      .map(String)
-      .sort((a, b) => (parseInt(a) || 0) - (parseInt(b) || 0));
+    const panchayats = Object.values(gpMap).map(gp => {
+      let primaryTehsil = 'रायपुर';
+      const tehsilEntries = Object.entries(gp.tehsils);
+      if (tehsilEntries.length > 0) {
+        tehsilEntries.sort((a, b) => b[1] - a[1]);
+        primaryTehsil = tehsilEntries[0][0];
+      } else if (sahadaGps.has(gp.name)) {
+        primaryTehsil = 'सहाड़ा';
+      }
+      return {
+        name: gp.name,
+        samiti: primaryTehsil,
+        tehsil: primaryTehsil,
+        totalVoters: gp.totalVoters,
+        wards: Array.from(gp.wards).sort((a, b) => (parseInt(a) || 0) - (parseInt(b) || 0)),
+        wardCounts: gp.wardCounts || {},
+        villages: Array.from(gp.villages).sort(),
+        parts: Array.from(gp.parts.values()).map(p => ({
+          partNumber: p.partNumber,
+          voterCount: p.voterCount,
+          villages: Array.from(p.villages)
+        })).sort((a, b) => (parseInt(a.partNumber) || 0) - (parseInt(b.partNumber) || 0))
+      };
+    }).sort((a, b) => a.name.localeCompare(b.name, 'hi-IN'));
+
+    let finalPanchayats = panchayats;
+    if (finalPanchayats.length === 0) {
+      try {
+        const officialRaipur = require('../config/raipurOfficial29Panchayats.json');
+        finalPanchayats = officialRaipur.map(p => ({
+          name: p.name,
+          samiti: 'रायपुर',
+          tehsil: 'रायपुर',
+          totalVoters: p.pop || 0,
+          wards: Array.from({ length: p.wards || 11 }, (_, i) => String(i + 1)),
+          wardCounts: {},
+          villages: (p.villages || []).map(v => typeof v === 'string' ? v : v.name),
+          parts: []
+        }));
+        for (const sGp of sahadaGps) {
+          finalPanchayats.push({
+            name: sGp,
+            samiti: 'सहाड़ा',
+            tehsil: 'सहाड़ा',
+            totalVoters: 0,
+            wards: Array.from({ length: 9 }, (_, i) => String(i + 1)),
+            wardCounts: {},
+            villages: [sGp],
+            parts: []
+          });
+        }
+      } catch (_) {}
+    }
+
+    const partsSet = new Set(parts.filter(Boolean).map(String));
+    for (let i = 1; i <= 315; i++) {
+      partsSet.add(String(i));
+    }
+    const sortedParts = Array.from(partsSet).sort((a, b) => (parseInt(a) || 0) - (parseInt(b) || 0));
 
     res.json({
       samiti: 'रायपुर (सहाड़ा विधानसभा)',
-      panchayats,
+      samitis: ['रायपुर', 'सहाड़ा'],
+      panchayats: finalPanchayats,
       parts: sortedParts
     });
   } catch (error) {

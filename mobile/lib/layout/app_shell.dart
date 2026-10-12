@@ -21,6 +21,7 @@ import '../features/settings/settings_page.dart';
 import '../features/uploads/admin_review_hub_page.dart';
 import '../features/uploads/smart_excel_import_page.dart';
 import '../features/uploads/upload_page.dart';
+import '../features/dashboard/dashboard_page.dart';
 import '../features/users/booth_user_page.dart';
 import '../features/voters/voter_management_page.dart';
 import 'app_layout.dart';
@@ -83,80 +84,74 @@ class _AppShellState extends State<AppShell> {
 
   List<NavItem> get mobileItems {
     final isAdmin = widget.role == 'admin';
-    final user = api.user;
-    final assignedGps = (user?['assignedGramPanchayats'] as List? ?? [])
-        .where((s) => '$s'.trim().isNotEmpty)
-        .toList();
-    final assignedVillages = (user?['assignedVillages'] as List? ?? [])
-        .where((s) => '$s'.trim().isNotEmpty)
-        .toList();
-    final assignedWards = (user?['assignedWards'] as List? ?? [])
-        .where((s) => '$s'.trim().isNotEmpty)
-        .toList();
-    final assignedParts = (user?['assignedParts'] as List? ?? [])
-        .where((s) => '$s'.trim().isNotEmpty)
-        .toList();
 
-    final hasWardOrPartRestriction = assignedWards.isNotEmpty ||
-        assignedParts.isNotEmpty ||
-        user?['assignedBooth'] != null ||
-        user?['assignedWard'] != null ||
-        widget.role == 'booth' ||
-        widget.role == 'ward_head';
-
-    final hasWholeVillageAccess = isAdmin ||
-        (!hasWardOrPartRestriction &&
-            (assignedGps.isNotEmpty || assignedVillages.isNotEmpty) &&
-            assignedWards.isEmpty &&
-            assignedParts.isEmpty);
-
-    final navList = <NavItem>[];
-
-    if (hasWholeVillageAccess) {
-      navList.add(
+    if (isAdmin) {
+      return [
         NavItem(
-          isAdmin ? 'क्षेत्र व गाँव' : 'गाँव व वार्ड',
-          Icons.holiday_village_rounded,
-          SamitiHierarchyPage(key: ValueKey('samiti-hierarchy-$refreshVersion')),
+          'डैशबोर्ड',
+          Icons.home_rounded,
+          DashboardPage(
+            key: ValueKey('admin-dash-$refreshVersion'),
+            onNavigate: select,
+          ),
         ),
-      );
-    }
-
-    navList.add(
-      NavItem(
-        isAdmin ? 'सभी मतदाता' : 'मतदाता सूची',
-        Icons.groups_rounded,
-        VoterManagementPage(key: ValueKey('voters-$refreshVersion')),
-      ),
-    );
-
-    navList.add(
-      NavItem(
-        'पार्टी गणना',
-        Icons.analytics_rounded,
-        PartyAnalyticsPage(key: ValueKey('party-analytics-$refreshVersion')),
-      ),
-    );
-
-    final permissions = user?['permissions'] as Map? ?? {};
-    final hasAnyExtraPerm = isAdmin ||
-        permissions['canPrintProfiles'] == true ||
-        permissions['canViewReports'] == true ||
-        permissions['canExportData'] == true ||
-        permissions['canUploadPdf'] == true ||
-        permissions['canImportData'] == true;
-
-    if (hasAnyExtraPerm) {
-      navList.add(
+        NavItem(
+          'सभी मतदाता',
+          Icons.groups_rounded,
+          VoterManagementPage(key: ValueKey('admin-voters-$refreshVersion')),
+        ),
+        NavItem(
+          'क्षेत्र व गाँव',
+          Icons.holiday_village_rounded,
+          SamitiHierarchyPage(key: ValueKey('admin-samiti-$refreshVersion')),
+        ),
+        NavItem(
+          'पार्टी गणना',
+          Icons.analytics_rounded,
+          PartyAnalyticsPage(key: ValueKey('admin-analytics-$refreshVersion')),
+        ),
         NavItem(
           'अधिक',
           Icons.grid_view_rounded,
-          MorePage(key: ValueKey('more-$refreshVersion'), role: widget.role),
+          MorePage(key: ValueKey('admin-more-$refreshVersion'), role: widget.role),
         ),
-      );
+      ];
     }
 
-    return navList;
+    // Booth, Ward, and Normal Users
+    return [
+      NavItem(
+        'होम',
+        Icons.home_rounded,
+        DashboardPage(
+          key: ValueKey('user-dash-$refreshVersion'),
+          onNavigate: select,
+        ),
+      ),
+      NavItem(
+        'मतदाता सूची',
+        Icons.groups_rounded,
+        VoterManagementPage(key: ValueKey('user-voters-$refreshVersion')),
+      ),
+      NavItem(
+        'फ़ेवरेट',
+        Icons.star_rounded,
+        VoterManagementPage(
+          key: ValueKey('user-fav-$refreshVersion'),
+          initialFavoriteFilter: true,
+        ),
+      ),
+      NavItem(
+        'पार्टी गणना',
+        Icons.analytics_rounded,
+        PartyAnalyticsPage(key: ValueKey('user-analytics-$refreshVersion')),
+      ),
+      NavItem(
+        'अधिक',
+        Icons.grid_view_rounded,
+        MorePage(key: ValueKey('user-more-$refreshVersion'), role: widget.role),
+      ),
+    ];
   }
 
   List<DesktopNavSection> get desktopSections {
@@ -391,19 +386,17 @@ class _AppShellState extends State<AppShell> {
     final safeSelected = (selected >= 0 && selected < currentItems.length) ? selected : 0;
 
     return Scaffold(
-      drawer: widget.role == 'booth'
-          ? null
-          : AppDrawer(
-              role: widget.role,
-              onLogout: logout,
-            ),
+      drawer: AppDrawer(
+        role: widget.role,
+        onLogout: logout,
+      ),
       body: Column(
         children: [
           MobileHeader(
             title: currentItems[safeSelected].label,
-            onSearch: () => select(widget.role == 'booth' ? 0 : 1),
-            onLogout: widget.role == 'booth' ? logout : null,
-            showNotifications: widget.role != 'booth',
+            onSearch: () => select(1),
+            onLogout: logout,
+            showNotifications: true,
           ),
           Expanded(
             child: PageView(
@@ -419,13 +412,11 @@ class _AppShellState extends State<AppShell> {
           ),
         ],
       ),
-      bottomNavigationBar: widget.role == 'booth'
-          ? null
-          : _PhoneBottomBar(
-              items: currentItems,
-              selected: safeSelected,
-              onSelect: select,
-            ),
+      bottomNavigationBar: _PhoneBottomBar(
+        items: currentItems,
+        selected: safeSelected,
+        onSelect: select,
+      ),
     );
   }
 }
@@ -442,9 +433,9 @@ class _PhoneBottomBar extends StatelessWidget {
   final ValueChanged<int> onSelect;
 
   static IconData _filledIcon(IconData icon) {
-    // Return a filled variant for selected state where possible
-    // Note: cannot be const because IconData overrides ==
     final Map<IconData, IconData> filledVariants = {
+      Icons.home_outlined: Icons.home_rounded,
+      Icons.star_outline_rounded: Icons.star_rounded,
       Icons.holiday_village_outlined: Icons.holiday_village_rounded,
       Icons.groups_outlined: Icons.groups_rounded,
       Icons.grid_view_outlined: Icons.grid_view_rounded,

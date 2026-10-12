@@ -17,6 +17,65 @@ class _SamitiHierarchyPageState extends State<SamitiHierarchyPage> {
   String selectedSamiti = 'रायपुर';
   String? expandedPanchayat;
   Map<String, dynamic>? liveHierarchyData;
+  final Map<String, Map<String, int>> _liveGpWardCounts = {};
+
+  Future<void> _fetchWardCountsForGp(String gpName) async {
+    final cleanGp = gpName.trim();
+    if (_liveGpWardCounts.containsKey(cleanGp)) return;
+    _liveGpWardCounts[cleanGp] = {};
+    try {
+      final res = await api.getQuery('/api/members/field-values', {
+        'field': 'wardNumber',
+        'gramPanchayat': cleanGp,
+        'limit': '100',
+      });
+      final items = res['items'] as List? ?? [];
+      final Map<String, int> counts = {};
+      for (final item in items) {
+        if (item is Map) {
+          final rawVal = '${item['value'] ?? item['label'] ?? ''}';
+          final numVal = rawVal.replaceAll(RegExp(r'\D'), '').trim();
+          final c = (item['count'] as num?)?.toInt() ?? 0;
+          if (numVal.isNotEmpty && c > 0) {
+            counts[numVal] = (counts[numVal] ?? 0) + c;
+          }
+        }
+      }
+      if (mounted && counts.isNotEmpty) {
+        setState(() {
+          _liveGpWardCounts[cleanGp] = counts;
+        });
+      }
+    } catch (_) {}
+  }
+
+  Map<String, int> getGpWardCounts(String gpName) {
+    final cleanGp = gpName.trim();
+    if (_liveGpWardCounts.containsKey(cleanGp) && _liveGpWardCounts[cleanGp]!.isNotEmpty) {
+      return _liveGpWardCounts[cleanGp]!;
+    }
+    final panchayats = liveHierarchyData?['panchayats'];
+    if (panchayats is List) {
+      for (final p in panchayats) {
+        if (p is Map) {
+          final pName = '${p['name']}'.trim();
+          if (pName == cleanGp || cleanGp.contains(pName) || pName.contains(cleanGp)) {
+            final rawCounts = p['wardCounts'];
+            if (rawCounts is Map && rawCounts.isNotEmpty) {
+              final Map<String, int> result = {};
+              rawCounts.forEach((k, v) {
+                result[k.toString()] = int.tryParse(v.toString()) ?? 0;
+              });
+              return result;
+            }
+          }
+        }
+      }
+    }
+    _fetchWardCountsForGp(cleanGp);
+    return _liveGpWardCounts[cleanGp] ?? {};
+  }
+
 
   @override
   void initState() {
@@ -254,11 +313,11 @@ class _SamitiHierarchyPageState extends State<SamitiHierarchyPage> {
             {'name': 'पाटियाखेड़ा', 'parts': '', 'pop': 720}
           ]
         },
-        'पालरां': {
+        'पालरा': {
           'wards': 7,
           'pop': 2685,
           'villages': [
-            {'name': 'पालरां', 'parts': '', 'pop': 2346},
+            {'name': 'पालरा', 'parts': '', 'pop': 2346},
             {'name': 'खाननिया', 'parts': '', 'pop': 339}
           ]
         },
@@ -680,7 +739,7 @@ class _SamitiHierarchyPageState extends State<SamitiHierarchyPage> {
           ),
           body: VoterManagementPage(
             initialVillage: village,
-            initialGramPanchayat: village != null ? null : gramPanchayat,
+            initialGramPanchayat: gramPanchayat,
             initialWard: ward,
             initialPartNumber: partNumber,
             initialTehsil: (village != null || gramPanchayat != null || (partNumber != null && partNumber.isNotEmpty)) ? null : tehsil,
@@ -997,26 +1056,37 @@ class _SamitiHierarchyPageState extends State<SamitiHierarchyPage> {
                                             ],
                                           ),
                                           const SizedBox(height: 6),
-                                          SingleChildScrollView(
-                                            scrollDirection: Axis.horizontal,
-                                            child: Row(
-                                              children: List.generate(wardCount, (wIdx) {
-                                                final wNum = '${wIdx + 1}';
-                                                return Padding(
-                                                  padding: const EdgeInsets.only(right: 6),
-                                                  child: ActionChip(
-                                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                                                    visualDensity: VisualDensity.compact,
-                                                    label: Text('वार्ड $wNum', style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: navy)),
-                                                    backgroundColor: Colors.white,
-                                                    side: const BorderSide(color: border),
-                                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                                                    onPressed: () => _openVoters(gramPanchayat: gpName, ward: wNum),
-                                                  ),
-                                                );
-                                              }),
-                                            ),
-                                          ),
+                                          Builder(builder: (context) {
+                                            final wardCounts = getGpWardCounts(gpName);
+                                            return SingleChildScrollView(
+                                              scrollDirection: Axis.horizontal,
+                                              child: Row(
+                                                children: List.generate(wardCount, (wIdx) {
+                                                  final wNum = '${wIdx + 1}';
+                                                  final count = wardCounts[wNum] ?? 0;
+                                                  return Padding(
+                                                    padding: const EdgeInsets.only(right: 6),
+                                                    child: ActionChip(
+                                                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                                      visualDensity: VisualDensity.compact,
+                                                      label: Text(
+                                                        count > 0 ? 'वार्ड $wNum ($count)' : 'वार्ड $wNum',
+                                                        style: TextStyle(
+                                                          fontSize: 11,
+                                                          fontWeight: FontWeight.w800,
+                                                          color: count > 0 ? const Color(0xff15803d) : navy,
+                                                        ),
+                                                      ),
+                                                      backgroundColor: count > 0 ? const Color(0xfff0fdf4) : Colors.white,
+                                                      side: BorderSide(color: count > 0 ? const Color(0xffbbf7d0) : border),
+                                                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                                      onPressed: () => _openVoters(gramPanchayat: gpName, ward: wNum),
+                                                    ),
+                                                  );
+                                                }),
+                                              ),
+                                            );
+                                          }),
                                           const SizedBox(height: 14),
                                         ],
 

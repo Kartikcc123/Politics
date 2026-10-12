@@ -42,7 +42,6 @@ class _WhatsAppPageState extends State<WhatsAppPage> with SingleTickerProviderSt
   List<Map<String, dynamic>> _villageOptions = [];
   List<Map<String, dynamic>> _partOptions = [];
   List<Map<String, dynamic>> _casteOptions = [];
-  bool _loadingFilters = true;
 
   // Voters
   List<Map<String, dynamic>> _voters = [];
@@ -75,7 +74,6 @@ class _WhatsAppPageState extends State<WhatsAppPage> with SingleTickerProviderSt
   }
 
   Future<void> _loadAllFilters() async {
-    setState(() => _loadingFilters = true);
     await Future.wait([
       _loadSamitiOptions(),
       _loadGramPanchayatOptions(),
@@ -84,7 +82,6 @@ class _WhatsAppPageState extends State<WhatsAppPage> with SingleTickerProviderSt
       _loadCasteOptions(),
     ]);
     if (mounted) {
-      setState(() => _loadingFilters = false);
       _fetchVoters();
     }
   }
@@ -157,7 +154,16 @@ class _WhatsAppPageState extends State<WhatsAppPage> with SingleTickerProviderSt
 
   Future<void> _loadCasteOptions() async {
     try {
-      final dynamic res = await api.get('/api/members/field-values?field=caste&limit=500');
+      final qParams = <String, String>{
+        'field': 'caste',
+        'limit': '500',
+      };
+      if (_selectedSamiti != 'all') qParams['tehsil'] = _selectedSamiti;
+      if (_selectedGramPanchayat != 'all') qParams['gramPanchayat'] = _selectedGramPanchayat;
+      if (_selectedVillage != 'all') qParams['village'] = _selectedVillage;
+      if (_selectedPart != 'all') qParams['partNumber'] = _selectedPart;
+
+      final dynamic res = await api.getQuery('/api/members/field-values', qParams);
       if (res is Map && res['items'] is List) {
         _casteOptions = (res['items'] as List)
             .whereType<Map>()
@@ -618,10 +624,12 @@ class _WhatsAppPageState extends State<WhatsAppPage> with SingleTickerProviderSt
                           _selectedGramPanchayat = 'all';
                           _selectedVillage = 'all';
                           _selectedPart = 'all';
+                          _selectedCaste = 'all';
                         });
                         _loadGramPanchayatOptions();
                         _loadVillageOptions();
                         _loadPartOptions();
+                        _loadCasteOptions();
                         _fetchVoters();
                       }
                     },
@@ -650,9 +658,11 @@ class _WhatsAppPageState extends State<WhatsAppPage> with SingleTickerProviderSt
                           _selectedGramPanchayat = val;
                           _selectedVillage = 'all';
                           _selectedPart = 'all';
+                          _selectedCaste = 'all';
                         });
                         _loadVillageOptions();
                         _loadPartOptions();
+                        _loadCasteOptions();
                         _fetchVoters();
                       }
                     },
@@ -686,8 +696,10 @@ class _WhatsAppPageState extends State<WhatsAppPage> with SingleTickerProviderSt
                         setState(() {
                           _selectedVillage = val;
                           _selectedPart = 'all';
+                          _selectedCaste = 'all';
                         });
                         _loadPartOptions();
+                        _loadCasteOptions();
                         _fetchVoters();
                       }
                     },
@@ -713,7 +725,11 @@ class _WhatsAppPageState extends State<WhatsAppPage> with SingleTickerProviderSt
                     ],
                     onChanged: (val) {
                       if (val != null) {
-                        setState(() => _selectedPart = val);
+                        setState(() {
+                          _selectedPart = val;
+                          _selectedCaste = 'all';
+                        });
+                        _loadCasteOptions();
                         _fetchVoters();
                       }
                     },

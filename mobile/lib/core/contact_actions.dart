@@ -96,10 +96,12 @@ Future<void> shareVoterDetails(
   if (epic != '-' && epic.isNotEmpty) {
     buffer.writeln('🆔 *EPIC (वोटर ID):* $epic');
   }
-  if (asmSerial != '-' || partNo != '-') {
+  final hasAssembly = voter['hasAssemblyMembership'] == true;
+  final hasMunicipal = voter['hasMunicipalMembership'] == true || (wardNo != '-' && wardNo.isNotEmpty);
+  if (hasAssembly && (asmSerial != '-' || partNo != '-')) {
     buffer.writeln('🗳️ *वि.स. भाग:* #$partNo · *वि.स. क्रमांक:* #$asmSerial');
   }
-  if (wardNo != '-' || wardSerial != '-') {
+  if (hasMunicipal && (wardNo != '-' || (wardSerial != '-' && wardSerial.isNotEmpty))) {
     buffer.writeln('🏛️ *वार्ड संख्या:* #$wardNo · *वार्ड क्रमांक:* #$wardSerial');
   }
   if (house != '-' && house != '.' && house != '0' && house.isNotEmpty) {

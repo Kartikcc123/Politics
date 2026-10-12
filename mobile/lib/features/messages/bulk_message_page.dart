@@ -11,7 +11,6 @@ import '../../core/api_client.dart';
 import '../../core/contact_actions.dart';
 import '../../core/theme.dart';
 import '../../layout/app_layout.dart';
-import '../../widgets/common.dart';
 import '../../widgets/mobile_components.dart';
 
 class BulkMessagePage extends StatefulWidget {

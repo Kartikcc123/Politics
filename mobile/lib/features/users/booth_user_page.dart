@@ -308,6 +308,7 @@ class _BoothUserPageState extends State<BoothUserPage> with SingleTickerProvider
         onEdit: () => _openAddEditDialog(user: list[index]),
         onToggleActive: (active) => _toggleUserActive(list[index], active),
         onDelete: () => _deleteUser(list[index]),
+        onShowWorkStats: () => _showUserWorkStats(list[index]),
       ),
     );
   }
@@ -368,6 +369,7 @@ class _BoothUserPageState extends State<BoothUserPage> with SingleTickerProvider
                     user: u,
                     onEdit: () => _openAddEditDialog(user: u),
                     onDelete: () => _deleteUser(u),
+                    onShowWorkStats: () => _showUserWorkStats(u),
                   ),
                 ),
             ] else ...[
@@ -423,28 +425,39 @@ class _BoothUserPageState extends State<BoothUserPage> with SingleTickerProvider
               return Container(
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16), border: Border.all(color: border)),
-                child: Row(children: [
-                  Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(color: const Color(0xffecfdf5), borderRadius: BorderRadius.circular(10)),
-                    child: Text('वार्ड $wardNum', style: const TextStyle(color: Color(0xff059669), fontWeight: FontWeight.bold, fontSize: 13)),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                      Text('$curGpName (वार्ड $wardNum)', style: const TextStyle(color: navy, fontWeight: FontWeight.bold, fontSize: 14)),
-                      if (wardManagers.isNotEmpty)
-                        Text('${wardManagers.map((m) => m['name']).join(', ')} (${wardManagers.first['phone'] ?? wardManagers.first['email']})',
-                            style: const TextStyle(color: Color(0xff059669), fontSize: 11, fontWeight: FontWeight.w600))
-                      else
-                        const Text('प्रभारी नियुक्त नहीं', style: TextStyle(color: muted, fontSize: 11)),
-                    ]),
-                  ),
-                  IconButton(
-                    tooltip: 'वार्ड प्रभारी नियुक्त करें',
-                    onPressed: () => _openAddEditDialog(initialPanchayat: curGpName, initialWard: wardNum, initialScope: 'ward'),
-                    icon: const Icon(Icons.person_add_alt_1_rounded, color: Color(0xff059669), size: 20),
-                  ),
+                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Row(children: [
+                    Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(color: const Color(0xffecfdf5), borderRadius: BorderRadius.circular(10)),
+                      child: Text('वार्ड $wardNum', style: const TextStyle(color: Color(0xff059669), fontWeight: FontWeight.bold, fontSize: 13)),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text('$curGpName (वार्ड $wardNum)', style: const TextStyle(color: navy, fontWeight: FontWeight.bold, fontSize: 14)),
+                    ),
+                    IconButton(
+                      tooltip: 'वार्ड प्रभारी नियुक्त करें',
+                      onPressed: () => _openAddEditDialog(initialPanchayat: curGpName, initialWard: wardNum, initialScope: 'ward'),
+                      icon: const Icon(Icons.person_add_alt_1_rounded, color: Color(0xff059669), size: 20),
+                    ),
+                  ]),
+                  if (wardManagers.isNotEmpty) ...[
+                    const SizedBox(height: 8),
+                    for (final u in wardManagers)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 4),
+                        child: _MiniUserRow(
+                          user: u,
+                          onEdit: () => _openAddEditDialog(user: u),
+                          onDelete: () => _deleteUser(u),
+                          onShowWorkStats: () => _showUserWorkStats(u),
+                        ),
+                      ),
+                  ] else ...[
+                    const SizedBox(height: 4),
+                    const Text('प्रभारी नियुक्त नहीं', style: TextStyle(color: muted, fontSize: 11)),
+                  ],
                 ]),
               );
             },
@@ -470,30 +483,51 @@ class _BoothUserPageState extends State<BoothUserPage> with SingleTickerProvider
         return Container(
           padding: const EdgeInsets.all(12),
           decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16), border: Border.all(color: border)),
-          child: Row(children: [
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-              decoration: BoxDecoration(color: const Color(0xffeff6ff), borderRadius: BorderRadius.circular(10)),
-              child: Text('भाग #$partNum', style: const TextStyle(color: Color(0xff2563eb), fontWeight: FontWeight.bold, fontSize: 13)),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text('बूथ / भाग संख्या $partNum', style: const TextStyle(color: navy, fontWeight: FontWeight.bold, fontSize: 14)),
-                if (partManagers.isNotEmpty)
-                  Text('प्रभारी: ${partManagers.map((m) => m['name']).join(', ')}', style: const TextStyle(color: Color(0xff2563eb), fontSize: 11, fontWeight: FontWeight.w600))
-                else
-                  const Text('बूथ प्रभारी नियुक्त नहीं', style: TextStyle(color: muted, fontSize: 11)),
-              ]),
-            ),
-            IconButton(
-              tooltip: 'बूथ प्रभारी नियुक्त करें',
-              onPressed: () => _openAddEditDialog(initialPart: partNum, initialScope: 'booth'),
-              icon: const Icon(Icons.person_add_alt_1_rounded, color: Color(0xff2563eb), size: 20),
-            ),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Row(children: [
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                decoration: BoxDecoration(color: const Color(0xffeff6ff), borderRadius: BorderRadius.circular(10)),
+                child: Text('भाग #$partNum', style: const TextStyle(color: Color(0xff2563eb), fontWeight: FontWeight.bold, fontSize: 13)),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text('बूथ / भाग संख्या $partNum', style: const TextStyle(color: navy, fontWeight: FontWeight.bold, fontSize: 14)),
+              ),
+              IconButton(
+                tooltip: 'बूथ प्रभारी नियुक्त करें',
+                onPressed: () => _openAddEditDialog(initialPart: partNum, initialScope: 'booth'),
+                icon: const Icon(Icons.person_add_alt_1_rounded, color: Color(0xff2563eb), size: 20),
+              ),
+            ]),
+            if (partManagers.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              for (final u in partManagers)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 4),
+                  child: _MiniUserRow(
+                    user: u,
+                    onEdit: () => _openAddEditDialog(user: u),
+                    onDelete: () => _deleteUser(u),
+                    onShowWorkStats: () => _showUserWorkStats(u),
+                  ),
+                ),
+            ] else ...[
+              const SizedBox(height: 4),
+              const Text('बूथ प्रभारी नियुक्त नहीं', style: TextStyle(color: muted, fontSize: 11)),
+            ],
           ]),
         );
       },
+    );
+  }
+
+  void _showUserWorkStats(Map<String, dynamic> user) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => _UserWorkStatsSheet(user: user),
     );
   }
 
@@ -551,6 +585,7 @@ class _BoothUserPageState extends State<BoothUserPage> with SingleTickerProvider
         user: user,
         panchayats: panchayats,
         parts: parts,
+        hierarchyData: hierarchyData,
         initialPanchayat: initialPanchayat,
         initialWard: initialWard,
         initialPart: initialPart,
@@ -568,12 +603,14 @@ class _ManagerCard extends StatelessWidget {
     required this.onEdit,
     required this.onToggleActive,
     required this.onDelete,
+    this.onShowWorkStats,
   });
 
   final Map<String, dynamic> user;
   final VoidCallback onEdit;
   final ValueChanged<bool> onToggleActive;
   final VoidCallback onDelete;
+  final VoidCallback? onShowWorkStats;
 
   @override
   Widget build(BuildContext context) {
@@ -592,7 +629,7 @@ class _ManagerCard extends StatelessWidget {
       roleTitle = 'व्यवस्थापक (Admin)';
       roleColor = const Color(0xffea4335);
     } else if (role == 'booth') {
-      roleTitle = 'बूथ मैनेजर';
+      roleTitle = 'बूथ प्रबंधक';
       roleColor = const Color(0xff2563eb);
     } else if (role == 'ward_head') {
       roleTitle = 'वार्ड प्रभारी';
@@ -652,6 +689,14 @@ class _ManagerCard extends StatelessWidget {
               _tag('🗳️ भाग #$p', const Color(0xff2563eb)),
           if (gps.isEmpty && wards.isEmpty && pParts.isEmpty && role == 'admin')
             _tag('🌐 संपूर्ण विधानसभा क्षेत्र', const Color(0xffea4335)),
+          if (role != 'admin') ...[
+            if ((user['allowedRollType'] ?? 'municipal') == 'municipal')
+              _tag('📋 केवल वार्ड सूची', const Color(0xff0d9488)),
+            if (user['allowedRollType'] == 'assembly')
+              _tag('📋 केवल विधानसभा सूची', const Color(0xffd97706)),
+            if (user['allowedRollType'] == 'all')
+              _tag('📋 दोनों सूचियां', const Color(0xff4f46e5)),
+          ],
         ]),
         const SizedBox(height: 10),
         const Divider(height: 1, color: border),
@@ -664,6 +709,12 @@ class _ManagerCard extends StatelessWidget {
           ),
           Text(active ? 'सक्रिय (Active)' : 'निष्क्रिय (Disabled)', style: TextStyle(color: active ? navy : muted, fontSize: 12)),
           const Spacer(),
+          if (onShowWorkStats != null)
+            IconButton(
+              tooltip: 'कार्य विवरण (Work Stats)',
+              onPressed: onShowWorkStats,
+              icon: const Icon(Icons.assessment_rounded, color: Color(0xff7c3aed), size: 20),
+            ),
           if (phone.isNotEmpty) ...[
             IconButton(
               tooltip: 'कॉल करें ($phone)',
@@ -699,10 +750,16 @@ class _ManagerCard extends StatelessWidget {
 }
 
 class _MiniUserRow extends StatelessWidget {
-  const _MiniUserRow({required this.user, required this.onEdit, required this.onDelete});
+  const _MiniUserRow({
+    required this.user,
+    required this.onEdit,
+    required this.onDelete,
+    this.onShowWorkStats,
+  });
   final Map<String, dynamic> user;
   final VoidCallback onEdit;
   final VoidCallback onDelete;
+  final VoidCallback? onShowWorkStats;
 
   @override
   Widget build(BuildContext context) {
@@ -718,6 +775,16 @@ class _MiniUserRow extends StatelessWidget {
           child: Text('$name (${phone.isNotEmpty ? phone : user['email']})',
               maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: navy, fontSize: 12, fontWeight: FontWeight.bold)),
         ),
+        if (onShowWorkStats != null) ...[
+          IconButton(
+            icon: const Icon(Icons.assessment_rounded, size: 18, color: Color(0xff7c3aed)),
+            tooltip: 'कार्य विवरण',
+            onPressed: onShowWorkStats,
+            padding: const EdgeInsets.symmetric(horizontal: 4),
+            constraints: const BoxConstraints(),
+          ),
+          const SizedBox(width: 4),
+        ],
         if (phone.isNotEmpty) ...[
           IconButton(
             icon: const Icon(Icons.call_rounded, size: 18, color: green),
@@ -750,6 +817,7 @@ class _AddEditManagerDialog extends StatefulWidget {
     this.user,
     required this.panchayats,
     required this.parts,
+    this.hierarchyData,
     this.initialPanchayat,
     this.initialWard,
     this.initialPart,
@@ -760,6 +828,7 @@ class _AddEditManagerDialog extends StatefulWidget {
   final Map<String, dynamic>? user;
   final List<Map<String, dynamic>> panchayats;
   final List<String> parts;
+  final Map<String, dynamic>? hierarchyData;
   final String? initialPanchayat;
   final String? initialWard;
   final String? initialPart;
@@ -777,11 +846,15 @@ class _AddEditManagerDialogState extends State<_AddEditManagerDialog> {
   final passwordController = TextEditingController();
   final voterSearchController = TextEditingController();
 
-  String selectedScope = 'panchayat'; // 'panchayat', 'ward', 'booth', 'all'
+  // Primary access type: 'municipal' vs 'assembly'
+  String selectedRollCategory = 'municipal';
+  String selectedSamiti = 'रायपुर';
+  String selectedScope = 'panchayat'; // 'panchayat' or 'ward' (for municipal), 'booth' (for assembly)
   String? selectedGp;
   String? selectedWard;
   String? selectedPart;
-  String selectedRole = 'booth'; // 'admin', 'ward_head', 'booth', 'worker', 'user'
+  String selectedRole = 'booth';
+  String selectedRollType = 'municipal'; // 'municipal', 'assembly', 'all'
   bool selectFromVoters = true;
 
   // Voter Search State
@@ -805,6 +878,25 @@ class _AddEditManagerDialogState extends State<_AddEditManagerDialog> {
   bool saving = false;
   bool showPassword = false;
 
+  List<String> get samitiList {
+    final list = widget.hierarchyData?['samitis'] as List?;
+    if (list != null && list.isNotEmpty) {
+      return list.map((e) => e.toString()).toList();
+    }
+    final samitis = <String>{};
+    for (final p in widget.panchayats) {
+      final s = (p['samiti'] ?? '').toString();
+      if (s.isNotEmpty) samitis.add(s);
+    }
+    return samitis.isNotEmpty ? samitis.toList() : ['रायपुर', 'सहाड़ा'];
+  }
+
+  List<Map<String, dynamic>> get filteredPanchayats {
+    if (selectedSamiti.isEmpty) return widget.panchayats;
+    final list = widget.panchayats.where((p) => (p['samiti'] ?? 'रायपुर') == selectedSamiti).toList();
+    return list.isNotEmpty ? list : widget.panchayats;
+  }
+
   @override
   void initState() {
     super.initState();
@@ -818,19 +910,30 @@ class _AddEditManagerDialogState extends State<_AddEditManagerDialog> {
       final gps = (u['assignedGramPanchayats'] as List? ?? []).map((e) => e.toString()).toList();
       final wards = (u['assignedWards'] as List? ?? []).map((e) => e.toString()).toList();
       final pParts = (u['assignedParts'] as List? ?? []).map((e) => e.toString()).toList();
+      final rollType = '${u['allowedRollType'] ?? ''}';
 
-      if (wards.isNotEmpty) {
-        selectedScope = 'ward';
-        selectedGp = gps.isNotEmpty ? gps.first : null;
-        selectedWard = wards.first;
-      } else if (gps.isNotEmpty) {
-        selectedScope = 'panchayat';
-        selectedGp = gps.first;
-      } else if (pParts.isNotEmpty) {
+      if (rollType == 'assembly' || (pParts.isNotEmpty && gps.isEmpty)) {
+        selectedRollCategory = 'assembly';
+        selectedRollType = 'assembly';
+        selectedPart = pParts.isNotEmpty ? pParts.first : (widget.parts.isNotEmpty ? widget.parts.first : null);
         selectedScope = 'booth';
-        selectedPart = pParts.first;
       } else {
-        selectedScope = 'all';
+        selectedRollCategory = 'municipal';
+        selectedRollType = 'municipal';
+        selectedGp = gps.isNotEmpty ? gps.first : null;
+        if (wards.isNotEmpty && wards.length == 1) {
+          selectedScope = 'ward';
+          selectedWard = wards.first;
+        } else {
+          selectedScope = 'panchayat';
+        }
+      }
+
+      if (selectedGp != null) {
+        final found = widget.panchayats.firstWhere((p) => '${p['name']}' == selectedGp, orElse: () => {});
+        if (found['samiti'] != null) {
+          selectedSamiti = found['samiti'].toString();
+        }
       }
 
       final perms = (u['permissions'] as Map?) ?? {};
@@ -847,13 +950,27 @@ class _AddEditManagerDialogState extends State<_AddEditManagerDialog> {
       canViewReports = perms['canViewReports'] != false;
       selectFromVoters = false;
     } else {
-      selectedScope = widget.initialScope ?? 'panchayat';
-      selectedGp = widget.initialPanchayat ?? (widget.panchayats.isNotEmpty ? '${widget.panchayats.first['name']}' : null);
-      selectedWard = widget.initialWard;
-      selectedPart = widget.initialPart;
-      if (selectedScope == 'ward') selectedRole = 'ward_head';
-      if (selectedScope == 'panchayat') selectedRole = 'booth';
-      if (selectedScope == 'booth') selectedRole = 'booth';
+      if (widget.initialScope == 'booth' || widget.initialPart != null) {
+        selectedRollCategory = 'assembly';
+        selectedRollType = 'assembly';
+        selectedScope = 'booth';
+        selectedPart = widget.initialPart ?? (widget.parts.isNotEmpty ? widget.parts.first : null);
+        selectedRole = 'booth';
+      } else {
+        selectedRollCategory = 'municipal';
+        selectedRollType = 'municipal';
+        selectedScope = widget.initialScope ?? 'panchayat';
+        selectedGp = widget.initialPanchayat ?? (filteredPanchayats.isNotEmpty ? '${filteredPanchayats.first['name']}' : null);
+        selectedWard = widget.initialWard;
+        selectedRole = selectedScope == 'ward' ? 'ward_head' : 'booth';
+
+        if (selectedGp != null) {
+          final found = widget.panchayats.firstWhere((p) => '${p['name']}' == selectedGp, orElse: () => {});
+          if (found['samiti'] != null) {
+            selectedSamiti = found['samiti'].toString();
+          }
+        }
+      }
     }
 
     _searchVoters();
@@ -874,17 +991,18 @@ class _AddEditManagerDialogState extends State<_AddEditManagerDialog> {
     setState(() => searchingVoters = true);
 
     try {
-      final queryParams = <String, String>{
-        'limit': '15',
-      };
-      if (selectedGp != null && selectedGp!.isNotEmpty) {
-        queryParams['gramPanchayat'] = selectedGp!;
-      }
-      if (selectedScope == 'ward' && selectedWard != null && selectedWard!.isNotEmpty) {
-        queryParams['wardNumber'] = selectedWard!;
-      }
-      if (selectedScope == 'booth' && selectedPart != null && selectedPart!.isNotEmpty) {
-        queryParams['partNumber'] = selectedPart!;
+      final queryParams = <String, String>{'limit': '15'};
+      if (selectedRollCategory == 'assembly') {
+        if (selectedPart != null && selectedPart!.isNotEmpty) {
+          queryParams['partNumber'] = selectedPart!;
+        }
+      } else {
+        if (selectedGp != null && selectedGp!.isNotEmpty) {
+          queryParams['gramPanchayat'] = selectedGp!;
+        }
+        if (selectedScope == 'ward' && selectedWard != null && selectedWard!.isNotEmpty) {
+          queryParams['wardNumber'] = selectedWard!;
+        }
       }
       final q = voterSearchController.text.trim();
       if (q.isNotEmpty) {
@@ -958,16 +1076,51 @@ class _AddEditManagerDialogState extends State<_AddEditManagerDialog> {
       return;
     }
 
+    if (selectedRollCategory == 'assembly') {
+      if (selectedPart == null || selectedPart!.trim().isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('कृपया भाग/बूथ संख्या चुनें।')));
+        return;
+      }
+    } else {
+      if (selectedGp == null || selectedGp!.trim().isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('कृपया ग्राम पंचायत चुनें।')));
+        return;
+      }
+      if (selectedScope == 'ward' && (selectedWard == null || selectedWard!.trim().isEmpty)) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('कृपया वार्ड नंबर चुनें।')));
+        return;
+      }
+    }
+
     setState(() => saving = true);
+
+    final curGp = widget.panchayats.firstWhere((p) => '${p['name']}' == selectedGp, orElse: () => {});
+    final allGpWards = (curGp['wards'] as List? ?? []).map((w) => w.toString()).toList();
+
+    List<String> assignedWardsList = [];
+    List<String> assignedGpsList = [];
+    List<String> assignedPartsList = [];
+
+    if (selectedRollCategory == 'assembly') {
+      assignedPartsList = selectedPart != null ? [selectedPart!] : [];
+    } else {
+      assignedGpsList = selectedGp != null ? [selectedGp!] : [];
+      if (selectedScope == 'ward' && selectedWard != null && selectedWard!.isNotEmpty) {
+        assignedWardsList = [selectedWard!];
+      } else {
+        assignedWardsList = allGpWards;
+      }
+    }
 
     final payload = <String, dynamic>{
       'name': name,
       'email': email,
       'phone': phone,
       'role': selectedRole,
-      'assignedGramPanchayats': selectedGp != null && selectedScope != 'all' && selectedScope != 'booth' ? [selectedGp!] : [],
-      'assignedWards': selectedScope == 'ward' && selectedWard != null ? [selectedWard!] : [],
-      'assignedParts': selectedScope == 'booth' && selectedPart != null ? [selectedPart!] : [],
+      'allowedRollType': selectedRollType,
+      'assignedGramPanchayats': assignedGpsList,
+      'assignedWards': assignedWardsList,
+      'assignedParts': assignedPartsList,
       'assignedVoterId': selectedVoter?['voterId'] ?? '',
       'permissions': {
         'canViewFullMobile': canViewFullMobile,
@@ -1058,7 +1211,7 @@ class _AddEditManagerDialogState extends State<_AddEditManagerDialog> {
         Icon(widget.user != null ? Icons.edit_note_rounded : Icons.person_add_rounded, color: const Color(0xff2563eb)),
         const SizedBox(width: 10),
         Expanded(
-          child: Text(widget.user != null ? 'प्रभारी संपादित करें' : 'नया प्रभारी नियुक्त करें',
+          child: Text(widget.user != null ? 'प्रभारी एक्सेस संपादित करें' : 'नया प्रभारी नियुक्त करें',
               style: const TextStyle(color: navy, fontSize: 18, fontWeight: FontWeight.bold)),
         ),
       ]),
@@ -1068,21 +1221,60 @@ class _AddEditManagerDialogState extends State<_AddEditManagerDialog> {
         child: SingleChildScrollView(
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             const SizedBox(height: 10),
-            // STEP 1: SCOPE SELECTOR
-            const Text('१. कार्यक्षेत्र का स्तर चुनें (Scope Level):', style: TextStyle(color: navy, fontWeight: FontWeight.bold, fontSize: 13)),
+            // STEP 1: PRIMARY ROLL TYPE
+            const Text('१. मतदाता सूची एक्सेस प्रकार (Access Type):',
+                style: TextStyle(color: navy, fontWeight: FontWeight.bold, fontSize: 13)),
             const SizedBox(height: 8),
             Row(children: [
-              _scopeChip('panchayat', '🏛️ पंचायत स्तर', Icons.location_city),
-              const SizedBox(width: 8),
-              _scopeChip('ward', '🏘️ वार्ड स्तर', Icons.maps_home_work),
-              const SizedBox(width: 8),
-              _scopeChip('booth', '🗳️ भाग/बूथ स्तर', Icons.how_to_vote),
+              Expanded(
+                child: _accessCategoryCard(
+                  title: '🏢 नगरपालिका / पंचायत',
+                  subtitle: 'वार्ड व पंचायत आधारित',
+                  icon: Icons.location_city_rounded,
+                  isSelected: selectedRollCategory == 'municipal',
+                  onTap: () {
+                    setState(() {
+                      selectedRollCategory = 'municipal';
+                      selectedRollType = 'municipal';
+                      selectedScope = 'panchayat';
+                      selectedPart = null;
+                      if (selectedGp == null && filteredPanchayats.isNotEmpty) {
+                        selectedGp = '${filteredPanchayats.first['name']}';
+                      }
+                    });
+                    _searchVoters();
+                  },
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: _accessCategoryCard(
+                  title: '🏛️ विधानसभा',
+                  subtitle: 'भाग/बूथ संख्या (1-315)',
+                  icon: Icons.how_to_vote_rounded,
+                  isSelected: selectedRollCategory == 'assembly',
+                  onTap: () {
+                    setState(() {
+                      selectedRollCategory = 'assembly';
+                      selectedRollType = 'assembly';
+                      selectedScope = 'booth';
+                      selectedGp = null;
+                      selectedWard = null;
+                      if (selectedPart == null && widget.parts.isNotEmpty) {
+                        selectedPart = widget.parts.first;
+                      }
+                    });
+                    _searchVoters();
+                  },
+                ),
+              ),
             ]),
-            const SizedBox(height: 12),
+            const SizedBox(height: 14),
 
-            // Dropdowns based on scope
-            if (selectedScope == 'panchayat' || selectedScope == 'ward') ...[
-              const Text('ग्राम पंचायत:', style: TextStyle(color: muted, fontSize: 12)),
+            // If Assembly selected:
+            if (selectedRollCategory == 'assembly') ...[
+              const Text('विधानसभा भाग (बूथ) संख्या चुनें (1 - 315):',
+                  style: TextStyle(color: muted, fontSize: 12, fontWeight: FontWeight.bold)),
               const SizedBox(height: 4),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 12),
@@ -1090,8 +1282,58 @@ class _AddEditManagerDialogState extends State<_AddEditManagerDialog> {
                 child: DropdownButtonHideUnderline(
                   child: DropdownButton<String>(
                     isExpanded: true,
-                    value: selectedGp,
-                    hint: const Text('पंचायत चुनें...'),
+                    value: selectedPart ?? (widget.parts.isNotEmpty ? widget.parts.first : null),
+                    hint: const Text('भाग संख्या चुनें...'),
+                    onChanged: (val) {
+                      setState(() => selectedPart = val);
+                      _searchVoters();
+                    },
+                    items: widget.parts.map((p) => DropdownMenuItem(value: p, child: Text('🗳️ भाग संख्या $p (बूथ $p)'))).toList(),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 14),
+            ],
+
+            // If Municipal / Panchayat selected:
+            if (selectedRollCategory == 'municipal') ...[
+              // Step 1.1: Samiti Selection
+              const Text('पंचायत समिति चुनें:', style: TextStyle(color: muted, fontSize: 12, fontWeight: FontWeight.bold)),
+              const SizedBox(height: 6),
+              Wrap(
+                spacing: 8,
+                children: samitiList.map((sam) {
+                  final isSel = selectedSamiti == sam;
+                  return ChoiceChip(
+                    label: Text('समिति: $sam', style: TextStyle(fontWeight: isSel ? FontWeight.bold : FontWeight.normal)),
+                    selected: isSel,
+                    onSelected: (val) {
+                      if (val) {
+                        setState(() {
+                          selectedSamiti = sam;
+                          final fps = filteredPanchayats;
+                          selectedGp = fps.isNotEmpty ? '${fps.first['name']}' : null;
+                          selectedWard = null;
+                        });
+                        _searchVoters();
+                      }
+                    },
+                  );
+                }).toList(),
+              ),
+              const SizedBox(height: 12),
+
+              // Step 1.2: Gram Panchayat Selection
+              const Text('ग्राम पंचायत चुनें:', style: TextStyle(color: muted, fontSize: 12, fontWeight: FontWeight.bold)),
+              const SizedBox(height: 4),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                decoration: BoxDecoration(color: const Color(0xfff8fafc), borderRadius: BorderRadius.circular(12), border: Border.all(color: border)),
+                child: DropdownButtonHideUnderline(
+                  child: DropdownButton<String>(
+                    isExpanded: true,
+                    value: selectedGp ?? (filteredPanchayats.isNotEmpty ? '${filteredPanchayats.first['name']}' : null),
+                    hint: const Text('ग्राम पंचायत चुनें...'),
                     onChanged: (val) {
                       setState(() {
                         selectedGp = val;
@@ -1099,55 +1341,71 @@ class _AddEditManagerDialogState extends State<_AddEditManagerDialog> {
                       });
                       _searchVoters();
                     },
-                    items: widget.panchayats.map((p) => DropdownMenuItem(value: '${p['name']}', child: Text('पंचायत: ${p['name']} (${p['totalVoters']} वोटर्स)'))).toList(),
+                    items: filteredPanchayats.map((p) => DropdownMenuItem(
+                      value: '${p['name']}',
+                      child: Text('🏛️ पंचायत: ${p['name']} (${p['totalVoters'] ?? 0} वोटर्स)'),
+                    )).toList(),
                   ),
                 ),
               ),
-              const SizedBox(height: 10),
-            ],
+              const SizedBox(height: 12),
 
-            if (selectedScope == 'ward') ...[
-              const Text('वार्ड नंबर:', style: TextStyle(color: muted, fontSize: 12)),
-              const SizedBox(height: 4),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12),
-                decoration: BoxDecoration(color: const Color(0xfff8fafc), borderRadius: BorderRadius.circular(12), border: Border.all(color: border)),
-                child: DropdownButtonHideUnderline(
-                  child: DropdownButton<String>(
-                    isExpanded: true,
-                    value: selectedWard,
-                    hint: const Text('वार्ड नंबर चुनें...'),
-                    onChanged: (val) {
-                      setState(() => selectedWard = val);
+              // Step 1.3: Access Scope (Whole Panchayat vs Specific Ward)
+              const Text('एक्सेस का स्तर (Scope Level):', style: TextStyle(color: muted, fontSize: 12, fontWeight: FontWeight.bold)),
+              const SizedBox(height: 6),
+              Row(children: [
+                Expanded(
+                  child: ChoiceChip(
+                    label: const Center(child: Text('🟢 सम्पूर्ण पंचायत')),
+                    selected: selectedScope == 'panchayat',
+                    onSelected: (_) {
+                      setState(() {
+                        selectedScope = 'panchayat';
+                        selectedWard = null;
+                        selectedRole = 'booth';
+                      });
                       _searchVoters();
                     },
-                    items: wards.map((w) => DropdownMenuItem(value: w, child: Text('वार्ड नंबर $w'))).toList(),
                   ),
                 ),
-              ),
-              const SizedBox(height: 10),
-            ],
-
-            if (selectedScope == 'booth') ...[
-              const Text('भाग / बूथ संख्या:', style: TextStyle(color: muted, fontSize: 12)),
-              const SizedBox(height: 4),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12),
-                decoration: BoxDecoration(color: const Color(0xfff8fafc), borderRadius: BorderRadius.circular(12), border: Border.all(color: border)),
-                child: DropdownButtonHideUnderline(
-                  child: DropdownButton<String>(
-                    isExpanded: true,
-                    value: selectedPart,
-                    hint: const Text('भाग संख्या चुनें...'),
-                    onChanged: (val) {
-                      setState(() => selectedPart = val);
+                const SizedBox(width: 8),
+                Expanded(
+                  child: ChoiceChip(
+                    label: const Center(child: Text('🔵 विशिष्ट वार्ड')),
+                    selected: selectedScope == 'ward',
+                    onSelected: (_) {
+                      setState(() {
+                        selectedScope = 'ward';
+                        selectedRole = 'ward_head';
+                      });
                       _searchVoters();
                     },
-                    items: widget.parts.map((p) => DropdownMenuItem(value: p, child: Text('भाग संख्या $p'))).toList(),
                   ),
                 ),
-              ),
+              ]),
               const SizedBox(height: 10),
+
+              if (selectedScope == 'ward') ...[
+                const Text('वार्ड नंबर चुनें:', style: TextStyle(color: muted, fontSize: 12, fontWeight: FontWeight.bold)),
+                const SizedBox(height: 4),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  decoration: BoxDecoration(color: const Color(0xfff8fafc), borderRadius: BorderRadius.circular(12), border: Border.all(color: border)),
+                  child: DropdownButtonHideUnderline(
+                    child: DropdownButton<String>(
+                      isExpanded: true,
+                      value: selectedWard,
+                      hint: const Text('वार्ड नंबर चुनें...'),
+                      onChanged: (val) {
+                        setState(() => selectedWard = val);
+                        _searchVoters();
+                      },
+                      items: wards.map((w) => DropdownMenuItem(value: w, child: Text('🏘️ वार्ड नंबर $w'))).toList(),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 10),
+              ],
             ],
 
             const Divider(color: border, height: 24),
@@ -1276,7 +1534,7 @@ class _AddEditManagerDialogState extends State<_AddEditManagerDialog> {
                   value: selectedRole,
                   onChanged: (val) => setState(() => selectedRole = val ?? 'booth'),
                   items: const [
-                    DropdownMenuItem(value: 'booth', child: Text('बूथ मैनेजर (Booth Manager)')),
+                    DropdownMenuItem(value: 'booth', child: Text('बूथ / पंचायत प्रबंधक (Manager)')),
                     DropdownMenuItem(value: 'ward_head', child: Text('वार्ड प्रभारी (Ward Head)')),
                     DropdownMenuItem(value: 'worker', child: Text('कार्यकर्ता (Field Worker)')),
                     DropdownMenuItem(value: 'admin', child: Text('व्यवस्थापक (Full Admin)')),
@@ -1319,32 +1577,34 @@ class _AddEditManagerDialogState extends State<_AddEditManagerDialog> {
     );
   }
 
-  Widget _scopeChip(String type, String label, IconData icon) {
-    final isSel = selectedScope == type;
-    return Expanded(
-      child: InkWell(
-        onTap: () {
-          setState(() {
-            selectedScope = type;
-            if (type == 'ward') selectedRole = 'ward_head';
-            if (type == 'booth') selectedRole = 'booth';
-            if (type == 'panchayat') selectedRole = 'booth';
-          });
-          _searchVoters();
-        },
-        borderRadius: BorderRadius.circular(12),
-        child: Container(
-          padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 6),
-          decoration: BoxDecoration(
-            color: isSel ? const Color(0xff2563eb) : const Color(0xfff1f5f9),
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: isSel ? const Color(0xff2563eb) : border),
+  Widget _accessCategoryCard({
+    required String title,
+    required String subtitle,
+    required IconData icon,
+    required bool isSelected,
+    required VoidCallback onTap,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(14),
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 10),
+        decoration: BoxDecoration(
+          color: isSelected ? const Color(0xffeff6ff) : const Color(0xfff8fafc),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(
+            color: isSelected ? const Color(0xff2563eb) : border,
+            width: isSelected ? 2 : 1,
           ),
-          child: Column(children: [
-            Icon(icon, size: 18, color: isSel ? Colors.white : navy),
-            const SizedBox(height: 4),
-            Text(label, textAlign: TextAlign.center, style: TextStyle(color: isSel ? Colors.white : navy, fontSize: 10, fontWeight: FontWeight.bold)),
-          ]),
+        ),
+        child: Column(
+          children: [
+            Icon(icon, size: 24, color: isSelected ? const Color(0xff2563eb) : muted),
+            const SizedBox(height: 6),
+            Text(title, textAlign: TextAlign.center, style: TextStyle(color: isSelected ? const Color(0xff2563eb) : navy, fontSize: 12, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 2),
+            Text(subtitle, textAlign: TextAlign.center, style: const TextStyle(color: muted, fontSize: 10)),
+          ],
         ),
       ),
     );
@@ -1356,6 +1616,239 @@ class _AddEditManagerDialogState extends State<_AddEditManagerDialog> {
           Transform.scale(scale: 0.8, child: Switch(value: val, activeColor: const Color(0xff2563eb), onChanged: onChange)),
         ],
       );
+}
+
+// USER WORK STATS BOTTOM SHEET
+class _UserWorkStatsSheet extends StatefulWidget {
+  const _UserWorkStatsSheet({required this.user});
+  final Map<String, dynamic> user;
+
+  @override
+  State<_UserWorkStatsSheet> createState() => _UserWorkStatsSheetState();
+}
+
+class _UserWorkStatsSheetState extends State<_UserWorkStatsSheet> {
+  bool loading = true;
+  String? error;
+  Map<String, dynamic>? stats;
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchStats();
+  }
+
+  Future<void> _fetchStats() async {
+    try {
+      final res = await api.get('/api/auth/users/${widget.user['_id']}/work-stats');
+      if (mounted) {
+        setState(() {
+          stats = Map<String, dynamic>.from(res);
+          loading = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          error = 'त्रुटि: $e';
+          loading = false;
+        });
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final name = '${widget.user['name'] ?? '-'}';
+    final role = '${widget.user['role'] ?? 'user'}';
+    final phone = '${widget.user['phone'] ?? ''}';
+
+    return Container(
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      padding: EdgeInsets.fromLTRB(20, 12, 20, MediaQuery.of(context).viewInsets.bottom + 24),
+      constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.85),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Center(
+            child: Container(
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2)),
+            ),
+          ),
+          const SizedBox(height: 14),
+          Row(
+            children: [
+              CircleAvatar(
+                radius: 20,
+                backgroundColor: const Color(0xff7c3aed).withValues(alpha: 0.15),
+                child: Text(name.isNotEmpty ? name[0].toUpperCase() : 'U',
+                    style: const TextStyle(color: Color(0xff7c3aed), fontWeight: FontWeight.bold, fontSize: 16)),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(name, style: const TextStyle(color: navy, fontSize: 16, fontWeight: FontWeight.bold)),
+                    Text(phone.isNotEmpty ? phone : (widget.user['email'] ?? ''),
+                        style: const TextStyle(color: muted, fontSize: 12)),
+                  ],
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  color: const Color(0xff7c3aed).withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Text('भूमिका: $role', style: const TextStyle(color: Color(0xff7c3aed), fontSize: 11, fontWeight: FontWeight.bold)),
+              ),
+              IconButton(
+                icon: const Icon(Icons.close_rounded),
+                onPressed: () => Navigator.pop(context),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          const Divider(height: 1, color: border),
+          const SizedBox(height: 14),
+          if (loading)
+            const Padding(
+              padding: EdgeInsets.all(40),
+              child: Center(child: CircularProgressIndicator()),
+            )
+          else if (error != null)
+            Padding(
+              padding: const EdgeInsets.all(20),
+              child: Center(child: Text(error!, style: const TextStyle(color: Colors.red))),
+            )
+          else ...[
+            // KPI Summary Grid
+            Row(
+              children: [
+                Expanded(child: _kpiCard('✏️ संपादित मतदाता', '${stats?['votersEdited'] ?? 0}', const Color(0xff2563eb))),
+                const SizedBox(width: 8),
+                Expanded(child: _kpiCard('📱 मोबाइल जोड़े', '${stats?['mobilesAdded'] ?? 0}', const Color(0xff059669))),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Expanded(child: _kpiCard('🗳️ वोट स्थिति दर्ज', '${stats?['voteStatusMarked'] ?? 0}', const Color(0xff7c3aed))),
+                const SizedBox(width: 8),
+                Expanded(child: _kpiCard('⭐ फ़ेवरेट मार्क', '${stats?['favoritesMarked'] ?? 0}', const Color(0xffd97706))),
+              ],
+            ),
+            const SizedBox(height: 16),
+            const Text('हाल की गतिविधियां (Recent Activity Log):',
+                style: TextStyle(color: navy, fontSize: 13, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 8),
+            Expanded(
+              child: Builder(
+                builder: (_) {
+                  final recent = (stats?['recentActivity'] as List? ?? []);
+                  if (recent.isEmpty) {
+                    return Container(
+                      padding: const EdgeInsets.all(20),
+                      alignment: Alignment.center,
+                      child: const Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.history_rounded, size: 40, color: muted),
+                          SizedBox(height: 8),
+                          Text('इस यूजर द्वारा अभी तक कोई संपादन कार्य दर्ज नहीं हुआ है।',
+                              style: TextStyle(color: muted, fontSize: 12), textAlign: TextAlign.center),
+                        ],
+                      ),
+                    );
+                  }
+                  return ListView.separated(
+                    itemCount: recent.length,
+                    separatorBuilder: (_, __) => const Divider(height: 1, color: border),
+                    itemBuilder: (_, idx) {
+                      final act = recent[idx];
+                      final actionStr = '${act['action'] ?? ''}';
+                      final createdAt = '${act['createdAt'] ?? ''}';
+                      final details = act['details'] as Map? ?? {};
+
+                      String actionLabel = actionStr;
+                      IconData actionIcon = Icons.edit_note_rounded;
+                      Color iconColor = const Color(0xff2563eb);
+
+                      if (actionStr == 'member.favorite') {
+                        actionLabel = 'पसंदीदा (Favorite) मार्क किया';
+                        actionIcon = Icons.star_rounded;
+                        iconColor = const Color(0xffd97706);
+                      } else if (actionStr.contains('vote')) {
+                        actionLabel = 'मतदान स्थिति मार्क की';
+                        actionIcon = Icons.how_to_vote_rounded;
+                        iconColor = const Color(0xff7c3aed);
+                      } else if (actionStr.contains('mobile') || details.containsKey('mobile')) {
+                        actionLabel = 'मोबाइल नंबर अपडेट किया';
+                        actionIcon = Icons.phone_android_rounded;
+                        iconColor = const Color(0xff059669);
+                      } else if (actionStr.contains('update')) {
+                        actionLabel = 'मतदाता विवरण संपादित किया';
+                      }
+
+                      String dateDisplay = createdAt;
+                      if (createdAt.length >= 10) {
+                        try {
+                          final dt = DateTime.parse(createdAt).toLocal();
+                          dateDisplay = '${dt.day}/${dt.month}/${dt.year} ${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
+                        } catch (_) {}
+                      }
+
+                      return ListTile(
+                        dense: true,
+                        contentPadding: EdgeInsets.zero,
+                        leading: CircleAvatar(
+                          radius: 16,
+                          backgroundColor: iconColor.withValues(alpha: 0.12),
+                          child: Icon(actionIcon, size: 16, color: iconColor),
+                        ),
+                        title: Text(actionLabel, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13, color: navy)),
+                        subtitle: Text(
+                          details['name'] != null ? 'मतदाता: ${details['name']} (${details['voterId'] ?? ''})' : (details['voterId'] != null ? 'EPIC: ${details['voterId']}' : ''),
+                          style: const TextStyle(fontSize: 11, color: muted),
+                        ),
+                        trailing: Text(dateDisplay, style: const TextStyle(fontSize: 10, color: muted)),
+                      );
+                    },
+                  );
+                },
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _kpiCard(String label, String value, Color color) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: color.withValues(alpha: 0.2)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(label, style: TextStyle(color: color, fontSize: 11, fontWeight: FontWeight.w600)),
+          const SizedBox(height: 4),
+          Text(value, style: TextStyle(color: color, fontSize: 20, fontWeight: FontWeight.bold)),
+        ],
+      ),
+    );
+  }
 }
 
 // VOTER PHOTO WIDGET

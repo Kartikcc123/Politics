@@ -226,62 +226,639 @@ class MobileHeader extends StatelessWidget {
       );
 }
 
-class DesktopSidebar extends StatelessWidget {
-  const DesktopSidebar(
-      {super.key,
-      required this.items,
-      required this.selected,
-      required this.onSelect});
+class DesktopNavSection {
+  const DesktopNavSection({
+    required this.title,
+    required this.items,
+  });
+  final String title;
   final List<NavItem> items;
-  final int selected;
-  final ValueChanged<int> onSelect;
+}
+
+class DesktopHeader extends StatelessWidget {
+  const DesktopHeader({
+    super.key,
+    required this.title,
+    this.subtitle,
+    this.icon,
+    this.onRefresh,
+    this.onSearch,
+    this.onLogout,
+    this.showNotifications = true,
+  });
+
+  final String title;
+  final String? subtitle;
+  final IconData? icon;
+  final VoidCallback? onRefresh;
+  final VoidCallback? onSearch;
+  final VoidCallback? onLogout;
+  final bool showNotifications;
 
   @override
-  Widget build(BuildContext context) => Material(
-        color: deepNavy,
-        child: SizedBox(
-          width: 236,
-          child: SafeArea(
-            child: Column(children: [
-              const Padding(
-                padding: EdgeInsets.fromLTRB(16, 20, 16, 18),
-                child: Row(children: [
-                  CongressMark(size: 42),
-                  SizedBox(width: 10),
-                  Expanded(
-                      child: Text('Voter Phone Book\nडिजिटल वोटर फ़ोन बुक',
-                          style: TextStyle(
-                              color: Colors.white,
-                              height: 1.25,
-                              fontWeight: FontWeight.w900))),
-                ]),
+  Widget build(BuildContext context) {
+    final user = api.user;
+    final userName = user?['name'] ?? 'User';
+    final userRole = user?['role'] == 'admin' ? 'व्यवस्थापक (Admin)' : 'बूथ प्रबंधक';
+
+    return Container(
+      height: 66,
+      padding: const EdgeInsets.symmetric(horizontal: 24),
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        border: Border(bottom: BorderSide(color: border)),
+        boxShadow: [
+          BoxShadow(
+            color: Color(0x08071b4b),
+            blurRadius: 8,
+            offset: Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          if (icon != null) ...[
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: softBlue,
+                borderRadius: BorderRadius.circular(10),
               ),
-              Expanded(
-                child: ListView.builder(
-                  padding: const EdgeInsets.all(12),
-                  itemCount: items.length,
-                  itemBuilder: (_, i) => Padding(
-                    padding: const EdgeInsets.only(bottom: 6),
-                    child: ListTile(
-                      selected: selected == i,
-                      selectedTileColor: blue,
-                      tileColor: Colors.white.withValues(alpha: .03),
-                      shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(14)),
-                      leading: Icon(items[i].icon, color: Colors.white),
-                      title: Text(items[i].label,
-                          style: const TextStyle(
+              child: Icon(icon, color: blue, size: 20),
+            ),
+            const SizedBox(width: 12),
+          ],
+          Expanded(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Text(
+                      'होम / ',
+                      style: TextStyle(
+                        color: muted.withValues(alpha: 0.7),
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    Text(
+                      title,
+                      style: const TextStyle(
+                        color: navy,
+                        fontSize: 16,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  ],
+                ),
+                if (subtitle != null && subtitle!.isNotEmpty)
+                  Text(
+                    subtitle!,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(color: muted, fontSize: 11),
+                  ),
+              ],
+            ),
+          ),
+          // Live Database Status Badge
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+            margin: const EdgeInsets.only(right: 12),
+            decoration: BoxDecoration(
+              color: softGreen,
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: green.withValues(alpha: 0.3)),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 8,
+                  height: 8,
+                  decoration: const BoxDecoration(
+                    color: green,
+                    shape: BoxShape.circle,
+                  ),
+                ),
+                const SizedBox(width: 6),
+                const Text(
+                  'लाइव कनेक्टेड',
+                  style: TextStyle(
+                    color: Color(0xff0f766e),
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          if (onRefresh != null) ...[
+            IconButton(
+              tooltip: 'डेटा रिफ्रेश करें',
+              onPressed: onRefresh,
+              icon: const Icon(Icons.refresh_rounded, color: navy, size: 21),
+            ),
+            const SizedBox(width: 4),
+          ],
+          if (showNotifications) ...[
+            FutureBuilder<Map<String, dynamic>>(
+              future: api.get('/api/notifications/today'),
+              builder: (context, snapshot) {
+                final count = snapshot.data?['count'] ?? 0;
+                return Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    IconButton.filledTonal(
+                      tooltip: 'आज की सूचनाएँ',
+                      style: IconButton.styleFrom(backgroundColor: softBlue),
+                      onPressed: () => Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => const CelebrationsPage(),
+                        ),
+                      ),
+                      icon: const Icon(
+                        Icons.notifications_none_rounded,
+                        color: navy,
+                        size: 21,
+                      ),
+                    ),
+                    if (count > 0)
+                      Positioned(
+                        right: -2,
+                        top: -2,
+                        child: Container(
+                          constraints: const BoxConstraints(minWidth: 18),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 5,
+                            vertical: 2,
+                          ),
+                          decoration: BoxDecoration(
+                            color: rose,
+                            borderRadius: BorderRadius.circular(20),
+                            border: Border.all(
                               color: Colors.white,
-                              fontWeight: FontWeight.w800)),
-                      onTap: () => onSelect(i),
+                              width: 1.5,
+                            ),
+                          ),
+                          child: Text(
+                            count > 99 ? '99+' : '$count',
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 9,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                        ),
+                      ),
+                  ],
+                );
+              },
+            ),
+            const SizedBox(width: 12),
+          ],
+          // User Chip with Dropdown
+          PopupMenuButton<String>(
+            tooltip: 'खाता विकल्प',
+            offset: const Offset(0, 50),
+            onSelected: (value) {
+              if (value == 'logout' && onLogout != null) onLogout!();
+            },
+            itemBuilder: (_) => [
+              PopupMenuItem(
+                enabled: false,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      userName,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w900,
+                        color: navy,
+                      ),
+                    ),
+                    Text(
+                      userRole,
+                      style: const TextStyle(fontSize: 11, color: muted),
+                    ),
+                  ],
+                ),
+              ),
+              const PopupMenuDivider(),
+              const PopupMenuItem(
+                value: 'logout',
+                child: Row(
+                  children: [
+                    Icon(Icons.logout_rounded, color: rose, size: 20),
+                    SizedBox(width: 10),
+                    Text('लॉग आउट', style: TextStyle(color: rose, fontWeight: FontWeight.w700)),
+                  ],
+                ),
+              ),
+            ],
+            child: Container(
+              padding: const EdgeInsets.fromLTRB(10, 6, 12, 6),
+              decoration: BoxDecoration(
+                color: const Color(0xfff1f5f9),
+                borderRadius: BorderRadius.circular(24),
+                border: Border.all(color: border),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  CircleAvatar(
+                    radius: 14,
+                    backgroundColor: blue,
+                    child: Text(
+                      userName.isNotEmpty ? userName[0].toUpperCase() : 'U',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        userName,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: navy,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                      Text(
+                        userRole,
+                        style: const TextStyle(color: muted, fontSize: 10),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(width: 4),
+                  const Icon(Icons.keyboard_arrow_down_rounded, color: muted, size: 18),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class DesktopSidebar extends StatefulWidget {
+  const DesktopSidebar({
+    super.key,
+    required this.sections,
+    required this.selectedIndex,
+    required this.onSelect,
+    required this.onLogout,
+  });
+
+  final List<DesktopNavSection> sections;
+  final int selectedIndex;
+  final ValueChanged<int> onSelect;
+  final VoidCallback onLogout;
+
+  @override
+  State<DesktopSidebar> createState() => _DesktopSidebarState();
+}
+
+class _DesktopSidebarState extends State<DesktopSidebar> {
+  bool collapsed = false;
+  String query = '';
+  final searchController = TextEditingController();
+
+  @override
+  void dispose() {
+    searchController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final user = api.user;
+    final userName = user?['name'] ?? 'User';
+    final userRole = user?['role'] == 'admin' ? 'व्यवस्थापक (Admin)' : 'बूथ प्रबंधक';
+
+    // Calculate flat index mapping
+    int globalIndex = 0;
+    final renderedSections = <Widget>[];
+
+    for (final section in widget.sections) {
+      final matchingItems = <MapEntry<int, NavItem>>[];
+      for (final item in section.items) {
+        final curIdx = globalIndex++;
+        if (query.isEmpty ||
+            item.label.toLowerCase().contains(query.toLowerCase())) {
+          matchingItems.add(MapEntry(curIdx, item));
+        }
+      }
+
+      if (matchingItems.isEmpty) continue;
+
+      renderedSections.add(
+        Padding(
+          padding: EdgeInsets.fromLTRB(
+            collapsed ? 4 : 14,
+            14,
+            collapsed ? 4 : 14,
+            6,
+          ),
+          child: collapsed
+              ? const Divider(color: Color(0x1fffffff), height: 1)
+              : Text(
+                  section.title.toUpperCase(),
+                  style: const TextStyle(
+                    color: Color(0xff8da4c4),
+                    fontSize: 10,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: 0.8,
+                  ),
+                ),
+        ),
+      );
+
+      for (final entry in matchingItems) {
+        final idx = entry.key;
+        final item = entry.value;
+        final isSelected = widget.selectedIndex == idx;
+
+        renderedSections.add(
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+            child: Tooltip(
+              message: collapsed ? item.label : '',
+              waitDuration: const Duration(milliseconds: 300),
+              child: Material(
+                color: isSelected
+                    ? blue
+                    : Colors.transparent,
+                borderRadius: BorderRadius.circular(12),
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(12),
+                  hoverColor: Colors.white.withValues(alpha: 0.08),
+                  onTap: () => widget.onSelect(idx),
+                  child: Container(
+                    padding: EdgeInsets.symmetric(
+                      horizontal: collapsed ? 0 : 12,
+                      vertical: 9,
+                    ),
+                    alignment:
+                        collapsed ? Alignment.center : Alignment.centerLeft,
+                    child: Row(
+                      mainAxisAlignment: collapsed
+                          ? MainAxisAlignment.center
+                          : MainAxisAlignment.start,
+                      children: [
+                        Icon(
+                          item.icon,
+                          color: isSelected
+                              ? Colors.white
+                              : const Color(0xffcbd5e1),
+                          size: 20,
+                        ),
+                        if (!collapsed) ...[
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Text(
+                              item.label,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                color: isSelected
+                                    ? Colors.white
+                                    : const Color(0xfff1f5f9),
+                                fontSize: 13,
+                                fontWeight: isSelected
+                                    ? FontWeight.w900
+                                    : FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                          if (isSelected)
+                            Container(
+                              width: 6,
+                              height: 6,
+                              decoration: const BoxDecoration(
+                                color: Colors.white,
+                                shape: BoxShape.circle,
+                              ),
+                            ),
+                        ],
+                      ],
                     ),
                   ),
                 ),
               ),
-            ]),
+            ),
           ),
+        );
+      }
+    }
+
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 200),
+      curve: Curves.easeOutCubic,
+      width: collapsed ? 72 : 260,
+      color: deepNavy,
+      child: SafeArea(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            // Header: Logo and Title + Collapse Toggle
+            Container(
+              padding: EdgeInsets.fromLTRB(
+                collapsed ? 12 : 16,
+                16,
+                collapsed ? 12 : 12,
+                16,
+              ),
+              decoration: const BoxDecoration(
+                border: Border(bottom: BorderSide(color: Color(0x1fffffff))),
+              ),
+              child: Row(
+                children: [
+                  const CongressMark(size: 38),
+                  if (!collapsed) ...[
+                    const SizedBox(width: 10),
+                    const Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Voter CRM Pro',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 14,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                          Text(
+                            'डिजिटल वोटर फ़ोन बुक',
+                            style: TextStyle(
+                              color: Color(0xff94a3b8),
+                              fontSize: 10,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                  IconButton(
+                    visualDensity: VisualDensity.compact,
+                    tooltip: collapsed ? 'साइडबार खोलें' : 'साइडबार छोटा करें',
+                    onPressed: () => setState(() => collapsed = !collapsed),
+                    icon: Icon(
+                      collapsed
+                          ? Icons.menu_open_rounded
+                          : Icons.menu_rounded,
+                      color: const Color(0xffcbd5e1),
+                      size: 20,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
+            // Search Bar in Sidebar (when not collapsed)
+            if (!collapsed) ...[
+              Padding(
+                padding: const EdgeInsets.fromLTRB(12, 10, 12, 4),
+                child: SizedBox(
+                  height: 36,
+                  child: TextField(
+                    controller: searchController,
+                    onChanged: (val) => setState(() => query = val.trim()),
+                    style: const TextStyle(color: Colors.white, fontSize: 12),
+                    decoration: InputDecoration(
+                      hintText: 'मॉड्यूल खोजें...',
+                      hintStyle: const TextStyle(
+                        color: Color(0xff64748b),
+                        fontSize: 12,
+                      ),
+                      prefixIcon: const Icon(
+                        Icons.search_rounded,
+                        color: Color(0xff64748b),
+                        size: 16,
+                      ),
+                      suffixIcon: query.isNotEmpty
+                          ? IconButton(
+                              icon: const Icon(
+                                Icons.clear_rounded,
+                                color: Color(0xff94a3b8),
+                                size: 14,
+                              ),
+                              onPressed: () {
+                                searchController.clear();
+                                setState(() => query = '');
+                              },
+                            )
+                          : null,
+                      filled: true,
+                      fillColor: Colors.white.withValues(alpha: 0.06),
+                      contentPadding: EdgeInsets.zero,
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(10),
+                        borderSide: BorderSide.none,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+
+            // Main Menu List
+            Expanded(
+              child: ListView(
+                padding: const EdgeInsets.symmetric(vertical: 6),
+                children: renderedSections,
+              ),
+            ),
+
+            // Footer: User Card and Logout
+            Container(
+              padding: EdgeInsets.all(collapsed ? 8 : 12),
+              decoration: const BoxDecoration(
+                color: Color(0xff020b1c),
+                border: Border(top: BorderSide(color: Color(0x1fffffff))),
+              ),
+              child: collapsed
+                  ? IconButton(
+                      tooltip: 'लॉग आउट',
+                      onPressed: widget.onLogout,
+                      icon: const Icon(Icons.logout_rounded, color: rose, size: 20),
+                    )
+                  : Row(
+                      children: [
+                        CircleAvatar(
+                          radius: 16,
+                          backgroundColor: softBlue,
+                          child: Text(
+                            userName.isNotEmpty
+                                ? userName[0].toUpperCase()
+                                : 'U',
+                            style: const TextStyle(
+                              color: blue,
+                              fontWeight: FontWeight.w900,
+                              fontSize: 13,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                userName,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w900,
+                                ),
+                              ),
+                              Text(
+                                userRole,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  color: Color(0xff94a3b8),
+                                  fontSize: 10,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        IconButton(
+                          tooltip: 'लॉग आउट',
+                          visualDensity: VisualDensity.compact,
+                          onPressed: widget.onLogout,
+                          icon: const Icon(
+                            Icons.logout_rounded,
+                            color: rose,
+                            size: 18,
+                          ),
+                        ),
+                      ],
+                    ),
+            ),
+          ],
         ),
-      );
+      ),
+    );
+  }
 }
 
 class AppPage extends StatelessWidget {

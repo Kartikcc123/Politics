@@ -38,6 +38,7 @@ class VoterManagementPage extends StatefulWidget {
     this.initialTehsil,
     this.initialWard,
     this.initialMunicipality,
+    this.initialFavoriteFilter = false,
   });
 
   final String? initialAreaId;
@@ -49,6 +50,7 @@ class VoterManagementPage extends StatefulWidget {
   final String? initialTehsil;
   final String? initialWard;
   final String? initialMunicipality;
+  final bool initialFavoriteFilter;
 
   @override
   State<VoterManagementPage> createState() => _VoterManagementPageState();
@@ -100,6 +102,13 @@ class _VoterManagementPageState extends State<VoterManagementPage> {
   Timer? searchDebounce;
   static const int pageSize = 50;
 
+  String get _defaultRollType {
+    final u = api.user;
+    if (u == null) return 'all';
+    if (u['role'] == 'admin') return 'all';
+    return u['allowedRollType'] ?? 'municipal';
+  }
+
   void refreshVoters() {
     votersFuture = OfflineVoterCache.loadPage(
       query: filterQuery,
@@ -130,6 +139,9 @@ class _VoterManagementPageState extends State<VoterManagementPage> {
       }
     });
     profileCompletionStatus = widget.initialProfileCompletionStatus ?? '';
+    if (widget.initialFavoriteFilter) {
+      favoriteOnly = true;
+    }
     if (widget.initialVillage != null && widget.initialVillage!.isNotEmpty) {
       village.text = widget.initialVillage!;
     }
@@ -148,6 +160,27 @@ class _VoterManagementPageState extends State<VoterManagementPage> {
     if (widget.initialWard != null && widget.initialWard!.isNotEmpty) {
       municipalWardNumber.text = widget.initialWard!;
       rollType = 'all';
+    }
+    // Pre-populate persistent scope for restricted / scoped users if not already set
+    final u = api.user;
+    if (u != null && u['role'] != 'admin') {
+      rollType = _defaultRollType;
+      if (gramPanchayat.text.isEmpty) {
+        final gps = (u['assignedGramPanchayats'] as List? ?? []).where((s) => '$s'.trim().isNotEmpty).toList();
+        if (gps.length == 1) gramPanchayat.text = '${gps.first}'.trim();
+      }
+      if (municipalWardNumber.text.isEmpty) {
+        final wards = (u['assignedWards'] as List? ?? []).where((s) => '$s'.trim().isNotEmpty).toList();
+        if (wards.length == 1) municipalWardNumber.text = '${wards.first}'.trim();
+      }
+      if (boothNumber.text.isEmpty) {
+        final parts = (u['assignedParts'] as List? ?? []).where((s) => '$s'.trim().isNotEmpty).toList();
+        if (parts.length == 1) boothNumber.text = '${parts.first}'.trim();
+      }
+      if (village.text.isEmpty) {
+        final vils = (u['assignedVillages'] as List? ?? []).where((s) => '$s'.trim().isNotEmpty).toList();
+        if (vils.length == 1) village.text = '${vils.first}'.trim();
+      }
     }
     dashboardFuture = api.get('/api/reports/dashboard');
     refreshVoters();
@@ -288,7 +321,7 @@ class _VoterManagementPageState extends State<VoterManagementPage> {
       profileCompletionStatus = '';
       favoriteOnly = false;
       contactTypeFilter = '';
-      rollType = 'assembly';
+      rollType = _defaultRollType;
       matchStatus = '';
       queryMode = '';
       nameLetter = '';
@@ -403,8 +436,8 @@ class _VoterManagementPageState extends State<VoterManagementPage> {
     add('Search', search.text, () => _clearFilterText(search));
     if (favoriteOnly) {
       add(
-          'सूची',
-          'Favorites',
+          'फ़िल्टर',
+          '⭐ केवल फ़ेवरेट',
           () => setState(() {
                 favoriteOnly = false;
                 currentPage = 1;
@@ -416,7 +449,7 @@ class _VoterManagementPageState extends State<VoterManagementPage> {
         _contactTypeFilterLabel(contactTypeFilter),
         () => setState(() {
               contactTypeFilter = '';
-              rollType = 'assembly';
+              rollType = _defaultRollType;
               matchStatus = '';
               currentPage = 1;
               selectedIds.clear();
@@ -2011,20 +2044,19 @@ class _VoterManagementPageState extends State<VoterManagementPage> {
                 },
                 onMic: toggleVoiceSearch,
                 onQuickPick: useQuickSearch,
-                expandedFilters: api.user?['role'] == 'admin'
-                    ? _RollFilterStrip(
-                        rollType: rollType,
-                        matchStatus: matchStatus,
-                        wardController: municipalWardNumber,
-                        onChanged: (roll, match) => setState(() {
-                          rollType = roll;
-                          matchStatus = match;
-                          currentPage = 1;
-                          refreshVoters();
-                        }),
-                        onWardSubmitted: (_) => filtersChanged(),
-                      )
-                    : null,
+                expandedFilters: _RollFilterStrip(
+                  rollType: rollType,
+                  matchStatus: matchStatus,
+                  wardController: municipalWardNumber,
+                  allowedRollType: _defaultRollType,
+                  onChanged: (roll, match) => setState(() {
+                    rollType = roll;
+                    matchStatus = match;
+                    currentPage = 1;
+                    refreshVoters();
+                  }),
+                  onWardSubmitted: (_) => filtersChanged(),
+                ),
               ),
             ),
             const SizedBox(height: 12),
@@ -2064,7 +2096,7 @@ class _VoterManagementPageState extends State<VoterManagementPage> {
                 reviewSelected: verificationStatus == 'needs_review',
                 onAll: () => setState(() {
                   contactTypeFilter = '';
-                  rollType = 'assembly';
+                  rollType = _defaultRollType;
                   matchStatus = '';
                   support = '';
                   partyPreferenceFilter = '';
@@ -2162,9 +2194,8 @@ class _VoterManagementPageState extends State<VoterManagementPage> {
                   onPressed: recheckOcr,
                   icon: Icon(Icons.document_scanner_outlined, color: Theme.of(context).colorScheme.primary),
                 ),
-              if (api.user?['role'] == 'admin')
-                GestureDetector(
-                  onLongPress: _showStarFilterSheet,
+              GestureDetector(
+                onLongPress: _showStarFilterSheet,
                   child: IconButton(
                     tooltip: favoriteRatingFilter > 0
                         ? '$favoriteRatingFilter★ पसंदीदा'
@@ -2527,65 +2558,98 @@ class _RecentFilter {
 }
 
 class _RollFilterStrip extends StatelessWidget {
-  const _RollFilterStrip(
-      {required this.rollType,
-      required this.matchStatus,
-      required this.wardController,
-      required this.onChanged,
-      required this.onWardSubmitted});
+  const _RollFilterStrip({
+    required this.rollType,
+    required this.matchStatus,
+    required this.wardController,
+    required this.onChanged,
+    required this.onWardSubmitted,
+    this.allowedRollType = 'all',
+  });
   final String rollType;
   final String matchStatus;
   final TextEditingController wardController;
   final void Function(String rollType, String matchStatus) onChanged;
   final ValueChanged<String> onWardSubmitted;
+  final String allowedRollType;
+
   @override
-  Widget build(BuildContext context) => Container(
-        padding: const EdgeInsets.fromLTRB(10, 9, 10, 10),
-        decoration: BoxDecoration(
-            color: const Color(0xfff7f9ff),
-            borderRadius: BorderRadius.circular(14),
-            border: Border.all(color: const Color(0xffdbe5f6))),
-        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          const Row(children: [
-            Icon(Icons.filter_alt_outlined, color: blue, size: 17),
-            SizedBox(width: 6),
-            Text('सूची फ़िल्टर',
-                style: TextStyle(color: navy, fontWeight: FontWeight.w900))
-          ]),
-          const SizedBox(height: 8),
-          SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: Row(children: [
+  Widget build(BuildContext context) {
+    final showAll = allowedRollType == 'all';
+    final showMunicipal = allowedRollType == 'all' || allowedRollType == 'municipal';
+    final showAssembly = allowedRollType == 'all' || allowedRollType == 'assembly';
+
+    return Container(
+      padding: const EdgeInsets.fromLTRB(10, 9, 10, 10),
+      decoration: BoxDecoration(
+          color: const Color(0xfff7f9ff),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: const Color(0xffdbe5f6))),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [
+          const Icon(Icons.filter_alt_outlined, color: blue, size: 17),
+          const SizedBox(width: 6),
+          Text(
+            allowedRollType == 'municipal'
+                ? '🏛️ वार्ड सूची फ़िल्टर'
+                : allowedRollType == 'assembly'
+                    ? '🗳️ विधानसभा सूची फ़िल्टर'
+                    : 'सूची फ़िल्टर',
+            style: const TextStyle(color: navy, fontWeight: FontWeight.w900),
+          ),
+        ]),
+        const SizedBox(height: 8),
+        SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(children: [
+              if (showAll) ...[
                 ChoiceChip(
                     visualDensity: VisualDensity.compact,
                     label: const Text('सभी'),
                     selected: (rollType == 'all' || rollType.isEmpty) && matchStatus.isEmpty,
                     onSelected: (_) => onChanged('all', '')),
                 const SizedBox(width: 6),
+              ],
+              if (showMunicipal) ...[
                 ChoiceChip(
                     visualDensity: VisualDensity.compact,
                     label: const Text('कुल वार्ड सूची'),
-                    selected: (rollType == 'municipal' || rollType == 'ward') && matchStatus.isEmpty,
+                    selected: (rollType == 'municipal' || rollType == 'ward' || (allowedRollType == 'municipal' && (rollType == 'all' || rollType.isEmpty))) && matchStatus.isEmpty,
                     onSelected: (_) => onChanged('municipal', '')),
                 const SizedBox(width: 6),
+              ],
+              if (showAssembly && !showMunicipal) ...[
                 ChoiceChip(
                     visualDensity: VisualDensity.compact,
-                    label: const Text('दोनों में (Matched)'),
-                    selected: matchStatus == 'both',
-                    onSelected: (_) => onChanged('all', 'both')),
+                    label: const Text('कुल विधानसभा सूची'),
+                    selected: (rollType == 'assembly' || (allowedRollType == 'assembly' && (rollType == 'all' || rollType.isEmpty))) && matchStatus.isEmpty,
+                    onSelected: (_) => onChanged('assembly', '')),
                 const SizedBox(width: 6),
+              ],
+              ChoiceChip(
+                  visualDensity: VisualDensity.compact,
+                  label: const Text('दोनों में (Matched)'),
+                  selected: matchStatus == 'both',
+                  onSelected: (_) => onChanged(allowedRollType == 'municipal' ? 'municipal' : (allowedRollType == 'assembly' ? 'assembly' : 'all'), 'both')),
+              const SizedBox(width: 6),
+              if (showMunicipal) ...[
                 ChoiceChip(
                     visualDensity: VisualDensity.compact,
                     label: const Text('केवल वार्ड (नए)'),
                     selected: matchStatus == 'municipal_only' || matchStatus == 'ward_only',
-                    onSelected: (_) => onChanged('all', 'municipal_only')),
+                    onSelected: (_) => onChanged(allowedRollType == 'municipal' ? 'municipal' : 'all', 'municipal_only')),
                 const SizedBox(width: 6),
+              ],
+              if (showAssembly) ...[
                 ChoiceChip(
                     visualDensity: VisualDensity.compact,
                     label: const Text('केवल विधानसभा'),
                     selected: matchStatus == 'assembly_only',
-                    onSelected: (_) => onChanged('all', 'assembly_only')),
-                const SizedBox(width: 8),
+                    onSelected: (_) => onChanged(allowedRollType == 'assembly' ? 'assembly' : 'all', 'assembly_only')),
+                const SizedBox(width: 6),
+              ],
+              if (showMunicipal) ...[
+                const SizedBox(width: 2),
                 SizedBox(
                     width: 102,
                     child: TextField(
@@ -2598,9 +2662,11 @@ class _RollFilterStrip extends StatelessWidget {
                             hintText: 'Ward नं.',
                             prefixIcon:
                                 Icon(Icons.grid_view_rounded, size: 17)))),
-              ])),
-        ]),
-      );
+              ],
+            ])),
+      ]),
+    );
+  }
 }
 
 class _ContactTypeFilterChips extends StatelessWidget {
@@ -3792,7 +3858,13 @@ class _PhoneContactTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final mobile = '${voter['mobile'] ?? ''}'.trim();
     final village = '${voter['village'] ?? ''}'.trim();
-    final ward = voter['ward'] is Map ? '${voter['ward']['number'] ?? ''}' : '';
+    final ward = voter['ward'] is Map
+        ? '${voter['ward']['number'] ?? ''}'
+        : '${voter['wardNumber'] ?? ''}'.trim();
+    final mukhyaGram = '${voter['mukhyaGram'] ?? ''}'.trim();
+    final wardSerial = '${voter['wardVoterSerial'] ?? ''}'.trim();
+    final asmSerial = '${voter['voterSerial'] ?? ''}'.trim();
+    final partNo = '${voter['partNumber'] ?? ''}'.trim();
     final hasAssembly = voter['hasAssemblyMembership'] == true;
     final hasMunicipal = voter['hasMunicipalMembership'] == true;
     final municipalWards = (voter['municipalWardNumbers'] as List? ?? const [])
@@ -3801,6 +3873,7 @@ class _PhoneContactTile extends StatelessWidget {
     final place = [
       if (ward.isNotEmpty) 'वार्ड $ward',
       if (village.isNotEmpty) village,
+      if (mukhyaGram.isNotEmpty && mukhyaGram != village) 'मुख्य ग्राम: $mukhyaGram',
     ].join(' · ');
     return Material(
       color: selected ? const Color(0xffeef5ff) : Colors.white,
@@ -3902,31 +3975,51 @@ class _PhoneContactTile extends StatelessWidget {
                 ),
               ]),
               const SizedBox(height: 6),
-              // Badges and action buttons row
+              // Badges and action buttons row: Priority given to Ward 1st when voter has ward serial
               Row(
                 children: [
                   Expanded(
                     child: Wrap(spacing: 5, runSpacing: 4, children: [
-                      if (hasAssembly && '${voter['partNumber'] ?? ''}'.trim().isNotEmpty && '${voter['partNumber']}' != '0')
+                      if (wardSerial.isNotEmpty) ...[
                         _MembershipBadge(
-                          label: 'भाग #${voter['partNumber']}',
-                          color: const Color(0xff2563eb),
-                        ),
-                      if (hasAssembly && '${voter['voterSerial'] ?? ''}'.trim().isNotEmpty)
-                        _MembershipBadge(
-                          label: 'वि.स. क्र. #${voter['voterSerial']}',
-                          color: const Color(0xff4338ca),
-                        ),
-                      if ('${voter['wardNumber'] ?? ''}'.trim().isNotEmpty || municipalWards.isNotEmpty)
-                        _MembershipBadge(
-                          label: 'वार्ड #${voter['wardNumber'] ?? municipalWards}',
+                          label: 'वार्ड क्र. #$wardSerial',
                           color: const Color(0xff059669),
+                          isHighlighted: true,
+                          icon: Icons.how_to_reg_rounded,
                         ),
-                      if ('${voter['wardVoterSerial'] ?? ''}'.trim().isNotEmpty)
-                        _MembershipBadge(
-                          label: 'वार्ड क्र. #${voter['wardVoterSerial']}',
-                          color: const Color(0xff0d9488),
-                        ),
+                        if (ward.isNotEmpty || municipalWards.isNotEmpty)
+                          _MembershipBadge(
+                            label: 'वार्ड #${ward.isNotEmpty ? ward : municipalWards}',
+                            color: const Color(0xff0d9488),
+                          ),
+                        if (hasAssembly && partNo.isNotEmpty && partNo != '0')
+                          _MembershipBadge(
+                            label: 'भाग #$partNo',
+                            color: const Color(0xff2563eb),
+                          ),
+                        if (hasAssembly && asmSerial.isNotEmpty)
+                          _MembershipBadge(
+                            label: 'वि.स. क्र. #$asmSerial',
+                            color: const Color(0xff4338ca),
+                          ),
+                      ] else ...[
+                        if (hasAssembly && partNo.isNotEmpty && partNo != '0')
+                          _MembershipBadge(
+                            label: 'भाग #$partNo',
+                            color: const Color(0xff2563eb),
+                          ),
+                        if (hasAssembly && asmSerial.isNotEmpty)
+                          _MembershipBadge(
+                            label: 'वि.स. क्र. #$asmSerial',
+                            color: const Color(0xff4338ca),
+                            isHighlighted: true,
+                          ),
+                        if (ward.isNotEmpty || municipalWards.isNotEmpty)
+                          _MembershipBadge(
+                            label: 'वार्ड #${ward.isNotEmpty ? ward : municipalWards}',
+                            color: const Color(0xff059669),
+                          ),
+                      ],
                       if (voter['groups'] is List && (voter['groups'] as List).isNotEmpty)
                         for (final g in (voter['groups'] as List).take(3))
                           _MembershipBadge(
@@ -3949,9 +4042,8 @@ class _PhoneContactTile extends StatelessWidget {
                   ),
                   // Action buttons
                   Row(mainAxisSize: MainAxisSize.min, children: [
-                    if (api.user?['role'] == 'admin')
-                      IconButton(
-                        tooltip: voter['isFavorite'] == true
+                    IconButton(
+                      tooltip: voter['isFavorite'] == true
                             ? 'Favorites से हटाएं'
                             : 'Favorites में जोड़ें',
                         onPressed: () async {
@@ -4006,19 +4098,55 @@ class _PhoneContactTile extends StatelessWidget {
 }
 
 class _MembershipBadge extends StatelessWidget {
-  const _MembershipBadge({required this.label, required this.color});
+  const _MembershipBadge({
+    required this.label,
+    required this.color,
+    this.isHighlighted = false,
+    this.icon,
+  });
+
   final String label;
   final Color color;
+  final bool isHighlighted;
+  final IconData? icon;
 
   @override
   Widget build(BuildContext context) => Container(
-        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+        padding: EdgeInsets.symmetric(
+          horizontal: isHighlighted ? 8 : 7,
+          vertical: isHighlighted ? 3.5 : 3,
+        ),
         decoration: BoxDecoration(
-            color: color.withValues(alpha: .10),
-            borderRadius: BorderRadius.circular(20)),
-        child: Text(label,
-            style: TextStyle(
-                color: color, fontSize: 10, fontWeight: FontWeight.w800)),
+          color: isHighlighted ? color : color.withValues(alpha: .10),
+          borderRadius: BorderRadius.circular(20),
+          boxShadow: isHighlighted
+              ? [
+                  BoxShadow(
+                    color: color.withValues(alpha: 0.35),
+                    blurRadius: 4,
+                    offset: const Offset(0, 1),
+                  )
+                ]
+              : null,
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (icon != null) ...[
+              Icon(icon, size: 12, color: isHighlighted ? Colors.white : color),
+              const SizedBox(width: 3),
+            ],
+            Text(
+              label,
+              style: TextStyle(
+                color: isHighlighted ? Colors.white : color,
+                fontSize: isHighlighted ? 11 : 10,
+                fontWeight: isHighlighted ? FontWeight.w900 : FontWeight.w800,
+                letterSpacing: isHighlighted ? 0.2 : 0,
+              ),
+            ),
+          ],
+        ),
       );
 }
 
@@ -6977,9 +7105,8 @@ class _VoterDetailPageState extends State<VoterDetailPage> {
             style: TextStyle(fontSize: 17, fontWeight: FontWeight.w900)),
         centerTitle: true,
         actions: [
-          if (api.user?['role'] == 'admin')
-            IconButton(
-              tooltip: voter['isFavorite'] == true
+          IconButton(
+            tooltip: voter['isFavorite'] == true
                   ? 'Favorites से हटाएं'
                   : 'Favorites में जोड़ें',
               onPressed: _toggleFavorite,

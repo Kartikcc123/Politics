@@ -178,32 +178,13 @@ const samitiHierarchyData = <String, Map<String, dynamic>>{
           {'name': 'बोरियापुरा', 'parts': '', 'pop': 1890}
         ]
       },
-      'आसींद': {
-        'wards': 11,
-        'pop': 4500,
-        'villages': [
-          {'name': 'आसींद', 'parts': '', 'pop': 4500}
-        ]
-      },
-      'गांगलास': {
-        'wards': 9,
-        'pop': 3200,
-        'villages': [
-          {'name': 'गांगलास', 'parts': '', 'pop': 3200}
-        ]
-      },
-      'कोटड़ी': {
-        'wards': 7,
-        'pop': 2100,
-        'villages': [
-          {'name': 'कोटड़ी', 'parts': '', 'pop': 2100}
-        ]
-      },
       'रायपुर': {
-        'wards': 15,
+        'wards': 17,
         'pop': 11500,
         'villages': [
-          {'name': 'रायपुर', 'parts': '', 'pop': 11500}
+          {'name': 'रायपुर', 'parts': '', 'pop': 6735},
+          {'name': 'राजपुरा', 'parts': '', 'pop': 850},
+          {'name': 'कैमुनिया', 'parts': '', 'pop': 560}
         ]
       },
       'बाघना': {
@@ -225,20 +206,6 @@ const samitiHierarchyData = <String, Map<String, dynamic>>{
         'pop': 1650,
         'villages': [
           {'name': 'गुर्जरों का खेड़ा', 'parts': '', 'pop': 1650}
-        ]
-      },
-      'देवगढ़': {
-        'wards': 9,
-        'pop': 2900,
-        'villages': [
-          {'name': 'देवगढ़', 'parts': '', 'pop': 2900}
-        ]
-      },
-      'करेडा': {
-        'wards': 11,
-        'pop': 4100,
-        'villages': [
-          {'name': 'करेडा', 'parts': '', 'pop': 4100}
         ]
       }
     }

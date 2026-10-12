@@ -71,43 +71,41 @@ class _BulkAnubhagEditorPageState extends State<BulkAnubhagEditorPage> {
       List<String> rawParts = [];
       List<String> rawSections = [];
 
-      if (res is Map<String, dynamic>) {
-        final vList = res['village'] ?? res['villages'];
-        if (vList is List) {
-          for (final item in vList) {
-            if (item is Map) {
-              final val = '${item['value'] ?? item['label'] ?? ''}'.trim();
-              if (val.isNotEmpty) rawVillages.add(val);
-            } else if (item != null) {
-              final val = '$item'.trim();
-              if (val.isNotEmpty) rawVillages.add(val);
-            }
+      final vList = res['village'] ?? res['villages'];
+      if (vList is List) {
+        for (final item in vList) {
+          if (item is Map) {
+            final val = '${item['value'] ?? item['label'] ?? ''}'.trim();
+            if (val.isNotEmpty) rawVillages.add(val);
+          } else if (item != null) {
+            final val = '$item'.trim();
+            if (val.isNotEmpty) rawVillages.add(val);
           }
         }
+      }
 
-        final pList = res['partNumber'] ?? res['partNumbers'] ?? res['booth'];
-        if (pList is List) {
-          for (final item in pList) {
-            if (item is Map) {
-              final val = '${item['value'] ?? item['label'] ?? ''}'.trim();
-              if (val.isNotEmpty) rawParts.add(val);
-            } else if (item != null) {
-              final val = '$item'.trim();
-              if (val.isNotEmpty) rawParts.add(val);
-            }
+      final pList = res['partNumber'] ?? res['partNumbers'] ?? res['booth'];
+      if (pList is List) {
+        for (final item in pList) {
+          if (item is Map) {
+            final val = '${item['value'] ?? item['label'] ?? ''}'.trim();
+            if (val.isNotEmpty) rawParts.add(val);
+          } else if (item != null) {
+            final val = '$item'.trim();
+            if (val.isNotEmpty) rawParts.add(val);
           }
         }
+      }
 
-        final sList = res['sectionName'] ?? res['sectionNames'];
-        if (sList is List) {
-          for (final item in sList) {
-            if (item is Map) {
-              final val = '${item['value'] ?? item['label'] ?? ''}'.trim();
-              if (val.isNotEmpty) rawSections.add(val);
-            } else if (item != null) {
-              final val = '$item'.trim();
-              if (val.isNotEmpty) rawSections.add(val);
-            }
+      final sList = res['sectionName'] ?? res['sectionNames'];
+      if (sList is List) {
+        for (final item in sList) {
+          if (item is Map) {
+            final val = '${item['value'] ?? item['label'] ?? ''}'.trim();
+            if (val.isNotEmpty) rawSections.add(val);
+          } else if (item != null) {
+            final val = '$item'.trim();
+            if (val.isNotEmpty) rawSections.add(val);
           }
         }
       }
@@ -137,7 +135,7 @@ class _BulkAnubhagEditorPageState extends State<BulkAnubhagEditorPage> {
       }
 
       final res = await api.getQuery('/api/members', query);
-      final List<Map<String, dynamic>> items = (res is Map && res['items'] is List)
+      final List<Map<String, dynamic>> items = (res['items'] is List)
           ? List<Map<String, dynamic>>.from(res['items'])
           : <Map<String, dynamic>>[];
 
@@ -150,9 +148,7 @@ class _BulkAnubhagEditorPageState extends State<BulkAnubhagEditorPage> {
             .toList();
         if (extractedParts.isNotEmpty) {
           partNumbers = extractedParts;
-          if (selectedPartNumber == null) {
-            selectedPartNumber = extractedParts.first;
-          }
+          selectedPartNumber ??= extractedParts.first;
         }
       }
 

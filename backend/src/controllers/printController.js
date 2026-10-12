@@ -108,6 +108,15 @@ function applyPrintFilters(req, filter) {
   if (req.query.letter) {
     filter.name = new RegExp(`^${escapeRegex(String(req.query.letter).trim())}`, 'i');
   }
+  if (req.query.hasMobile === 'true' || req.query.withMobileOnly === 'true') {
+    filter.mobile = { $nin: ['', null], $exists: true };
+  }
+  if (req.query.favorite === 'true' || req.query.favoritesOnly === 'true' || req.query.isFavorite === 'true') {
+    filter.isFavorite = true;
+  }
+  if (req.query.verified === 'true' || req.query.verifiedOnly === 'true') {
+    filter.verificationStatus = 'verified';
+  }
   if (req.query.missingMobile === 'true') {
     filter.$and = [...(filter.$and || []), { $or: [{ mobile: '' }, { mobile: null }, { mobile: { $exists: false } }] }];
   }
@@ -371,7 +380,11 @@ exports.printMembers = async (req, res, next) => {
       req.query.wardNumber ||
       req.query.scope === 'specific_ward' ||
       req.query.electoralListType === 'municipal' ||
-      req.query.sortBy === 'wardVoterSerial'
+      req.query.sortBy === 'wardVoterSerial' ||
+      req.query.rollType === 'municipal' ||
+      req.query.rollType === 'ward' ||
+      req.currentUser?.allowedRollType === 'municipal' ||
+      (Array.isArray(req.currentUser?.assignedWards) && req.currentUser.assignedWards.length > 0)
     );
 
     const members = await Member.find(filter)

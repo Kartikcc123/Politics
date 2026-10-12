@@ -12,6 +12,7 @@ const UserSchema = new mongoose.Schema({
   assignedWards: [{ type: String, trim: true }],
   assignedParts: [{ type: String, trim: true }],
   assignedVoterId: { type: String, trim: true },
+  allowedRollType: { type: String, enum: ['municipal', 'assembly', 'all'], default: 'municipal' },
   phone: String,
   active: { type: Boolean, default: true },
   permissions: {
