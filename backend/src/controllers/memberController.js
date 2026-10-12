@@ -422,6 +422,7 @@ exports.list = async (req, res, next) => {
       (Array.isArray(req.currentUser?.assignedWards) && req.currentUser.assignedWards.length > 0)
     );
     const hasLocationScope = Boolean(village || partNumber || booth || sectionName || gramPanchayat || isWardScope);
+    const sortParam = String(req.query.sortBy || req.query.sort || '').toLowerCase();
     let sortObj = { _id: -1 };
 
     if (sortParam === 'recent') {
