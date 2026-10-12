@@ -164,7 +164,9 @@ class _VoterManagementPageState extends State<VoterManagementPage> {
     // Pre-populate persistent scope for restricted / scoped users if not already set
     final u = api.user;
     if (u != null && u['role'] != 'admin') {
-      rollType = _defaultRollType;
+      if (widget.initialWard == null || widget.initialWard!.isEmpty) {
+        rollType = _defaultRollType;
+      }
       if (gramPanchayat.text.isEmpty) {
         final gps = (u['assignedGramPanchayats'] as List? ?? []).where((s) => '$s'.trim().isNotEmpty).toList();
         if (gps.length == 1) gramPanchayat.text = '${gps.first}'.trim();
@@ -2368,11 +2370,41 @@ class _VoterManagementPageState extends State<VoterManagementPage> {
 
   @override
   Widget build(BuildContext context) {
-    return Center(
+    final body = Center(
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 1280),
         child: buildPhoneBookMobile(context),
       ),
+    );
+
+    final canPop = Navigator.of(context).canPop();
+    if (canPop) {
+      final titleParts = <String>[];
+      if (gramPanchayat.text.isNotEmpty) titleParts.add('पंचायत: ${gramPanchayat.text}');
+      if (municipalWardNumber.text.isNotEmpty) titleParts.add('वार्ड: ${municipalWardNumber.text}');
+      if (village.text.isNotEmpty) titleParts.add('गाँव: ${village.text}');
+      if (boothNumber.text.isNotEmpty) titleParts.add('भाग: ${boothNumber.text}');
+      final pageTitle = titleParts.isNotEmpty ? titleParts.join(' · ') : 'मतदाता सूची';
+
+      return Scaffold(
+        backgroundColor: const Color(0xfff7f8fb),
+        appBar: AppBar(
+          title: Text(pageTitle, style: const TextStyle(color: navy, fontWeight: FontWeight.w900, fontSize: 16)),
+          backgroundColor: Colors.white,
+          foregroundColor: navy,
+          elevation: 0,
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back_rounded),
+            onPressed: () => Navigator.of(context).pop(),
+          ),
+        ),
+        body: body,
+      );
+    }
+
+    return Scaffold(
+      backgroundColor: const Color(0xfff7f8fb),
+      body: body,
     );
   }
 

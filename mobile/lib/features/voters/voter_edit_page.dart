@@ -184,7 +184,11 @@ class _VoterEditPageState extends State<VoterEditPage> {
       currentIndex = newIndex;
       currentVoter = widget.voterList![newIndex];
       _loadVoterData(currentVoter);
+      editStep = 0;
     });
+    if (editPageController.hasClients) {
+      editPageController.jumpToPage(0);
+    }
     widget.onVoterChanged?.call(newIndex);
   }
 
@@ -286,7 +290,7 @@ class _VoterEditPageState extends State<VoterEditPage> {
     );
   }
 
-  Future<void> save({bool addAnother = false}) async {
+  Future<void> save({bool autoNext = false}) async {
     if (!formKey.currentState!.validate()) return;
     setState(() => saving = true);
     try {
@@ -298,6 +302,22 @@ class _VoterEditPageState extends State<VoterEditPage> {
         'verificationStatus': verificationStatus,
         'profileCompletionStatus': profileCompletionStatus,
       };
+      // Explicitly preserve ward and membership attributes so they never get dropped
+      if (currentVoter['wardNumber'] != null) {
+        body['wardNumber'] = currentVoter['wardNumber'];
+      }
+      if (currentVoter['wardVoterSerial'] != null) {
+        body['wardVoterSerial'] = currentVoter['wardVoterSerial'];
+      }
+      if (currentVoter['municipalWardNumbers'] != null) {
+        body['municipalWardNumbers'] = currentVoter['municipalWardNumbers'];
+      }
+      if (currentVoter['hasMunicipalMembership'] != null) {
+        body['hasMunicipalMembership'] = currentVoter['hasMunicipalMembership'];
+      }
+      if (currentVoter['hasAssemblyMembership'] != null) {
+        body['hasAssemblyMembership'] = currentVoter['hasAssemblyMembership'];
+      }
       if (body['age'] == '') body['age'] = null;
       for (final dateKey in ['dob', 'anniversary']) {
         final original = currentVoter[dateKey];
@@ -335,7 +355,7 @@ class _VoterEditPageState extends State<VoterEditPage> {
       if (!mounted) return;
       final hasNextVoter = widget.voterList != null &&
           currentIndex < widget.voterList!.length - 1;
-      if (hasNextVoter) {
+      if (autoNext && hasNextVoter) {
         _switchVoter(currentIndex + 1);
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
           content: Text('जानकारी सहेज दी गई। अगला मतदाता खुल गया।'),
@@ -488,7 +508,7 @@ class _VoterEditPageState extends State<VoterEditPage> {
                 padding:
                     const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                 decoration: BoxDecoration(
-                  color: blue.withOpacity(0.12),
+                  color: blue.withValues(alpha: 0.12),
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: Text(
@@ -1016,32 +1036,46 @@ class _VoterEditPageState extends State<VoterEditPage> {
                 label: const Text('पिछला'),
               ),
             ),
-            const SizedBox(width: 12),
-            Expanded(
-              flex: 2,
-              child: FilledButton.icon(
-                onPressed: saving
-                    ? null
-                    : editStep < 3
-                        ? () => _moveStep(editStep + 1)
-                        : save,
-                icon: saving
-                    ? const SizedBox(
-                        width: 16,
-                        height: 16,
-                        child: CircularProgressIndicator(
-                            strokeWidth: 2, color: Colors.white),
-                      )
-                    : Icon(editStep < 3
-                        ? Icons.arrow_forward_rounded
-                        : Icons.save_rounded),
-                label: Text(saving
-                    ? 'सहेज रहे हैं...'
-                    : editStep < 3
-                        ? 'अगला'
-                        : 'सुरक्षित करें'),
+            const SizedBox(width: 8),
+            if (editStep < 3)
+              Expanded(
+                flex: 2,
+                child: FilledButton.icon(
+                  onPressed: saving ? null : () => _moveStep(editStep + 1),
+                  icon: const Icon(Icons.arrow_forward_rounded),
+                  label: const Text('अगला'),
+                ),
+              )
+            else ...[
+              if (widget.voterList != null && currentIndex < widget.voterList!.length - 1) ...[
+                Expanded(
+                  child: OutlinedButton.icon(
+                    style: OutlinedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 12),
+                    ),
+                    onPressed: saving ? null : () => save(autoNext: true),
+                    icon: const Icon(Icons.arrow_forward_rounded, size: 16),
+                    label: const Text('सहेजें व अगला', style: TextStyle(fontSize: 12)),
+                  ),
+                ),
+                const SizedBox(width: 8),
+              ],
+              Expanded(
+                flex: (widget.voterList != null && currentIndex < widget.voterList!.length - 1) ? 1 : 2,
+                child: FilledButton.icon(
+                  onPressed: saving ? null : () => save(autoNext: false),
+                  icon: saving
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(
+                              strokeWidth: 2, color: Colors.white),
+                        )
+                      : const Icon(Icons.save_rounded),
+                  label: Text(saving ? 'सहेज रहे हैं...' : 'सुरक्षित करें'),
+                ),
               ),
-            ),
+            ],
           ]),
         ),
       );

@@ -733,17 +733,12 @@ class _SamitiHierarchyPageState extends State<SamitiHierarchyPage> {
 
     Navigator.of(context).push(
       MaterialPageRoute(
-        builder: (_) => Scaffold(
-          appBar: AppBar(
-            title: Text(titleText),
-          ),
-          body: VoterManagementPage(
-            initialVillage: village,
-            initialGramPanchayat: gramPanchayat,
-            initialWard: ward,
-            initialPartNumber: partNumber,
-            initialTehsil: (village != null || gramPanchayat != null || (partNumber != null && partNumber.isNotEmpty)) ? null : tehsil,
-          ),
+        builder: (_) => VoterManagementPage(
+          initialVillage: village,
+          initialGramPanchayat: gramPanchayat,
+          initialWard: ward,
+          initialPartNumber: partNumber,
+          initialTehsil: (village != null || gramPanchayat != null || (partNumber != null && partNumber.isNotEmpty)) ? null : tehsil,
         ),
       ),
     );

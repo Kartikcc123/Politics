@@ -30,8 +30,32 @@ class _BoothUserPageState extends State<BoothUserPage> with SingleTickerProvider
   String? selectedWard;
   String? selectedPart;
   String scopeType = 'all'; // 'all', 'panchayat', 'ward', 'booth'
+  String selectedSamitiFilter = 'all'; // 'all', 'रायपुर', 'सहाड़ा'
 
   int refreshKey = 0;
+
+  bool isSahadaGp(String gpName) {
+    const sahadaGps = {
+      'सहाड़ा', 'सांगवा', 'सुन्दरपुरा', 'लाखोला', 'पोटलां', 'बांसड़ा',
+      'अरनिया', 'समोडी', 'दुदिया', 'गलोदिया', 'महेन्द्र गढ़', 'भूणास',
+      'खांखला', 'उल्लाई', 'जवासिया', 'रायथलियास'
+    };
+    return sahadaGps.contains(gpName.trim());
+  }
+
+  String getGpSamiti(Map<String, dynamic> gp) {
+    final s = '${gp['samiti'] ?? gp['tehsil'] ?? ''}'.trim();
+    if (s.isNotEmpty) return s;
+    return isSahadaGp('${gp['name'] ?? ''}') ? 'सहाड़ा' : 'रायपुर';
+  }
+
+  List<Map<String, dynamic>> get visiblePanchayats {
+    if (selectedSamitiFilter == 'all') return panchayats;
+    return panchayats.where((p) => getGpSamiti(p) == selectedSamitiFilter).toList();
+  }
+
+  int get raipurGpCount => panchayats.where((p) => getGpSamiti(p) == 'रायपुर').length;
+  int get sahadaGpCount => panchayats.where((p) => getGpSamiti(p) == 'सहाड़ा').length;
 
   @override
   void initState() {
@@ -193,7 +217,10 @@ class _BoothUserPageState extends State<BoothUserPage> with SingleTickerProvider
           ]),
           const SizedBox(height: 16),
           Row(children: [
-            _metricPill('कुल पंचायतें', '${panchayats.length} GP'),
+            _metricPill(
+              selectedSamitiFilter == 'all' ? 'कुल पंचायतें' : '$selectedSamitiFilter पंचायतें',
+              '${visiblePanchayats.length} GP',
+            ),
             const SizedBox(width: 8),
             _metricPill('सक्रिय प्रभारी', '$activeManagers Active'),
             const SizedBox(width: 8),
@@ -201,7 +228,64 @@ class _BoothUserPageState extends State<BoothUserPage> with SingleTickerProvider
           ]),
         ]),
       ),
-      const SizedBox(height: 16),
+      const SizedBox(height: 14),
+
+      // Samiti selector chip bar
+      Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: border),
+        ),
+        child: Row(
+          children: [
+            const Icon(Icons.account_balance_rounded, size: 18, color: Color(0xff2563eb)),
+            const SizedBox(width: 8),
+            const Text('समिति:', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 13, color: navy)),
+            const SizedBox(width: 10),
+            Expanded(
+              child: SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: Row(
+                  children: [
+                    ChoiceChip(
+                      label: Text('सभी (${panchayats.length} GP)'),
+                      selected: selectedSamitiFilter == 'all',
+                      onSelected: (_) => setState(() {
+                        selectedSamitiFilter = 'all';
+                        selectedPanchayat = null;
+                      }),
+                      visualDensity: VisualDensity.compact,
+                    ),
+                    const SizedBox(width: 6),
+                    ChoiceChip(
+                      label: Text('रायपुर ($raipurGpCount GP)'),
+                      selected: selectedSamitiFilter == 'रायपुर',
+                      onSelected: (_) => setState(() {
+                        selectedSamitiFilter = 'रायपुर';
+                        selectedPanchayat = null;
+                      }),
+                      visualDensity: VisualDensity.compact,
+                    ),
+                    const SizedBox(width: 6),
+                    ChoiceChip(
+                      label: Text('सहाड़ा ($sahadaGpCount GP)'),
+                      selected: selectedSamitiFilter == 'सहाड़ा',
+                      onSelected: (_) => setState(() {
+                        selectedSamitiFilter = 'सहाड़ा';
+                        selectedPanchayat = null;
+                      }),
+                      visualDensity: VisualDensity.compact,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+      const SizedBox(height: 12),
 
       // Tab selector
       Container(
@@ -315,7 +399,17 @@ class _BoothUserPageState extends State<BoothUserPage> with SingleTickerProvider
 
   // TAB 2: PANCHAYAT LEVEL
   Widget _buildPanchayatManagersView() {
-    final pList = panchayats;
+    final pList = visiblePanchayats;
+    if (pList.isEmpty) {
+      return Center(
+        child: Text(
+          selectedSamitiFilter == 'all'
+              ? 'कोई पंचायत डेटा उपलब्ध नहीं है।'
+              : '$selectedSamitiFilter समिति में कोई पंचायत नहीं मिली।',
+          style: const TextStyle(color: muted),
+        ),
+      );
+    }
     return ListView.separated(
       itemCount: pList.length,
       separatorBuilder: (_, __) => const SizedBox(height: 10),
@@ -384,7 +478,21 @@ class _BoothUserPageState extends State<BoothUserPage> with SingleTickerProvider
 
   // TAB 3: WARD LEVEL
   Widget _buildWardManagersView() {
-    final pList = panchayats;
+    final pList = visiblePanchayats;
+    if (pList.isEmpty) {
+      return Center(
+        child: Text(
+          selectedSamitiFilter == 'all'
+              ? 'कोई पंचायत डेटा उपलब्ध नहीं है।'
+              : '$selectedSamitiFilter समिति में कोई पंचायत नहीं मिली।',
+          style: const TextStyle(color: muted),
+        ),
+      );
+    }
+    final validSelectedPanchayat = (selectedPanchayat != null && pList.any((p) => '${p['name']}' == selectedPanchayat))
+        ? selectedPanchayat
+        : (pList.isNotEmpty ? '${pList.first['name']}' : null);
+
     return Column(children: [
       // Dropdown to pick Panchayat
       Container(
@@ -394,7 +502,7 @@ class _BoothUserPageState extends State<BoothUserPage> with SingleTickerProvider
           child: DropdownButton<String>(
             isExpanded: true,
             hint: const Text('ग्राम पंचायत चुनें...'),
-            value: selectedPanchayat ?? (pList.isNotEmpty ? '${pList.first['name']}' : null),
+            value: validSelectedPanchayat,
             onChanged: (val) => setState(() => selectedPanchayat = val),
             items: pList.map((p) => DropdownMenuItem(value: '${p['name']}', child: Text('पंचायत: ${p['name']}'))).toList(),
           ),
@@ -403,7 +511,7 @@ class _BoothUserPageState extends State<BoothUserPage> with SingleTickerProvider
       const SizedBox(height: 10),
       Expanded(
         child: Builder(builder: (_) {
-          final curGpName = selectedPanchayat ?? (pList.isNotEmpty ? '${pList.first['name']}' : '');
+          final curGpName = validSelectedPanchayat ?? (pList.isNotEmpty ? '${pList.first['name']}' : '');
           final curGp = pList.firstWhere((p) => '${p['name']}' == curGpName, orElse: () => {});
           final wards = (curGp['wards'] as List? ?? []).map((w) => w.toString()).toList();
 
@@ -590,6 +698,7 @@ class _BoothUserPageState extends State<BoothUserPage> with SingleTickerProvider
         initialWard: initialWard,
         initialPart: initialPart,
         initialScope: initialScope,
+        initialSamiti: selectedSamitiFilter != 'all' ? selectedSamitiFilter : null,
         onSaved: _refresh,
       ),
     );
@@ -822,6 +931,7 @@ class _AddEditManagerDialog extends StatefulWidget {
     this.initialWard,
     this.initialPart,
     this.initialScope,
+    this.initialSamiti,
     required this.onSaved,
   });
 
@@ -833,6 +943,7 @@ class _AddEditManagerDialog extends StatefulWidget {
   final String? initialWard;
   final String? initialPart;
   final String? initialScope;
+  final String? initialSamiti;
   final VoidCallback onSaved;
 
   @override
@@ -960,6 +1071,9 @@ class _AddEditManagerDialogState extends State<_AddEditManagerDialog> {
         selectedRollCategory = 'municipal';
         selectedRollType = 'municipal';
         selectedScope = widget.initialScope ?? 'panchayat';
+        if (widget.initialSamiti != null && widget.initialSamiti!.isNotEmpty) {
+          selectedSamiti = widget.initialSamiti!;
+        }
         selectedGp = widget.initialPanchayat ?? (filteredPanchayats.isNotEmpty ? '${filteredPanchayats.first['name']}' : null);
         selectedWard = widget.initialWard;
         selectedRole = selectedScope == 'ward' ? 'ward_head' : 'booth';
