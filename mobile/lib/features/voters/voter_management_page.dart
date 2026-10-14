@@ -102,6 +102,9 @@ class _VoterManagementPageState extends State<VoterManagementPage> {
   String matchStatus = '';
   String queryMode = '';
   String nameLetter = '';
+  String supplementTypeFilter = '';
+  String supplementDateFilter = '';
+  String isDeletedFilter = '';
   int currentPage = 1;
   late Future<Map<String, dynamic>> dashboardFuture;
   late Future<VoterPageResult> votersFuture;
@@ -256,6 +259,9 @@ class _VoterManagementPageState extends State<VoterManagementPage> {
       if (selectedGroupId.isNotEmpty) 'groupId': selectedGroupId,
       'area': widget.initialAreaId,
       'letter': nameLetter,
+      if (supplementTypeFilter.isNotEmpty) 'supplementType': supplementTypeFilter,
+      if (supplementDateFilter.isNotEmpty) 'supplementDate': supplementDateFilter,
+      if (isDeletedFilter.isNotEmpty) 'isDeleted': isDeletedFilter,
       if (queryMode.isNotEmpty) 'qMode': queryMode,
       if (queryMode.isEmpty && nameLetter.isNotEmpty) 'qMode': 'name',
     };
@@ -341,6 +347,9 @@ class _VoterManagementPageState extends State<VoterManagementPage> {
       matchStatus = '';
       queryMode = '';
       nameLetter = '';
+      supplementTypeFilter = '';
+      supplementDateFilter = '';
+      isDeletedFilter = '';
       currentPage = 1;
       selectedIds.clear();
       selectedOptionFilters.clear();
@@ -1289,6 +1298,10 @@ class _VoterManagementPageState extends State<VoterManagementPage> {
     var nextGender = gender;
     var nextVerification = verificationStatus;
     var nextProfileCompletion = profileCompletionStatus;
+    var nextSupplementType = supplementTypeFilter.isNotEmpty
+        ? supplementTypeFilter
+        : (isDeletedFilter == 'true' ? 'deleted' : '');
+    final nextSupplementDate = TextEditingController(text: supplementDateFilter);
     final nextVillage = TextEditingController(text: village.text);
     final nextBooth = TextEditingController(text: boothNumber.text);
     final nextPartVillage = TextEditingController(text: partVillageValue);
@@ -1307,6 +1320,20 @@ class _VoterManagementPageState extends State<VoterManagementPage> {
           gender = nextGender;
           verificationStatus = nextVerification;
           profileCompletionStatus = nextProfileCompletion;
+          if (nextSupplementType == 'addition') {
+            supplementTypeFilter = 'addition';
+            isDeletedFilter = 'false';
+          } else if (nextSupplementType == 'deleted') {
+            supplementTypeFilter = '';
+            isDeletedFilter = 'true';
+          } else if (nextSupplementType == 'main') {
+            supplementTypeFilter = 'main';
+            isDeletedFilter = 'false';
+          } else {
+            supplementTypeFilter = '';
+            isDeletedFilter = '';
+          }
+          supplementDateFilter = nextSupplementDate.text.trim();
           for (final field in [
             'partVillage',
             'village',
@@ -1373,6 +1400,31 @@ class _VoterManagementPageState extends State<VoterManagementPage> {
                 ),
               ]),
               const SizedBox(height: 14),
+              DropdownButtonFormField<String>(
+                initialValue: nextSupplementType,
+                decoration: const InputDecoration(
+                    labelText: 'नामावली / पूरक सूची (List Type)',
+                    prefixIcon: Icon(Icons.menu_book_outlined)),
+                items: const [
+                  DropdownMenuItem(value: '', child: Text('सभी मतदाता (All)')),
+                  DropdownMenuItem(value: 'main', child: Text('मूल सूची (Main Roll)')),
+                  DropdownMenuItem(value: 'addition', child: Text('परिवर्धन सूची (Additions / Supp)')),
+                  DropdownMenuItem(value: 'deleted', child: Text('विलोपन सूची (Deleted Voters)')),
+                ],
+                onChanged: (value) =>
+                    setSheetState(() => nextSupplementType = value ?? ''),
+              ),
+              if (nextSupplementType == 'addition') ...[
+                const SizedBox(height: 12),
+                TextField(
+                  controller: nextSupplementDate,
+                  decoration: const InputDecoration(
+                    labelText: 'परिवर्धन दिनांक (उदा. 07-02-2026)',
+                    prefixIcon: Icon(Icons.calendar_today_outlined),
+                  ),
+                ),
+              ],
+              const SizedBox(height: 12),
               DropdownButtonFormField<String>(
                 initialValue: nextSupport,
                 decoration: const InputDecoration(
@@ -1615,6 +1667,7 @@ class _VoterManagementPageState extends State<VoterManagementPage> {
     nextOccupation.dispose();
     nextPinCode.dispose();
     nextVoterSerial.dispose();
+    nextSupplementDate.dispose();
   }
 
   void _showStarFilterSheet() {
@@ -7197,19 +7250,35 @@ class _VoterPhoto extends StatelessWidget {
   }
 }
 
-class _VoterCardImageSection extends StatelessWidget {
+class _VoterCardImageSection extends StatefulWidget {
   const _VoterCardImageSection({required this.voter});
   final Map<String, dynamic> voter;
 
   @override
+  State<_VoterCardImageSection> createState() => _VoterCardImageSectionState();
+}
+
+class _VoterCardImageSectionState extends State<_VoterCardImageSection> {
+  int _selectedTab = 0;
+
+  @override
   Widget build(BuildContext context) {
+    final voter = widget.voter;
+    final wardCard = '${voter['wardCardImage'] ?? ''}'.trim();
     final source = voter['sourceDocument'];
-    final path = (source is Map
+    final asmCard = (source is Map
             ? '${source['ocrCardImage'] ?? source['cardImage'] ?? ''}'
             : '${voter['ocrCardImage'] ?? voter['cardImage'] ?? ''}')
         .trim();
-    if (path.isEmpty) return const SizedBox.shrink();
-    final url = voterPhotoUrl(path);
+
+    final hasWard = wardCard.isNotEmpty;
+    final hasAsm = asmCard.isNotEmpty && asmCard != wardCard;
+
+    if (!hasWard && !hasAsm) return const SizedBox.shrink();
+
+    final activePath = (_selectedTab == 0 && hasWard) ? wardCard : (hasAsm ? asmCard : wardCard);
+    final url = voterPhotoUrl(activePath);
+
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.all(12),
@@ -7221,13 +7290,39 @@ class _VoterCardImageSection extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Row(children: [
-            Icon(Icons.document_scanner_outlined, color: blue, size: 20),
-            SizedBox(width: 8),
-            Text('मूल मतदाता कार्ड (Voter Card Image)',
-                style: TextStyle(
-                    fontWeight: FontWeight.w900, color: navy, fontSize: 15)),
-          ]),
+          Row(
+            children: [
+              const Icon(Icons.document_scanner_outlined, color: blue, size: 20),
+              const SizedBox(width: 8),
+              const Expanded(
+                child: Text(
+                  'मतदाता कार्ड पर्ची (Voter Card)',
+                  style: TextStyle(fontWeight: FontWeight.w900, color: navy, fontSize: 15),
+                ),
+              ),
+              if (hasWard && hasAsm)
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    ChoiceChip(
+                      label: const Text('वार्ड पर्ची', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+                      selected: _selectedTab == 0,
+                      onSelected: (val) => setState(() => _selectedTab = 0),
+                      visualDensity: VisualDensity.compact,
+                      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    ),
+                    const SizedBox(width: 4),
+                    ChoiceChip(
+                      label: const Text('विधानसभा', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+                      selected: _selectedTab == 1,
+                      onSelected: (val) => setState(() => _selectedTab = 1),
+                      visualDensity: VisualDensity.compact,
+                      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    ),
+                  ],
+                ),
+            ],
+          ),
           const SizedBox(height: 10),
           ClipRRect(
             borderRadius: BorderRadius.circular(8),

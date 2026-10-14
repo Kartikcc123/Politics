@@ -403,6 +403,27 @@ exports.list = async (req, res, next) => {
     if (req.query.hasMobile === 'true') filter.mobile = { $nin: ['', null], $exists: true };
     if (req.query.missingMobile === 'true') filter.$and = [...(filter.$and || []), { $or: [{ mobile: '' }, { mobile: null }, { mobile: { $exists: false } }] }];
     if (req.query.missingHouse === 'true') filter.$and = [...(filter.$and || []), { $or: [{ houseNumber: '' }, { houseNumber: null }, { houseNumber: { $exists: false } }] }];
+    if (req.query.supplementType) {
+      if (req.query.supplementType === 'addition' || req.query.supplementType === 'parivardhan') {
+        filter.supplementType = { $in: ['addition', 'parivardhan'] };
+      } else if (req.query.supplementType === 'main' || req.query.supplementType === 'mool') {
+        filter.supplementType = { $nin: ['addition', 'parivardhan'] };
+        filter.isDeleted = { $ne: true };
+      } else {
+        filter.supplementType = req.query.supplementType;
+      }
+    }
+    if (req.query.supplementDate) {
+      filter.supplementDate = req.query.supplementDate;
+    }
+    if (req.query.supplementNumber) {
+      filter.supplementNumber = Number(req.query.supplementNumber);
+    }
+    if (req.query.isDeleted === 'true') {
+      filter.isDeleted = true;
+    } else if (req.query.isDeleted === 'false') {
+      filter.isDeleted = { $ne: true };
+    }
     if (booth && req.currentUser.role === 'admin') filter.booth = booth;
     if (q) {
       const cleanMode = qMode ? String(qMode).trim().toLowerCase() : '';
@@ -457,7 +478,7 @@ exports.list = async (req, res, next) => {
 
     const listQuery = (query) => {
       let qBuilder = Member.find(query)
-        .select('contactType photo ocrCardImage cardImage name surname relativeName mobile altMobile dob estimatedDob anniversary voterId voterSerial wardVoterSerial wardSerialMap wardNumber guardianName houseNumber address location area tehsil gramPanchayat village municipality caste subCaste organizationPost organizationLevel influenceLevel occupation workplaceState workplaceCity workplaceVillage spouseName marriageState marriageCity marriageVillage education extraDetails supportLevel partyPreference isFavorite favoriteRating groups labels ward booth updatedAt age gender sectionNumber sectionName assemblyNumber assemblyName partNumber partName postOffice policeStation district pinCode verificationStatus profileCompletionStatus profileCompletedBy profileCompletedAt ocrConfidence houseNumberConfidence locationMatchConfidence locationResolution ocrReviewReasons ocrValidationPassed ocrFieldConfidence ocrValues sourceDocument hasAssemblyMembership hasMunicipalMembership municipalWardNumbers googleMapUrl')
+        .select('contactType photo ocrCardImage cardImage wardCardImage isDeleted deletionReason deletionSupplement deletionDate supplementType supplementNumber supplementDate name surname relativeName mobile altMobile dob estimatedDob anniversary voterId voterSerial wardVoterSerial wardSerialMap wardNumber guardianName houseNumber address location area tehsil gramPanchayat village municipality caste subCaste organizationPost organizationLevel influenceLevel occupation workplaceState workplaceCity workplaceVillage spouseName marriageState marriageCity marriageVillage education extraDetails supportLevel partyPreference isFavorite favoriteRating groups labels ward booth updatedAt age gender sectionNumber sectionName assemblyNumber assemblyName partNumber partName postOffice policeStation district pinCode verificationStatus profileCompletionStatus profileCompletedBy profileCompletedAt ocrConfidence houseNumberConfidence locationMatchConfidence locationResolution ocrReviewReasons ocrValidationPassed ocrFieldConfidence ocrValues sourceDocument hasAssemblyMembership hasMunicipalMembership municipalWardNumbers googleMapUrl')
         .populate(populate)
         .sort(sortObj);
       if (hasLocationScope) {
