@@ -5,6 +5,7 @@ import '../../core/api_client.dart';
 import '../../core/contact_actions.dart';
 import '../../core/theme.dart';
 import '../../layout/app_layout.dart';
+import '../voters/voter_management_page.dart';
 
 class BoothUserPage extends StatefulWidget {
   const BoothUserPage({super.key});
@@ -1754,10 +1755,30 @@ class _UserWorkStatsSheetState extends State<_UserWorkStatsSheet> {
 
   Future<void> _fetchStats() async {
     try {
-      final res = await api.get('/api/auth/users/${widget.user['_id']}/work-stats');
+      dynamic res;
+      try {
+        res = await api.get('/api/auth/users/${widget.user['_id']}/work-summary');
+      } catch (_) {
+        res = await api.get('/api/auth/users/${widget.user['_id']}/work-stats');
+      }
       if (mounted) {
+        final data = Map<String, dynamic>.from(res is Map ? res : {});
+        final innerStats = data['stats'] is Map ? Map<String, dynamic>.from(data['stats']) : <String, dynamic>{};
+
+        final editedCount = data['votersEdited'] ?? innerStats['votersEdited'] ?? innerStats['votersUpdated'] ?? innerStats['updatedByCount'] ?? 0;
+        final mobilesCount = data['mobilesAdded'] ?? innerStats['mobilesAdded'] ?? 0;
+        final voteCount = data['voteStatusMarked'] ?? innerStats['voteStatusMarked'] ?? 0;
+        final favCount = data['favoritesMarked'] ?? innerStats['favoritesMarked'] ?? 0;
+        final recentList = data['recentActivity'] ?? data['recentActivities'] ?? innerStats['recentActivities'] ?? [];
+
+        data['votersEdited'] = editedCount;
+        data['mobilesAdded'] = mobilesCount;
+        data['voteStatusMarked'] = voteCount;
+        data['favoritesMarked'] = favCount;
+        data['recentActivity'] = recentList;
+
         setState(() {
-          stats = Map<String, dynamic>.from(res);
+          stats = data;
           loading = false;
         });
       }
@@ -1840,7 +1861,28 @@ class _UserWorkStatsSheetState extends State<_UserWorkStatsSheet> {
           else if (error != null)
             Padding(
               padding: const EdgeInsets.all(20),
-              child: Center(child: Text(error!, style: const TextStyle(color: Colors.red))),
+              child: Center(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.error_outline_rounded, color: Colors.red, size: 36),
+                    const SizedBox(height: 8),
+                    Text(error!, style: const TextStyle(color: Colors.red, fontSize: 13), textAlign: TextAlign.center),
+                    const SizedBox(height: 12),
+                    ElevatedButton.icon(
+                      onPressed: () {
+                        setState(() {
+                          loading = true;
+                          error = null;
+                        });
+                        _fetchStats();
+                      },
+                      icon: const Icon(Icons.refresh_rounded, size: 16),
+                      label: const Text('पुनः प्रयास करें'),
+                    ),
+                  ],
+                ),
+              ),
             )
           else ...[
             // KPI Summary Grid
@@ -1859,14 +1901,47 @@ class _UserWorkStatsSheetState extends State<_UserWorkStatsSheet> {
                 Expanded(child: _kpiCard('⭐ फ़ेवरेट मार्क', '${stats?['favoritesMarked'] ?? 0}', const Color(0xffd97706))),
               ],
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton.icon(
+                onPressed: () {
+                  final gps = (widget.user['assignedGramPanchayats'] as List? ?? []).map((e) => e.toString()).toList();
+                  final wards = (widget.user['assignedWards'] as List? ?? []).map((e) => e.toString()).toList();
+                  Navigator.pop(context);
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => VoterManagementPage(
+                        initialGramPanchayat: gps.isNotEmpty ? gps.first : null,
+                        initialWard: wards.isNotEmpty ? wards.first : null,
+                        initialUpdatedBy: '${widget.user['_id']}',
+                        initialUpdatedByName: '${widget.user['name'] ?? 'कार्यकर्ता'}',
+                      ),
+                    ),
+                  );
+                },
+                icon: const Icon(Icons.people_alt_rounded, size: 18),
+                label: Text(
+                  'इस कार्यकर्ता द्वारा अपडेट किए मतदाता देखें (${stats?['votersEdited'] ?? 0})',
+                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                ),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xff2563eb),
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 11),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                ),
+              ),
+            ),
+            const SizedBox(height: 14),
             const Text('हाल की गतिविधियां (Recent Activity Log):',
                 style: TextStyle(color: navy, fontSize: 13, fontWeight: FontWeight.bold)),
             const SizedBox(height: 8),
             Expanded(
               child: Builder(
                 builder: (_) {
-                  final recent = (stats?['recentActivity'] as List? ?? []);
+                  final recent = (stats?['recentActivity'] as List? ?? stats?['recentActivities'] as List? ?? []);
                   if (recent.isEmpty) {
                     return Container(
                       padding: const EdgeInsets.all(20),
@@ -1889,7 +1964,7 @@ class _UserWorkStatsSheetState extends State<_UserWorkStatsSheet> {
                       final act = recent[idx];
                       final actionStr = '${act['action'] ?? ''}';
                       final createdAt = '${act['createdAt'] ?? ''}';
-                      final details = act['details'] as Map? ?? {};
+                      final details = act['details'] as Map? ?? (act['after'] as Map? ?? (act['before'] as Map? ?? {}));
 
                       String actionLabel = actionStr;
                       IconData actionIcon = Icons.edit_note_rounded;
@@ -1919,6 +1994,20 @@ class _UserWorkStatsSheetState extends State<_UserWorkStatsSheet> {
                         } catch (_) {}
                       }
 
+                      final voterName = details['name'] ?? '';
+                      final voterId = details['voterId'] ?? '';
+                      final voterMobile = details['mobile'] ?? '';
+                      final gp = details['gramPanchayat'] ?? '';
+                      final ward = details['wardNumber'] ?? '';
+
+                      final subParts = <String>[
+                        if ('$voterName'.isNotEmpty) '$voterName',
+                        if ('$voterId'.isNotEmpty) '$voterId',
+                        if ('$voterMobile'.isNotEmpty) '📞 $voterMobile',
+                        if ('$gp'.isNotEmpty) '$gp',
+                        if ('$ward'.isNotEmpty) 'वार्ड $ward',
+                      ];
+
                       return ListTile(
                         dense: true,
                         contentPadding: EdgeInsets.zero,
@@ -1929,7 +2018,7 @@ class _UserWorkStatsSheetState extends State<_UserWorkStatsSheet> {
                         ),
                         title: Text(actionLabel, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13, color: navy)),
                         subtitle: Text(
-                          details['name'] != null ? 'मतदाता: ${details['name']} (${details['voterId'] ?? ''})' : (details['voterId'] != null ? 'EPIC: ${details['voterId']}' : ''),
+                          subParts.isNotEmpty ? subParts.join(' · ') : 'मतदाता संपादन',
                           style: const TextStyle(fontSize: 11, color: muted),
                         ),
                         trailing: Text(dateDisplay, style: const TextStyle(fontSize: 10, color: muted)),

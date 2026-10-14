@@ -278,6 +278,16 @@ exports.list = async (req, res, next) => {
         filter.labels = String(req.query.group).trim();
       }
     }
+    if (req.query.updatedBy) {
+      if (mongoose.Types.ObjectId.isValid(req.query.updatedBy)) {
+        filter.updatedBy = new mongoose.Types.ObjectId(req.query.updatedBy);
+      }
+    }
+    if (req.query.createdBy) {
+      if (mongoose.Types.ObjectId.isValid(req.query.createdBy)) {
+        filter.createdBy = new mongoose.Types.ObjectId(req.query.createdBy);
+      }
+    }
     const addOrClause = (conditions) => {
       if (!conditions || !conditions.length) return;
       if (filter.$or) {
@@ -1245,9 +1255,13 @@ exports.update = async (req, res, next) => {
   const canEditAnubhag = isUserAdmin || user.permissions?.canEditAnubhag !== false;
   const canEditEpic = isUserAdmin || user.permissions?.canEditEpic === true;
 
-  // Allow update if user has at least one relevant permission (voters, photo, party, or anubhag)
+  // Allow update if user has at least one relevant permission (voters, photo, party, or anubhag),
+  // or if the request is toggling favorite / star status
+  const isFavoriteToggle = (req.body?.isFavorite !== undefined || req.body?.favoriteRating !== undefined) &&
+    !Object.keys(req.body || {}).some((k) => !['isFavorite', 'favoriteRating', '_id', 'id'].includes(k));
+
   const canDoAnyEdit = canEditVoters || canEditPhoto || canEditParty || canEditAnubhag;
-  if (!canDoAnyEdit) {
+  if (!canDoAnyEdit && !isFavoriteToggle) {
     try { requirePermission(user, 'canEditVoters'); } catch (error) { return next(error); }
   }
   try {
@@ -1260,7 +1274,16 @@ exports.update = async (req, res, next) => {
     if (req.body.ward) assertWardAccess(req.currentUser, req.body.ward);
     const before = member.toObject();
     const updates = { ...req.body };
-    if (!isUserAdmin) delete updates.isFavorite;
+
+    // Favorite status & rating: allowed for all authenticated users who have access to the member
+    if (updates.favoriteRating !== undefined && updates.favoriteRating !== null && updates.favoriteRating !== '') {
+      const parsedRating = parseInt(updates.favoriteRating, 10);
+      updates.favoriteRating = isNaN(parsedRating) ? 0 : Math.max(0, Math.min(3, parsedRating));
+      updates.isFavorite = updates.favoriteRating > 0;
+    } else if (updates.isFavorite !== undefined) {
+      updates.isFavorite = updates.isFavorite === true || updates.isFavorite === 'true';
+      updates.favoriteRating = updates.isFavorite ? Math.max(1, Number(member.favoriteRating) || 0) : 0;
+    }
 
     // Only if canEditVoters is explicitly false, protect demographic fields
     if (!canEditVoters && member.contactType !== 'personal') {
@@ -1402,6 +1425,15 @@ exports.update = async (req, res, next) => {
     await member.save();
     await syncMemberFamily(member, req.currentUser._id);
     await writeActivity({ req, action: 'member.updated', module: 'members', entityId: member._id, before, after: member });
+    if (!before.isFavorite && member.isFavorite) {
+      await writeActivity({
+        req,
+        action: 'member.favorite',
+        module: 'members',
+        entityId: member._id,
+        after: { isFavorite: member.isFavorite, favoriteRating: member.favoriteRating },
+      });
+    }
     invalidateMemberData();
     res.json(await Member.findById(member._id).populate(populate));
   } catch (error) {
@@ -1634,6 +1666,16 @@ exports.toggleFavorite = async (req, res, next) => {
     const { rating } = req.body || {};
     const member = await Member.findById(id);
     if (!member) return res.status(404).json({ message: 'Member not found.' });
+    try {
+      assertMemberAccess(req.currentUser, member);
+      assertBoothAccess(req.currentUser, member.booth);
+      assertWardAccess(req.currentUser, member.ward);
+    } catch (accessErr) {
+      // If user has GP/ward level access to this voter or admin, allow favoriting even if rollType flag is mismatched
+      const isScopeOk = req.currentUser.role === 'admin' ||
+        (!req.currentUser.assignedGramPanchayats?.length || req.currentUser.assignedGramPanchayats.includes(member.gramPanchayat));
+      if (!isScopeOk) throw accessErr;
+    }
 
     if (rating !== undefined && rating !== null) {
       const parsed = parseInt(rating, 10);
@@ -1650,7 +1692,7 @@ exports.toggleFavorite = async (req, res, next) => {
       action: 'member.favorite',
       module: 'members',
       entityId: member._id,
-      after: { isFavorite: member.isFavorite, favoriteRating: member.favoriteRating },
+      after: { isFavorite: member.isFavorite, favoriteRating: member.favoriteRating, name: member.name, voterId: member.voterId, mobile: member.mobile },
     });
     invalidateMemberData();
 
@@ -1659,6 +1701,7 @@ exports.toggleFavorite = async (req, res, next) => {
       message: member.isFavorite ? `पसंदीदा (${starDesc}) में जोड़ा गया` : 'पसंदीदा सूची से हटाया गया',
       isFavorite: member.isFavorite,
       favoriteRating: member.favoriteRating,
+      member: member.toObject(),
     });
   } catch (error) {
     next(error);

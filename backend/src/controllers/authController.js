@@ -324,14 +324,63 @@ exports.userWorkSummary = async (req, res, next) => {
   try {
     const user = await User.findById(req.params.id).populate('assignedWard assignedBooth');
     if (!user) return res.status(404).json({ message: 'User not found' });
-    const [recentActivities, stats] = await Promise.all([
-      Activity.find({ actor: user._id }).sort({ createdAt: -1 }).limit(50).lean(),
+    const [
+      recentActivities,
+      stats,
+      memberUpdatedCount,
+      memberCreatedCount,
+      mobilesAddedCount,
+      favoritesMarkedCount,
+      votedCount,
+    ] = await Promise.all([
+      Activity.find({ actor: user._id }).sort({ createdAt: -1 }).limit(100).lean(),
       userWorkStats(),
+      Member.countDocuments({ updatedBy: user._id }),
+      Member.countDocuments({ createdBy: user._id }),
+      Member.countDocuments({ updatedBy: user._id, mobile: { $exists: true, $nin: ['', null] } }),
+      Member.countDocuments({ updatedBy: user._id, isFavorite: true }),
+      Member.countDocuments({ updatedBy: user._id, voted: { $in: [true, 'true'] } }),
     ]);
+
+    const baseStats = statsForUser(stats, user);
+    const votersEdited = Math.max(baseStats.votersUpdated || 0, memberUpdatedCount || 0);
+    const votersCreated = Math.max(baseStats.votersCreated || 0, memberCreatedCount || 0);
+    const mobilesAdded = Math.max(baseStats.mobilesAdded || 0, mobilesAddedCount || 0);
+    const favoritesMarked = Math.max(baseStats.favoritesMarked || 0, favoritesMarkedCount || 0);
+    const voteStatusMarked = Math.max(baseStats.voteStatusMarked || 0, votedCount || 0);
+
+    const formattedActivities = recentActivities.map((a) => {
+      const details = {
+        name: a.after?.name || a.before?.name || '',
+        voterId: a.after?.voterId || a.before?.voterId || '',
+        mobile: a.after?.mobile || a.before?.mobile || '',
+        wardNumber: a.after?.wardNumber || a.before?.wardNumber || '',
+        gramPanchayat: a.after?.gramPanchayat || a.before?.gramPanchayat || '',
+      };
+      return {
+        ...a,
+        details,
+      };
+    });
+
+    const unifiedStats = {
+      ...baseStats,
+      votersEdited,
+      votersUpdated: votersEdited,
+      votersCreated,
+      mobilesAdded,
+      favoritesMarked,
+      voteStatusMarked,
+      recentActivity: formattedActivities,
+      recentActivities: formattedActivities,
+    };
+
     res.json({
       user: publicUser(user),
-      stats: statsForUser(stats, user),
-      recentActivities,
+      stats: unifiedStats,
+      ...unifiedStats,
+      recentActivities: formattedActivities,
+      recentActivity: formattedActivities,
     });
   } catch (error) {
     next(error);

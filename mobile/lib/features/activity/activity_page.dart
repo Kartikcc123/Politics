@@ -132,9 +132,14 @@ String _description(Map item) {
       : before is Map
           ? '${before['name'] ?? before['title'] ?? ''}'.trim()
           : '';
-  final actor = item['user'] is Map
-      ? '${item['user']['name'] ?? ''}'.trim()
+  final actorObj = item['actor'] ?? item['user'];
+  final actorName = actorObj is Map
+      ? '${actorObj['name'] ?? ''}'.trim()
       : '${item['userName'] ?? ''}'.trim();
+  final actorRole = actorObj is Map && '${actorObj['role'] ?? ''}'.isNotEmpty && actorObj['role'] != 'admin'
+      ? ' (${actorObj['role'] == 'ward_head' ? 'वार्ड प्रभारी' : actorObj['role'] == 'booth' ? 'बूथ प्रबंधक' : 'कार्यकर्ता'})'
+      : '';
+  final actor = actorName.isNotEmpty ? '$actorName$actorRole' : '';
   final date = _date(item['createdAt']);
   final values = [
     if (person.isNotEmpty) person,

@@ -239,6 +239,19 @@ class OfflineVoterCache {
       if (query['favorite'] == 'true' && item['isFavorite'] != true) {
         return false;
       }
+      if (query['favoriteRating'] != null && query['favoriteRating'].toString().isNotEmpty) {
+        final reqRating = int.tryParse(query['favoriteRating'].toString()) ?? 0;
+        final itemRating = int.tryParse('${item['favoriteRating']}') ?? (item['isFavorite'] == true ? 1 : 0);
+        if (reqRating > 0 && itemRating != reqRating) {
+          return false;
+        }
+      }
+      if (query['updatedBy'] != null && query['updatedBy'].toString().isNotEmpty) {
+        final targetUser = query['updatedBy'].toString();
+        final itemUpdatedBy = item['updatedBy'];
+        final updatedById = itemUpdatedBy is Map ? '${itemUpdatedBy['_id'] ?? ''}' : '$itemUpdatedBy';
+        if (updatedById != targetUser) return false;
+      }
       final groupId = query['groupId'] ?? '';
       if (groupId.isNotEmpty) {
         final groups = item['groups'] as List? ?? const [];

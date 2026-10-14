@@ -173,6 +173,9 @@ class Api {
       throw NetworkRequestException(
           'Server is restarting or temporarily unavailable (${res.statusCode}).');
     }
+    if (res.statusCode == 404) {
+      throw Exception('अनुरोधित डेटा या रूट उपलब्ध नहीं है (404 Not Found)');
+    }
     dynamic body;
     final contentType = res.headers['content-type'] ?? '';
     if (res.body.isEmpty) {

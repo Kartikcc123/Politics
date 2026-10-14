@@ -39,6 +39,8 @@ class VoterManagementPage extends StatefulWidget {
     this.initialWard,
     this.initialMunicipality,
     this.initialFavoriteFilter = false,
+    this.initialUpdatedBy,
+    this.initialUpdatedByName,
   });
 
   final String? initialAreaId;
@@ -51,6 +53,8 @@ class VoterManagementPage extends StatefulWidget {
   final String? initialWard;
   final String? initialMunicipality;
   final bool initialFavoriteFilter;
+  final String? initialUpdatedBy;
+  final String? initialUpdatedByName;
 
   @override
   State<VoterManagementPage> createState() => _VoterManagementPageState();
@@ -83,6 +87,8 @@ class _VoterManagementPageState extends State<VoterManagementPage> {
   bool showAdvancedFilters = false;
   bool favoriteOnly = false;
   int favoriteRatingFilter = 0;
+  String updatedByFilter = '';
+  String updatedByNameFilter = '';
   String selectedGroupId = '';
   String selectedGroupName = '';
   bool searchOptionsVisible = false;
@@ -141,6 +147,10 @@ class _VoterManagementPageState extends State<VoterManagementPage> {
     profileCompletionStatus = widget.initialProfileCompletionStatus ?? '';
     if (widget.initialFavoriteFilter) {
       favoriteOnly = true;
+    }
+    if (widget.initialUpdatedBy != null && widget.initialUpdatedBy!.isNotEmpty) {
+      updatedByFilter = widget.initialUpdatedBy!;
+      updatedByNameFilter = widget.initialUpdatedByName ?? 'कार्यकर्ता';
     }
     if (widget.initialVillage != null && widget.initialVillage!.isNotEmpty) {
       village.text = widget.initialVillage!;
@@ -242,6 +252,7 @@ class _VoterManagementPageState extends State<VoterManagementPage> {
       'profileCompletionStatus': profileCompletionStatus,
       'favorite': (favoriteOnly || favoriteRatingFilter > 0) ? 'true' : '',
       if (favoriteRatingFilter > 0) 'favoriteRating': '$favoriteRatingFilter',
+      if (updatedByFilter.isNotEmpty) 'updatedBy': updatedByFilter,
       if (selectedGroupId.isNotEmpty) 'groupId': selectedGroupId,
       'area': widget.initialAreaId,
       'letter': nameLetter,
@@ -322,6 +333,9 @@ class _VoterManagementPageState extends State<VoterManagementPage> {
       verificationStatus = '';
       profileCompletionStatus = '';
       favoriteOnly = false;
+      favoriteRatingFilter = 0;
+      updatedByFilter = '';
+      updatedByNameFilter = '';
       contactTypeFilter = '';
       rollType = _defaultRollType;
       matchStatus = '';
@@ -442,6 +456,27 @@ class _VoterManagementPageState extends State<VoterManagementPage> {
           '⭐ केवल फ़ेवरेट',
           () => setState(() {
                 favoriteOnly = false;
+                currentPage = 1;
+                refreshVoters();
+              }));
+    }
+    if (favoriteRatingFilter > 0) {
+      add(
+          'स्टार',
+          '$favoriteRatingFilter★ पसंदीदा',
+          () => setState(() {
+                favoriteRatingFilter = 0;
+                currentPage = 1;
+                refreshVoters();
+              }));
+    }
+    if (updatedByFilter.isNotEmpty) {
+      add(
+          'कार्यकर्ता',
+          '👤 $updatedByNameFilter',
+          () => setState(() {
+                updatedByFilter = '';
+                updatedByNameFilter = '';
                 currentPage = 1;
                 refreshVoters();
               }));
@@ -4073,32 +4108,108 @@ class _PhoneContactTile extends StatelessWidget {
                         PartyPreferenceChip(
                           value: '${voter['partyPreference'] ?? 'undecided'}',
                         ),
+                      if (voter['updatedBy'] != null)
+                        _MembershipBadge(
+                          label: 'संपादक: ${voter['updatedBy'] is Map ? (voter['updatedBy']['name'] ?? '') : ''}',
+                          color: const Color(0xff7c3aed),
+                        ),
                     ]),
                   ),
                   // Action buttons
                   Row(mainAxisSize: MainAxisSize.min, children: [
-                    IconButton(
-                      tooltip: voter['isFavorite'] == true
-                            ? 'Favorites से हटाएं'
-                            : 'Favorites में जोड़ें',
-                        onPressed: () async {
-                          final updated =
-                              await api.put('/api/members/${voter['_id']}', {
-                            'isFavorite': voter['isFavorite'] != true,
-                          });
-                          voter['isFavorite'] = updated['isFavorite'] == true;
-                          await OfflineVoterCache.merge([updated]);
+                    GestureDetector(
+                      onLongPress: () async {
+                        final current = int.tryParse('${voter['favoriteRating']}') ?? (voter['isFavorite'] == true ? 1 : 0);
+                        final chosen = await showModalBottomSheet<int>(
+                          context: context,
+                          shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(16))),
+                          builder: (ctx) => SafeArea(
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const Padding(
+                                  padding: EdgeInsets.all(16),
+                                  child: Text('पसंदीदा स्टार चुनें (Favorite Priority)', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                                ),
+                                ListTile(
+                                  leading: const Icon(Icons.star_border, color: Colors.grey),
+                                  title: const Text('पसंदीदा से हटाएं (0 Star)'),
+                                  trailing: current == 0 ? const Icon(Icons.check, color: Colors.blue) : null,
+                                  onTap: () => Navigator.pop(ctx, 0),
+                                ),
+                                ListTile(
+                                  leading: const Icon(Icons.star, color: Colors.amber),
+                                  title: const Text('★ 1 Star - सामान्य समर्थक'),
+                                  trailing: current == 1 ? const Icon(Icons.check, color: Colors.blue) : null,
+                                  onTap: () => Navigator.pop(ctx, 1),
+                                ),
+                                ListTile(
+                                  leading: Row(mainAxisSize: MainAxisSize.min, children: const [Icon(Icons.star, color: Colors.amber, size: 18), Icon(Icons.star, color: Colors.amber, size: 18)]),
+                                  title: const Text('★★ 2 Star - प्रमुख समर्थक / कार्यकर्ता'),
+                                  trailing: current == 2 ? const Icon(Icons.check, color: Colors.blue) : null,
+                                  onTap: () => Navigator.pop(ctx, 2),
+                                ),
+                                ListTile(
+                                  leading: Row(mainAxisSize: MainAxisSize.min, children: const [Icon(Icons.star, color: Colors.amber, size: 18), Icon(Icons.star, color: Colors.amber, size: 18), Icon(Icons.star, color: Colors.amber, size: 18)]),
+                                  title: const Text('★★★ 3 Star - VIP / कोर वोटर'),
+                                  trailing: current == 3 ? const Icon(Icons.check, color: Colors.blue) : null,
+                                  onTap: () => Navigator.pop(ctx, 3),
+                                ),
+                                const SizedBox(height: 8),
+                              ],
+                            ),
+                          ),
+                        );
+                        if (chosen != null) {
+                          final res = await api.toggleFavorite(voter['_id'], rating: chosen);
+                          voter['isFavorite'] = res['isFavorite'] == true;
+                          voter['favoriteRating'] = res['favoriteRating'] ?? chosen;
+                          await OfflineVoterCache.merge([voter]);
                           onChanged();
+                          if (context.mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(res['message'] ?? 'पसंदीदा अपडेट हो गया।'), duration: const Duration(seconds: 1)));
+                          }
+                        }
+                      },
+                      child: IconButton(
+                        tooltip: voter['isFavorite'] == true
+                            ? 'Favorites से हटाएं (लंबा दबाएं: 1-3★)'
+                            : 'Favorites में जोड़ें (लंबा दबाएं: 1-3★)',
+                        onPressed: () async {
+                          final res = await api.toggleFavorite(voter['_id']);
+                          voter['isFavorite'] = res['isFavorite'] == true;
+                          voter['favoriteRating'] = res['favoriteRating'] ?? (voter['isFavorite'] == true ? 1 : 0);
+                          await OfflineVoterCache.merge([voter]);
+                          onChanged();
+                          if (context.mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text(res['message'] ?? (voter['isFavorite'] == true ? 'पसंदीदा में जोड़ा गया।' : 'पसंदीदा से हटाया गया।')),
+                                duration: const Duration(seconds: 1),
+                              ),
+                            );
+                          }
                         },
-                        icon: Icon(
-                          voter['isFavorite'] == true
-                              ? Icons.star_rounded
-                              : Icons.star_border_rounded,
-                          color: voter['isFavorite'] == true ? orange : muted,
-                          size: 20,
+                        icon: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              voter['isFavorite'] == true
+                                  ? Icons.star_rounded
+                                  : Icons.star_border_rounded,
+                              color: voter['isFavorite'] == true ? orange : muted,
+                              size: 20,
+                            ),
+                            if ((int.tryParse('${voter['favoriteRating']}') ?? (voter['isFavorite'] == true ? 1 : 0)) > 1)
+                              Text(
+                                '${voter['favoriteRating']}',
+                                style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: orange),
+                              ),
+                          ],
                         ),
                         visualDensity: VisualDensity.compact,
                       ),
+                    ),
                     IconButton(
                       tooltip: 'WhatsApp पर शेयर करें',
                       onPressed: () => shareVoterDetails(context, voter),
@@ -6838,6 +6949,11 @@ class _VoterRow extends StatelessWidget {
                             _InfoPill(Icons.location_on_rounded, place),
                           if (mobile.isNotEmpty)
                             _InfoPill(Icons.phone_rounded, mobile),
+                          if (member['updatedBy'] != null)
+                            _InfoPill(
+                              Icons.edit_note_rounded,
+                              'संपादक: ${member['updatedBy'] is Map ? (member['updatedBy']['name'] ?? member['updatedBy']['username'] ?? '') : (member['updatedByName'] ?? '')}',
+                            ),
                         ]),
                       ]),
                 ),
@@ -6878,29 +6994,121 @@ class _VoterRow extends StatelessWidget {
                   value: '${member['partyPreference'] ?? 'undecided'}',
                 ),
                 const Spacer(),
-                if (api.user?['role'] == 'admin')
-                  IconButton.filledTonal(
+                GestureDetector(
+                  onLongPress: () async {
+                    final current = int.tryParse('${member['favoriteRating']}') ?? (member['isFavorite'] == true ? 1 : 0);
+                    final chosen = await showModalBottomSheet<int>(
+                      context: context,
+                      backgroundColor: Colors.transparent,
+                      builder: (ctx) => Container(
+                        padding: const EdgeInsets.all(20),
+                        decoration: const BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+                        ),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Text('पसंदीदा रेटिंग (प्राथमिकता) चुनें',
+                                style: TextStyle(fontWeight: FontWeight.w900, fontSize: 16)),
+                            const SizedBox(height: 16),
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                              children: [
+                                OutlinedButton(
+                                  onPressed: () => Navigator.pop(ctx, 0),
+                                  child: const Text('हटाएं (0)'),
+                                ),
+                                for (int s = 1; s <= 3; s++)
+                                  ElevatedButton.icon(
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: current == s ? orange : Colors.amber.shade50,
+                                      foregroundColor: current == s ? Colors.white : Colors.amber.shade900,
+                                    ),
+                                    onPressed: () => Navigator.pop(ctx, s),
+                                    icon: const Icon(Icons.star, size: 16),
+                                    label: Text('$s ★'),
+                                  ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                    if (chosen != null) {
+                      try {
+                        final res = await api.toggleFavorite('${member['_id']}', rating: chosen);
+                        member['isFavorite'] = res['isFavorite'] == true;
+                        member['favoriteRating'] = res['favoriteRating'] ?? (member['isFavorite'] == true ? 1 : 0);
+                        if (res['member'] is Map) {
+                          await OfflineVoterCache.merge([res['member']]);
+                        }
+                        refresh();
+                      } catch (e) {
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text('पसंदीदा अपडेट नहीं हुआ: $e'), backgroundColor: Colors.red),
+                          );
+                        }
+                      }
+                    }
+                  },
+                  child: IconButton.filledTonal(
                     tooltip: member['isFavorite'] == true
-                        ? 'Favorites से हटाएं'
+                        ? 'Favorites से हटाएं (दबाकर रखें रेटिंग के लिए)'
                         : 'Favorites में जोड़ें',
                     onPressed: () async {
-                      final updated =
-                          await api.put('/api/members/${member['_id']}', {
-                        'isFavorite': member['isFavorite'] != true,
-                      });
-                      member['isFavorite'] = updated['isFavorite'] == true;
-                      await OfflineVoterCache.merge([updated]);
-                      refresh();
+                      final current = int.tryParse('${member['favoriteRating']}') ?? (member['isFavorite'] == true ? 1 : 0);
+                      final next = current == 0 ? 1 : 0;
+                      try {
+                        final res = await api.toggleFavorite('${member['_id']}', rating: next);
+                        member['isFavorite'] = res['isFavorite'] == true;
+                        member['favoriteRating'] = res['favoriteRating'] ?? (member['isFavorite'] == true ? 1 : 0);
+                        if (res['member'] is Map) {
+                          await OfflineVoterCache.merge([res['member']]);
+                        }
+                        refresh();
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text(res['message'] ?? (member['isFavorite'] == true ? 'पसंदीदा में जोड़ा गया।' : 'पसंदीदा से हटाया गया।')),
+                              duration: const Duration(seconds: 1),
+                              behavior: SnackBarBehavior.floating,
+                            ),
+                          );
+                        }
+                      } catch (e) {
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text('पसंदीदा अपडेट नहीं हुआ: $e'), backgroundColor: Colors.red),
+                          );
+                        }
+                      }
                     },
-                    icon: Icon(
-                      member['isFavorite'] == true
-                          ? Icons.star_rounded
-                          : Icons.star_border_rounded,
-                      color: member['isFavorite'] == true ? orange : muted,
-                      size: 19,
+                    icon: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          member['isFavorite'] == true
+                              ? Icons.star_rounded
+                              : Icons.star_border_rounded,
+                          color: member['isFavorite'] == true ? orange : muted,
+                          size: 19,
+                        ),
+                        if ((int.tryParse('${member['favoriteRating']}') ?? (member['isFavorite'] == true ? 1 : 0)) > 1)
+                          Text(
+                            '${member['favoriteRating']}',
+                            style: const TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.w900,
+                              color: orange,
+                            ),
+                          ),
+                      ],
                     ),
                   ),
-                if (api.user?['role'] == 'admin') const SizedBox(width: 6),
+                ),
+                const SizedBox(width: 6),
                 IconButton.filledTonal(
                   tooltip: 'कॉल करें',
                   onPressed:
@@ -7089,13 +7297,103 @@ class _VoterDetailPageState extends State<VoterDetailPage> {
   }
 
   Future<void> _toggleFavorite() async {
-    final updated = await api.put('/api/members/${voter['_id']}', {
-      'isFavorite': voter['isFavorite'] != true,
-    });
-    await OfflineVoterCache.merge([updated]);
-    if (mounted) {
-      setState(() => voter = Map<String, dynamic>.from(updated));
-      widget.onChanged();
+    final current = int.tryParse('${voter['favoriteRating']}') ?? (voter['isFavorite'] == true ? 1 : 0);
+    final next = current == 0 ? 1 : 0;
+    try {
+      final res = await api.toggleFavorite('${voter['_id']}', rating: next);
+      if (mounted) {
+        setState(() {
+          voter['isFavorite'] = res['isFavorite'] == true;
+          voter['favoriteRating'] = res['favoriteRating'] ?? (voter['isFavorite'] == true ? 1 : 0);
+        });
+        widget.onChanged();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(res['message'] ?? (voter['isFavorite'] == true ? 'पसंदीदा में जोड़ा गया।' : 'पसंदीदा से हटाया गया।')),
+            duration: const Duration(seconds: 1),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+      if (res['member'] is Map) {
+        await OfflineVoterCache.merge([res['member']]);
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('पसंदीदा अपडेट नहीं हुआ: $e'), backgroundColor: Colors.red),
+        );
+      }
+    }
+  }
+
+  Future<void> _showRatingPicker() async {
+    final current = int.tryParse('${voter['favoriteRating']}') ?? (voter['isFavorite'] == true ? 1 : 0);
+    final chosen = await showModalBottomSheet<int>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => Container(
+        padding: const EdgeInsets.all(20),
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text('पसंदीदा रेटिंग (प्राथमिकता) चुनें',
+                style: TextStyle(fontWeight: FontWeight.w900, fontSize: 16)),
+            const SizedBox(height: 16),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+              children: [
+                OutlinedButton(
+                  onPressed: () => Navigator.pop(ctx, 0),
+                  child: const Text('हटाएं (0)'),
+                ),
+                for (int s = 1; s <= 3; s++)
+                  ElevatedButton.icon(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: current == s ? orange : Colors.amber.shade50,
+                      foregroundColor: current == s ? Colors.white : Colors.amber.shade900,
+                    ),
+                    onPressed: () => Navigator.pop(ctx, s),
+                    icon: const Icon(Icons.star, size: 16),
+                    label: Text('$s ★'),
+                  ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+    if (chosen != null) {
+      try {
+        final res = await api.toggleFavorite('${voter['_id']}', rating: chosen);
+        if (mounted) {
+          setState(() {
+            voter['isFavorite'] = res['isFavorite'] == true;
+            voter['favoriteRating'] = res['favoriteRating'] ?? (voter['isFavorite'] == true ? 1 : 0);
+          });
+          widget.onChanged();
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(res['message'] ?? (voter['isFavorite'] == true ? 'पसंदीदा रेटिंग अपडेट हुई।' : 'पसंदीदा से हटाया गया।')),
+              duration: const Duration(seconds: 1),
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+        }
+        if (res['member'] is Map) {
+          await OfflineVoterCache.merge([res['member']]);
+        }
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('पसंदीदा अपडेट नहीं हुआ: $e'), backgroundColor: Colors.red),
+          );
+        }
+      }
     }
   }
 
@@ -7144,18 +7442,35 @@ class _VoterDetailPageState extends State<VoterDetailPage> {
             style: TextStyle(fontSize: 17, fontWeight: FontWeight.w900)),
         centerTitle: true,
         actions: [
-          IconButton(
-            tooltip: voter['isFavorite'] == true
-                  ? 'Favorites से हटाएं'
+          GestureDetector(
+            onLongPress: _showRatingPicker,
+            child: IconButton(
+              tooltip: voter['isFavorite'] == true
+                  ? 'Favorites से हटाएं (दबाकर रेटिंग बदलें)'
                   : 'Favorites में जोड़ें',
               onPressed: _toggleFavorite,
-              icon: Icon(
-                voter['isFavorite'] == true
-                    ? Icons.star_rounded
-                    : Icons.star_border_rounded,
-                color: voter['isFavorite'] == true ? orange : null,
+              icon: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    voter['isFavorite'] == true
+                        ? Icons.star_rounded
+                        : Icons.star_border_rounded,
+                    color: voter['isFavorite'] == true ? orange : null,
+                  ),
+                  if ((int.tryParse('${voter['favoriteRating']}') ?? (voter['isFavorite'] == true ? 1 : 0)) > 1)
+                    Text(
+                      '${voter['favoriteRating']}',
+                      style: const TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w900,
+                        color: orange,
+                      ),
+                    ),
+                ],
               ),
             ),
+          ),
           PopupMenuButton<String>(
             onSelected: (action) {
               if (action == 'print') {
@@ -7624,6 +7939,10 @@ class DetailList extends StatelessWidget {
             voter['ocrReviewReasons'] is List &&
             (voter['ocrReviewReasons'] as List).isNotEmpty)
           info('Review reasons', _ocrReviewLabels(voter['ocrReviewReasons'])),
+        if (voter['updatedBy'] != null)
+          info('संपादक / अपडेटकर्ता', voter['updatedBy'] is Map ? (voter['updatedBy']['name'] ?? voter['updatedBy']['username']) : voter['updatedByName']),
+        if (voter['createdBy'] != null)
+          info('निर्माता (Created By)', voter['createdBy'] is Map ? (voter['createdBy']['name'] ?? voter['createdBy']['username']) : voter['createdByName']),
         ..._extraDetails(voter['extraDetails']),
       ]);
 

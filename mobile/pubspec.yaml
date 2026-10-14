@@ -1,7 +1,7 @@
 name: political_booth_crm
 description: Political Booth Management CRM - Mobile Flutter app
 publish_to: 'none'
-version: 1.0.7+8
+version: 1.0.8+10
 
 environment:
   sdk: '>=3.3.0 <4.0.0'
