@@ -198,7 +198,7 @@ class _SamitiHierarchyPageState extends State<SamitiHierarchyPage> {
         {'name': 'थोरियाखेडा', 'pop': 382},
       ],
     },
-    'गेलड़ा': {
+    'गलवा': {
       'wards': 7,
       'pop': 2896,
       'villages': [
@@ -295,7 +295,7 @@ class _SamitiHierarchyPageState extends State<SamitiHierarchyPage> {
         {'name': 'दुल्हेपुरा', 'pop': 0},
       ],
     },
-    'पानोतिया': {
+    'पनोतिया': {
       'wards': 7,
       'pop': 2961,
       'villages': [

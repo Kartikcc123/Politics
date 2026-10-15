@@ -458,13 +458,18 @@ exports.list = async (req, res, next) => {
     const hasLocationScope = Boolean(village || partNumber || booth || sectionName || gramPanchayat || isWardScope);
     const sortParam = String(req.query.sortBy || req.query.sort || '').toLowerCase();
     let sortObj = { _id: -1 };
+    const hasSpecificWard = Boolean(ward || req.query.wardNumber || req.query.municipalWard || req.query.municipalWardNumber);
 
     if (sortParam === 'recent') {
       sortObj = { _id: -1 };
     } else if (['name', 'alphabetic', 'alphabetical'].includes(sortParam)) {
       sortObj = { name: 1, surname: 1, houseNumber: 1 };
     } else if (['voterserial', 'serial', 'serialnumber', 'matdatakram', 'kram'].includes(sortParam)) {
-      if (isWardScope) {
+      if (hasSpecificWard) {
+        sortObj = { wardVoterSerial: 1, voterSerial: 1, name: 1 };
+      } else if (gramPanchayat) {
+        sortObj = { wardNumber: 1, wardVoterSerial: 1, voterSerial: 1, name: 1 };
+      } else if (isWardScope) {
         sortObj = { wardVoterSerial: 1, voterSerial: 1, name: 1 };
       } else if (hasLocationScope) {
         sortObj = { voterSerial: 1, name: 1 };
@@ -473,6 +478,10 @@ exports.list = async (req, res, next) => {
       }
     } else if (['house', 'housenumber', 'makan'].includes(sortParam)) {
       sortObj = { houseNumber: 1, voterSerial: 1 };
+    } else if (hasSpecificWard) {
+      sortObj = { wardVoterSerial: 1, voterSerial: 1, name: 1 };
+    } else if (gramPanchayat) {
+      sortObj = { wardNumber: 1, wardVoterSerial: 1, voterSerial: 1, name: 1 };
     } else if (isWardScope) {
       sortObj = { wardVoterSerial: 1, voterSerial: 1, name: 1 };
     } else if (hasLocationScope) {
@@ -484,7 +493,7 @@ exports.list = async (req, res, next) => {
         .select('contactType photo ocrCardImage cardImage wardCardImage isDeleted deletionReason deletionSupplement deletionDate supplementType supplementNumber supplementDate name surname relativeName mobile altMobile dob estimatedDob anniversary voterId voterSerial wardVoterSerial wardSerialMap wardNumber guardianName houseNumber address location area tehsil gramPanchayat village municipality caste subCaste organizationPost organizationLevel influenceLevel occupation workplaceState workplaceCity workplaceVillage spouseName marriageState marriageCity marriageVillage education extraDetails supportLevel partyPreference isFavorite favoriteRating groups labels ward booth updatedAt age gender sectionNumber sectionName assemblyNumber assemblyName partNumber partName postOffice policeStation district pinCode verificationStatus profileCompletionStatus profileCompletedBy profileCompletedAt ocrConfidence houseNumberConfidence locationMatchConfidence locationResolution ocrReviewReasons ocrValidationPassed ocrFieldConfidence ocrValues sourceDocument hasAssemblyMembership hasMunicipalMembership municipalWardNumbers googleMapUrl')
         .populate(populate)
         .sort(sortObj);
-      if (hasLocationScope) {
+      if (hasLocationScope || isWardScope || gramPanchayat || hasSpecificWard) {
         qBuilder = qBuilder.collation({ locale: 'en', numericOrdering: true, strength: 1 });
       }
       return qBuilder;
@@ -1027,7 +1036,21 @@ exports.filterOptions = async (req, res, next) => {
     // 3. Gram Panchayat
     const gpParam = req.query.gramPanchayat || req.query.panchayat;
     if (gpParam) {
-      filter.$and = [...(filter.$and || []), { gramPanchayat: new RegExp(`^${escapeRegex(String(gpParam).trim())}$`, 'i') }];
+      filter.$and = [...(filter.$and || []), {
+        $or: [
+          { gramPanchayat: hindiFlexibleRegex(gpParam) },
+          { gramPanchayat: { $in: ['', null] }, village: hindiFlexibleRegex(gpParam) }
+        ]
+      }];
+      if (selectedRoll !== 'assembly') {
+        filter.hasMunicipalMembership = true;
+      }
+    }
+
+    // 3.5. Panchayat Samiti Ward
+    const samitiWardParam = req.query.panchayatSamitiWard || req.query.samitiWard;
+    if (samitiWardParam) {
+      filter.$and = [...(filter.$and || []), { panchayatSamitiWard: samitiWardParam }];
     }
 
     // 4. Village
@@ -2478,13 +2501,13 @@ exports.fieldValues = async (req, res, next) => {
     const wardVal = (wardNumber || ward || municipalWard || '').trim();
 
     if (samitiVal && samitiVal !== 'all') {
-      filter.$and = [...(filter.$and || []), { tehsil: new RegExp(`^${escapeRegex(samitiVal)}$`, 'i') }];
+      filter.$and = [...(filter.$and || []), { tehsil: hindiFlexibleRegex(samitiVal) }];
     }
     if (gpVal && gpVal !== 'all') {
-      filter.$and = [...(filter.$and || []), { gramPanchayat: new RegExp(`^${escapeRegex(gpVal)}$`, 'i') }];
+      filter.$and = [...(filter.$and || []), { gramPanchayat: hindiFlexibleRegex(gpVal) }];
     }
     if (vilVal && vilVal !== 'all') {
-      filter.$and = [...(filter.$and || []), { village: new RegExp(`^${escapeRegex(vilVal)}$`, 'i') }];
+      filter.$and = [...(filter.$and || []), { village: hindiFlexibleRegex(vilVal) }];
     }
     if (partVal && partVal !== 'all') {
       const parts = partVal.split(',').map((p) => p.trim()).filter(Boolean);

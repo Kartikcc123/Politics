@@ -6,8 +6,8 @@ const Map<String, dynamic> officialSamitiWardsData = {
         "wardNumber": "1",
         "wardLabel": "वार्ड संख्या 1",
         "panchayats": {
-          "भीटा": {
-            "name": "भीटा",
+          "भींटा": {
+            "name": "भींटा",
             "population": 4872,
             "totalWards": 11,
             "villages": [
@@ -41,8 +41,8 @@ const Map<String, dynamic> officialSamitiWardsData = {
               }
             ]
           },
-          "कलाल खेडी": {
-            "name": "कलाल खेडी",
+          "कलालखेड़ी": {
+            "name": "कलालखेड़ी",
             "population": 0,
             "totalWards": 0,
             "villages": [
@@ -69,8 +69,8 @@ const Map<String, dynamic> officialSamitiWardsData = {
         "wardNumber": "14",
         "wardLabel": "वार्ड संख्या 14",
         "panchayats": {
-          "कलाल खेडी": {
-            "name": "कलाल खेडी",
+          "कलालखेड़ी": {
+            "name": "कलालखेड़ी",
             "population": 2868,
             "totalWards": 7,
             "villages": [
@@ -80,8 +80,8 @@ const Map<String, dynamic> officialSamitiWardsData = {
               }
             ]
           },
-          "पीथा का खेड़ा": {
-            "name": "पीथा का खेड़ा",
+          "पीथा का खेड़ा": {
+            "name": "पीथा का खेड़ा",
             "population": 0,
             "totalWards": 0,
             "villages": [
@@ -108,8 +108,8 @@ const Map<String, dynamic> officialSamitiWardsData = {
         "wardNumber": "15",
         "wardLabel": "वार्ड संख्या 15",
         "panchayats": {
-          "कलाल खेडी": {
-            "name": "कलाल खेडी",
+          "कलालखेड़ी": {
+            "name": "कलालखेड़ी",
             "population": 0,
             "totalWards": 0,
             "villages": [
@@ -185,8 +185,8 @@ const Map<String, dynamic> officialSamitiWardsData = {
         "wardNumber": "2",
         "wardLabel": "वार्ड संख्या 2",
         "panchayats": {
-          "पीथा का खेड़ा": {
-            "name": "पीथा का खेड़ा",
+          "पीथा का खेड़ा": {
+            "name": "पीथा का खेड़ा",
             "population": 4354,
             "totalWards": 11,
             "villages": [
@@ -219,8 +219,8 @@ const Map<String, dynamic> officialSamitiWardsData = {
               }
             ]
           },
-          "गल्यावडी": {
-            "name": "गल्यावडी",
+          "गल्यावड़ी": {
+            "name": "गल्यावड़ी",
             "population": 0,
             "totalWards": 0,
             "villages": [
@@ -230,8 +230,8 @@ const Map<String, dynamic> officialSamitiWardsData = {
               }
             ]
           },
-          "पालरां": {
-            "name": "पालरां",
+          "पालरा": {
+            "name": "पालरा",
             "population": 2685,
             "totalWards": 7,
             "villages": [
@@ -321,8 +321,8 @@ const Map<String, dynamic> officialSamitiWardsData = {
               }
             ]
           },
-          "मौखुन्दा": {
-            "name": "मौखुन्दा",
+          "मोखुन्दा": {
+            "name": "मोखुन्दा",
             "population": 3327,
             "totalWards": 9,
             "villages": [
@@ -355,8 +355,8 @@ const Map<String, dynamic> officialSamitiWardsData = {
               }
             ]
           },
-          "पालरां": {
-            "name": "पालरां",
+          "पालरा": {
+            "name": "पालरा",
             "population": 0,
             "totalWards": 0,
             "villages": [
@@ -468,8 +468,8 @@ const Map<String, dynamic> officialSamitiWardsData = {
               }
             ]
           },
-          "झडोल": {
-            "name": "झडोल",
+          "झाड़ोल": {
+            "name": "झाड़ोल",
             "population": 3741,
             "totalWards": 9,
             "villages": [
@@ -489,8 +489,8 @@ const Map<String, dynamic> officialSamitiWardsData = {
         "wardNumber": "8",
         "wardLabel": "वार्ड संख्या 8",
         "panchayats": {
-          "गल्यावडी": {
-            "name": "गल्यावडी",
+          "गल्यावड़ी": {
+            "name": "गल्यावड़ी",
             "population": 2791,
             "totalWards": 7,
             "villages": [
@@ -589,8 +589,8 @@ const Map<String, dynamic> officialSamitiWardsData = {
               }
             ]
           },
-          "नारायणखेड़ा": {
-            "name": "नारायणखेड़ा",
+          "नारायणखेड़ा": {
+            "name": "नारायणखेड़ा",
             "population": 3049,
             "totalWards": 9,
             "villages": [
@@ -621,8 +621,8 @@ const Map<String, dynamic> officialSamitiWardsData = {
               }
             ]
           },
-          "नाथडियास": {
-            "name": "नाथडियास",
+          "नाथड़ियास": {
+            "name": "नाथड़ियास",
             "population": 2999,
             "totalWards": 7,
             "villages": [
@@ -637,11 +637,15 @@ const Map<String, dynamic> officialSamitiWardsData = {
               {
                 "name": "आसपुर",
                 "population": 637
+              },
+              {
+                "name": "देवली",
+                "population": 675
               }
             ]
           },
-          "नारायणखेड़ा": {
-            "name": "नारायणखेड़ा",
+          "नारायणखेड़ा": {
+            "name": "नारायणखेड़ा",
             "population": 0,
             "totalWards": 0,
             "villages": [
@@ -660,6 +664,14 @@ const Map<String, dynamic> officialSamitiWardsData = {
               {
                 "name": "खुटियाखेड़ा",
                 "population": 325
+              },
+              {
+                "name": "नारायणखेड़ा",
+                "population": 610
+              },
+              {
+                "name": "सरंगु",
+                "population": 345
               }
             ]
           }
@@ -786,8 +798,8 @@ const Map<String, dynamic> officialSamitiWardsData = {
               }
             ]
           },
-          "बागड़": {
-            "name": "बागड़",
+          "बागड़": {
+            "name": "बागड़",
             "population": 3261,
             "totalWards": 9,
             "villages": [

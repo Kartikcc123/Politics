@@ -432,27 +432,49 @@ exports.printMembers = async (req, res, next) => {
 
     const selected = [...new Set(String(req.query.fields || 'name,voterId,voterSerial,wardNumber,partNumber,guardianName,mobile,village,gramPanchayat')
       .split(',').map((key) => key.trim()).filter((key) => fields[key]))];
-    const columns = Math.max(1, Math.min(3, Number(req.query.columns || 2)));
+
+    // Configurable Rows & Columns per Page (Admin control for 30 voters per page, etc.)
+    let columns = Number(req.query.columns);
+    let rowsPerPage = Number(req.query.rowsPerPage);
+    const votersPerPage = Number(req.query.votersPerPage);
+
+    if (votersPerPage && (!columns || !rowsPerPage)) {
+      if (votersPerPage >= 30) { columns = 3; rowsPerPage = 10; }
+      else if (votersPerPage === 24) { columns = 3; rowsPerPage = 8; }
+      else if (votersPerPage === 20) { columns = 2; rowsPerPage = 10; }
+      else if (votersPerPage === 16) { columns = 2; rowsPerPage = 8; }
+      else if (votersPerPage === 15) { columns = 3; rowsPerPage = 5; }
+      else if (votersPerPage === 12) { columns = 2; rowsPerPage = 6; }
+      else if (votersPerPage === 10) { columns = 2; rowsPerPage = 5; }
+      else { columns = 3; rowsPerPage = Math.max(2, Math.ceil(votersPerPage / 3)); }
+    } else {
+      columns = Math.max(1, Math.min(4, columns || 3));
+      rowsPerPage = Math.max(2, Math.min(15, rowsPerPage || (columns === 3 ? 10 : 8)));
+    }
+
     const includePhoto = req.query.photo !== 'false';
     const paperSize = ['A4', 'A3', 'LETTER', 'LEGAL'].includes(String(req.query.paperSize).toUpperCase())
       ? String(req.query.paperSize).toUpperCase() : 'A4';
     const orientation = req.query.orientation === 'landscape' ? 'landscape' : 'portrait';
     const title = String(req.query.title || 'मतदाता सूची 2026').slice(0, 100);
 
-    const doc = new PDFDocument({ size: paperSize, layout: orientation, margin: 28, bufferPages: true });
+    const margin = 20;
+    const doc = new PDFDocument({ size: paperSize, layout: orientation, margin, bufferPages: true });
     doc.registerFont('Hindi', regularFont).registerFont('HindiBold', boldFont).font('Hindi');
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', 'inline; filename="voter-list.pdf"');
     doc.pipe(res);
 
-    const margin = 28;
-    const gap = 10;
+    const isCompact = rowsPerPage >= 8 || columns >= 3;
+    const gapX = columns >= 3 ? 5 : 8;
+    const gapY = rowsPerPage >= 8 ? 4 : 8;
+    const topY = isCompact ? 38 : 50;
+    const bottomY = doc.page.height - 22;
     const usableWidth = doc.page.width - margin * 2;
-    const cardWidth = (usableWidth - gap * (columns - 1)) / columns;
-    const photoWidth = includePhoto ? 58 : 0;
-    const textWidth = cardWidth - 18 - photoWidth;
-    const topY = 64;
-    const bottomY = doc.page.height - 38;
+    const usableHeight = bottomY - topY;
+    const cardWidth = (usableWidth - gapX * (columns - 1)) / columns;
+    const cardHeight = (usableHeight - gapY * (rowsPerPage - 1)) / rowsPerPage;
+    const pageSize = columns * rowsPerPage;
 
     // Aggregate metadata for official cover and headers
     const sampleMember = members[0] || {};
@@ -468,15 +490,16 @@ exports.printMembers = async (req, res, next) => {
     const otherCount = members.length - (maleCount + femaleCount);
 
     const drawHeader = () => {
-      doc.font('HindiBold').fontSize(13).fillColor('#071b4b').text(title, margin, 24, { width: usableWidth - 150 });
+      const headerTitleSize = isCompact ? 10.5 : 12;
+      doc.font('HindiBold').fontSize(headerTitleSize).fillColor('#071b4b').text(title, margin, isCompact ? 14 : 20, { width: usableWidth - 120 });
       let subHeader = `विधानसभा: ${uniqueAssembly}`;
       if (uniqueGps) subHeader += ` | पं.: ${uniqueGps}`;
       if (uniqueWards.length === 1) subHeader += ` | वार्ड ${uniqueWards[0]}`;
       if (uniqueParts.length === 1) subHeader += ` | भाग #${uniqueParts[0]}`;
-      doc.font('Hindi').fontSize(8).fillColor('#475569').text(subHeader, margin, 40, { width: usableWidth - 150 });
+      doc.font('Hindi').fontSize(isCompact ? 7 : 8).fillColor('#475569').text(subHeader, margin, isCompact ? 26 : 34, { width: usableWidth - 120 });
 
-      doc.font('HindiBold').fontSize(8.5).fillColor('#1e40af').text(`कुल मतदाता: ${members.length}`, doc.page.width - margin - 140, 26, { width: 140, align: 'right' });
-      doc.moveTo(margin, 54).lineTo(doc.page.width - margin, 54).strokeColor('#cbd5e1').stroke();
+      doc.font('HindiBold').fontSize(isCompact ? 7.5 : 8.5).fillColor('#1e40af').text(`कुल मतदाता: ${members.length}`, doc.page.width - margin - 110, isCompact ? 16 : 22, { width: 110, align: 'right' });
+      doc.moveTo(margin, isCompact ? 34 : 46).lineTo(doc.page.width - margin, isCompact ? 34 : 46).strokeColor('#cbd5e1').stroke();
       doc.fillColor('#111827');
     };
 
@@ -551,56 +574,126 @@ exports.printMembers = async (req, res, next) => {
       doc.addPage();
     }
 
-    // 2. Draw Voter Cards
+    // 2. Draw Voter Cards in Configured Grid (e.g. 30 per page = 3 columns x 10 rows)
     drawHeader();
-    let y = topY;
-    for (let index = 0; index < members.length; index += columns) {
-      const rowMembers = members.slice(index, index + columns);
-      const prepared = rowMembers.map((member) => {
-        const rows = fieldRows(doc, member, selected, textWidth);
-        const contentHeight = rows.reduce((sum, row) => sum + row.height, 0);
-        return { member, rows, height: Math.max(includePhoto ? 84 : 48, contentHeight + 18) };
-      });
-      const rowHeight = Math.max(...prepared.map((item) => item.height));
-      if (y + rowHeight > bottomY && y > topY) {
+    for (let i = 0; i < members.length; i++) {
+      if (i > 0 && i % pageSize === 0) {
         doc.addPage();
         drawHeader();
-        y = topY;
       }
 
-      prepared.forEach((item, column) => {
-        const x = margin + column * (cardWidth + gap);
-        doc.roundedRect(x, y, cardWidth, rowHeight, 8).lineWidth(.8).strokeColor('#cbd5e1').stroke();
-        doc.roundedRect(x, y, cardWidth, Math.min(22, rowHeight), 8).fillOpacity(0.05).fillAndStroke('#2563eb', '#cbd5e1').fillOpacity(1);
-        let textX = x + 9;
-        if (includePhoto) {
-          const image = getPhotoSource(item.member);
-          if (image) {
-            try {
-              doc.roundedRect(x + 9, y + 10, 48, 62, 3).strokeColor('#dbe4f2').stroke();
-              doc.image(image, x + 9, y + 10, { fit: [48, 62], align: 'center', valign: 'center' });
-            }
-            catch (error) {
-              doc.roundedRect(x + 9, y + 10, 48, 62, 3).strokeColor('#dbe4f2').stroke();
-              doc.font('Hindi').fontSize(6).fillColor('#94a3b8').text('Photo', x + 9, y + 36, { width: 48, align: 'center' });
-            }
-          } else {
-            doc.roundedRect(x + 9, y + 10, 48, 62, 3).strokeColor('#dbe4f2').stroke();
-            doc.font('Hindi').fontSize(6).fillColor('#94a3b8').text('Photo', x + 9, y + 36, { width: 48, align: 'center' });
+      const m = members[i];
+      const pageIndex = i % pageSize;
+      const r = Math.floor(pageIndex / columns);
+      const c = pageIndex % columns;
+      const x = margin + c * (cardWidth + gapX);
+      const y = topY + r * (cardHeight + gapY);
+
+      // Card border
+      doc.roundedRect(x, y, cardWidth, cardHeight, 3.5).lineWidth(0.5).strokeColor('#94a3b8').stroke();
+
+      // Header strip
+      const headerH = Math.min(14, Math.max(10.5, cardHeight * 0.2));
+      doc.rect(x, y, cardWidth, headerH).fillColor('#f8fafc').fill();
+      doc.rect(x, y + headerH, cardWidth, 0.5).fillColor('#e2e8f0').fill();
+
+      // Serial
+      const serialNum = isWardPrint
+        ? (m.wardVoterSerial ? String(m.wardVoterSerial) : (m.voterSerial ? String(m.voterSerial) : String(i + 1)))
+        : (m.voterSerial ? String(m.voterSerial) : (m.wardVoterSerial ? String(m.wardVoterSerial) : String(i + 1)));
+      const serialSize = isCompact ? 7.5 : 9;
+      doc.font('HindiBold').fontSize(serialSize).fillColor('#1d4ed8').text(serialNum, x + 4, y + (headerH - serialSize) / 2);
+
+      // EPIC / Voter ID
+      if (m.voterId) {
+        const epicSize = isCompact ? 6.8 : 8;
+        doc.font('HindiBold').fontSize(epicSize).fillColor('#334155').text(m.voterId, x, y + (headerH - epicSize) / 2 + 0.2, { width: cardWidth - 4, align: 'right' });
+      }
+
+      // Photo
+      let photoW = 0;
+      if (includePhoto) {
+        photoW = Math.min(38, Math.max(26, cardWidth * 0.22));
+        const photoH = Math.min(cardHeight - headerH - 5, photoW * 1.35);
+        const photoX = x + cardWidth - photoW - 3.5;
+        const photoY = y + headerH + 2;
+
+        const img = getPhotoSource(m);
+        if (img) {
+          try {
+            doc.roundedRect(photoX, photoY, photoW, photoH, 2).strokeColor('#cbd5e1').stroke();
+            doc.image(img, photoX, photoY, { fit: [photoW, photoH], align: 'center', valign: 'center' });
+          } catch (_) {
+            doc.roundedRect(photoX, photoY, photoW, photoH, 2).strokeColor('#cbd5e1').stroke();
+            doc.font('Hindi').fontSize(5.5).fillColor('#94a3b8').text('Photo', photoX, photoY + (photoH / 2) - 3, { width: photoW, align: 'center' });
           }
-          textX += photoWidth;
+        } else {
+          doc.roundedRect(photoX, photoY, photoW, photoH, 2).strokeColor('#cbd5e1').stroke();
+          doc.font('Hindi').fontSize(5.5).fillColor('#94a3b8').text('Photo', photoX, photoY + (photoH / 2) - 3, { width: photoW, align: 'center' });
         }
-        let lineY = y + 9;
-        for (const row of item.rows) {
-          const isName = row.key === 'name';
-          doc.font(isName ? 'HindiBold' : 'Hindi')
-            .fontSize(isName ? 10 : 8.5)
-            .fillColor(isName ? '#071b4b' : '#1f2937')
-            .text(row.text, textX, lineY, { width: textWidth, lineGap: 1 });
-          lineY += row.height;
+      }
+
+      // Text lines
+      const textX = x + 4;
+      const textW = cardWidth - (includePhoto ? photoW + 9 : 8);
+      let textY = y + headerH + 2;
+
+      const name = ((m.name || '') + ' ' + (m.surname || '')).trim() || '-';
+      const guardian = m.guardianName || m.relativeName || '-';
+      const house = m.houseNumber || '-';
+      const gender = labels.gender[m.gender] ? (m.gender === 'male' ? 'पु.' : (m.gender === 'female' ? 'म.' : labels.gender[m.gender])) : (m.gender || '-');
+      const age = m.age ? String(m.age) : '-';
+
+      if (isCompact) {
+        // Compact 4-5 line voter slip format
+        const nameSize = rowsPerPage >= 10 ? 7.2 : 7.8;
+        doc.font('HindiBold').fontSize(nameSize).fillColor('#0f172a').text(name, textX, textY, { width: textW, lineBreak: false });
+        textY += (rowsPerPage >= 10 ? 9.8 : 10.5);
+
+        doc.font('Hindi').fontSize(6.5).fillColor('#334155').text('पिता/पति: ' + guardian, textX, textY, { width: textW, lineBreak: false });
+        textY += 9;
+
+        doc.font('Hindi').fontSize(6.5).fillColor('#334155').text('मकान सं.: ' + house, textX, textY, { width: textW, lineBreak: false });
+        textY += 9;
+
+        let ageLine = 'उम्र: ' + age + '  लिंग: ' + gender;
+        if (m.mobile) ageLine += '  📱' + m.mobile;
+        doc.font('Hindi').fontSize(6.2).fillColor('#334155').text(ageLine, textX, textY, { width: textW, lineBreak: false });
+        textY += 9;
+
+        let extraLine = '';
+        if (m.caste) extraLine += 'जाति: ' + m.caste;
+        if (m.village) extraLine += (extraLine ? ' | ' : '') + m.village;
+        else if (m.wardNumber) extraLine += (extraLine ? ' | ' : '') + 'वार्ड ' + m.wardNumber;
+        if (extraLine && cardHeight >= 68) {
+          doc.font('Hindi').fontSize(5.8).fillColor('#64748b').text(extraLine, textX, textY, { width: textW, lineBreak: false });
         }
-      });
-      y += rowHeight + gap;
+      } else {
+        // Spacious format for fewer rows / cards
+        const nameSize = 9.5;
+        doc.font('HindiBold').fontSize(nameSize).fillColor('#0f172a').text(name, textX, textY, { width: textW, lineBreak: false });
+        textY += 13;
+
+        doc.font('Hindi').fontSize(8).fillColor('#334155').text('पिता/पति: ' + guardian, textX, textY, { width: textW, lineBreak: false });
+        textY += 11;
+
+        doc.font('Hindi').fontSize(8).fillColor('#334155').text('मकान संख्या: ' + house, textX, textY, { width: textW, lineBreak: false });
+        textY += 11;
+
+        let ageLine = 'उम्र: ' + age + ' वर्ष  |  लिंग: ' + (labels.gender[m.gender] || m.gender || '-');
+        doc.font('Hindi').fontSize(7.5).fillColor('#334155').text(ageLine, textX, textY, { width: textW, lineBreak: false });
+        textY += 11;
+
+        if (m.mobile) {
+          doc.font('Hindi').fontSize(7.5).fillColor('#1e40af').text('मोबाइल: ' + m.mobile, textX, textY, { width: textW, lineBreak: false });
+          textY += 11;
+        }
+
+        if (m.caste || m.village || m.wardNumber) {
+          const detail = [m.caste ? 'जाति: ' + m.caste : '', m.village ? 'गाँव: ' + m.village : '', m.wardNumber ? 'वार्ड: ' + m.wardNumber : ''].filter(Boolean).join(' | ');
+          doc.font('Hindi').fontSize(7).fillColor('#64748b').text(detail, textX, textY, { width: textW, lineBreak: false });
+        }
+      }
     }
 
     if (!members.length) {

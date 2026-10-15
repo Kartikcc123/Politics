@@ -50,13 +50,15 @@ const samitiHierarchyData = <String, Map<String, dynamic>>{
         ]
       },
       'गलवा': {
-        'wards': 11,
-        'pop': 4280,
+        'wards': 7,
+        'pop': 2896,
         'villages': [
-          {'name': 'गलवा', 'parts': '', 'pop': 2341},
-          {'name': 'चावंड खेड़ा', 'parts': '', 'pop': 634},
-          {'name': 'सज्जनपुरा', 'parts': '', 'pop': 677},
-          {'name': 'टोकरा', 'parts': '', 'pop': 628}
+          {'name': 'गलवा', 'parts': '', 'pop': 1555},
+          {'name': 'सज्जनपुरा', 'parts': '', 'pop': 0},
+          {'name': 'रालीखेडा', 'parts': '', 'pop': 308},
+          {'name': 'लाठियाखेडी', 'parts': '', 'pop': 217},
+          {'name': 'टोकरा', 'parts': '', 'pop': 816},
+          {'name': 'रतनपुरा', 'parts': '', 'pop': 0}
         ]
       },
       'लाठियाखेड़ी': {
@@ -148,12 +150,12 @@ const samitiHierarchyData = <String, Map<String, dynamic>>{
           {'name': 'थला', 'parts': '', 'pop': 1400}
         ]
       },
-      'पानोतिया': {
-        'wards': 9,
-        'pop': 3120,
+      'पनोतिया': {
+        'wards': 7,
+        'pop': 2961,
         'villages': [
-          {'name': 'पानोतिया', 'parts': '', 'pop': 1820},
-          {'name': 'मासिंगपुरा', 'parts': '', 'pop': 1300}
+          {'name': 'पनोतिया', 'parts': '', 'pop': 1666},
+          {'name': 'जोगरास', 'parts': '', 'pop': 1295}
         ]
       },
       'सरेवाड़ी': {

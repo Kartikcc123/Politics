@@ -192,6 +192,9 @@ class _PhoneDashboard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isAdmin = api.user?['role'] == 'admin';
+    final perms = (api.user?['permissions'] as Map?) ?? {};
+    final canUpload = isAdmin || perms['canUploadPdf'] == true;
     final total = _number(data['members']);
     final today = _number(data['createdToday']);
     final families = _number(data['families']);
@@ -281,13 +284,24 @@ class _PhoneDashboard extends StatelessWidget {
                       builder: (_) => VoterForm(onSaved: api.notifyDataChanged),
                     ),
                   ),
-                  _PhoneQuickAction(
-                    icon: Icons.upload_file_rounded,
-                    label: 'PDF Upload',
-                    color: orange,
-                    onTap: () => Navigator.push(context,
-                        MaterialPageRoute(builder: (_) => const UploadPage())),
-                  ),
+                  if (canUpload)
+                    _PhoneQuickAction(
+                      icon: Icons.upload_file_rounded,
+                      label: 'PDF Upload',
+                      color: orange,
+                      onTap: () => Navigator.push(context,
+                          MaterialPageRoute(builder: (_) => const UploadPage())),
+                    )
+                  else
+                    _PhoneQuickAction(
+                      icon: Icons.print_rounded,
+                      label: 'सूची प्रिंट',
+                      color: orange,
+                      onTap: () => Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                              builder: (_) => const ConfigurablePrintPage())),
+                    ),
                   _PhoneQuickAction(
                     icon: Icons.family_restroom_rounded,
                     label: 'परिवार',
@@ -299,7 +313,7 @@ class _PhoneDashboard extends StatelessWidget {
           ),
           const SizedBox(height: 14),
           if (api.user != null) _PanchayatWardsCard(user: api.user!),
-          const HierarchicalLocationNavigator(),
+          if (isAdmin) const HierarchicalLocationNavigator(),
           const SizedBox(height: 14),
           Row(children: [
             const Expanded(
@@ -1116,64 +1130,90 @@ class _PanchayatWardsCard extends StatefulWidget {
 }
 
 class _PanchayatWardsCardState extends State<_PanchayatWardsCard> {
+  String _selectedGp = '';
   List<String> _wards = [];
   bool _loading = false;
+
+  static const _defaultGpWards = <String, int>{
+    'आशाहोली': 9,
+    'कलालखेड़ी': 7,
+    'कोट': 9,
+    'खाखरमाला': 7,
+    'खेमाणा': 9,
+    'गलवा': 7,
+    'गल्यावड़ी': 7,
+    'चारोट': 7,
+    'झाड़ोल': 9,
+    'थला': 9,
+    'देवरिया': 7,
+    'नाथड़ियास': 7,
+    'नान्दशा जागीर': 11,
+    'नारायणखेड़ा': 9,
+    'नाहरी': 9,
+    'पनोतिया': 7,
+    'पालरा': 7,
+    'पीथा का खेड़ा': 11,
+    'बकाण': 7,
+    'बागोलिया': 9,
+    'बागड़': 9,
+    'बोराणा': 11,
+    'बोरियापुरा': 7,
+    'भींटा': 11,
+    'मासिंगपुरा': 7,
+    'मोखुन्दा': 9,
+    'रायपुर': 17,
+    'सागरेव': 9,
+    'सुरास': 7,
+  };
 
   @override
   void initState() {
     super.initState();
-    _initWards();
+    final gps = (widget.user['assignedGramPanchayats'] as List? ?? [])
+        .map((e) => e.toString().trim())
+        .where((e) => e.isNotEmpty)
+        .toList();
+    if (gps.isNotEmpty) {
+      _selectedGp = gps.first;
+      _loadWardsForGp(_selectedGp);
+    } else {
+      final assigned = (widget.user['assignedWards'] as List? ?? [])
+          .map((w) => w.toString().trim())
+          .where((w) => w.isNotEmpty)
+          .toList();
+      if (assigned.isNotEmpty) {
+        assigned.sort((a, b) => (int.tryParse(a) ?? 999).compareTo(int.tryParse(b) ?? 999));
+        _wards = assigned;
+      }
+    }
   }
 
-  void _initWards() async {
+  void _loadWardsForGp(String gpName) async {
+    setState(() => _loading = true);
     final assigned = (widget.user['assignedWards'] as List? ?? [])
         .map((w) => w.toString().trim())
         .where((w) => w.isNotEmpty)
         .toList();
-    if (assigned.isNotEmpty) {
-      assigned.sort((a, b) {
-        final na = int.tryParse(a) ?? 999;
-        final nb = int.tryParse(b) ?? 999;
-        return na.compareTo(nb);
+    final gps = (widget.user['assignedGramPanchayats'] as List? ?? [])
+        .map((e) => e.toString().trim())
+        .where((e) => e.isNotEmpty)
+        .toList();
+
+    if (assigned.isNotEmpty && gps.length <= 1) {
+      assigned.sort((a, b) => (int.tryParse(a) ?? 999).compareTo(int.tryParse(b) ?? 999));
+      setState(() {
+        _wards = assigned;
+        _loading = false;
       });
-      setState(() => _wards = assigned);
-    } else {
-      final gps = (widget.user['assignedGramPanchayats'] as List? ?? [])
-          .map((e) => e.toString().trim())
-          .where((e) => e.isNotEmpty)
-          .toList();
-      if (gps.isNotEmpty) {
-        setState(() => _loading = true);
-        try {
-          final res = await api.get('/api/auth/hierarchy-options');
-          if (res is Map && res['panchayats'] is List) {
-            final gpDoc = (res['panchayats'] as List).firstWhere(
-              (p) => '${p['name']}'.trim() == gps.first,
-              orElse: () => null,
-            );
-            if (gpDoc != null && gpDoc['wards'] is List) {
-              final wList = (gpDoc['wards'] as List)
-                  .map((w) => w.toString().trim())
-                  .where((w) => w.isNotEmpty)
-                  .toList();
-              wList.sort((a, b) {
-                final na = int.tryParse(a) ?? 999;
-                final nb = int.tryParse(b) ?? 999;
-                return na.compareTo(nb);
-              });
-              if (mounted) {
-                setState(() {
-                  _wards = wList;
-                  _loading = false;
-                });
-              }
-              return;
-            }
-          }
-        } catch (_) {}
-        if (mounted) setState(() => _loading = false);
-      }
+      return;
     }
+
+    final total = _defaultGpWards[gpName] ?? 7;
+    final wList = List.generate(total, (i) => '${i + 1}');
+    setState(() {
+      _wards = wList;
+      _loading = false;
+    });
   }
 
   @override
@@ -1182,9 +1222,15 @@ class _PanchayatWardsCardState extends State<_PanchayatWardsCard> {
         .map((e) => e.toString().trim())
         .where((e) => e.isNotEmpty)
         .toList();
-    if (gps.isEmpty && _wards.isEmpty) return const SizedBox.shrink();
+    final samitiWards = (widget.user['assignedSamitiWards'] as List? ?? [])
+        .map((e) => e.toString().trim())
+        .where((e) => e.isNotEmpty)
+        .toList();
+    final samitiName = widget.user['assignedSamiti']?.toString().trim() ?? 'रायपुर';
 
-    final gpName = gps.isNotEmpty ? gps.first : 'पंचायत';
+    if (gps.isEmpty && _wards.isEmpty && samitiWards.isEmpty) return const SizedBox.shrink();
+
+    final currentGp = _selectedGp.isNotEmpty ? _selectedGp : (gps.isNotEmpty ? gps.first : 'पंचायत');
 
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
@@ -1204,6 +1250,104 @@ class _PanchayatWardsCardState extends State<_PanchayatWardsCard> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // Samiti Ward banner if assigned
+          if (samitiWards.isNotEmpty) ...[
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              margin: const EdgeInsets.only(bottom: 12),
+              decoration: BoxDecoration(
+                color: const Color(0xfff0fdf4),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: const Color(0xffbbf7d0)),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.account_balance_rounded, color: Color(0xff059669), size: 18),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'पंचायत समिति: $samitiName • ${samitiWards.first}',
+                      style: const TextStyle(
+                        color: Color(0xff166534),
+                        fontWeight: FontWeight.w800,
+                        fontSize: 13,
+                      ),
+                    ),
+                  ),
+                  InkWell(
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => VoterManagementPage(
+                            initialPanchayatSamitiWard: samitiWards.first,
+                            initialPanchayatSamiti: samitiName,
+                          ),
+                        ),
+                      );
+                    },
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: const Color(0xff059669),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: const Text(
+                        'पूरे वार्ड के मतदाता',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 11,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+
+          // If multiple GPs assigned, show GP selection chips
+          if (gps.length > 1) ...[
+            const Text(
+              'ग्राम पंचायत चुनें:',
+              style: TextStyle(fontWeight: FontWeight.w800, fontSize: 12.5, color: navy),
+            ),
+            const SizedBox(height: 8),
+            SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                children: gps.map((gp) {
+                  final isSel = gp == currentGp;
+                  return Padding(
+                    padding: const EdgeInsets.only(right: 8),
+                    child: ChoiceChip(
+                      label: Text(gp),
+                      selected: isSel,
+                      onSelected: (selected) {
+                        if (selected) {
+                          setState(() {
+                            _selectedGp = gp;
+                            _loadWardsForGp(gp);
+                          });
+                        }
+                      },
+                      selectedColor: const Color(0xff059669),
+                      labelStyle: TextStyle(
+                        color: isSel ? Colors.white : const Color(0xff166534),
+                        fontWeight: FontWeight.w800,
+                        fontSize: 12.5,
+                      ),
+                      backgroundColor: const Color(0xffecfdf5),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                    ),
+                  );
+                }).toList(),
+              ),
+            ),
+            const SizedBox(height: 12),
+          ],
+
           Row(
             children: [
               Container(
@@ -1219,8 +1363,8 @@ class _PanchayatWardsCardState extends State<_PanchayatWardsCard> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('ग्राम पंचायत: $gpName',
-                        style: const TextStyle(color: navy, fontSize: 16, fontWeight: FontWeight.bold)),
+                    Text('ग्राम पंचायत: $currentGp',
+                        style: const TextStyle(color: navy, fontSize: 15.5, fontWeight: FontWeight.bold)),
                     const Text('वार्ड अनुसार मतदाता सूची (वार्ड चुनें)',
                         style: TextStyle(color: muted, fontSize: 11)),
                   ],
@@ -1235,7 +1379,7 @@ class _PanchayatWardsCardState extends State<_PanchayatWardsCard> {
                   Navigator.push(
                     context,
                     MaterialPageRoute(
-                      builder: (_) => VoterManagementPage(initialGramPanchayat: gpName),
+                      builder: (_) => VoterManagementPage(initialGramPanchayat: currentGp),
                     ),
                   );
                 },
@@ -1262,7 +1406,7 @@ class _PanchayatWardsCardState extends State<_PanchayatWardsCard> {
                       context,
                       MaterialPageRoute(
                         builder: (_) => VoterManagementPage(
-                          initialGramPanchayat: gpName,
+                          initialGramPanchayat: currentGp,
                           initialWard: w,
                         ),
                       ),
@@ -1286,11 +1430,11 @@ class _PanchayatWardsCardState extends State<_PanchayatWardsCard> {
                         const Icon(Icons.how_to_vote_rounded, size: 16, color: Color(0xff059669)),
                         const SizedBox(width: 6),
                         Text(
-                          'वार्ड $w',
+                          '$currentGp वार्ड $w',
                           style: const TextStyle(
                             color: Color(0xff166534),
                             fontWeight: FontWeight.bold,
-                            fontSize: 13,
+                            fontSize: 12.5,
                           ),
                         ),
                         const SizedBox(width: 4),

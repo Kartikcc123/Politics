@@ -55,7 +55,9 @@ class _ConfigurablePrintPageState extends State<ConfigurablePrintPage> {
   // Layout & Shape Configuration
   String paperSize = 'A4';
   String orientation = 'portrait'; // 'portrait' | 'landscape'
-  int columns = 2; // 1, 2, 3
+  int columns = 3; // 1, 2, 3, 4 (Default 3 for 30 voters per page)
+  int rowsPerPage = 10; // Default 10 rows for 30 voters per page
+  String densityPreset = '30'; // '30', '24', '20', '16', '10', 'custom'
   bool includePhoto = true;
   bool includeCoverPage = true;
 
@@ -264,6 +266,8 @@ class _ConfigurablePrintPageState extends State<ConfigurablePrintPage> {
     final params = <String, String>{
       'fields': selectedFields.join(','),
       'columns': '$columns',
+      'rowsPerPage': '$rowsPerPage',
+      'votersPerPage': '${columns * rowsPerPage}',
       'photo': '$includePhoto',
       'paperSize': paperSize,
       'orientation': orientation,
@@ -1345,11 +1349,201 @@ class _ConfigurablePrintPageState extends State<ConfigurablePrintPage> {
 
   // ================= STEP 2: Layout & Shape =================
   Widget _buildStepLayoutConfiguration() {
+    final totalVotersPerPage = columns * rowsPerPage;
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         const Text(
-          '1. पेज का आकार (Paper Size):',
+          '1. पेज ग्रिड व मतदाता संख्या (Voters Per Page):',
+          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: navy),
+        ),
+        const SizedBox(height: 4),
+        const Text(
+          '1 पेज पर कितने मतदाता प्रिंट करने हैं चुनें (30 मतदाता चुनाव आयोग का मानक फॉर्मेट है):',
+          style: TextStyle(fontSize: 12, color: muted),
+        ),
+        const SizedBox(height: 12),
+
+        // Density presets
+        Row(
+          children: [
+            _buildSelectableCard(
+              title: '30 मतदाता (मानक)',
+              subtitle: '3 × 10 ग्रिड • न्यूनतम पेज',
+              icon: Icons.grid_view_rounded,
+              isSelected: densityPreset == '30',
+              onTap: () => setState(() {
+                densityPreset = '30';
+                columns = 3;
+                rowsPerPage = 10;
+              }),
+            ),
+            const SizedBox(width: 8),
+            _buildSelectableCard(
+              title: '24 मतदाता',
+              subtitle: '3 × 8 ग्रिड • सघन',
+              icon: Icons.grid_on_rounded,
+              isSelected: densityPreset == '24',
+              onTap: () => setState(() {
+                densityPreset = '24';
+                columns = 3;
+                rowsPerPage = 8;
+              }),
+            ),
+            const SizedBox(width: 8),
+            _buildSelectableCard(
+              title: '20 मतदाता',
+              subtitle: '2 × 10 ग्रिड',
+              icon: Icons.view_column_rounded,
+              isSelected: densityPreset == '20',
+              onTap: () => setState(() {
+                densityPreset = '20';
+                columns = 2;
+                rowsPerPage = 10;
+              }),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        Row(
+          children: [
+            _buildSelectableCard(
+              title: '16 मतदाता',
+              subtitle: '2 × 8 ग्रिड • संतुलित',
+              icon: Icons.dashboard_customize_rounded,
+              isSelected: densityPreset == '16',
+              onTap: () => setState(() {
+                densityPreset = '16';
+                columns = 2;
+                rowsPerPage = 8;
+              }),
+            ),
+            const SizedBox(width: 8),
+            _buildSelectableCard(
+              title: '10 मतदाता',
+              subtitle: '2 × 5 ग्रिड • बड़ा कार्ड',
+              icon: Icons.view_agenda_rounded,
+              isSelected: densityPreset == '10',
+              onTap: () => setState(() {
+                densityPreset = '10';
+                columns = 2;
+                rowsPerPage = 5;
+              }),
+            ),
+            const SizedBox(width: 8),
+            _buildSelectableCard(
+              title: 'कस्टम ग्रिड',
+              subtitle: 'पंक्ति व कॉलम स्वयं तय करें',
+              icon: Icons.tune_rounded,
+              isSelected: densityPreset == 'custom',
+              onTap: () => setState(() {
+                densityPreset = 'custom';
+              }),
+            ),
+          ],
+        ),
+
+        // Custom rows and columns picker
+        if (densityPreset == 'custom') ...[
+          const SizedBox(height: 14),
+          Container(
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: const Color(0xfff8fafc),
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: border),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    const Icon(Icons.tune_rounded, color: royalBlue, size: 18),
+                    const SizedBox(width: 8),
+                    const Text('कस्टम ग्रिड सेटिंग्स:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: navy)),
+                    const Spacer(),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                      decoration: BoxDecoration(color: royalBlue, borderRadius: BorderRadius.circular(8)),
+                      child: Text(
+                        'कुल $totalVotersPerPage प्रति पेज',
+                        style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 11),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                const Text('कॉलम संख्या (Columns per Page):', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13, color: navy)),
+                const SizedBox(height: 8),
+                Row(
+                  children: [1, 2, 3, 4].map((c) {
+                    final isC = columns == c;
+                    return Expanded(
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 3),
+                        child: ChoiceChip(
+                          label: Center(child: Text('$c Col')),
+                          selected: isC,
+                          selectedColor: royalBlue,
+                          backgroundColor: Colors.white,
+                          labelStyle: TextStyle(color: isC ? Colors.white : navy, fontWeight: isC ? FontWeight.bold : FontWeight.normal, fontSize: 12),
+                          onSelected: (_) => setState(() => columns = c),
+                        ),
+                      ),
+                    );
+                  }).toList(),
+                ),
+                const SizedBox(height: 12),
+                const Text('प्रति पेज पंक्तियाँ (Rows per Page):', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13, color: navy)),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 6,
+                  runSpacing: 6,
+                  children: [4, 5, 6, 7, 8, 9, 10, 11, 12].map((r) {
+                    final isR = rowsPerPage == r;
+                    return ChoiceChip(
+                      label: Text('$r पंक्तियाँ'),
+                      selected: isR,
+                      selectedColor: royalBlue,
+                      backgroundColor: Colors.white,
+                      labelStyle: TextStyle(color: isR ? Colors.white : navy, fontWeight: isR ? FontWeight.bold : FontWeight.normal, fontSize: 11.5),
+                      onSelected: (_) => setState(() => rowsPerPage = r),
+                    );
+                  }).toList(),
+                ),
+              ],
+            ),
+          ),
+        ],
+
+        const SizedBox(height: 12),
+        // Live calculation banner
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+          decoration: BoxDecoration(
+            color: const Color(0xffeff6ff),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: royalBlue.withValues(alpha: 0.25)),
+          ),
+          child: Row(
+            children: [
+              const Icon(Icons.auto_awesome_rounded, color: royalBlue, size: 18),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  '💡 लेआउट सारांश: 1 पेज पर $totalVotersPerPage मतदाता ($columns कॉलम × $rowsPerPage पंक्तियाँ)। 300 मतदाता केवल ${(300 / totalVotersPerPage).ceil()} पेज में पूरे हो जाएंगे!',
+                  style: const TextStyle(color: royalBlue, fontSize: 12, fontWeight: FontWeight.w600),
+                ),
+              ),
+            ],
+          ),
+        ),
+
+        const SizedBox(height: 22),
+
+        const Text(
+          '2. पेज का आकार (Paper Size):',
           style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: navy),
         ),
         const SizedBox(height: 10),
@@ -1373,10 +1567,10 @@ class _ConfigurablePrintPageState extends State<ConfigurablePrintPage> {
           ],
         ),
 
-        const SizedBox(height: 24),
+        const SizedBox(height: 22),
 
         const Text(
-          '2. पेज ओरिएंटेशन (Orientation):',
+          '3. पेज ओरिएंटेशन (Orientation):',
           style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: navy),
         ),
         const SizedBox(height: 10),
@@ -1400,42 +1594,7 @@ class _ConfigurablePrintPageState extends State<ConfigurablePrintPage> {
           ],
         ),
 
-        const SizedBox(height: 24),
-
-        const Text(
-          '3. कॉलम संख्या (Columns per Page):',
-          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: navy),
-        ),
-        const SizedBox(height: 10),
-        Row(
-          children: [
-            _buildSelectableCard(
-              title: '1 कॉलम',
-              subtitle: 'बड़ा कार्ड (विस्तृत)',
-              icon: Icons.view_agenda_rounded,
-              isSelected: columns == 1,
-              onTap: () => setState(() => columns = 1),
-            ),
-            const SizedBox(width: 10),
-            _buildSelectableCard(
-              title: '2 कॉलम (अनुशंसित)',
-              subtitle: '2 मतदाता प्रति पंक्ति',
-              icon: Icons.view_column_rounded,
-              isSelected: columns == 2,
-              onTap: () => setState(() => columns = 2),
-            ),
-            const SizedBox(width: 10),
-            _buildSelectableCard(
-              title: '3 कॉलम',
-              subtitle: 'अधिक मतदाता / कॉम्पैक्ट',
-              icon: Icons.grid_view_rounded,
-              isSelected: columns == 3,
-              onTap: () => setState(() => columns = 3),
-            ),
-          ],
-        ),
-
-        const SizedBox(height: 24),
+        const SizedBox(height: 22),
 
         const Text(
           '4. अतिरिक्त विकल्प:',

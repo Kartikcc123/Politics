@@ -194,6 +194,12 @@ class _VoterManagementPageState extends State<VoterManagementPage> {
       if (widget.initialWard == null || widget.initialWard!.isEmpty) {
         rollType = _defaultRollType;
       }
+      if (samitiWardFilter == null && u['assignedSamitiWards'] is List && (u['assignedSamitiWards'] as List).isNotEmpty) {
+        samitiWardFilter = (u['assignedSamitiWards'] as List).first.toString();
+        if (tehsil.text.isEmpty && u['assignedSamiti'] != null) {
+          tehsil.text = u['assignedSamiti'].toString();
+        }
+      }
       if (gramPanchayat.text.isEmpty) {
         final gps = (u['assignedGramPanchayats'] as List? ?? []).where((s) => '$s'.trim().isNotEmpty).toList();
         if (gps.length == 1) gramPanchayat.text = '${gps.first}'.trim();
@@ -1489,6 +1495,18 @@ class _VoterManagementPageState extends State<VoterManagementPage> {
                       if (nextGender.isNotEmpty) 'gender': nextGender,
                       if (nextVerification.isNotEmpty)
                         'verificationStatus': nextVerification,
+                      if (gramPanchayat.text.trim().isNotEmpty)
+                        'gramPanchayat': gramPanchayat.text.trim(),
+                      if (samitiWardFilter != null && samitiWardFilter!.isNotEmpty)
+                        'panchayatSamitiWard': samitiWardFilter!,
+                      if (samitiFilter != null && samitiFilter!.isNotEmpty)
+                        'panchayatSamiti': samitiFilter!,
+                      if (tehsil.text.trim().isNotEmpty)
+                        'tehsil': tehsil.text.trim(),
+                      if (municipalWardNumber.text.trim().isNotEmpty)
+                        'municipalWard': municipalWardNumber.text.trim(),
+                      if (rollType.isNotEmpty)
+                        'rollType': rollType,
                     },
                   );
                   if (option == null) return;
@@ -2117,6 +2135,155 @@ class _VoterManagementPageState extends State<VoterManagementPage> {
     }
   }
 
+  int _getGpTotalWards(String gpName) {
+    const wardCounts = <String, int>{
+      'आशाहोली': 9,
+      'कलालखेड़ी': 7,
+      'कोट': 9,
+      'खाखरमाला': 7,
+      'खेमाणा': 9,
+      'गलवा': 7,
+      'गल्यावड़ी': 7,
+      'चारोट': 7,
+      'झाड़ोल': 9,
+      'थला': 9,
+      'देवरिया': 7,
+      'नाथड़ियास': 7,
+      'नान्दशा जागीर': 11,
+      'नारायणखेड़ा': 9,
+      'नाहरी': 9,
+      'पनोतिया': 7,
+      'पालरा': 7,
+      'पीथा का खेड़ा': 11,
+      'बकाण': 7,
+      'बागोलिया': 9,
+      'बागड़': 9,
+      'बोराणा': 11,
+      'बोरियापुरा': 7,
+      'भींटा': 11,
+      'मासिंगपुरा': 7,
+      'मोखुन्दा': 9,
+      'रायपुर': 17,
+      'सागरेव': 9,
+      'सुरास': 7,
+    };
+    return wardCounts[gpName.trim()] ?? 9;
+  }
+
+  Widget _buildPanchayatWardSelectorStrip() {
+    final gp = gramPanchayat.text.trim();
+    if (gp.isEmpty) return const SizedBox.shrink();
+    final totalWards = _getGpTotalWards(gp);
+    final activeWard = municipalWardNumber.text.trim();
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: const Color(0xffbfdbfe)),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x0a1e40af),
+            blurRadius: 8,
+            offset: Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.location_city_rounded, size: 16, color: Color(0xff2563eb)),
+              const SizedBox(width: 6),
+              Text(
+                'ग्राम पंचायत: $gp (वार्ड चुनें)',
+                style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 13, color: Color(0xff1e40af)),
+              ),
+              const Spacer(),
+              if (activeWard.isNotEmpty)
+                InkWell(
+                  onTap: () {
+                    setState(() {
+                      municipalWardNumber.clear();
+                      currentPage = 1;
+                      selectedIds.clear();
+                      refreshVoters();
+                    });
+                  },
+                  child: const Text(
+                    'सभी वार्ड देखें',
+                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11.5, color: Color(0xff2563eb)),
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: [
+                Padding(
+                  padding: const EdgeInsets.only(right: 6),
+                  child: ChoiceChip(
+                    label: const Text('सभी वार्ड'),
+                    selected: activeWard.isEmpty,
+                    onSelected: (selected) {
+                      if (activeWard.isEmpty) return;
+                      setState(() {
+                        municipalWardNumber.clear();
+                        currentPage = 1;
+                        selectedIds.clear();
+                        refreshVoters();
+                      });
+                    },
+                    selectedColor: const Color(0xff2563eb),
+                    labelStyle: TextStyle(
+                      color: activeWard.isEmpty ? Colors.white : const Color(0xff1e3a8a),
+                      fontWeight: FontWeight.w800,
+                      fontSize: 11.5,
+                    ),
+                    backgroundColor: const Color(0xffeff6ff),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                  ),
+                ),
+                ...List.generate(totalWards, (idx) {
+                  final wNum = '${idx + 1}';
+                  final isSel = activeWard == wNum;
+                  return Padding(
+                    padding: const EdgeInsets.only(right: 6),
+                    child: ChoiceChip(
+                      label: Text('$gp वार्ड $wNum'),
+                      selected: isSel,
+                      onSelected: (selected) {
+                        setState(() {
+                          municipalWardNumber.text = isSel ? '' : wNum;
+                          currentPage = 1;
+                          selectedIds.clear();
+                          refreshVoters();
+                        });
+                      },
+                      selectedColor: const Color(0xff2563eb),
+                      labelStyle: TextStyle(
+                        color: isSel ? Colors.white : const Color(0xff1e3a8a),
+                        fontWeight: FontWeight.w800,
+                        fontSize: 11.5,
+                      ),
+                      backgroundColor: const Color(0xffeff6ff),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                    ),
+                  );
+                }),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget buildPhoneBookMobile(BuildContext context) => RefreshIndicator(
         onRefresh: () async {
           setState(refreshVoters);
@@ -2387,6 +2554,7 @@ class _VoterManagementPageState extends State<VoterManagementPage> {
               onClearAll: clearFilters,
               compact: true,
             ),
+            _buildPanchayatWardSelectorStrip(),
             if (api.user?['role'] == 'booth')
               _DatabaseFilterPicker(
                 label: 'अपने गाँव का अनुभाग',

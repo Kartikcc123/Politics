@@ -7,6 +7,7 @@ import '../../widgets/mobile_components.dart';
 import '../activity/activity_page.dart';
 import '../areas/area_directory_page.dart';
 import '../areas/master_data_import_page.dart';
+import '../areas/samiti_hierarchy_page.dart';
 import '../booths/booth_page.dart';
 import '../messages/bulk_message_page.dart';
 import '../messages/whatsapp_page.dart';
@@ -57,6 +58,12 @@ class MorePage extends StatelessWidget {
     final canImport = isAdmin || perms['canImportData'] == true;
 
     final importOptions = <_Option>[
+      _Option(
+          'क्षेत्र व गाँव (29 पंचायतें व 15 समिति वार्ड)',
+          'रायपुर की सभी 29 पंचायतें एवं 15 पंचायत समिति वार्ड अनुसार डेटा देखें',
+          Icons.account_balance_rounded,
+          const Color(0xff2563eb),
+          const SamitiHierarchyPage()),
       if (hasWholeVillageAccess)
         _Option(
             'गाँव एवं पंचायत मास्टर',

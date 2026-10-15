@@ -1,3 +1,50 @@
+function escapeRegex(s) {
+  return String(s || '').replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&');
+}
+
+function hindiFlexibleRegex(text) {
+  if (!text) return new RegExp('');
+  let t = String(text).trim();
+  t = t.replace(/\u0958/g, 'क');
+  t = t.replace(/\u0959/g, 'ख');
+  t = t.replace(/\u095A/g, 'ग');
+  t = t.replace(/\u095B/g, 'ज');
+  t = t.replace(/\u095C/g, 'ड');
+  t = t.replace(/\u095D/g, 'ढ');
+  t = t.replace(/\u095E/g, 'फ');
+  t = t.replace(/\u093C/g, '');
+  let pattern = '';
+  for (let i = 0; i < t.length; i++) {
+    const char = t[i];
+    if (char === 'ड' || char === 'ड़') {
+      pattern += '(?:ड|ड़|\u0921\u093C|\u095C)';
+    } else if (char === 'ढ' || char === 'ढ़') {
+      pattern += '(?:ढ|ढ़|\u0922\u093C|\u095D)';
+    } else if (char === 'र' || char === 'ड़') {
+      pattern += '(?:र|ड|ड़|\u0921\u093C|\u095C)';
+    } else if (char === 'श' || char === 'ष' || char === 'स') {
+      pattern += '[शषस]';
+    } else if (char === 'ब' || char === 'व') {
+      pattern += '[बव]';
+    } else if (char === 'ि' || char === 'ी') {
+      pattern += '[िी]';
+    } else if (char === 'ु' || char === 'ू') {
+      pattern += '[ुू]';
+    } else if (char === 'े' || char === 'ै') {
+      pattern += '[ेै]';
+    } else if (char === 'ो' || char === 'ौ') {
+      pattern += '[ोौ]';
+    } else if (char === 'ं' || char === 'ँ') {
+      pattern += '[ंँ]?';
+    } else {
+      pattern += escapeRegex(char);
+    }
+  }
+  return new RegExp('^' + pattern + '$', 'i');
+}
+
+exports.hindiFlexibleRegex = hindiFlexibleRegex;
+
 exports.applyMemberScope = (user, filter = {}) => {
   if (!user || user.role === 'admin') return filter;
 
@@ -15,36 +62,39 @@ exports.applyMemberScope = (user, filter = {}) => {
     filter.hasAssemblyMembership = true;
   }
 
+  const hasSamitiWards = Array.isArray(user.assignedSamitiWards) && user.assignedSamitiWards.length > 0;
+  const hasGps = Array.isArray(user.assignedGramPanchayats) && user.assignedGramPanchayats.length > 0;
+  const hasVillages = Array.isArray(user.assignedVillages) && user.assignedVillages.length > 0;
+
   // 1. Part / Booth number scope
   if (Array.isArray(user.assignedParts) && user.assignedParts.length > 0) {
     filter.partNumber = { $in: user.assignedParts.map(String) };
-    // If the user also has an assigned GP, enforce it so part numbers from
-    // other GPs are never exposed.
-    if (Array.isArray(user.assignedGramPanchayats) && user.assignedGramPanchayats.length > 0) {
-      filter.gramPanchayat = { $in: user.assignedGramPanchayats };
+    if (hasGps) {
+      filter.gramPanchayat = { $in: user.assignedGramPanchayats.map(g => hindiFlexibleRegex(g)) };
     }
     return filter;  // Part scope is the tightest – skip broader filters below
   }
 
-  // 2. Village level scope (if user assigned to specific villages)
-  if (Array.isArray(user.assignedVillages) && user.assignedVillages.length > 0) {
-    filter.village = { $in: user.assignedVillages };
-  }
-  // 3. Gram Panchayat level scope
-  if (Array.isArray(user.assignedGramPanchayats) && user.assignedGramPanchayats.length > 0) {
-    filter.gramPanchayat = { $in: user.assignedGramPanchayats };
+  // 2. Gram Panchayat level scope
+  if (hasGps) {
+    filter.gramPanchayat = { $in: user.assignedGramPanchayats.map(g => hindiFlexibleRegex(g)) };
   }
 
-  // 3.5. Samiti Ward level scope
-  if (Array.isArray(user.assignedSamitiWards) && user.assignedSamitiWards.length > 0) {
+  // 3. Village level scope (only enforce if user does not have entire GP or Samiti Ward scope)
+  if (hasVillages && !hasSamitiWards && (!hasGps || user.assignedVillages.length <= 1)) {
+    filter.village = { $in: user.assignedVillages.map(v => hindiFlexibleRegex(v)) };
+  }
+
+  // 3.5. Samiti Ward level scope (only apply as strict filter if GP list is empty)
+  if (hasSamitiWards && !hasGps) {
     filter.panchayatSamitiWard = { $in: user.assignedSamitiWards.map(String) };
     if (user.assignedSamiti) {
       filter.panchayatSamiti = user.assignedSamiti;
     }
   }
 
-  // 4. Ward level scope
-  if (Array.isArray(user.assignedWards) && user.assignedWards.length > 0) {
+  // 4. Ward level scope - only apply if user is explicitly a single-ward head (not multi-GP / Samiti Ward manager)
+  if (!hasSamitiWards && (!hasGps || (user.assignedWards && user.assignedWards.length <= 1)) && Array.isArray(user.assignedWards) && user.assignedWards.length > 0) {
     const wards = user.assignedWards.map(String);
     const wardConditions = [
       { wardNumber: { $in: wards } },
@@ -132,7 +182,8 @@ exports.assertMemberAccess = (user, member) => {
     }
     // Additionally enforce GP so same part# in another GP is blocked
     if (Array.isArray(user.assignedGramPanchayats) && user.assignedGramPanchayats.length > 0) {
-      if (member.gramPanchayat && !user.assignedGramPanchayats.includes(member.gramPanchayat)) {
+      const matchesGp = member.gramPanchayat && user.assignedGramPanchayats.some(g => hindiFlexibleRegex(g).test(member.gramPanchayat));
+      if (!matchesGp) {
         const err = new Error('इस ग्राम पंचायत के मतदाता को देखने या संपादित करने की अनुमति नहीं है।');
         err.status = 403;
         throw err;
@@ -140,25 +191,30 @@ exports.assertMemberAccess = (user, member) => {
     }
   }
 
-  // 2. Village check
-  if (Array.isArray(user.assignedVillages) && user.assignedVillages.length > 0) {
-    if (member.village && !user.assignedVillages.includes(member.village)) {
-      const err = new Error('इस गाँव के मतदाता को देखने या संपादित करने की अनुमति नहीं है।');
-      err.status = 403;
-      throw err;
-    }
-  }
-  // 3. Gram Panchayat check
-  else if (Array.isArray(user.assignedGramPanchayats) && user.assignedGramPanchayats.length > 0) {
-    if (member.gramPanchayat && !user.assignedGramPanchayats.includes(member.gramPanchayat)) {
+  const hasSamitiWards = Array.isArray(user.assignedSamitiWards) && user.assignedSamitiWards.length > 0;
+  const hasGps = Array.isArray(user.assignedGramPanchayats) && user.assignedGramPanchayats.length > 0;
+
+  // 2. Gram Panchayat check
+  if (hasGps) {
+    const matchesGp = member.gramPanchayat && user.assignedGramPanchayats.some(g => hindiFlexibleRegex(g).test(member.gramPanchayat));
+    if (!matchesGp) {
       const err = new Error('इस ग्राम पंचायत के मतदाता को देखने या संपादित करने की अनुमति नहीं है।');
       err.status = 403;
       throw err;
     }
   }
+  // 3. Village check (only if user assigned specifically to village level without whole GP/Samiti Ward)
+  else if (Array.isArray(user.assignedVillages) && user.assignedVillages.length > 0 && !hasSamitiWards) {
+    const matchesVil = member.village && user.assignedVillages.some(v => hindiFlexibleRegex(v).test(member.village));
+    if (!matchesVil) {
+      const err = new Error('इस गाँव के मतदाता को देखने या संपादित करने की अनुमति नहीं है।');
+      err.status = 403;
+      throw err;
+    }
+  }
 
-  // 3.5. Samiti Ward check
-  if (Array.isArray(user.assignedSamitiWards) && user.assignedSamitiWards.length > 0) {
+  // 3.5. Samiti Ward check (only if GP check was not used)
+  if (hasSamitiWards && !hasGps) {
     const sWards = user.assignedSamitiWards.map(String);
     if (member.panchayatSamitiWard && !sWards.includes(String(member.panchayatSamitiWard))) {
       const err = new Error('इस पंचायत समिति वार्ड के मतदाता को देखने या संपादित करने की अनुमति नहीं है।');
@@ -167,8 +223,8 @@ exports.assertMemberAccess = (user, member) => {
     }
   }
 
-  // 4. Ward check
-  if (Array.isArray(user.assignedWards) && user.assignedWards.length > 0) {
+  // 4. Ward check (only for single ward assignments, not full GP / Samiti Ward managers)
+  if (!hasSamitiWards && (!hasGps || (user.assignedWards && user.assignedWards.length <= 1)) && Array.isArray(user.assignedWards) && user.assignedWards.length > 0) {
     const wards = user.assignedWards.map(String);
     const mWard = member.wardNumber ? String(member.wardNumber) : null;
     const mUniWards = Array.isArray(member.municipalWardNumbers) ? member.municipalWardNumbers.map(String) : [];
