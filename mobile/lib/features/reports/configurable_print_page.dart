@@ -59,7 +59,7 @@ class _ConfigurablePrintPageState extends State<ConfigurablePrintPage> {
   int rowsPerPage = 10; // Default 10 rows for 30 voters per page
   String densityPreset = '30'; // '30', '24', '20', '16', '10', 'custom'
   bool includePhoto = true;
-  bool includeCoverPage = true;
+  bool includeCoverPage = false;
 
   // Field Customization
   final Set<String> selectedFields = {

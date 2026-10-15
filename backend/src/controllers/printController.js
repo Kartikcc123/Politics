@@ -6,7 +6,7 @@ const Member = require('../models/Member');
 const Booth = require('../models/Booth');
 const Ward = require('../models/Ward');
 const MediaAsset = require('../models/MediaAsset');
-const { applyMemberScope } = require('../utils/boothAccess');
+const { applyMemberScope, hindiFlexibleRegex } = require('../utils/boothAccess');
 const { resolveUploadPublicPath } = require('../utils/uploadPath');
 
 const regularFont = path.join(__dirname, '../assets/fonts/Nirmala.ttf');
@@ -66,15 +66,36 @@ function applyPrintFilters(req, filter) {
     'assemblyName', 'partNumber',
   ].map((key) => ({ [key]: new RegExp(escapeRegex(q), 'i') }));
 
+  const vilParam = req.query.village || req.query.gaon || req.query.gav;
+  if (vilParam) {
+    const vRegex = hindiFlexibleRegex(vilParam);
+    filter.$and = [...(filter.$and || []), {
+      $or: [
+        { village: vRegex },
+        { mukhyaGram: vRegex }
+      ]
+    }];
+  }
+
+  const gpParam = req.query.gramPanchayat || req.query.panchayat;
+  if (gpParam) {
+    filter.gramPanchayat = hindiFlexibleRegex(gpParam);
+  }
+
+  const samitiWardParam = req.query.samitiWard || req.query.panchayatSamitiWard;
+  if (samitiWardParam) {
+    filter.panchayatSamitiWard = hindiFlexibleRegex(samitiWardParam);
+  }
+
   for (const key of [
-    'village', 'gramPanchayat', 'tehsil', 'municipality', 'caste',
+    'tehsil', 'municipality', 'caste',
     'organizationPost', 'location', 'sectionName', 'assemblyName',
   ]) {
     if (req.query[key]) filter[key] = new RegExp(escapeRegex(req.query[key]), 'i');
   }
-  const samitiParam = req.query.tehsil || req.query.samiti || req.query.simiti;
+  const samitiParam = req.query.tehsil || req.query.samiti || req.query.simiti || req.query.panchayatSamiti;
   if (samitiParam) {
-    filter.tehsil = new RegExp(`^${escapeRegex(String(samitiParam).trim())}$`, 'i');
+    filter.tehsil = hindiFlexibleRegex(samitiParam);
   }
   for (const key of [
     'supportLevel', 'area', 'gender', 'verificationStatus', 'assemblyNumber',
@@ -503,8 +524,8 @@ exports.printMembers = async (req, res, next) => {
       doc.fillColor('#111827');
     };
 
-    // 1. Draw Official Cover Page (Like Official Election Commission Voter List)
-    if (req.query.includeCoverPage !== 'false') {
+    // 1. Draw Official Cover Page (Like Official Election Commission Voter List) - only if explicitly requested
+    if (req.query.includeCoverPage === 'true') {
       doc.rect(margin, margin, usableWidth, doc.page.height - margin * 2).lineWidth(2).strokeColor('#071b4b').stroke();
 
       // Official Title Header
