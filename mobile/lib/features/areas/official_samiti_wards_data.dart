@@ -47,7 +47,7 @@ const Map<String, dynamic> officialSamitiWardsData = {
             "totalWards": 0,
             "villages": [
               {
-                "name": "कलाल खेडी",
+                "name": "कलालखेड़ी",
                 "population": 918
               }
             ]
@@ -75,7 +75,7 @@ const Map<String, dynamic> officialSamitiWardsData = {
             "totalWards": 7,
             "villages": [
               {
-                "name": "थोरियाखेडी",
+                "name": "थोरियाखेड़ी",
                 "population": 711
               }
             ]
@@ -114,7 +114,7 @@ const Map<String, dynamic> officialSamitiWardsData = {
             "totalWards": 0,
             "villages": [
               {
-                "name": "बाडी",
+                "name": "बाड़ी",
                 "population": 1239
               }
             ]
@@ -144,7 +144,7 @@ const Map<String, dynamic> officialSamitiWardsData = {
                 "population": 0
               },
               {
-                "name": "भीलखेडी",
+                "name": "भीलखेड़ी",
                 "population": 205
               }
             ]
@@ -159,11 +159,11 @@ const Map<String, dynamic> officialSamitiWardsData = {
                 "population": 1444
               },
               {
-                "name": "अर्जुनगढ",
+                "name": "अर्जुनगढ़",
                 "population": 128
               },
               {
-                "name": "पाटियाखेडा",
+                "name": "पाटियाखेड़ा",
                 "population": 720
               }
             ]
@@ -191,7 +191,7 @@ const Map<String, dynamic> officialSamitiWardsData = {
             "totalWards": 11,
             "villages": [
               {
-                "name": "पीथा का खेड़ा",
+                "name": "पीथा का खेड़ा",
                 "population": 1140
               },
               {
@@ -214,7 +214,7 @@ const Map<String, dynamic> officialSamitiWardsData = {
             "totalWards": 0,
             "villages": [
               {
-                "name": "थोरियाखेडा",
+                "name": "थोरियाखेड़ा",
                 "population": 382
               }
             ]
@@ -225,7 +225,7 @@ const Map<String, dynamic> officialSamitiWardsData = {
             "totalWards": 0,
             "villages": [
               {
-                "name": "पचातरों का खेडा",
+                "name": "पचातरों का खेड़ा",
                 "population": 578
               }
             ]
@@ -279,7 +279,7 @@ const Map<String, dynamic> officialSamitiWardsData = {
             "totalWards": 7,
             "villages": [
               {
-                "name": "रेबारियो की ढ़ाणी",
+                "name": "रेबारियों की ढाणी",
                 "population": 400
               },
               {
@@ -287,7 +287,7 @@ const Map<String, dynamic> officialSamitiWardsData = {
                 "population": 603
               },
               {
-                "name": "नान्दुडा",
+                "name": "नान्दूड़ा",
                 "population": 275
               },
               {
@@ -331,11 +331,11 @@ const Map<String, dynamic> officialSamitiWardsData = {
                 "population": 2751
               },
               {
-                "name": "तेलीखेडा",
+                "name": "तेलीखेड़ा",
                 "population": 0
               },
               {
-                "name": "माण्डकाखेडा",
+                "name": "माण्डकाखेड़ा",
                 "population": 576
               }
             ]
@@ -397,7 +397,7 @@ const Map<String, dynamic> officialSamitiWardsData = {
                 "population": 0
               },
               {
-                "name": "लाठियाखेडी",
+                "name": "लाठियाखेड़ी",
                 "population": 217
               },
               {
@@ -448,7 +448,7 @@ const Map<String, dynamic> officialSamitiWardsData = {
             "totalWards": 0,
             "villages": [
               {
-                "name": "रालीखेडा",
+                "name": "रालीखेड़ा",
                 "population": 308
               }
             ]
@@ -478,7 +478,7 @@ const Map<String, dynamic> officialSamitiWardsData = {
                 "population": 3430
               },
               {
-                "name": "नयाखेड़ा",
+                "name": "नयाखेड़ा",
                 "population": 311
               }
             ]
@@ -495,7 +495,7 @@ const Map<String, dynamic> officialSamitiWardsData = {
             "totalWards": 7,
             "villages": [
               {
-                "name": "गल्यावडी",
+                "name": "गल्यावड़ी",
                 "population": 1652
               },
               {
@@ -595,7 +595,7 @@ const Map<String, dynamic> officialSamitiWardsData = {
             "totalWards": 9,
             "villages": [
               {
-                "name": "नारायणखेड़ा",
+                "name": "नारायणखेड़ा",
                 "population": 828
               },
               {
@@ -631,7 +631,7 @@ const Map<String, dynamic> officialSamitiWardsData = {
                 "population": 2362
               },
               {
-                "name": "मोटरों का खेडा",
+                "name": "मोटरों का खेड़ा",
                 "population": 0
               },
               {
@@ -654,15 +654,15 @@ const Map<String, dynamic> officialSamitiWardsData = {
                 "population": 949
               },
               {
-                "name": "आम्बाखेड़ा",
+                "name": "आम्बाखेड़ा",
                 "population": 369
               },
               {
-                "name": "तेल्याखेड़ी",
+                "name": "तेल्याखेड़ी",
                 "population": 376
               },
               {
-                "name": "खुटियाखेड़ा",
+                "name": "खुटियाखेड़ा",
                 "population": 325
               },
               {
@@ -702,7 +702,7 @@ const Map<String, dynamic> officialSamitiWardsData = {
             "totalWards": 0,
             "villages": [
               {
-                "name": "गाडरीखेडा",
+                "name": "गाडरीखेड़ा",
                 "population": 852
               }
             ]
@@ -793,7 +793,7 @@ const Map<String, dynamic> officialSamitiWardsData = {
                 "population": 411
               },
               {
-                "name": "मेरनियाखेड़ा",
+                "name": "मेरनियाखेड़ा",
                 "population": 651
               }
             ]
@@ -1039,7 +1039,7 @@ const Map<String, dynamic> officialSamitiWardsData = {
                 "population": 0
               },
               {
-                "name": "गाडरीखेडा",
+                "name": "गाडरीखेड़ा",
                 "population": 0
               },
               {

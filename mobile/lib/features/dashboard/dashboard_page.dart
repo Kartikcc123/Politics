@@ -27,6 +27,7 @@ class DashboardPage extends StatelessWidget {
           if (api.user?['role'] == 'booth') {
             return _BoothManagerHome(data: data, onNavigate: onNavigate);
           }
+          final isAdmin = api.user?['role'] == 'admin';
           final total = _number(data['members']);
           final families = _number(data['families']);
           final booths = _number(data['booths']);
@@ -75,16 +76,18 @@ class DashboardPage extends StatelessWidget {
                   icon: const Icon(Icons.search_rounded),
                   label: const Text('मतदाता खोजें'),
                 ),
-                secondaryAction: OutlinedButton.icon(
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: Colors.white,
-                    side: const BorderSide(color: Colors.white54),
-                  ),
-                  onPressed: () => Navigator.push(context,
-                      MaterialPageRoute(builder: (_) => const UploadPage())),
-                  icon: const Icon(Icons.upload_file_rounded),
-                  label: const Text('फाइल अपलोड'),
-                ),
+                secondaryAction: isAdmin
+                    ? OutlinedButton.icon(
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: Colors.white,
+                          side: const BorderSide(color: Colors.white54),
+                        ),
+                        onPressed: () => Navigator.push(context,
+                            MaterialPageRoute(builder: (_) => const UploadPage())),
+                        icon: const Icon(Icons.upload_file_rounded),
+                        label: const Text('फाइल अपलोड'),
+                      )
+                    : null,
               ),
               _MetricGrid(items: [
                 _MetricData('कुल मतदाता', '$total', Icons.groups_rounded, blue,
@@ -100,7 +103,7 @@ class DashboardPage extends StatelessWidget {
                     review > 0 ? rose : green,
                     review > 0 ? 'डेटा जाँचें' : 'सब ठीक है'),
               ]),
-              const HierarchicalLocationNavigator(),
+              if (isAdmin) const HierarchicalLocationNavigator(),
               const _SectionHeading(
                   title: 'जरूरी काम',
                   subtitle: 'रोज़ इस्तेमाल होने वाले मुख्य विकल्प'),
@@ -116,22 +119,24 @@ class DashboardPage extends StatelessWidget {
                         context,
                         MaterialPageRoute(
                             builder: (_) => const VoterManagementPage()))),
-                _ActionData(
-                    Icons.upload_file_rounded,
-                    'डेटा इम्पोर्ट',
-                    'PDF, Excel या CSV अपलोड करें',
-                    orange,
-                    () => Navigator.push(context,
-                        MaterialPageRoute(builder: (_) => const UploadPage()))),
-                _ActionData(
-                    Icons.account_balance_rounded,
-                    'क्षेत्र एवं गाँव',
-                    'विधानसभा से गाँव तक प्रबंधन',
-                    purple,
-                    () => Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                            builder: (_) => const AreaDirectoryPage()))),
+                if (isAdmin)
+                  _ActionData(
+                      Icons.upload_file_rounded,
+                      'डेटा इम्पोर्ट',
+                      'PDF, Excel या CSV अपलोड करें',
+                      orange,
+                      () => Navigator.push(context,
+                          MaterialPageRoute(builder: (_) => const UploadPage()))),
+                if (isAdmin)
+                  _ActionData(
+                      Icons.account_balance_rounded,
+                      'क्षेत्र एवं गाँव',
+                      'विधानसभा से गाँव तक प्रबंधन',
+                      purple,
+                      () => Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                              builder: (_) => const AreaDirectoryPage()))),
                 _ActionData(
                     Icons.family_restroom_rounded,
                     'परिवार प्रबंधन',
@@ -193,8 +198,6 @@ class _PhoneDashboard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isAdmin = api.user?['role'] == 'admin';
-    final perms = (api.user?['permissions'] as Map?) ?? {};
-    final canUpload = isAdmin || perms['canUploadPdf'] == true;
     final total = _number(data['members']);
     final today = _number(data['createdToday']);
     final families = _number(data['families']);
@@ -284,7 +287,7 @@ class _PhoneDashboard extends StatelessWidget {
                       builder: (_) => VoterForm(onSaved: api.notifyDataChanged),
                     ),
                   ),
-                  if (canUpload)
+                  if (isAdmin)
                     _PhoneQuickAction(
                       icon: Icons.upload_file_rounded,
                       label: 'PDF Upload',

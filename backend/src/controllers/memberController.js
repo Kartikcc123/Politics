@@ -1030,7 +1030,7 @@ exports.filterOptions = async (req, res, next) => {
     // 2. Samiti / Tehsil
     const tehsilParam = req.query.tehsil || req.query.samiti || req.query.simiti || req.query.panchayatSamiti;
     if (tehsilParam) {
-      filter.$and = [...(filter.$and || []), { tehsil: new RegExp(`^${escapeRegex(String(tehsilParam).trim())}$`, 'i') }];
+      filter.$and = [...(filter.$and || []), { tehsil: hindiFlexibleRegex(tehsilParam) }];
     }
 
     // 3. Gram Panchayat
@@ -1056,7 +1056,13 @@ exports.filterOptions = async (req, res, next) => {
     // 4. Village
     const vilParam = req.query.village || req.query.gaon || req.query.gav;
     if (vilParam) {
-      filter.$and = [...(filter.$and || []), { village: new RegExp(`^${escapeRegex(String(vilParam).trim())}$`, 'i') }];
+      const vRegex = hindiFlexibleRegex(vilParam);
+      filter.$and = [...(filter.$and || []), {
+        $or: [
+          { village: vRegex },
+          { mukhyaGram: vRegex }
+        ]
+      }];
     }
 
     // 5. Ward Number

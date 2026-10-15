@@ -164,9 +164,9 @@ class _SamitiHierarchyPageState extends State<SamitiHierarchyPage> {
       'wards': 7,
       'pop': 2868,
       'villages': [
-        {'name': 'थोरियाखेडी', 'pop': 711},
-        {'name': 'कलाल खेडी', 'pop': 918},
-        {'name': 'बाडी', 'pop': 1239},
+        {'name': 'थोरियाखेड़ी', 'pop': 711},
+        {'name': 'कलालखेड़ी', 'pop': 918},
+        {'name': 'बाड़ी', 'pop': 1239},
       ],
     },
     'कोट': {
@@ -175,16 +175,16 @@ class _SamitiHierarchyPageState extends State<SamitiHierarchyPage> {
       'villages': [
         {'name': 'कोट', 'pop': 2001},
         {'name': 'छातोल', 'pop': 411},
-        {'name': 'मेरनियाखेड़ा', 'pop': 651},
+        {'name': 'मेरनियाखेड़ा', 'pop': 651},
       ],
     },
     'खाखरमाला': {
       'wards': 7,
       'pop': 2837,
       'villages': [
-        {'name': 'रेबारियो की ढ़ाणी', 'pop': 400},
+        {'name': 'रेबारियों की ढाणी', 'pop': 400},
         {'name': 'खाखरमाला', 'pop': 603},
-        {'name': 'नान्दुडा', 'pop': 275},
+        {'name': 'नान्दूड़ा', 'pop': 275},
         {'name': 'टुंगच', 'pop': 1035},
         {'name': 'सिंरोडी', 'pop': 524},
       ],
@@ -195,7 +195,7 @@ class _SamitiHierarchyPageState extends State<SamitiHierarchyPage> {
       'villages': [
         {'name': 'खेमाणा', 'pop': 2327},
         {'name': 'खरडाया', 'pop': 0},
-        {'name': 'थोरियाखेडा', 'pop': 382},
+        {'name': 'थोरियाखेड़ा', 'pop': 382},
       ],
     },
     'गलवा': {
@@ -204,8 +204,8 @@ class _SamitiHierarchyPageState extends State<SamitiHierarchyPage> {
       'villages': [
         {'name': 'गलवा', 'pop': 1555},
         {'name': 'सज्जनपुरा', 'pop': 0},
-        {'name': 'रालीखेडा', 'pop': 308},
-        {'name': 'लाठियाखेडी', 'pop': 217},
+        {'name': 'रालीखेड़ा', 'pop': 308},
+        {'name': 'लाठियाखेड़ी', 'pop': 217},
         {'name': 'टोकरा', 'pop': 816},
         {'name': 'रतनपुरा', 'pop': 0},
       ],
@@ -214,9 +214,9 @@ class _SamitiHierarchyPageState extends State<SamitiHierarchyPage> {
       'wards': 7,
       'pop': 2791,
       'villages': [
-        {'name': 'गल्यावडी', 'pop': 1652},
+        {'name': 'गल्यावड़ी', 'pop': 1652},
         {'name': 'केमुनिया', 'pop': 561},
-        {'name': 'पचातरों का खेडा', 'pop': 578},
+        {'name': 'पचातरों का खेड़ा', 'pop': 578},
       ],
     },
     'चारोट': {
@@ -235,7 +235,7 @@ class _SamitiHierarchyPageState extends State<SamitiHierarchyPage> {
       'pop': 3741,
       'villages': [
         {'name': 'झडोल', 'pop': 3430},
-        {'name': 'नयाखेड़ा', 'pop': 311},
+        {'name': 'नयाखेड़ा', 'pop': 311},
       ],
     },
     'थला': {
@@ -260,7 +260,8 @@ class _SamitiHierarchyPageState extends State<SamitiHierarchyPage> {
       'pop': 2999,
       'villages': [
         {'name': 'नाथडियास', 'pop': 2362},
-        {'name': 'मोटरों का खेडा', 'pop': 0},
+        {'name': 'मोटरों का खेड़ा', 'pop': 369},
+        {'name': 'देवली', 'pop': 675},
         {'name': 'आसपुर', 'pop': 637},
       ],
     },
@@ -278,12 +279,12 @@ class _SamitiHierarchyPageState extends State<SamitiHierarchyPage> {
       'wards': 9,
       'pop': 3049,
       'villages': [
-        {'name': 'नारायणखेड़ा', 'pop': 828},
+        {'name': 'नारायणखेड़ा', 'pop': 828},
         {'name': 'सरंगु', 'pop': 202},
         {'name': 'खुटिया', 'pop': 949},
-        {'name': 'आम्बाखेड़ा', 'pop': 369},
-        {'name': 'तेल्याखेड़ी', 'pop': 376},
-        {'name': 'खुटियाखेड़ा', 'pop': 325},
+        {'name': 'आम्बाखेड़ा', 'pop': 369},
+        {'name': 'तेल्याखेड़ी', 'pop': 376},
+        {'name': 'खुटियाखेड़ा', 'pop': 325},
       ],
     },
     'नाहरी': {
@@ -307,7 +308,7 @@ class _SamitiHierarchyPageState extends State<SamitiHierarchyPage> {
       'wards': 7,
       'pop': 2685,
       'villages': [
-        {'name': 'पालरां', 'pop': 2346},
+        {'name': 'पालरा', 'pop': 2346},
         {'name': 'खाननिया', 'pop': 339},
       ],
     },
@@ -315,7 +316,7 @@ class _SamitiHierarchyPageState extends State<SamitiHierarchyPage> {
       'wards': 11,
       'pop': 4354,
       'villages': [
-        {'name': 'पीथा का खेड़ा', 'pop': 1140},
+        {'name': 'पीथा का खेड़ा', 'pop': 1140},
         {'name': 'मंडोल', 'pop': 619},
         {'name': 'ढिकाणी', 'pop': 148},
         {'name': 'रामा', 'pop': 1171},
@@ -337,9 +338,9 @@ class _SamitiHierarchyPageState extends State<SamitiHierarchyPage> {
       'pop': 3144,
       'villages': [
         {'name': 'बागोलिया', 'pop': 1444},
-        {'name': 'अर्जुनगढ', 'pop': 128},
-        {'name': 'गाडरीखेडा', 'pop': 852},
-        {'name': 'पाटियाखेडा', 'pop': 720},
+        {'name': 'अर्जुनगढ़', 'pop': 128},
+        {'name': 'गाडरीखेड़ा', 'pop': 852},
+        {'name': 'पाटियाखेड़ा', 'pop': 720},
       ],
     },
     'बागड़': {
@@ -377,8 +378,8 @@ class _SamitiHierarchyPageState extends State<SamitiHierarchyPage> {
         {'name': 'भीटा', 'pop': 1231},
         {'name': 'सेमलाट', 'pop': 57},
         {'name': 'रूपाखेडा', 'pop': 619},
-        {'name': 'सरेवडी', 'pop': 1191},
-        {'name': 'सरेवडी का बाडीया', 'pop': 0},
+        {'name': 'सरेवड़ी', 'pop': 1191},
+        {'name': 'सरेवड़ी का बाड़िया', 'pop': 0},
         {'name': 'जोरावरपुरा', 'pop': 315},
         {'name': 'भटेवर', 'pop': 1459},
       ],
@@ -398,8 +399,8 @@ class _SamitiHierarchyPageState extends State<SamitiHierarchyPage> {
       'pop': 3327,
       'villages': [
         {'name': 'मौखुन्दा', 'pop': 2751},
-        {'name': 'तेलीखेडा', 'pop': 0},
-        {'name': 'माण्डकाखेडा', 'pop': 576},
+        {'name': 'तेलीखेड़ा', 'pop': 0},
+        {'name': 'माण्डकाखेड़ा', 'pop': 576},
       ],
     },
     'रायपुर': {
@@ -426,7 +427,7 @@ class _SamitiHierarchyPageState extends State<SamitiHierarchyPage> {
         {'name': 'सुरास', 'pop': 1179},
         {'name': 'लक्ष्मीपुरा', 'pop': 0},
         {'name': 'धुलखेडा', 'pop': 1387},
-        {'name': 'भीलखेडी', 'pop': 205},
+        {'name': 'भीलखेड़ी', 'pop': 205},
       ],
     },
   };

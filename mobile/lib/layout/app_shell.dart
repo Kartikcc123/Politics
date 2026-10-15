@@ -159,38 +159,17 @@ class _AppShellState extends State<AppShell> {
     final user = api.user;
     final perms = (user?['permissions'] as Map?) ?? {};
 
-    final assignedGps = (user?['assignedGramPanchayats'] as List? ?? [])
-        .where((s) => '$s'.trim().isNotEmpty)
-        .toList();
-    final assignedVillages = (user?['assignedVillages'] as List? ?? [])
-        .where((s) => '$s'.trim().isNotEmpty)
-        .toList();
-    final assignedWards = (user?['assignedWards'] as List? ?? [])
-        .where((s) => '$s'.trim().isNotEmpty)
-        .toList();
-    final assignedParts = (user?['assignedParts'] as List? ?? [])
-        .where((s) => '$s'.trim().isNotEmpty)
-        .toList();
-
-    final hasWholeVillageAccess = isAdmin ||
-        assignedGps.isNotEmpty ||
-        assignedVillages.isNotEmpty ||
-        assignedWards.length > 1 ||
-        assignedParts.length > 1;
-
     final canPrint = isAdmin || perms['canPrintProfiles'] == true;
     final canExport = isAdmin || perms['canExportData'] == true;
     final canReport = isAdmin || perms['canViewReports'] == true;
-    final canUpload = isAdmin || perms['canUploadPdf'] == true;
-    final canImport = isAdmin || perms['canImportData'] == true;
 
     final sections = <DesktopNavSection>[];
 
     // 1. मुख्य कार्यक्षेत्र (Core)
     final coreItems = <NavItem>[
-      if (hasWholeVillageAccess)
+      if (isAdmin)
         NavItem(
-          isAdmin ? 'क्षेत्र व गाँव' : 'गाँव व वार्ड',
+          'क्षेत्र व गाँव',
           Icons.holiday_village_rounded,
           SamitiHierarchyPage(key: ValueKey('desktop-samiti-$refreshVersion')),
         ),
@@ -248,19 +227,19 @@ class _AppShellState extends State<AppShell> {
 
     // 3. डेटा व आयात (Data Management)
     final dataItems = <NavItem>[
-      if (hasWholeVillageAccess)
+      if (isAdmin)
         NavItem(
           'गाँव एवं पंचायत मास्टर',
           Icons.holiday_village_outlined,
           AreaDirectoryPage(key: ValueKey('desktop-area-dir-$refreshVersion')),
         ),
-      if (canUpload)
+      if (isAdmin)
         NavItem(
           'PDF / Excel अपलोड',
           Icons.cloud_upload_rounded,
           UploadPage(key: ValueKey('desktop-upload-$refreshVersion')),
         ),
-      if (canImport)
+      if (isAdmin)
         NavItem(
           'स्मार्ट Excel आयात',
           Icons.rule_folder_rounded,

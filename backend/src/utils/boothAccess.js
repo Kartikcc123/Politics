@@ -77,7 +77,17 @@ exports.applyMemberScope = (user, filter = {}) => {
 
   // 2. Gram Panchayat level scope
   if (hasGps) {
-    filter.gramPanchayat = { $in: user.assignedGramPanchayats.map(g => hindiFlexibleRegex(g)) };
+    const allowedGps = user.assignedGramPanchayats.map(g => hindiFlexibleRegex(g));
+    if (filter.gramPanchayat) {
+      filter.$and = [
+        ...(filter.$and || []),
+        { gramPanchayat: filter.gramPanchayat },
+        { gramPanchayat: { $in: allowedGps } }
+      ];
+      delete filter.gramPanchayat;
+    } else {
+      filter.gramPanchayat = { $in: allowedGps };
+    }
   }
 
   // 3. Village level scope (only enforce if user does not have entire GP or Samiti Ward scope)

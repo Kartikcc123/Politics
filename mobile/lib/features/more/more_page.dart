@@ -32,39 +32,19 @@ class MorePage extends StatelessWidget {
     final isAdmin = role == 'admin';
     final perms = (user?['permissions'] as Map?) ?? {};
 
-    final assignedGps = (user?['assignedGramPanchayats'] as List? ?? [])
-        .where((s) => '$s'.trim().isNotEmpty)
-        .toList();
-    final assignedVillages = (user?['assignedVillages'] as List? ?? [])
-        .where((s) => '$s'.trim().isNotEmpty)
-        .toList();
-    final assignedWards = (user?['assignedWards'] as List? ?? [])
-        .where((s) => '$s'.trim().isNotEmpty)
-        .toList();
-    final assignedParts = (user?['assignedParts'] as List? ?? [])
-        .where((s) => '$s'.trim().isNotEmpty)
-        .toList();
-
-    final hasWholeVillageAccess = isAdmin ||
-        assignedGps.isNotEmpty ||
-        assignedVillages.isNotEmpty ||
-        assignedWards.length > 1 ||
-        assignedParts.length > 1;
-
     final canPrint = isAdmin || perms['canPrintProfiles'] == true;
     final canExport = isAdmin || perms['canExportData'] == true;
     final canReport = isAdmin || perms['canViewReports'] == true;
-    final canUpload = isAdmin || perms['canUploadPdf'] == true;
-    final canImport = isAdmin || perms['canImportData'] == true;
 
     final importOptions = <_Option>[
-      _Option(
-          'क्षेत्र व गाँव (29 पंचायतें व 15 समिति वार्ड)',
-          'रायपुर की सभी 29 पंचायतें एवं 15 पंचायत समिति वार्ड अनुसार डेटा देखें',
-          Icons.account_balance_rounded,
-          const Color(0xff2563eb),
-          const SamitiHierarchyPage()),
-      if (hasWholeVillageAccess)
+      if (isAdmin)
+        _Option(
+            'क्षेत्र व गाँव (29 पंचायतें व 15 समिति वार्ड)',
+            'रायपुर की सभी 29 पंचायतें एवं 15 पंचायत समिति वार्ड अनुसार डेटा देखें',
+            Icons.account_balance_rounded,
+            const Color(0xff2563eb),
+            const SamitiHierarchyPage()),
+      if (isAdmin)
         _Option(
             'गाँव एवं पंचायत मास्टर',
             'गाँव, पंचायत, PIN, जनसंख्या, वार्ड और मतदाता देखें',
@@ -85,10 +65,10 @@ class MorePage extends StatelessWidget {
             Icons.edit_location_alt_rounded,
             const Color(0xff0f766e),
             const BulkLocationEditPage()),
-      if (canUpload)
+      if (isAdmin)
         _Option('PDF / Excel अपलोड', 'मतदाता सूची से एक साथ रिकॉर्ड जोड़ें',
             Icons.cloud_upload_rounded, orange, const UploadPage()),
-      if (canImport)
+      if (isAdmin)
         _Option('Excel का विस्तृत आयात', 'कॉलम मिलाएं और रिकॉर्ड पहले जांचें',
             Icons.rule_folder_rounded, green, const SmartExcelImportPage()),
       if (isAdmin)
@@ -195,7 +175,7 @@ class MorePage extends StatelessWidget {
         title: 'अधिक विकल्प',
         subtitle: 'सभी अतिरिक्त सुविधाएं यहां आसानी से मिलेंगी',
         icon: Icons.grid_view_rounded,
-        primaryAction: canUpload
+        primaryAction: isAdmin
             ? FilledButton.icon(
                 style: FilledButton.styleFrom(
                     backgroundColor: Colors.white, foregroundColor: blue),
