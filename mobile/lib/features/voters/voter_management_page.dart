@@ -38,6 +38,8 @@ class VoterManagementPage extends StatefulWidget {
     this.initialTehsil,
     this.initialWard,
     this.initialMunicipality,
+    this.initialPanchayatSamitiWard,
+    this.initialPanchayatSamiti,
     this.initialFavoriteFilter = false,
     this.initialUpdatedBy,
     this.initialUpdatedByName,
@@ -52,6 +54,8 @@ class VoterManagementPage extends StatefulWidget {
   final String? initialTehsil;
   final String? initialWard;
   final String? initialMunicipality;
+  final String? initialPanchayatSamitiWard;
+  final String? initialPanchayatSamiti;
   final bool initialFavoriteFilter;
   final String? initialUpdatedBy;
   final String? initialUpdatedByName;
@@ -105,6 +109,8 @@ class _VoterManagementPageState extends State<VoterManagementPage> {
   String supplementTypeFilter = '';
   String supplementDateFilter = '';
   String isDeletedFilter = '';
+  String? samitiWardFilter;
+  String? samitiFilter;
   int currentPage = 1;
   late Future<Map<String, dynamic>> dashboardFuture;
   late Future<VoterPageResult> votersFuture;
@@ -174,6 +180,14 @@ class _VoterManagementPageState extends State<VoterManagementPage> {
       municipalWardNumber.text = widget.initialWard!;
       rollType = 'all';
     }
+    if (widget.initialPanchayatSamitiWard != null && widget.initialPanchayatSamitiWard!.isNotEmpty) {
+      samitiWardFilter = widget.initialPanchayatSamitiWard!;
+      rollType = 'all';
+    }
+    if (widget.initialPanchayatSamiti != null && widget.initialPanchayatSamiti!.isNotEmpty) {
+      samitiFilter = widget.initialPanchayatSamiti!;
+      if (tehsil.text.isEmpty) tehsil.text = widget.initialPanchayatSamiti!;
+    }
     // Pre-populate persistent scope for restricted / scoped users if not already set
     final u = api.user;
     if (u != null && u['role'] != 'admin') {
@@ -239,6 +253,9 @@ class _VoterManagementPageState extends State<VoterManagementPage> {
       'gramPanchayat': gramPanchayat.text.trim(),
       'tehsil': tehsil.text.trim(),
       'samiti': tehsil.text.trim(),
+      if (samitiWardFilter != null && samitiWardFilter!.isNotEmpty) 'panchayatSamitiWard': samitiWardFilter!,
+      if (samitiWardFilter != null && samitiWardFilter!.isNotEmpty) 'samitiWard': samitiWardFilter!,
+      if (samitiFilter != null && samitiFilter!.isNotEmpty) 'panchayatSamiti': samitiFilter!,
       'municipality': municipality.text.trim(),
       'rollType': rollType,
       'matchStatus': matchStatus,
@@ -2468,6 +2485,9 @@ class _VoterManagementPageState extends State<VoterManagementPage> {
     final canPop = Navigator.of(context).canPop();
     if (canPop) {
       final titleParts = <String>[];
+      if (samitiWardFilter != null && samitiWardFilter!.isNotEmpty) {
+        titleParts.add('${samitiFilter ?? ""} $samitiWardFilter'.trim());
+      }
       if (gramPanchayat.text.isNotEmpty) titleParts.add('पंचायत: ${gramPanchayat.text}');
       if (municipalWardNumber.text.isNotEmpty) titleParts.add('वार्ड: ${municipalWardNumber.text}');
       if (village.text.isNotEmpty) titleParts.add('गाँव: ${village.text}');

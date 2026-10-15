@@ -93,8 +93,42 @@ const normalizeUserPayload = async (body, existingUser) => {
   if (Array.isArray(data.assignedParts)) {
     data.assignedParts = data.assignedParts.filter(Boolean).map(s => String(s).trim());
   }
+  if (Array.isArray(data.assignedSamitiWards)) {
+    data.assignedSamitiWards = data.assignedSamitiWards.filter(Boolean).map(s => String(s).trim());
+  }
+  if (data.assignedSamiti) {
+    data.assignedSamiti = String(data.assignedSamiti).trim();
+  }
   if (data.assignedVoterId) {
     data.assignedVoterId = String(data.assignedVoterId).trim();
+  }
+
+  // If user assigned to Samiti Ward(s) and assignedGramPanchayats is empty, populate GPs & villages from hierarchy
+  if (Array.isArray(data.assignedSamitiWards) && data.assignedSamitiWards.length > 0) {
+    try {
+      const hierarchy = require('../config/official_samiti_ward_hierarchy.json');
+      const samitiName = data.assignedSamiti || 'रायपुर';
+      const samitiData = hierarchy[samitiName];
+      if (samitiData && samitiData.wards) {
+        const gpsSet = new Set(data.assignedGramPanchayats || []);
+        const villagesSet = new Set(data.assignedVillages || []);
+        for (const wKey of data.assignedSamitiWards) {
+          const wObj = samitiData.wards[wKey];
+          if (wObj && wObj.panchayats) {
+            for (const [gpName, gpVal] of Object.entries(wObj.panchayats)) {
+              gpsSet.add(gpName);
+              for (const v of (gpVal.villages || [])) {
+                if (v && v.name) villagesSet.add(v.name);
+              }
+            }
+          }
+        }
+        data.assignedGramPanchayats = Array.from(gpsSet);
+        if (villagesSet.size > 0 && (!data.assignedVillages || data.assignedVillages.length === 0)) {
+          data.assignedVillages = Array.from(villagesSet);
+        }
+      }
+    } catch (_) {}
   }
 
   // If municipal Panchayat manager has empty assignedWards, populate all wards of those GPs
@@ -515,11 +549,17 @@ exports.hierarchyOptions = async (req, res, next) => {
     }
     const sortedParts = Array.from(partsSet).sort((a, b) => (parseInt(a) || 0) - (parseInt(b) || 0));
 
+    let samitiWardsHierarchy = {};
+    try {
+      samitiWardsHierarchy = require('../config/official_samiti_ward_hierarchy.json');
+    } catch (_) {}
+
     res.json({
       samiti: 'रायपुर (सहाड़ा विधानसभा)',
-      samitis: ['रायपुर', 'सहाड़ा'],
+      samitis: ['रायपुर', 'सहाड़ा', 'सुवाणा'],
       panchayats: finalPanchayats,
-      parts: sortedParts
+      parts: sortedParts,
+      samitiWards: samitiWardsHierarchy
     });
   } catch (error) {
     next(error);

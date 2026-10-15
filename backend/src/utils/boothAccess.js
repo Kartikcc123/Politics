@@ -35,6 +35,14 @@ exports.applyMemberScope = (user, filter = {}) => {
     filter.gramPanchayat = { $in: user.assignedGramPanchayats };
   }
 
+  // 3.5. Samiti Ward level scope
+  if (Array.isArray(user.assignedSamitiWards) && user.assignedSamitiWards.length > 0) {
+    filter.panchayatSamitiWard = { $in: user.assignedSamitiWards.map(String) };
+    if (user.assignedSamiti) {
+      filter.panchayatSamiti = user.assignedSamiti;
+    }
+  }
+
   // 4. Ward level scope
   if (Array.isArray(user.assignedWards) && user.assignedWards.length > 0) {
     const wards = user.assignedWards.map(String);
@@ -144,6 +152,16 @@ exports.assertMemberAccess = (user, member) => {
   else if (Array.isArray(user.assignedGramPanchayats) && user.assignedGramPanchayats.length > 0) {
     if (member.gramPanchayat && !user.assignedGramPanchayats.includes(member.gramPanchayat)) {
       const err = new Error('इस ग्राम पंचायत के मतदाता को देखने या संपादित करने की अनुमति नहीं है।');
+      err.status = 403;
+      throw err;
+    }
+  }
+
+  // 3.5. Samiti Ward check
+  if (Array.isArray(user.assignedSamitiWards) && user.assignedSamitiWards.length > 0) {
+    const sWards = user.assignedSamitiWards.map(String);
+    if (member.panchayatSamitiWard && !sWards.includes(String(member.panchayatSamitiWard))) {
+      const err = new Error('इस पंचायत समिति वार्ड के मतदाता को देखने या संपादित करने की अनुमति नहीं है।');
       err.status = 403;
       throw err;
     }

@@ -5,6 +5,7 @@ import '../../core/api_client.dart';
 import '../../core/contact_actions.dart';
 import '../../core/theme.dart';
 import '../../layout/app_layout.dart';
+import '../areas/official_samiti_wards_data.dart';
 import '../voters/voter_management_page.dart';
 
 class BoothUserPage extends StatefulWidget {
@@ -61,7 +62,7 @@ class _BoothUserPageState extends State<BoothUserPage> with SingleTickerProvider
   @override
   void initState() {
     super.initState();
-    tabController = TabController(length: 4, vsync: this);
+    tabController = TabController(length: 5, vsync: this);
     _loadInitialData();
   }
 
@@ -127,12 +128,16 @@ class _BoothUserPageState extends State<BoothUserPage> with SingleTickerProvider
         final gps = (user['assignedGramPanchayats'] as List? ?? []).join(' ').toLowerCase();
         final wards = (user['assignedWards'] as List? ?? []).join(' ').toLowerCase();
         final pParts = (user['assignedParts'] as List? ?? []).join(' ').toLowerCase();
+        final sWards = (user['assignedSamitiWards'] as List? ?? []).join(' ').toLowerCase();
+        final samiti = (user['assignedSamiti'] ?? '').toString().toLowerCase();
         if (!name.contains(q) &&
             !email.contains(q) &&
             !phone.contains(q) &&
             !gps.contains(q) &&
             !wards.contains(q) &&
-            !pParts.contains(q)) {
+            !pParts.contains(q) &&
+            !sWards.contains(q) &&
+            !samiti.contains(q)) {
           return false;
         }
       }
@@ -279,6 +284,16 @@ class _BoothUserPageState extends State<BoothUserPage> with SingleTickerProvider
                       }),
                       visualDensity: VisualDensity.compact,
                     ),
+                    const SizedBox(width: 6),
+                    ChoiceChip(
+                      label: const Text('सुवाणा (12 वार्ड)'),
+                      selected: selectedSamitiFilter == 'सुवाणा',
+                      onSelected: (_) => setState(() {
+                        selectedSamitiFilter = 'सुवाणा';
+                        selectedPanchayat = null;
+                      }),
+                      visualDensity: VisualDensity.compact,
+                    ),
                   ],
                 ),
               ),
@@ -306,8 +321,9 @@ class _BoothUserPageState extends State<BoothUserPage> with SingleTickerProvider
           dividerColor: Colors.transparent,
           tabs: const [
             Tab(icon: Icon(Icons.groups_rounded, size: 18), text: 'सभी प्रभारी'),
+            Tab(icon: Icon(Icons.account_balance_rounded, size: 18), text: 'समिति वार्डवार'),
             Tab(icon: Icon(Icons.location_city_rounded, size: 18), text: 'पंचायतवार'),
-            Tab(icon: Icon(Icons.maps_home_work_rounded, size: 18), text: 'वार्डवार'),
+            Tab(icon: Icon(Icons.maps_home_work_rounded, size: 18), text: 'GP वार्डवार'),
             Tab(icon: Icon(Icons.how_to_vote_rounded, size: 18), text: 'बूथ/भागवार'),
           ],
         ),
@@ -343,6 +359,7 @@ class _BoothUserPageState extends State<BoothUserPage> with SingleTickerProvider
           controller: tabController,
           children: [
             _buildAllManagersView(),
+            _buildSamitiWardManagersView(),
             _buildPanchayatManagersView(),
             _buildWardManagersView(),
             _buildBoothManagersView(),
@@ -398,7 +415,172 @@ class _BoothUserPageState extends State<BoothUserPage> with SingleTickerProvider
     );
   }
 
-  // TAB 2: PANCHAYAT LEVEL
+  // TAB 2: SAMITI WARD LEVEL
+  Widget _buildSamitiWardManagersView() {
+    final samitiWardsAll = (hierarchyData?['samitiWards'] as Map<String, dynamic>?) ?? officialSamitiWardsData;
+    final samitiKeys = samitiWardsAll.keys.toList();
+    final effectiveSamiti = (selectedSamitiFilter != 'all' && samitiKeys.contains(selectedSamitiFilter))
+        ? selectedSamitiFilter
+        : 'रायपुर';
+    final curSamitiData = (samitiWardsAll[effectiveSamiti] as Map<String, dynamic>?) ?? {};
+    final wardsMap = (curSamitiData['wards'] as Map<String, dynamic>?) ?? {};
+
+    final sortedWardKeys = wardsMap.keys.toList()
+      ..sort((a, b) {
+        final numA = int.tryParse(a.replaceAll(RegExp(r'\D'), '')) ?? 0;
+        final numB = int.tryParse(b.replaceAll(RegExp(r'\D'), '')) ?? 0;
+        return numA.compareTo(numB);
+      });
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          margin: const EdgeInsets.only(bottom: 10),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: border),
+          ),
+          child: Row(
+            children: [
+              const Icon(Icons.account_balance_rounded, size: 16, color: Color(0xff2563eb)),
+              const SizedBox(width: 8),
+              const Text('समिति:', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 12, color: navy)),
+              const SizedBox(width: 8),
+              Expanded(
+                child: SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: Row(
+                    children: samitiKeys.map((sName) {
+                      final isSel = effectiveSamiti == sName;
+                      return Padding(
+                        padding: const EdgeInsets.only(right: 6),
+                        child: ChoiceChip(
+                          label: Text(sName),
+                          selected: isSel,
+                          onSelected: (_) => setState(() {
+                            selectedSamitiFilter = sName;
+                          }),
+                          visualDensity: VisualDensity.compact,
+                        ),
+                      );
+                    }).toList(),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        Expanded(
+          child: ListView.separated(
+            itemCount: sortedWardKeys.length,
+            separatorBuilder: (_, __) => const SizedBox(height: 8),
+            itemBuilder: (_, index) {
+              final wardKey = sortedWardKeys[index];
+              final wData = wardsMap[wardKey] as Map<String, dynamic>? ?? {};
+              final wardNum = '${wData['wardNumber'] ?? wardKey.replaceAll(RegExp(r'\D'), '')}';
+              final panchayats = (wData['panchayats'] as Map<String, dynamic>?) ?? {};
+
+              final wardManagers = allUsers.where((u) {
+                final sWards = (u['assignedSamitiWards'] as List? ?? []).map((e) => e.toString());
+                final uSamiti = '${u['assignedSamiti'] ?? ''}'.trim();
+                final matchesSamiti = uSamiti.isEmpty || uSamiti == effectiveSamiti;
+                return matchesSamiti && sWards.contains(wardKey);
+              }).toList();
+
+              return Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: border),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                          decoration: BoxDecoration(
+                            color: const Color(0xffeff6ff),
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(color: const Color(0xffbfdbfe)),
+                          ),
+                          child: Text(
+                            'W$wardNum',
+                            style: const TextStyle(
+                              color: Color(0xff1d4ed8),
+                              fontWeight: FontWeight.w900,
+                              fontSize: 13,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                '$effectiveSamiti · $wardKey',
+                                style: const TextStyle(
+                                  color: navy,
+                                  fontWeight: FontWeight.w800,
+                                  fontSize: 14,
+                                ),
+                              ),
+                              Text(
+                                '${panchayats.length} पंचायतें: ${panchayats.keys.take(3).join(', ')}${panchayats.length > 3 ? "..." : ""}',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(color: muted, fontSize: 11),
+                              ),
+                            ],
+                          ),
+                        ),
+                        IconButton(
+                          tooltip: 'समिति वार्ड प्रभारी नियुक्त करें',
+                          onPressed: () => _openAddEditDialog(
+                            initialSamiti: effectiveSamiti,
+                            initialSamitiWard: wardKey,
+                            initialScope: 'samiti_ward',
+                          ),
+                          icon: const Icon(Icons.person_add_alt_1_rounded, color: Color(0xff2563eb), size: 20),
+                        ),
+                      ],
+                    ),
+                    if (wardManagers.isNotEmpty) ...[
+                      const SizedBox(height: 8),
+                      for (final u in wardManagers)
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 4),
+                          child: _MiniUserRow(
+                            user: u,
+                            onEdit: () => _openAddEditDialog(user: u),
+                            onDelete: () => _deleteUser(u),
+                            onShowWorkStats: () => _showUserWorkStats(u),
+                          ),
+                        ),
+                    ] else ...[
+                      const SizedBox(height: 4),
+                      const Text(
+                        'प्रभारी नियुक्त नहीं — क्लिक करके पूरे वार्ड का प्रभारी बनाएं',
+                        style: TextStyle(color: muted, fontSize: 11, fontStyle: FontStyle.italic),
+                      ),
+                    ],
+                  ],
+                ),
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
+
+  // TAB 3: PANCHAYAT LEVEL
   Widget _buildPanchayatManagersView() {
     final pList = visiblePanchayats;
     if (pList.isEmpty) {
@@ -687,6 +869,8 @@ class _BoothUserPageState extends State<BoothUserPage> with SingleTickerProvider
     String? initialWard,
     String? initialPart,
     String? initialScope,
+    String? initialSamitiWard,
+    String? initialSamiti,
   }) {
     showDialog(
       context: context,
@@ -699,7 +883,8 @@ class _BoothUserPageState extends State<BoothUserPage> with SingleTickerProvider
         initialWard: initialWard,
         initialPart: initialPart,
         initialScope: initialScope,
-        initialSamiti: selectedSamitiFilter != 'all' ? selectedSamitiFilter : null,
+        initialSamitiWard: initialSamitiWard,
+        initialSamiti: initialSamiti ?? (selectedSamitiFilter != 'all' ? selectedSamitiFilter : null),
         onSaved: _refresh,
       ),
     );
@@ -732,12 +917,17 @@ class _ManagerCard extends StatelessWidget {
     final gps = (user['assignedGramPanchayats'] as List? ?? []).map((e) => e.toString()).toList();
     final wards = (user['assignedWards'] as List? ?? []).map((e) => e.toString()).toList();
     final pParts = (user['assignedParts'] as List? ?? []).map((e) => e.toString()).toList();
+    final samitiWards = (user['assignedSamitiWards'] as List? ?? []).map((e) => e.toString()).toList();
+    final samiti = '${user['assignedSamiti'] ?? ''}'.trim();
 
     String roleTitle = 'कार्यकर्ता';
     Color roleColor = Colors.blueGrey;
     if (role == 'admin') {
       roleTitle = 'व्यवस्थापक (Admin)';
       roleColor = const Color(0xffea4335);
+    } else if (samitiWards.isNotEmpty) {
+      roleTitle = 'समिति वार्ड प्रभारी';
+      roleColor = const Color(0xff0284c7);
     } else if (role == 'booth') {
       roleTitle = 'बूथ प्रबंधक';
       roleColor = const Color(0xff2563eb);
@@ -788,16 +978,19 @@ class _ManagerCard extends StatelessWidget {
         const SizedBox(height: 10),
         // Scope badges
         Wrap(spacing: 6, runSpacing: 4, children: [
-          if (gps.isNotEmpty)
+          if (samitiWards.isNotEmpty)
+            for (final sw in samitiWards)
+              _tag('🏛️ ${samiti.isNotEmpty ? "$samiti · " : ""}$sw', const Color(0xff0284c7)),
+          if (gps.isNotEmpty && samitiWards.isEmpty)
             for (final gp in gps)
               _tag('🏛️ GP: $gp', const Color(0xff7c3aed)),
-          if (wards.isNotEmpty)
+          if (wards.isNotEmpty && samitiWards.isEmpty)
             for (final w in wards)
               _tag('🏘️ वार्ड #$w', const Color(0xff059669)),
           if (pParts.isNotEmpty)
             for (final p in pParts)
               _tag('🗳️ भाग #$p', const Color(0xff2563eb)),
-          if (gps.isEmpty && wards.isEmpty && pParts.isEmpty && role == 'admin')
+          if (gps.isEmpty && wards.isEmpty && pParts.isEmpty && samitiWards.isEmpty && role == 'admin')
             _tag('🌐 संपूर्ण विधानसभा क्षेत्र', const Color(0xffea4335)),
           if (role != 'admin') ...[
             if ((user['allowedRollType'] ?? 'municipal') == 'municipal')
@@ -933,6 +1126,7 @@ class _AddEditManagerDialog extends StatefulWidget {
     this.initialPart,
     this.initialScope,
     this.initialSamiti,
+    this.initialSamitiWard,
     required this.onSaved,
   });
 
@@ -945,6 +1139,7 @@ class _AddEditManagerDialog extends StatefulWidget {
   final String? initialPart;
   final String? initialScope;
   final String? initialSamiti;
+  final String? initialSamitiWard;
   final VoidCallback onSaved;
 
   @override
@@ -958,12 +1153,13 @@ class _AddEditManagerDialogState extends State<_AddEditManagerDialog> {
   final passwordController = TextEditingController();
   final voterSearchController = TextEditingController();
 
-  // Primary access type: 'municipal' vs 'assembly'
+  // Primary access type: 'samiti_ward' vs 'municipal' vs 'assembly'
   String selectedRollCategory = 'municipal';
   String selectedSamiti = 'रायपुर';
-  String selectedScope = 'panchayat'; // 'panchayat' or 'ward' (for municipal), 'booth' (for assembly)
+  String selectedScope = 'panchayat'; // 'panchayat', 'ward', 'samiti_ward', 'booth'
   String? selectedGp;
   String? selectedWard;
+  String? selectedSamitiWard;
   String? selectedPart;
   String selectedRole = 'booth';
   String selectedRollType = 'municipal'; // 'municipal', 'assembly', 'all'
@@ -1024,7 +1220,16 @@ class _AddEditManagerDialogState extends State<_AddEditManagerDialog> {
       final pParts = (u['assignedParts'] as List? ?? []).map((e) => e.toString()).toList();
       final rollType = '${u['allowedRollType'] ?? ''}';
 
-      if (rollType == 'assembly' || (pParts.isNotEmpty && gps.isEmpty)) {
+      final sWards = (u['assignedSamitiWards'] as List? ?? []).map((e) => e.toString()).toList();
+      final userSamiti = '${u['assignedSamiti'] ?? ''}'.trim();
+      if (userSamiti.isNotEmpty) selectedSamiti = userSamiti;
+
+      if (sWards.isNotEmpty) {
+        selectedRollCategory = 'samiti_ward';
+        selectedRollType = 'municipal';
+        selectedScope = 'samiti_ward';
+        selectedSamitiWard = sWards.first;
+      } else if (rollType == 'assembly' || (pParts.isNotEmpty && gps.isEmpty)) {
         selectedRollCategory = 'assembly';
         selectedRollType = 'assembly';
         selectedPart = pParts.isNotEmpty ? pParts.first : (widget.parts.isNotEmpty ? widget.parts.first : null);
@@ -1062,7 +1267,14 @@ class _AddEditManagerDialogState extends State<_AddEditManagerDialog> {
       canViewReports = perms['canViewReports'] != false;
       selectFromVoters = false;
     } else {
-      if (widget.initialScope == 'booth' || widget.initialPart != null) {
+      if (widget.initialScope == 'samiti_ward' || widget.initialSamitiWard != null) {
+        selectedRollCategory = 'samiti_ward';
+        selectedRollType = 'municipal';
+        selectedScope = 'samiti_ward';
+        selectedRole = 'ward_head';
+        if (widget.initialSamiti != null) selectedSamiti = widget.initialSamiti!;
+        selectedSamitiWard = widget.initialSamitiWard;
+      } else if (widget.initialScope == 'booth' || widget.initialPart != null) {
         selectedRollCategory = 'assembly';
         selectedRollType = 'assembly';
         selectedScope = 'booth';
@@ -1110,6 +1322,13 @@ class _AddEditManagerDialogState extends State<_AddEditManagerDialog> {
       if (selectedRollCategory == 'assembly') {
         if (selectedPart != null && selectedPart!.isNotEmpty) {
           queryParams['partNumber'] = selectedPart!;
+        }
+      } else if (selectedRollCategory == 'samiti_ward') {
+        if (selectedSamiti.isNotEmpty) {
+          queryParams['panchayatSamiti'] = selectedSamiti;
+        }
+        if (selectedSamitiWard != null && selectedSamitiWard!.isNotEmpty) {
+          queryParams['panchayatSamitiWard'] = selectedSamitiWard!;
         }
       } else {
         if (selectedGp != null && selectedGp!.isNotEmpty) {
@@ -1196,6 +1415,11 @@ class _AddEditManagerDialogState extends State<_AddEditManagerDialog> {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('कृपया भाग/बूथ संख्या चुनें।')));
         return;
       }
+    } else if (selectedRollCategory == 'samiti_ward') {
+      if (selectedSamitiWard == null || selectedSamitiWard!.trim().isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('कृपया पंचायत समिति वार्ड चुनें।')));
+        return;
+      }
     } else {
       if (selectedGp == null || selectedGp!.trim().isEmpty) {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('कृपया ग्राम पंचायत चुनें।')));
@@ -1215,9 +1439,28 @@ class _AddEditManagerDialogState extends State<_AddEditManagerDialog> {
     List<String> assignedWardsList = [];
     List<String> assignedGpsList = [];
     List<String> assignedPartsList = [];
+    List<String> assignedSamitiWardsList = [];
+    List<String> assignedVillagesList = [];
 
     if (selectedRollCategory == 'assembly') {
       assignedPartsList = selectedPart != null ? [selectedPart!] : [];
+    } else if (selectedRollCategory == 'samiti_ward') {
+      assignedSamitiWardsList = selectedSamitiWard != null ? [selectedSamitiWard!] : [];
+      final samitiData = officialSamitiWardsData[selectedSamiti] as Map<String, dynamic>?;
+      final wardsMap = samitiData?['wards'] as Map<String, dynamic>?;
+      final wardData = wardsMap?[selectedSamitiWard] as Map<String, dynamic>?;
+      if (wardData != null) {
+        final gpMap = wardData['panchayats'] as Map<String, dynamic>? ?? {};
+        for (final gpEntry in gpMap.entries) {
+          assignedGpsList.add(gpEntry.key);
+          final villagesList = (gpEntry.value['villages'] as List? ?? []);
+          for (final v in villagesList) {
+            if (v is Map && v['name'] != null) {
+              assignedVillagesList.add(v['name'].toString());
+            }
+          }
+        }
+      }
     } else {
       assignedGpsList = selectedGp != null ? [selectedGp!] : [];
       if (selectedScope == 'ward' && selectedWard != null && selectedWard!.isNotEmpty) {
@@ -1233,8 +1476,11 @@ class _AddEditManagerDialogState extends State<_AddEditManagerDialog> {
       'phone': phone,
       'role': selectedRole,
       'allowedRollType': selectedRollType,
+      'assignedSamiti': selectedSamiti,
+      'assignedSamitiWards': assignedSamitiWardsList,
       'assignedGramPanchayats': assignedGpsList,
       'assignedWards': assignedWardsList,
+      'assignedVillages': assignedVillagesList,
       'assignedParts': assignedPartsList,
       'assignedVoterId': selectedVoter?['voterId'] ?? '',
       'permissions': {
@@ -1343,8 +1589,34 @@ class _AddEditManagerDialogState extends State<_AddEditManagerDialog> {
             Row(children: [
               Expanded(
                 child: _accessCategoryCard(
-                  title: '🏢 नगरपालिका / पंचायत',
-                  subtitle: 'वार्ड व पंचायत आधारित',
+                  title: '🏛️ समिति वार्ड',
+                  subtitle: 'समिति वार्ड स्तर',
+                  icon: Icons.account_balance_rounded,
+                  isSelected: selectedRollCategory == 'samiti_ward',
+                  onTap: () {
+                    setState(() {
+                      selectedRollCategory = 'samiti_ward';
+                      selectedRollType = 'municipal';
+                      selectedScope = 'samiti_ward';
+                      selectedRole = 'ward_head';
+                      selectedPart = null;
+                      selectedGp = null;
+                      selectedWard = null;
+                      final sMap = officialSamitiWardsData[selectedSamiti] as Map<String, dynamic>?;
+                      final wMap = sMap?['wards'] as Map<String, dynamic>? ?? {};
+                      if (selectedSamitiWard == null || !wMap.containsKey(selectedSamitiWard)) {
+                        selectedSamitiWard = wMap.keys.isNotEmpty ? wMap.keys.first : null;
+                      }
+                    });
+                    _searchVoters();
+                  },
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: _accessCategoryCard(
+                  title: '🏢 ग्राम पंचायत',
+                  subtitle: 'पंचायत व वार्ड स्तर',
                   icon: Icons.location_city_rounded,
                   isSelected: selectedRollCategory == 'municipal',
                   onTap: () {
@@ -1352,7 +1624,9 @@ class _AddEditManagerDialogState extends State<_AddEditManagerDialog> {
                       selectedRollCategory = 'municipal';
                       selectedRollType = 'municipal';
                       selectedScope = 'panchayat';
+                      selectedRole = 'booth';
                       selectedPart = null;
+                      selectedSamitiWard = null;
                       if (selectedGp == null && filteredPanchayats.isNotEmpty) {
                         selectedGp = '${filteredPanchayats.first['name']}';
                       }
@@ -1361,11 +1635,11 @@ class _AddEditManagerDialogState extends State<_AddEditManagerDialog> {
                   },
                 ),
               ),
-              const SizedBox(width: 10),
+              const SizedBox(width: 8),
               Expanded(
                 child: _accessCategoryCard(
-                  title: '🏛️ विधानसभा',
-                  subtitle: 'भाग/बूथ संख्या (1-315)',
+                  title: '🗳️ विधानसभा',
+                  subtitle: 'बूथ संख्या (1-315)',
                   icon: Icons.how_to_vote_rounded,
                   isSelected: selectedRollCategory == 'assembly',
                   onTap: () {
@@ -1373,8 +1647,10 @@ class _AddEditManagerDialogState extends State<_AddEditManagerDialog> {
                       selectedRollCategory = 'assembly';
                       selectedRollType = 'assembly';
                       selectedScope = 'booth';
+                      selectedRole = 'booth';
                       selectedGp = null;
                       selectedWard = null;
+                      selectedSamitiWard = null;
                       if (selectedPart == null && widget.parts.isNotEmpty) {
                         selectedPart = widget.parts.first;
                       }
@@ -1385,6 +1661,131 @@ class _AddEditManagerDialogState extends State<_AddEditManagerDialog> {
               ),
             ]),
             const SizedBox(height: 14),
+
+            // If Samiti Ward selected:
+            if (selectedRollCategory == 'samiti_ward') ...[
+              const Text('पंचायत समिति चुनें:', style: TextStyle(color: muted, fontSize: 12, fontWeight: FontWeight.bold)),
+              const SizedBox(height: 6),
+              Wrap(
+                spacing: 8,
+                children: ['रायपुर', 'सहाड़ा', 'सुवाणा'].map((sam) {
+                  final isSel = selectedSamiti == sam;
+                  return ChoiceChip(
+                    label: Text(sam, style: TextStyle(fontWeight: isSel ? FontWeight.bold : FontWeight.normal)),
+                    selected: isSel,
+                    onSelected: (val) {
+                      if (val) {
+                        setState(() {
+                          selectedSamiti = sam;
+                          final sMap = officialSamitiWardsData[selectedSamiti] as Map<String, dynamic>?;
+                          final wMap = sMap?['wards'] as Map<String, dynamic>? ?? {};
+                          selectedSamitiWard = wMap.keys.isNotEmpty ? wMap.keys.first : null;
+                        });
+                        _searchVoters();
+                      }
+                    },
+                  );
+                }).toList(),
+              ),
+              const SizedBox(height: 12),
+
+              const Text('पंचायत समिति वार्ड संख्या चुनें:', style: TextStyle(color: muted, fontSize: 12, fontWeight: FontWeight.bold)),
+              const SizedBox(height: 4),
+              Builder(builder: (context) {
+                final sMap = officialSamitiWardsData[selectedSamiti] as Map<String, dynamic>?;
+                final wMap = sMap?['wards'] as Map<String, dynamic>? ?? {};
+                final sortedWards = wMap.keys.toList()
+                  ..sort((a, b) {
+                    final numA = int.tryParse(a.replaceAll(RegExp(r'\D'), '')) ?? 0;
+                    final numB = int.tryParse(b.replaceAll(RegExp(r'\D'), '')) ?? 0;
+                    return numA.compareTo(numB);
+                  });
+                final currentVal = (selectedSamitiWard != null && sortedWards.contains(selectedSamitiWard))
+                    ? selectedSamitiWard
+                    : (sortedWards.isNotEmpty ? sortedWards.first : null);
+
+                return Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  decoration: BoxDecoration(color: const Color(0xfff8fafc), borderRadius: BorderRadius.circular(12), border: Border.all(color: border)),
+                  child: DropdownButtonHideUnderline(
+                    child: DropdownButton<String>(
+                      isExpanded: true,
+                      value: currentVal,
+                      hint: const Text('समिति वार्ड चुनें...'),
+                      onChanged: (val) {
+                        setState(() => selectedSamitiWard = val);
+                        _searchVoters();
+                      },
+                      items: sortedWards.map((wKey) {
+                        final wObj = wMap[wKey] as Map<String, dynamic>? ?? {};
+                        final gpsCount = (wObj['panchayats'] as Map? ?? {}).length;
+                        return DropdownMenuItem(
+                          value: wKey,
+                          child: Text('🏛️ $wKey ($gpsCount ग्राम पंचायतें सम्मिलित)'),
+                        );
+                      }).toList(),
+                    ),
+                  ),
+                );
+              }),
+              const SizedBox(height: 10),
+
+              // Preview box of GPs & villages in this ward
+              Builder(builder: (context) {
+                final sMap = officialSamitiWardsData[selectedSamiti] as Map<String, dynamic>?;
+                final wMap = sMap?['wards'] as Map<String, dynamic>? ?? {};
+                final curWard = (selectedSamitiWard != null && wMap.containsKey(selectedSamitiWard))
+                    ? wMap[selectedSamitiWard] as Map<String, dynamic>?
+                    : (wMap.isNotEmpty ? wMap.values.first as Map<String, dynamic>? : null);
+                if (curWard == null) return const SizedBox.shrink();
+
+                final gpMap = curWard['panchayats'] as Map<String, dynamic>? ?? {};
+                return Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: const Color(0xffeff6ff),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: const Color(0xffbfdbfe)),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(children: [
+                        const Icon(Icons.info_outline_rounded, size: 16, color: Color(0xff1d4ed8)),
+                        const SizedBox(width: 6),
+                        Text(
+                          'इस समिति वार्ड के अधिकार क्षेत्र में (${gpMap.length} ग्राम पंचायतें):',
+                          style: const TextStyle(color: Color(0xff1e3a8a), fontWeight: FontWeight.bold, fontSize: 12),
+                        ),
+                      ]),
+                      const SizedBox(height: 6),
+                      Wrap(
+                        spacing: 6,
+                        runSpacing: 4,
+                        children: gpMap.entries.map((e) {
+                          final vCount = (e.value['villages'] as List? ?? []).length;
+                          return Chip(
+                            backgroundColor: Colors.white,
+                            padding: EdgeInsets.zero,
+                            labelPadding: const EdgeInsets.symmetric(horizontal: 8),
+                            label: Text(
+                              '🏢 ${e.key} ($vCount गाँव)',
+                              style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xff1e40af)),
+                            ),
+                          );
+                        }).toList(),
+                      ),
+                      const SizedBox(height: 6),
+                      const Text(
+                        '💡 इस वार्ड के प्रभारी को ऊपर दी गई सभी पंचायतों व गाँवों के मतदाताओं का प्रबंधन अधिकार स्वतः प्राप्त होगा।',
+                        style: TextStyle(color: Color(0xff1d4ed8), fontSize: 11, fontStyle: FontStyle.italic),
+                      ),
+                    ],
+                  ),
+                );
+              }),
+              const SizedBox(height: 14),
+            ],
 
             // If Assembly selected:
             if (selectedRollCategory == 'assembly') ...[

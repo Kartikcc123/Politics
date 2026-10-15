@@ -118,6 +118,8 @@ const MemberSchema = new mongoose.Schema({
   pinCode: { type: String, trim: true },
   gramPanchayat: { type: String, trim: true },
   village: { type: String, trim: true },
+  panchayatSamiti: { type: String, trim: true, index: true },
+  panchayatSamitiWard: { type: String, trim: true, index: true },
   mukhyaGram: { type: String, trim: true },
   municipality: { type: String, trim: true },
   hasAssemblyMembership: { type: Boolean, default: false, index: true },

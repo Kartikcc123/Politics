@@ -345,6 +345,9 @@ exports.list = async (req, res, next) => {
     }
     const tehsilParam = tehsil || req.query.samiti || req.query.simiti || req.query.panchayatSamiti;
     if (tehsilParam) filter.tehsil = hindiFlexibleRegex(tehsilParam);
+    if (req.query.panchayatSamiti) filter.panchayatSamiti = req.query.panchayatSamiti;
+    const samitiWardParam = req.query.panchayatSamitiWard || req.query.samitiWard;
+    if (samitiWardParam) filter.panchayatSamitiWard = samitiWardParam;
     if (municipality) filter.municipality = hindiFlexibleRegex(municipality);
     if (caste && caste !== 'all') filter.caste = new RegExp(`^${escapeRegex(String(caste).trim())}$`, 'i');
     if (organizationPost) filter.organizationPost = searchRegex(organizationPost);
