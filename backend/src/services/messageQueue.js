@@ -6,7 +6,7 @@ const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 let processing = false;
 
 function normalizeMobile(value) {
-  let digits = String(value || '').replace(/\D/g, '');
+  let digits = String(value || '').replace(/\D/g, '').replace(/^0+/, '');
   if (digits.length === 10) digits = `91${digits}`;
   return digits;
 }

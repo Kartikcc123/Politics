@@ -1,4 +1,4 @@
-﻿const fs = require('fs');
+const fs = require('fs');
 const path = require('path');
 const QRCode = require('qrcode');
 const { Client, LocalAuth } = require('whatsapp-web.js');
@@ -110,11 +110,14 @@ async function sendWebMessage(sender, mobile, text) {
   let client = clients.get(id);
   if (!client) client = await connectSender(sender);
   if (!ready.has(id)) throw new Error('WhatsApp QR session connected नहीं है');
-  let digits = String(mobile || '').replace(/\D/g, '');
+  let digits = String(mobile || '').replace(/\D/g, '').replace(/^0+/, '');
   if (digits.length === 10) digits = `91${digits}`;
-  const numberId = await client.getNumberId(digits);
-  if (!numberId) throw new Error('यह नंबर WhatsApp पर registered नहीं है');
-  const message = await client.sendMessage(numberId._serialized, text);
+  let numberId = null;
+  try {
+    numberId = await client.getNumberId(digits);
+  } catch (_) {}
+  const targetSerialized = numberId?._serialized || `${digits}@c.us`;
+  const message = await client.sendMessage(targetSerialized, text);
   return message.id?._serialized || '';
 }
 
