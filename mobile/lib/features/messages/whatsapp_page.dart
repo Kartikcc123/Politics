@@ -32,6 +32,7 @@ class _WhatsAppPageState extends State<WhatsAppPage> with SingleTickerProviderSt
   String _selectedSamiti = 'all'; // 'all' or samiti name
   String _selectedGramPanchayat = 'all'; // 'all' or gram panchayat name
   String _selectedVillage = 'all'; // 'all' or village name
+  String _selectedWard = 'all'; // 'all' or ward number
   String _selectedPart = 'all'; // 'all' or part number
   String _selectedCaste = 'all'; // 'all' or caste name
   bool _onlyWithMobile = false;
@@ -40,6 +41,7 @@ class _WhatsAppPageState extends State<WhatsAppPage> with SingleTickerProviderSt
   List<Map<String, dynamic>> _samitiOptions = [];
   List<Map<String, dynamic>> _gramPanchayatOptions = [];
   List<Map<String, dynamic>> _villageOptions = [];
+  List<Map<String, dynamic>> _wardOptions = [];
   List<Map<String, dynamic>> _partOptions = [];
   List<Map<String, dynamic>> _casteOptions = [];
 
@@ -78,6 +80,7 @@ class _WhatsAppPageState extends State<WhatsAppPage> with SingleTickerProviderSt
       _loadSamitiOptions(),
       _loadGramPanchayatOptions(),
       _loadVillageOptions(),
+      _loadWardOptions(),
       _loadPartOptions(),
       _loadCasteOptions(),
     ]);
@@ -126,6 +129,28 @@ class _WhatsAppPageState extends State<WhatsAppPage> with SingleTickerProviderSt
             .map((e) => Map<String, dynamic>.from(e))
             .where((e) => (e['value'] ?? '').toString().trim().isNotEmpty)
             .toList();
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _loadWardOptions() async {
+    try {
+      final q = <String, String>{'field': 'ward', 'limit': '300'};
+      if (_selectedSamiti != 'all') q['samiti'] = _selectedSamiti;
+      if (_selectedGramPanchayat != 'all') q['gramPanchayat'] = _selectedGramPanchayat;
+      if (_selectedVillage != 'all') q['village'] = _selectedVillage;
+      final dynamic res = await api.get('/api/members/field-values?${Uri(queryParameters: q).query}');
+      if (res is Map && res['items'] is List) {
+        _wardOptions = (res['items'] as List)
+            .whereType<Map>()
+            .map((e) => Map<String, dynamic>.from(e))
+            .where((e) => (e['value'] ?? '').toString().trim().isNotEmpty)
+            .toList();
+        _wardOptions.sort((a, b) {
+          final aNum = int.tryParse('${a['value']}') ?? 0;
+          final bNum = int.tryParse('${b['value']}') ?? 0;
+          return aNum.compareTo(bNum);
+        });
       }
     } catch (_) {}
   }
@@ -185,6 +210,7 @@ class _WhatsAppPageState extends State<WhatsAppPage> with SingleTickerProviderSt
       if (_selectedSamiti != 'all') queryParams['tehsil'] = _selectedSamiti;
       if (_selectedGramPanchayat != 'all') queryParams['gramPanchayat'] = _selectedGramPanchayat;
       if (_selectedVillage != 'all') queryParams['village'] = _selectedVillage;
+      if (_selectedWard != 'all') queryParams['wardNumber'] = _selectedWard;
       if (_selectedPart != 'all') queryParams['partNumber'] = _selectedPart;
       if (_selectedCaste != 'all') queryParams['caste'] = _selectedCaste;
       final q = _searchController.text.trim();
@@ -695,9 +721,11 @@ class _WhatsAppPageState extends State<WhatsAppPage> with SingleTickerProviderSt
                       if (val != null) {
                         setState(() {
                           _selectedVillage = val;
+                          _selectedWard = 'all';
                           _selectedPart = 'all';
                           _selectedCaste = 'all';
                         });
+                        _loadWardOptions();
                         _loadPartOptions();
                         _loadCasteOptions();
                         _fetchVoters();
@@ -736,6 +764,32 @@ class _WhatsAppPageState extends State<WhatsAppPage> with SingleTickerProviderSt
                   ),
                 ),
               ],
+            ),
+            const SizedBox(height: 8),
+            // Row 2.5: Ward Dropdown
+            DropdownButtonFormField<String>(
+              value: _wardOptions.any((w) => w['value'] == _selectedWard) ? _selectedWard : 'all',
+              decoration: InputDecoration(
+                labelText: 'वार्ड फ़िल्टर',
+                contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                isDense: true,
+              ),
+              items: [
+                const DropdownMenuItem(value: 'all', child: Text('सभी वार्ड', style: TextStyle(fontSize: 13))),
+                ..._wardOptions.map((w) => DropdownMenuItem(
+                      value: '${w['value']}',
+                      child: Text('वार्ड ${w['value']} (${w['count'] ?? ''})', style: const TextStyle(fontSize: 13)),
+                    )),
+              ],
+              onChanged: (val) {
+                if (val != null) {
+                  setState(() {
+                    _selectedWard = val;
+                  });
+                  _fetchVoters();
+                }
+              },
             ),
             const SizedBox(height: 8),
             // Row 2: Caste Filter & Live Search

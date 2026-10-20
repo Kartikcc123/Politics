@@ -848,65 +848,75 @@ class _SamitiHierarchyPageState extends State<SamitiHierarchyPage> {
                                   ),
                                   const SizedBox(height: 8),
 
-                                  ...villages.map((v) {
-                                    final vName = v['name'] as String;
-                                    final pop = v['pop'] as int? ?? 0;
+                                  LayoutBuilder(builder: (context, constraints) {
+                                    final isWide = constraints.maxWidth >= 600;
+                                    final colWidth = isWide ? (constraints.maxWidth - 10) / 2 : constraints.maxWidth;
+                                    return Wrap(
+                                      spacing: 10,
+                                      runSpacing: 8,
+                                      children: villages.map((v) {
+                                        final vName = v['name'] as String;
+                                        final pop = v['pop'] as int? ?? 0;
 
-                                    return Container(
-                                      margin: const EdgeInsets.only(bottom: 8),
-                                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                                      decoration: BoxDecoration(
-                                        color: Colors.white,
-                                        borderRadius: BorderRadius.circular(12),
-                                        border: Border.all(color: border.withValues(alpha: 0.8)),
-                                      ),
-                                      child: Row(
-                                        children: [
-                                          Container(
-                                            width: 34,
-                                            height: 34,
-                                            decoration: const BoxDecoration(
-                                              color: Color(0xffeff6ff),
-                                              shape: BoxShape.circle,
+                                        return SizedBox(
+                                          width: colWidth,
+                                          child: Container(
+                                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                                            decoration: BoxDecoration(
+                                              color: Colors.white,
+                                              borderRadius: BorderRadius.circular(12),
+                                              border: Border.all(color: border.withValues(alpha: 0.8)),
                                             ),
-                                            alignment: Alignment.center,
-                                            child: const Icon(Icons.location_on_rounded, color: blue, size: 18),
-                                          ),
-                                          const SizedBox(width: 10),
-                                          Expanded(
-                                            child: Column(
-                                              crossAxisAlignment: CrossAxisAlignment.start,
+                                            child: Row(
                                               children: [
-                                                Text(
-                                                  vName,
-                                                  style: const TextStyle(
-                                                    fontWeight: FontWeight.w800,
-                                                    fontSize: 14,
-                                                    color: navy,
+                                                Container(
+                                                  width: 34,
+                                                  height: 34,
+                                                  decoration: const BoxDecoration(
+                                                    color: Color(0xffeff6ff),
+                                                    shape: BoxShape.circle,
+                                                  ),
+                                                  alignment: Alignment.center,
+                                                  child: const Icon(Icons.location_on_rounded, color: blue, size: 18),
+                                                ),
+                                                const SizedBox(width: 10),
+                                                Expanded(
+                                                  child: Column(
+                                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                                    children: [
+                                                      Text(
+                                                        vName,
+                                                        style: const TextStyle(
+                                                          fontWeight: FontWeight.w800,
+                                                          fontSize: 14,
+                                                          color: navy,
+                                                        ),
+                                                      ),
+                                                      if (pop > 0)
+                                                        Text(
+                                                          'जनसंख्या: $pop',
+                                                          style: const TextStyle(fontSize: 11, color: muted),
+                                                        ),
+                                                    ],
                                                   ),
                                                 ),
-                                                if (pop > 0)
-                                                  Text(
-                                                    'जनसंख्या: $pop',
-                                                    style: const TextStyle(fontSize: 11, color: muted),
+                                                FilledButton.tonal(
+                                                  style: FilledButton.styleFrom(
+                                                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                                                    visualDensity: VisualDensity.compact,
+                                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                                                   ),
+                                                  onPressed: () => _openVoters(
+                                                    village: vName,
+                                                    gramPanchayat: gpName,
+                                                  ),
+                                                  child: const Text('मतदाता ➔', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800)),
+                                                ),
                                               ],
                                             ),
                                           ),
-                                          FilledButton.tonal(
-                                            style: FilledButton.styleFrom(
-                                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                                              visualDensity: VisualDensity.compact,
-                                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                                            ),
-                                            onPressed: () => _openVoters(
-                                              village: vName,
-                                              gramPanchayat: gpName,
-                                            ),
-                                            child: const Text('मतदाता ➔', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800)),
-                                          ),
-                                        ],
-                                      ),
+                                        );
+                                      }).toList(),
                                     );
                                   }),
                                 ],

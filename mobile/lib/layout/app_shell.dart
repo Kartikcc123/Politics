@@ -167,12 +167,19 @@ class _AppShellState extends State<AppShell> {
 
     // 1. मुख्य कार्यक्षेत्र (Core)
     final coreItems = <NavItem>[
-      if (isAdmin)
-        NavItem(
-          'क्षेत्र व गाँव',
-          Icons.holiday_village_rounded,
-          SamitiHierarchyPage(key: ValueKey('desktop-samiti-$refreshVersion')),
+      NavItem(
+        isAdmin ? 'डैशबोर्ड' : 'होम / डैशबोर्ड',
+        Icons.home_rounded,
+        DashboardPage(
+          key: ValueKey('desktop-dash-$refreshVersion'),
+          onNavigate: (idx) => selectDesktop(idx <= 1 ? 2 : idx),
         ),
+      ),
+      NavItem(
+        'क्षेत्र व गाँव',
+        Icons.holiday_village_rounded,
+        SamitiHierarchyPage(key: ValueKey('desktop-samiti-$refreshVersion')),
+      ),
       NavItem(
         isAdmin ? 'सभी मतदाता' : 'मतदाता सूची',
         Icons.groups_rounded,

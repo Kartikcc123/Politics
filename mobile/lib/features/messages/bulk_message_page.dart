@@ -109,17 +109,25 @@ class _BulkMessagePageState extends State<BulkMessagePage> {
       'quietHoursEnd': 8,
       'templateName': templateName.text.trim(),
       'templateLanguage': 'hi',
+      'recipientMode': recipientMode,
     };
+    if (onlyWithMobile) {
+      body['hasMobile'] = 'true';
+    }
     if (recipientMode == 'custom') {
       final nums = customPhones.text
           .split(RegExp(r'[\n,;]'))
           .map((e) => e.replaceAll(RegExp(r'\D'), '').trim())
           .where((e) => e.length >= 10)
+          .toSet()
           .toList();
       body['customRecipients'] = nums;
     } else {
       for (final values in selectedFilters.values) {
         body.addAll(values);
+      }
+      if (selectedVoterIds.isNotEmpty && previewVoters.isNotEmpty && selectedVoterIds.length < previewVoters.length) {
+        body['memberIds'] = selectedVoterIds.toList();
       }
     }
     return body;
@@ -243,15 +251,35 @@ class _BulkMessagePageState extends State<BulkMessagePage> {
           content: Text('Sender और संदेश दोनों जरूरी हैं।')));
       return;
     }
+    if (recipientMode == 'custom') {
+      final nums = customPhones.text
+          .split(RegExp(r'[\n,;]'))
+          .map((e) => e.replaceAll(RegExp(r'\D'), '').trim())
+          .where((e) => e.length >= 10)
+          .toSet()
+          .toList();
+      if (nums.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text('कृपया कम से कम एक 10-अंकों का मोबाइल नंबर दर्ज करें।')));
+        return;
+      }
+    }
     if (preview == null) await loadPreview();
-    if (!mounted || _number(preview?['eligible']) == 0) return;
+    if (!mounted || _number(preview?['eligible']) == 0) {
+      if (mounted && _number(preview?['eligible']) == 0) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text('कोई पात्र प्राप्तकर्ता नहीं मिला। कृपया नंबर या फ़िल्टर जांचें।')));
+      }
+      return;
+    }
+    final eligibleCount = _number(preview?['eligible']);
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (_) => AlertDialog(
         icon: const Icon(Icons.schedule_send_rounded, color: green, size: 40),
         title: const Text('WhatsApp Auto Campaign शुरू करें?'),
         content: Text(
-          '${preview?['eligible'] ?? 0} मतदाताओं को $batchSize संदेश के सुरक्षित बैच में, '
+          '$eligibleCount प्राप्तकर्ताओं को $batchSize संदेश के सुरक्षित बैच में, '
           'हर संदेश के बीच $messageDelaySeconds सेकंड का अंतर देकर भेजा जाएगा।\n\n'
           'रात 8 बजे से सुबह 8 बजे तक sending अपने-आप रुकेगी।',
           textAlign: TextAlign.center,
@@ -611,10 +639,25 @@ class _BulkMessagePageState extends State<BulkMessagePage> {
             SectionCard(
               title: '2. Recipients (मतदाता / संपर्क) चुनें',
               action: preview == null
-                  ? null
+                  ? (recipientMode == 'custom'
+                      ? Builder(builder: (ctx) {
+                          final count = customPhones.text
+                              .split(RegExp(r'[\n,;]'))
+                              .map((e) => e.replaceAll(RegExp(r'\D'), '').trim())
+                              .where((e) => e.length >= 10)
+                              .toSet()
+                              .length;
+                          return count > 0
+                              ? Chip(
+                                  avatar: const Icon(Icons.phone_rounded, color: green, size: 16),
+                                  label: Text('$count नंबर दर्ज'),
+                                )
+                              : const SizedBox.shrink();
+                        })
+                      : null)
                   : Chip(
-                      avatar: const Icon(Icons.groups_rounded, color: green, size: 18),
-                      label: Text('${preview?['eligible'] ?? 0} मतदाता पात्र'),
+                      avatar: Icon(recipientMode == 'custom' ? Icons.phone_rounded : Icons.groups_rounded, color: green, size: 18),
+                      label: Text('${preview?['eligible'] ?? 0} ${recipientMode == 'custom' ? 'नंबर पात्र' : 'मतदाता पात्र'}'),
                     ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -653,6 +696,13 @@ class _BulkMessagePageState extends State<BulkMessagePage> {
                           () => selectFilter('village', 'गाँव'), () => setState(() {
                                 selectedFilters.remove('village');
                                 selectedLabels.remove('village');
+                                preview = null;
+                                loadPreview();
+                              })),
+                      _FilterPicker('वार्ड', Icons.location_on_rounded, selectedLabels['ward'],
+                          () => selectFilter('ward', 'वार्ड'), () => setState(() {
+                                selectedFilters.remove('ward');
+                                selectedLabels.remove('ward');
                                 preview = null;
                                 loadPreview();
                               })),
@@ -857,11 +907,41 @@ class _BulkMessagePageState extends State<BulkMessagePage> {
                     TextField(
                       controller: customPhones,
                       maxLines: 4,
+                      onChanged: (_) {
+                        setState(() => preview = null);
+                      },
                       decoration: const InputDecoration(
                         labelText: 'मोबाइल नंबर दर्ज करें (एक से अधिक नंबर कॉमा या नई लाइन में लिखें)',
                         hintText: '9876543210, 9876543211\n9876543212',
                         border: OutlineInputBorder(),
                       ),
+                    ),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        Builder(
+                          builder: (context) {
+                            final count = customPhones.text
+                                .split(RegExp(r'[\n,;]'))
+                                .map((e) => e.replaceAll(RegExp(r'\D'), '').trim())
+                                .where((e) => e.length >= 10)
+                                .toSet()
+                                .length;
+                            return Text(
+                              'वैध मोबाइल नंबर: $count',
+                              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: green),
+                            );
+                          },
+                        ),
+                        const Spacer(),
+                        FilledButton.tonalIcon(
+                          onPressed: () {
+                            loadPreview();
+                          },
+                          icon: const Icon(Icons.check_circle_outline, size: 16),
+                          label: const Text('नंबर लोड व सत्यापित करें'),
+                        ),
+                      ],
                     ),
                   ] else ...[
                     const Text(
@@ -1441,6 +1521,7 @@ class _MessageFilterDialogState extends State<_MessageFilterDialog> {
     if (field == 'samiti') return {'tehsil': val};
     if (field == 'gramPanchayat') return {'gramPanchayat': val};
     if (field == 'village') return {'village': val};
+    if (field == 'ward') return {'wardNumber': val};
     if (field == 'booth') return {'partNumber': val};
     if (field == 'caste') return {'caste': val};
     if (field == 'assembly') return {'assemblyName': val};
