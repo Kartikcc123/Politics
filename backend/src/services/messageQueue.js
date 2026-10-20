@@ -15,6 +15,13 @@ function inQuietHours(hour, start, end) {
   return start > end ? hour >= start || hour < end : hour >= start && hour < end;
 }
 
+function getIndianHour() {
+  const d = new Date();
+  const utc = d.getTime() + (d.getTimezoneOffset() * 60000);
+  const ist = new Date(utc + (3600000 * 5.5));
+  return ist.getHours();
+}
+
 async function sendCloudMessage(sender, recipient, campaign) {
   const token = process.env.WHATSAPP_ACCESS_TOKEN;
   if (!token) throw new Error('WHATSAPP_ACCESS_TOKEN configured नहीं है');
@@ -52,6 +59,12 @@ async function sendCloudMessage(sender, recipient, campaign) {
 
 async function processCampaign(campaign) {
   const sender = campaign.sender;
+  if (!sender) {
+    console.error(`[WhatsApp Queue] Sender not found for campaign ${campaign._id}`);
+    campaign.status = 'paused';
+    await campaign.save();
+    return;
+  }
   if (sender?.provider === 'whatsapp_cloud' && !process.env.WHATSAPP_ACCESS_TOKEN) {
     campaign.status = 'paused';
     campaign.recipients.forEach((item) => {
@@ -61,12 +74,17 @@ async function processCampaign(campaign) {
     return;
   }
   if (!sender?.active) {
+    console.warn(`[WhatsApp Queue] Sender is inactive for campaign ${campaign._id}`);
     campaign.status = 'paused';
     await campaign.save();
     return;
   }
-  const hour = new Date().getHours();
-  if (inQuietHours(hour, campaign.quietHoursStart, campaign.quietHoursEnd)) {
+
+  // Check Indian Standard Time (IST) for quiet hours
+  const isCustomOrImmediate = campaign.filters?.recipientMode === 'custom' || campaign.totalEligible <= 5;
+  const hour = getIndianHour();
+  if (!isCustomOrImmediate && inQuietHours(hour, campaign.quietHoursStart, campaign.quietHoursEnd)) {
+    console.log(`[WhatsApp Queue] Quiet hours active in India (${hour}:00 IST). Pausing campaign ${campaign._id} until morning.`);
     campaign.nextBatchAt = new Date(Date.now() + 15 * 60 * 1000);
     await campaign.save();
     return;
@@ -99,6 +117,7 @@ async function processCampaign(campaign) {
     return;
   }
   campaign.status = 'running';
+  console.log(`[WhatsApp Queue] Sending batch of ${batch.length} messages for campaign "${campaign.title}"...`);
   for (let index = 0; index < batch.length; index += 1) {
     const recipient = batch[index];
     recipient.status = 'processing';
@@ -111,7 +130,9 @@ async function processCampaign(campaign) {
       recipient.sentAt = new Date();
       recipient.error = '';
       campaign.sentCount += 1;
+      console.log(`[WhatsApp Queue] ✅ Message sent to ${recipient.mobile} (${recipient.name})`);
     } catch (error) {
+      console.error(`[WhatsApp Queue] ❌ Error sending to ${recipient.mobile}:`, error.message);
       recipient.error = error.message;
       if (recipient.attempts < 3 && !error.message.includes('ACCESS_TOKEN')) {
         recipient.status = 'queued';

@@ -445,6 +445,10 @@ exports.broadcast = async (req, res, next) => {
       total: messages.length, matched: totalMatched, optedOut: campaign.optedOut,
       batchSize, intervalSeconds, messageDelaySeconds, dailyLimit, scheduledAt,
     });
+    const { processMessageQueue } = require('../services/messageQueue');
+    setImmediate(() => {
+      processMessageQueue().catch((err) => console.error('[WhatsApp Broadcast] Queue trigger error:', err.message));
+    });
   } catch (e) { next(e); }
 };
 

@@ -109,7 +109,14 @@ async function sendWebMessage(sender, mobile, text) {
   const id = String(sender._id);
   let client = clients.get(id);
   if (!client) client = await connectSender(sender);
-  if (!ready.has(id)) throw new Error('WhatsApp QR session connected नहीं है');
+  if (!ready.has(id)) {
+    // Wait up to 12 seconds for WhatsApp Web session to become ready
+    for (let i = 0; i < 12; i += 1) {
+      await new Promise((r) => setTimeout(r, 1000));
+      if (ready.has(id)) break;
+    }
+  }
+  if (!ready.has(id)) throw new Error('WhatsApp QR session connected नहीं है या load हो रहा है। कृपया WhatsApp पेज पर QR स्थिति जांचें।');
   let digits = String(mobile || '').replace(/\D/g, '').replace(/^0+/, '');
   if (digits.length === 10) digits = `91${digits}`;
   let numberId = null;
