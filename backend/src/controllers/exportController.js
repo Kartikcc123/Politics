@@ -45,6 +45,8 @@ const hindiFlexibleRegex = (value) => {
       tokens.push('[उऊुू]?[ँं़]?');
     } else if (/[एऐेै]/.test(char)) {
       tokens.push('[एऐेै]?[ँं़]?');
+    } else if (/[ओऔोौ]/.test(char)) {
+      tokens.push('[ओऔोौ]?[ँं़]?');
     } else if (/[दधथ]/.test(char)) {
       tokens.push('[दधथ]ा?[ँं़]?');
     } else if (char === 'ा') {
