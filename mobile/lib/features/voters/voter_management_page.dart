@@ -2414,7 +2414,23 @@ class _VoterManagementPageState extends State<VoterManagementPage>
                 ...wardNumbersToShow.map((wNum) {
                   final isSel = activeWard == wNum;
                   final count = countsMap[wNum] ?? 0;
-                  final chipLabel = count > 0 ? 'वार्ड $wNum ($count)' : 'वार्ड $wNum';
+                  final mukhyaGram = (gp.contains('भीट') || gp.contains('भींट') || vName.contains('सरेव') || vName.contains('भटे') || vName.contains('भींट') || vName.contains('जोराव') || vName.contains('रूपा')) ? const {
+                    '1': 'भींटा - सेमलाट',
+                    '2': 'भींटा',
+                    '3': 'भींटा',
+                    '4': 'सरेवडी',
+                    '5': 'सरेवडी',
+                    '6': 'सरेवडी का बाडीया',
+                    '7': 'जोरावरपुरा',
+                    '8': 'भटेवर',
+                    '9': 'भटेवर',
+                    '10': 'भटेवर',
+                    '11': 'रूपा का खेडा',
+                  }[wNum] : null;
+
+                  final chipLabel = mukhyaGram != null
+                      ? (count > 0 ? 'वार्ड $wNum: $mukhyaGram ($count)' : 'वार्ड $wNum: $mukhyaGram')
+                      : (count > 0 ? 'वार्ड $wNum ($count)' : 'वार्ड $wNum');
 
                   return Padding(
                     padding: const EdgeInsets.only(right: 6),

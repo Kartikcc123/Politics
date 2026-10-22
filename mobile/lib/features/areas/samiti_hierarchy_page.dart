@@ -378,8 +378,8 @@ class _SamitiHierarchyPageState extends State<SamitiHierarchyPage> {
         {'name': 'भीटा', 'pop': 1231},
         {'name': 'सेमलाट', 'pop': 57},
         {'name': 'रूपाखेडा', 'pop': 619},
-        {'name': 'सरेवड़ी', 'pop': 1191},
-        {'name': 'सरेवड़ी का बाड़िया', 'pop': 0},
+        {'name': 'सरेवडी', 'pop': 1191},
+        {'name': 'सरेवडी का बाडीया', 'pop': 256},
         {'name': 'जोरावरपुरा', 'pop': 315},
         {'name': 'भटेवर', 'pop': 1459},
       ],
@@ -429,6 +429,35 @@ class _SamitiHierarchyPageState extends State<SamitiHierarchyPage> {
         {'name': 'धुलखेडा', 'pop': 1387},
         {'name': 'भीलखेड़ी', 'pop': 205},
       ],
+    },
+  };
+
+  static const Map<String, Map<String, String>> gpWardMukhyaGrams = {
+    'भीटा': {
+      '1': 'भींटा - सेमलाट',
+      '2': 'भींटा',
+      '3': 'भींटा',
+      '4': 'सरेवडी',
+      '5': 'सरेवडी',
+      '6': 'सरेवडी का बाडीया',
+      '7': 'जोरावरपुरा',
+      '8': 'भटेवर',
+      '9': 'भटेवर',
+      '10': 'भटेवर',
+      '11': 'रूपा का खेडा',
+    },
+    'भींटा': {
+      '1': 'भींटा - सेमलाट',
+      '2': 'भींटा',
+      '3': 'भींटा',
+      '4': 'सरेवडी',
+      '5': 'सरेवडी',
+      '6': 'सरेवडी का बाडीया',
+      '7': 'जोरावरपुरा',
+      '8': 'भटेवर',
+      '9': 'भटेवर',
+      '10': 'भटेवर',
+      '11': 'रूपा का खेडा',
     },
   };
 
@@ -940,13 +969,17 @@ class _SamitiHierarchyPageState extends State<SamitiHierarchyPage> {
                                           children: List.generate(wardCount, (wIdx) {
                                             final wNum = '${wIdx + 1}';
                                             final count = wardCounts[wNum] ?? 0;
+                                            final mukhyaGram = gpWardMukhyaGrams[gpName]?[wNum] ?? '';
+                                            final chipText = mukhyaGram.isNotEmpty
+                                                ? (count > 0 ? 'वार्ड $wNum: $mukhyaGram ($count)' : 'वार्ड $wNum: $mukhyaGram')
+                                                : (count > 0 ? 'वार्ड $wNum ($count)' : 'वार्ड $wNum');
                                             return Padding(
                                               padding: const EdgeInsets.only(right: 6),
                                               child: ActionChip(
                                                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                                                 visualDensity: VisualDensity.compact,
                                                 label: Text(
-                                                  count > 0 ? 'वार्ड $wNum ($count)' : 'वार्ड $wNum',
+                                                  chipText,
                                                   style: TextStyle(
                                                     fontSize: 11,
                                                     fontWeight: FontWeight.w800,
