@@ -338,7 +338,29 @@ const buildFilter = (req) => {
 
   if (tehsil) filter.tehsil = hindiFlexibleRegex(tehsil);
   if (municipality) filter.municipality = hindiFlexibleRegex(municipality);
-  if (caste && caste !== 'all') filter.caste = new RegExp(`^${escapeRegex(String(caste).trim())}$`, 'i');
+  if (caste && caste !== 'all') {
+    const cTrim = String(caste).trim();
+    if (/brahm|ब्राह्|ब्राहम/i.test(cTrim)) {
+      andConditions.push({
+        $or: [
+          { caste: new RegExp('^(brahman|brahamn|brahmin|ब्राह्मण|ब्राहमण|शर्मा|पारीक|दाधीच|जोशी|पालीवाल|पाठक|भट्ट|व्यास|तिवारी|गौड़|गौड़)$', 'i') },
+          { subCaste: new RegExp('^(brahman|brahamn|brahmin|ब्राह्मण|ब्राहमण|शर्मा|पारीक|दाधीच|जोशी|पालीवाल|पाठक|भट्ट|व्यास|तिवारी|गौड़|गौड़)$', 'i') }
+        ]
+      });
+    } else {
+      const cReg = new RegExp(`^${escapeRegex(cTrim)}$`, 'i');
+      andConditions.push({
+        $or: [
+          { caste: cReg },
+          { subCaste: cReg }
+        ]
+      });
+    }
+  }
+  if (params.subCaste && params.subCaste !== 'all') {
+    const scTrim = String(params.subCaste).trim();
+    if (scTrim) andConditions.push({ subCaste: new RegExp(`^${escapeRegex(scTrim)}$`, 'i') });
+  }
 
   if (gender && gender !== 'all') {
     const genderMap = { m: 'male', f: 'female', o: 'other' };

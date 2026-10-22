@@ -157,7 +157,7 @@ const getCasteRegex = (caste) => {
   const c = String(caste || '').trim();
   const lower = c.toLowerCase();
   if (lower.includes('brahm') || lower.includes('ब्राह्') || lower.includes('ब्राहम')) {
-    return '^(brahman|brahamn|brahmin|ब्राह्मण|ब्राहमण|शर्मा|जोशी|पालीवाल|पाठक|भट्ट|व्यास|तिवारी)$';
+    return '^(brahman|brahamn|brahmin|ब्राह्मण|ब्राहमण|शर्मा|पारीक|दाधीच|जोशी|पालीवाल|पाठक|भट्ट|व्यास|तिवारी|गौड़|गौड़)$';
   }
   if (lower.includes('लोहार') || lower.includes('लौहार') || lower.includes('lohar')) {
     return '^(lohar|lauhar|luhar|लोहार|लौहार|गाडोलिया लौहार)$';
@@ -437,8 +437,27 @@ exports.list = async (req, res, next) => {
     const samitiWardParam = req.query.panchayatSamitiWard || req.query.samitiWard;
     if (samitiWardParam) filter.panchayatSamitiWard = samitiWardParam;
     if (municipality) filter.municipality = hindiFlexibleRegex(municipality);
-    if (caste && caste !== 'all') filter.caste = new RegExp(getCasteRegex(caste), 'i');
-    if (organizationPost) filter.organizationPost = searchRegex(organizationPost);
+    if (caste && caste !== 'all') {
+      const cReg = new RegExp(getCasteRegex(caste), 'i');
+      filter.$and = [
+        ...(filter.$and || []),
+        {
+          $or: [
+            { caste: cReg },
+            { subCaste: cReg }
+          ]
+        }
+      ];
+    }
+    if (req.query.subCaste && req.query.subCaste !== 'all') {
+      const scVal = String(req.query.subCaste).trim();
+      if (scVal) {
+        filter.$and = [
+          ...(filter.$and || []),
+          { subCaste: new RegExp(`^${escapeRegex(scVal)}$`, 'i') }
+        ];
+      }
+    }
     if (occupation) filter.occupation = searchRegex(occupation);
     if (contactType === 'personal') filter.contactType = 'personal';
     if (contactType === 'voter') filter.contactType = { $ne: 'personal' };
@@ -1240,6 +1259,70 @@ exports.filterOptions = async (req, res, next) => {
       result.sectionNames = sections.filter(Boolean).sort();
       result.castes = castes.filter(Boolean).sort();
       return res.json(result);
+    }
+
+    if (field === 'caste') {
+      const casteRows = await Member.aggregate([
+        { $match: { $and: [filter, { caste: { $nin: ['', null] } }] } },
+        {
+          $group: {
+            _id: {
+              caste: '$caste',
+              subCaste: { $ifNull: ['$subCaste', ''] }
+            },
+            count: { $sum: 1 }
+          }
+        },
+        { $sort: { count: -1 } },
+        { $limit: 5000 }
+      ]);
+
+      const mainCasteMap = new Map();
+      const subCasteItems = [];
+
+      for (const row of casteRows) {
+        const rawCaste = String(row._id?.caste || '').trim();
+        const rawSubCaste = String(row._id?.subCaste || '').trim();
+        const normCaste = normalizeCasteName(rawCaste);
+        if (!normCaste) continue;
+
+        if (mainCasteMap.has(normCaste)) {
+          mainCasteMap.get(normCaste).count += row.count;
+        } else {
+          mainCasteMap.set(normCaste, {
+            value: normCaste,
+            label: normCaste,
+            count: row.count,
+            filters: { caste: normCaste }
+          });
+        }
+
+        if (rawSubCaste && rawSubCaste !== normCaste && rawSubCaste !== 'सामान्य') {
+          subCasteItems.push({
+            value: rawSubCaste,
+            label: `${normCaste} (${rawSubCaste})`,
+            count: row.count,
+            filters: { caste: normCaste, subCaste: rawSubCaste }
+          });
+        }
+      }
+
+      const allCasteOptions = [
+        ...Array.from(mainCasteMap.values()),
+        ...subCasteItems
+      ].filter((item) => !normalizedSearch || item.label.toLocaleLowerCase('hi-IN').includes(normalizedSearch));
+
+      const items = allCasteOptions
+        .sort((a, b) => {
+          if (!normalizedSearch) return compareLabels(a, b);
+          const aStarts = a.label.toLocaleLowerCase('hi-IN').startsWith(normalizedSearch);
+          const bStarts = b.label.toLocaleLowerCase('hi-IN').startsWith(normalizedSearch);
+          if (aStarts !== bStarts) return aStarts ? -1 : 1;
+          return compareLabels(a, b);
+        })
+        .slice(0, Math.min(Math.max(Number(req.query.limit) || 100, 1), 500));
+
+      return res.json({ items, caste: items });
     }
 
     const definition = optionDefinitions[field];

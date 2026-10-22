@@ -758,7 +758,7 @@ class _VoterManagementPageState extends State<VoterManagementPage>
     'municipality': ['municipality'],
     'partNumber': ['partNumber'],
     'section': ['sectionNumber', 'sectionName'],
-    'caste': ['caste'],
+    'caste': ['caste', 'subCaste'],
     'occupation': ['occupation'],
     'organizationPost': ['organizationPost'],
   };
@@ -7369,7 +7369,11 @@ class _VoterRow extends StatelessWidget {
             : 'EPIC: $epic';
     final guardian = '${member['guardianName'] ?? ''}'.trim();
     final mobile = '${member['mobile'] ?? ''}'.trim();
-    final caste = '${member['caste'] ?? ''}'.trim();
+    final rawCaste = '${member['caste'] ?? ''}'.trim();
+    final rawSubCaste = '${member['subCaste'] ?? ''}'.trim();
+    final caste = rawSubCaste.isNotEmpty && rawSubCaste != rawCaste && rawSubCaste != 'सामान्य'
+        ? '$rawCaste ($rawSubCaste)'
+        : rawCaste;
     final house = '${member['houseNumber'] ?? '-'}';
     final place = [
       '${member['village'] ?? ''}'.trim(),
