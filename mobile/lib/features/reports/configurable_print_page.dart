@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
@@ -51,10 +52,10 @@ class _ConfigurablePrintPageState extends State<ConfigurablePrintPage> {
   // Candidate Campaign Banner & Slip Customization State
   String? campaignBannerUrl;
   Uint8List? campaignBannerBytes;
-  final candidateNameCtrl = TextEditingController(text: 'सुनीता देवी');
-  final candidatePostCtrl = TextEditingController(text: 'सरपंच');
-  final candidatePhoneCtrl = TextEditingController(text: '9829858296');
-  final candidateSloganCtrl = TextEditingController(text: 'को वोट देकर भारी मतों से विजयी बनावें।');
+  final candidateNameCtrl = TextEditingController(text: '');
+  final candidatePostCtrl = TextEditingController(text: '');
+  final candidatePhoneCtrl = TextEditingController(text: '');
+  final candidateSloganCtrl = TextEditingController(text: '');
   final pollingTimeCtrl = TextEditingController(text: 'मतदान समय : प्रातः 7 से सायं 6 बजे तक');
   final pollingStationCtrl = TextEditingController();
   bool isUploadingBanner = false;
@@ -344,7 +345,9 @@ class _ConfigurablePrintPageState extends State<ConfigurablePrintPage> {
       params['votersPerPage'] = '8';
       params['columns'] = '2';
       params['rowsPerPage'] = '4';
-      if (campaignBannerUrl != null && campaignBannerUrl!.isNotEmpty) {
+      if (campaignBannerBytes != null && campaignBannerBytes!.isNotEmpty) {
+        params['bannerImage'] = 'data:image/png;base64,${base64Encode(campaignBannerBytes!)}';
+      } else if (campaignBannerUrl != null && campaignBannerUrl!.isNotEmpty) {
         params['bannerUrl'] = campaignBannerUrl!;
       }
       if (candidateNameCtrl.text.trim().isNotEmpty) {
@@ -424,21 +427,31 @@ class _ConfigurablePrintPageState extends State<ConfigurablePrintPage> {
       );
       if (picked == null) return;
 
-      setState(() => isUploadingBanner = true);
-      final res = await api.uploadFile(
-        '/api/print/upload-banner',
-        filename: picked.name,
-        fileField: 'banner',
-        bytes: picked.bytes,
-        filePath: picked.path,
-      );
+      setState(() {
+        campaignBannerBytes = picked.bytes;
+        isUploadingBanner = true;
+      });
+
+      try {
+        final res = await api.uploadFile(
+          '/api/print/upload-banner',
+          filename: picked.name,
+          fileField: 'banner',
+          bytes: picked.bytes,
+          filePath: picked.path,
+        );
+        if (mounted && res['url'] != null) {
+          setState(() {
+            campaignBannerUrl = res['url'];
+          });
+        }
+      } catch (uploadErr) {
+        // Upload failed or offline, but local cropped bytes are retained for immediate printing!
+        debugPrint('Banner upload note: $uploadErr');
+      }
 
       if (mounted) {
-        setState(() {
-          campaignBannerUrl = res['url'];
-          campaignBannerBytes = picked.bytes;
-          isUploadingBanner = false;
-        });
+        setState(() => isUploadingBanner = false);
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('✅ प्रचार बैनर फोटो सफलतापूर्वक सेट हो गया'),
@@ -451,7 +464,7 @@ class _ConfigurablePrintPageState extends State<ConfigurablePrintPage> {
         setState(() => isUploadingBanner = false);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('बैनर अपलोड में त्रुटि: $e'),
+            content: Text('बैनर चुनने में त्रुटि: $e'),
             backgroundColor: Colors.red,
           ),
         );
@@ -2232,8 +2245,8 @@ class _ConfigurablePrintPageState extends State<ConfigurablePrintPage> {
               if (densityPreset == 'campaign_8') ...[
                 const Divider(height: 16),
                 _buildSummaryRow('प्रारूप:', 'प्रत्याशी चुनाव प्रचार पर्ची (8 पर्ची/पेज) 🌟'),
-                _buildSummaryRow('प्रत्याशी नाम:', candidateNameCtrl.text.trim().isNotEmpty ? candidateNameCtrl.text.trim() : 'सुनीता देवी'),
-                _buildSummaryRow('बैनर फोटो:', campaignBannerUrl != null ? 'कस्टम इमेज अपलोड है ✅' : 'मानक ग्राफिक बैनर ✅'),
+                _buildSummaryRow('प्रत्याशी नाम:', candidateNameCtrl.text.trim().isNotEmpty ? candidateNameCtrl.text.trim() : 'लागू नहीं (सामान्य पर्ची)'),
+                _buildSummaryRow('बैनर फोटो:', (campaignBannerBytes != null || campaignBannerUrl != null) ? 'कस्टम इमेज सेट है ✅' : 'मानक ग्राफिक बैनर ✅'),
               ],
               if (selectedParty != 'all') ...[
                 const Divider(height: 16),

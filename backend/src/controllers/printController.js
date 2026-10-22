@@ -659,6 +659,8 @@ exports.printMembers = async (req, res, next) => {
         const bannerH = 68;
         if (bannerBuffer) {
           try {
+            // Fill background white before placing banner image
+            doc.rect(x + 0.5, y + 0.5, cardWidth - 1, bannerH).fillColor('#ffffff').fill();
             doc.image(bannerBuffer, x + 0.5, y + 0.5, { fit: [cardWidth - 1, bannerH], align: 'center', valign: 'center' });
           } catch (_) {
             drawDefaultBanner();
@@ -668,15 +670,53 @@ exports.printMembers = async (req, res, next) => {
         }
 
         function drawDefaultBanner() {
-          doc.rect(x + 0.5, y + 0.5, cardWidth - 1, bannerH).fillColor('#fef9c3').fill();
-          const gpName = m.gramPanchayat || params.gramPanchayat || sampleMember.gramPanchayat || 'ग्राम पंचायत';
-          const postName = params.candidatePost || 'सरपंच';
-          doc.font('HindiBold').fontSize(8.5).fillColor('#b45309').text(`ग्राम पंचायत ${gpName} से ${postName} पद हेतु`, x + 4, y + 5, { width: cardWidth - 8, align: 'center' });
-          doc.font('HindiBold').fontSize(16.5).fillColor('#1d4ed8').text(params.candidateName || 'सुनीता देवी', x + 4, y + 17, { width: cardWidth - 8, align: 'center' });
-          if (params.candidatePhone) {
-            doc.font('HindiBold').fontSize(8.5).fillColor('#0f172a').text(`मो. ${params.candidatePhone}`, x + 4, y + 37, { width: cardWidth - 8, align: 'center' });
+          const gpName = m.gramPanchayat || params.gramPanchayat || sampleMember.gramPanchayat || '';
+          const postName = params.candidatePost || '';
+          const candName = (params.candidateName || '').trim();
+          const candPhone = (params.candidatePhone || '').trim();
+          const candSlogan = (params.candidateSlogan || '').trim();
+
+          if (candName) {
+            // Rich election campaign banner with colors
+            doc.rect(x + 0.5, y + 0.5, cardWidth - 1, bannerH).fillColor('#fffdf5').fill();
+            doc.rect(x + 0.5, y + 0.5, cardWidth - 1, 3.5).fillColor('#f59e0b').fill();
+
+            let curY = y + 5;
+            if (postName || gpName) {
+              const headerText = postName
+                ? (gpName ? `ग्राम पंचायत ${gpName} से ${postName} पद हेतु` : `${postName} पद हेतु`)
+                : `ग्राम पंचायत ${gpName}`;
+              doc.font('HindiBold').fontSize(9).fillColor('#9a3412').text(headerText, x + 4, curY, { width: cardWidth - 8, align: 'center' });
+              curY += 13;
+            } else {
+              curY += 2;
+            }
+
+            doc.font('HindiBold').fontSize(16.5).fillColor('#1d4ed8').text(candName, x + 4, curY, { width: cardWidth - 8, align: 'center' });
+            curY += 19;
+
+            if (candPhone) {
+              doc.font('HindiBold').fontSize(9).fillColor('#0f172a').text(`मो. ${candPhone}`, x + 4, curY, { width: cardWidth - 8, align: 'center' });
+              curY += 13;
+            }
+
+            const sloganText = candSlogan || 'को वोट देकर भारी मतों से विजयी बनावें।';
+            doc.font('HindiBold').fontSize(9.5).fillColor('#b91c1c').text(sloganText, x + 4, curY, { width: cardWidth - 8, align: 'center' });
+          } else {
+            // Elegant Official Voter Information Header (No fake default name!)
+            doc.rect(x + 0.5, y + 0.5, cardWidth - 1, bannerH).fillColor('#f8fafc').fill();
+            doc.rect(x + 0.5, y + 0.5, cardWidth - 1, 3.5).fillColor('#1e40af').fill();
+
+            const wardNum = m.wardNumber || (Array.isArray(m.municipalWardNumbers) && m.municipalWardNumbers[0]) || params.wardNumber || '';
+            const asmNum = m.assemblyNumber || sampleMember.assemblyNumber || '';
+            const partNo = m.partNumber || sampleMember.partNumber || '';
+
+            doc.font('HindiBold').fontSize(9).fillColor('#1e40af').text('राजस्थान राज्य निर्वाचन आयोग | मतदाता सूचना पर्ची', x + 4, y + 8, { width: cardWidth - 8, align: 'center' });
+            const titlePanchayat = gpName ? (wardNum ? `ग्राम पंचायत : ${gpName} (वार्ड संख्या : ${wardNum})` : `ग्राम पंचायत : ${gpName}`) : 'मतदाता सूचना पर्ची 2026';
+            doc.font('HindiBold').fontSize(14).fillColor('#0f172a').text(titlePanchayat, x + 4, y + 24, { width: cardWidth - 8, align: 'center' });
+            const subTitle = asmNum ? `विधानसभा क्षेत्र सं. ${asmNum}  |  भाग संख्या : ${partNo || '-'}` : 'मतदाता पर्ची - निःशुल्क वितरण';
+            doc.font('Hindi').fontSize(8.5).fillColor('#475569').text(subTitle, x + 4, y + 46, { width: cardWidth - 8, align: 'center' });
           }
-          doc.font('HindiBold').fontSize(9).fillColor('#b91c1c').text(params.candidateSlogan || 'को वोट देकर भारी मतों से विजयी बनावें।', x + 4, y + 50, { width: cardWidth - 8, align: 'center' });
         }
 
         // 2. TEAR-OFF SCISSOR LINE
@@ -691,28 +731,28 @@ exports.printMembers = async (req, res, next) => {
         // 3. VOTER DATA AREA
         const contentY = dividerY + 10;
         const contentH = cardHeight - bannerH - 12 - 16;
-        const col1W = 132;
-        const col2W = 58;
+        const col1W = 136;
+        const col2W = 54;
         const col3W = cardWidth - col1W - col2W - 8;
         const col1X = x + 4;
         const col2X = col1X + col1W + 2;
         const col3X = col2X + col2W + 2;
 
-        // Serial Box
+        // Serial Box (Highlighted in Blue)
         const serialNum = isWardPrint
           ? (m.wardVoterSerial ? String(m.wardVoterSerial) : (m.voterSerial ? String(m.voterSerial) : String(i + 1)))
           : (m.voterSerial ? String(m.voterSerial) : (m.wardVoterSerial ? String(m.wardVoterSerial) : String(i + 1)));
 
-        doc.roundedRect(col1X, contentY, 36, 16, 2).lineWidth(0.6).strokeColor('#0f172a').stroke();
-        doc.font('HindiBold').fontSize(11).fillColor('#0f172a').text(serialNum, col1X, contentY + 2.5, { width: 36, align: 'center' });
+        doc.roundedRect(col1X, contentY, 36, 17, 2).lineWidth(0.8).strokeColor('#2563eb').fillColor('#eff6ff').fillAndStroke();
+        doc.font('HindiBold').fontSize(12).fillColor('#1e40af').text(serialNum, col1X, contentY + 2.5, { width: 36, align: 'center' });
 
-        // EPIC Box
+        // EPIC Box (Highlighted in Dark Slate)
         const epicBoxW = col1W - 40;
-        doc.roundedRect(col1X + 40, contentY, epicBoxW, 16, 2).lineWidth(0.6).strokeColor('#0f172a').stroke();
-        doc.font('HindiBold').fontSize(9).fillColor('#0f172a').text(m.voterId || '-', col1X + 40, contentY + 3.5, { width: epicBoxW, align: 'center' });
+        doc.roundedRect(col1X + 40, contentY, epicBoxW, 17, 2).lineWidth(0.8).strokeColor('#334155').fillColor('#f8fafc').fillAndStroke();
+        doc.font('HindiBold').fontSize(10.5).fillColor('#0f172a').text(m.voterId || '-', col1X + 40, contentY + 3, { width: epicBoxW, align: 'center' });
 
-        // Voter Lines
-        let voterLineY = contentY + 20;
+        // Voter Lines (Large, Bold, High-Contrast Typography)
+        let voterLineY = contentY + 21;
         const name = ((m.name || '') + ' ' + (m.surname || '')).trim() || '-';
         const guardian = m.guardianName || m.relativeName || '-';
         const relationLabel = m.gender === 'female' && m.relativeName ? 'पति का नाम' : 'पिता का नाम';
@@ -720,17 +760,32 @@ exports.printMembers = async (req, res, next) => {
         const gender = labels.gender[m.gender] ? (m.gender === 'male' ? 'पुरुष' : (m.gender === 'female' ? 'महिला' : labels.gender[m.gender])) : (m.gender || '-');
         const age = m.age ? String(m.age) : '-';
 
-        doc.font('Hindi').fontSize(8.5).fillColor('#0f172a').text('नाम: ', col1X, voterLineY, { continued: true });
-        doc.font('HindiBold').fontSize(9.5).fillColor('#090d16').text(name, { lineBreak: false });
+        // Voter Name: Extra Bold, 11.5pt
+        doc.font('Hindi').fontSize(9.5).fillColor('#334155').text('नाम: ', col1X, voterLineY, { continued: true });
+        doc.font('HindiBold').fontSize(11.5).fillColor('#000000').text(name, { lineBreak: false });
         voterLineY += 13.5;
 
-        doc.font('Hindi').fontSize(8.2).fillColor('#1e293b').text(`${relationLabel}: ${guardian}`, col1X, voterLineY, { width: col1W, lineBreak: false });
+        // Guardian: 9.5pt
+        doc.font('Hindi').fontSize(9.0).fillColor('#334155').text(`${relationLabel}: `, col1X, voterLineY, { continued: true });
+        doc.font('HindiBold').fontSize(9.5).fillColor('#0f172a').text(guardian, { lineBreak: false });
         voterLineY += 12.5;
 
-        doc.font('Hindi').fontSize(8.2).fillColor('#1e293b').text(`मकान संख्या: ${house}`, col1X, voterLineY, { width: col1W, lineBreak: false });
+        // House: 9.5pt
+        doc.font('Hindi').fontSize(9.0).fillColor('#334155').text('मकान संख्या: ', col1X, voterLineY, { continued: true });
+        doc.font('HindiBold').fontSize(9.5).fillColor('#0f172a').text(house, { lineBreak: false });
         voterLineY += 12.5;
 
-        doc.font('Hindi').fontSize(8.2).fillColor('#1e293b').text(`आयु: ${age}   लिंग: ${gender}`, col1X, voterLineY, { width: col1W, lineBreak: false });
+        // Age & Gender: 9.5pt
+        doc.font('Hindi').fontSize(9.0).fillColor('#334155').text('आयु: ', col1X, voterLineY, { continued: true });
+        doc.font('HindiBold').fontSize(9.5).fillColor('#0f172a').text(`${age}   `, { continued: true });
+        doc.font('Hindi').fontSize(9.0).fillColor('#334155').text('लिंग: ', { continued: true });
+        doc.font('HindiBold').fontSize(9.5).fillColor('#0f172a').text(gender, { lineBreak: false });
+
+        // Optional Mobile
+        if (m.mobile) {
+          voterLineY += 12.5;
+          doc.font('HindiBold').fontSize(9.2).fillColor('#15803d').text(`📱 ${m.mobile}`, col1X, voterLineY, { lineBreak: false });
+        }
 
         // Col 2: Voter Photo Box
         const photoBoxW = 52;
@@ -752,36 +807,36 @@ exports.printMembers = async (req, res, next) => {
           }
         }
 
-        // Col 3: Booth, Ward & Polling Station Box
-        doc.roundedRect(col3X, contentY, col3W, contentH - 4, 3).lineWidth(0.7).strokeColor('#0f172a').stroke();
+        // Col 3: Booth, Ward & Polling Station Box (With Red Highlights)
+        doc.roundedRect(col3X, contentY, col3W, contentH - 4, 3).lineWidth(0.8).strokeColor('#dc2626').fillColor('#fffbfb').fillAndStroke();
         
         // Header in Col 3 (GP / Location)
-        const locationHeader = m.village || m.gramPanchayat || sampleMember.gramPanchayat || 'माण्डल';
-        doc.font('HindiBold').fontSize(8.5).fillColor('#0f172a').text(locationHeader, col3X + 2, contentY + 3, { width: col3W - 4, align: 'center' });
-        doc.moveTo(col3X, contentY + 16).lineTo(col3X + col3W, contentY + 16).lineWidth(0.5).strokeColor('#cbd5e1').stroke();
+        const locationHeader = m.village || m.gramPanchayat || sampleMember.gramPanchayat || 'स्थान';
+        doc.font('HindiBold').fontSize(9.5).fillColor('#0f172a').text(locationHeader, col3X + 2, contentY + 3, { width: col3W - 4, align: 'center' });
+        doc.moveTo(col3X, contentY + 16).lineTo(col3X + col3W, contentY + 16).lineWidth(0.5).strokeColor('#fca5a5').stroke();
 
-        // WARD NUMBER (HIGHLIGHTED IN BOLD RED!)
+        // WARD NUMBER (HIGHLIGHTED IN BOLD RED 13.5pt!)
         const wardNum = m.wardNumber || (Array.isArray(m.municipalWardNumbers) && m.municipalWardNumbers[0]) || params.wardNumber || '-';
-        doc.font('HindiBold').fontSize(11.5).fillColor('#dc2626').text(`वार्ड : ${wardNum}`, col3X + 2, contentY + 18.5, { width: col3W - 4, align: 'center' });
-        doc.moveTo(col3X, contentY + 34).lineTo(col3X + col3W, contentY + 34).lineWidth(0.5).strokeColor('#cbd5e1').stroke();
+        doc.font('HindiBold').fontSize(13.5).fillColor('#b91c1c').text(`वार्ड : ${wardNum}`, col3X + 2, contentY + 18, { width: col3W - 4, align: 'center' });
+        doc.moveTo(col3X, contentY + 34).lineTo(col3X + col3W, contentY + 34).lineWidth(0.5).strokeColor('#fca5a5').stroke();
 
         // Assembly / Part numbers
         const asmNum = m.assemblyNumber || sampleMember.assemblyNumber || '179';
         const partNo = m.partNumber || sampleMember.partNumber || '-';
-        doc.font('Hindi').fontSize(7.0).fillColor('#1e293b').text(`वि. सं. ${asmNum} / प. सं. ${partNo}`, col3X + 2, contentY + 36.5, { width: col3W - 4, align: 'center' });
-        doc.moveTo(col3X, contentY + 47).lineTo(col3X + col3W, contentY + 47).lineWidth(0.5).strokeColor('#cbd5e1').stroke();
+        doc.font('HindiBold').fontSize(7.5).fillColor('#1e293b').text(`वि. सं. ${asmNum} / प. सं. ${partNo}`, col3X + 2, contentY + 36.5, { width: col3W - 4, align: 'center' });
+        doc.moveTo(col3X, contentY + 48).lineTo(col3X + col3W, contentY + 48).lineWidth(0.5).strokeColor('#fca5a5').stroke();
 
         // Polling Station Building Name
         const boothDesc = params.pollingStation || m.sectionName || m.partName || (m.gramPanchayat ? `राजकीय विद्यालय, ${m.gramPanchayat}` : 'मतदान केंद्र');
-        doc.font('Hindi').fontSize(6.5).fillColor('#1e293b').text(boothDesc, col3X + 3, contentY + 49, { width: col3W - 6, align: 'center', height: 42, lineBreak: true });
+        doc.font('Hindi').fontSize(7.0).fillColor('#334155').text(boothDesc, col3X + 2, contentY + 50, { width: col3W - 4, align: 'center', height: 42, lineBreak: true });
 
         // 4. BOTTOM RED FOOTER STRIP
         const footerH = 16;
         const footerY = y + cardHeight - footerH;
         doc.rect(x + 0.5, footerY, cardWidth - 1, footerH).fillColor('#dc2626').fill();
         const votingTime = params.pollingTime || 'मतदान समय : प्रातः 7 से सायं 6 बजे तक';
-        doc.font('HindiBold').fontSize(8.5).fillColor('#ffffff').text(votingTime, x, footerY + 3.5, { width: cardWidth, align: 'center' });
-        doc.font('Hindi').fontSize(7.5).fillColor('#ffffff').text(String(i + 1), x, footerY + 4, { width: cardWidth - 8, align: 'right' });
+        doc.font('HindiBold').fontSize(9.2).fillColor('#ffffff').text(votingTime, x, footerY + 3, { width: cardWidth, align: 'center' });
+        doc.font('Hindi').fontSize(8.0).fillColor('#ffffff').text(String(i + 1), x, footerY + 3.5, { width: cardWidth - 8, align: 'right' });
       } else {
         // =========================================================================
         // STANDARD VOTER LIST CARD GRID

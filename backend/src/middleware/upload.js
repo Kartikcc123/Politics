@@ -1,4 +1,4 @@
-﻿const fs = require('fs');
+const fs = require('fs');
 const multer = require('multer');
 const { uploadRoot } = require('../utils/uploadPath');
 
@@ -25,11 +25,10 @@ module.exports = multer({
     const fieldName = String(file?.fieldname || '');
     const mimeType = String(file?.mimetype || '');
 
-    if (fieldName === 'photo') {
-      const imageByName = /\.(jpg|jpeg|png|webp|heic|heif)$/i.test(originalName);
-      const imageByMime = /^image\//i.test(mimeType);
-      if (!imageByName && !imageByMime) {
-        const error = new Error('Only image files are allowed for contact photo.');
+    if (fieldName === 'photo' || fieldName === 'banner' || /^image\//i.test(mimeType) || /\.(jpg|jpeg|png|webp|heic|heif|bmp|gif)$/i.test(originalName)) {
+      const isImg = /^image\//i.test(mimeType) || /\.(jpg|jpeg|png|webp|heic|heif|bmp|gif)$/i.test(originalName);
+      if (!isImg) {
+        const error = new Error('Only image files (JPG, PNG, WebP) are allowed for photos and banners.');
         error.status = 400;
         return cb(error);
       }
