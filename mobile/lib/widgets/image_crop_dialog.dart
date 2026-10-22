@@ -170,7 +170,8 @@ class _ImageCropDialogState extends State<ImageCropDialog> {
         throw Exception('क्रॉप फ्रेम लोड नहीं हो सका।');
       }
 
-      final pixelRatio = math.max(2.5, 700.0 / viewportSize);
+      // Target crisp 320px resolution (ultra-sharp for 1-2 inch print, but under 50KB to prevent memory overload)
+      final pixelRatio = math.max(1.0, 320.0 / viewportSize);
       final ui.Image image = await boundary.toImage(pixelRatio: pixelRatio);
       final ByteData? byteData =
           await image.toByteData(format: ui.ImageByteFormat.png);

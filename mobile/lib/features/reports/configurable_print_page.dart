@@ -351,9 +351,12 @@ class _ConfigurablePrintPageState extends State<ConfigurablePrintPage> {
       params['columns'] = '2';
       params['rowsPerPage'] = '${campaignCardsPerPage ~/ 2}';
       if (campaignBannerBytes != null && campaignBannerBytes!.isNotEmpty) {
-        params['bannerImage'] = 'data:image/png;base64,${base64Encode(campaignBannerBytes!)}';
+        final b64 = 'data:image/png;base64,${base64Encode(campaignBannerBytes!)}';
+        params['banner'] = b64;
+        params['bannerImage'] = b64;
       } else if (campaignBannerUrl != null && campaignBannerUrl!.isNotEmpty) {
         params['bannerUrl'] = campaignBannerUrl!;
+        params['banner'] = campaignBannerUrl!;
       }
       if (candidatePhotoBytes != null && candidatePhotoBytes!.isNotEmpty) {
         params['candidatePhoto'] = 'data:image/png;base64,${base64Encode(candidatePhotoBytes!)}';
@@ -362,7 +365,9 @@ class _ConfigurablePrintPageState extends State<ConfigurablePrintPage> {
         params['leaderPhoto'] = 'data:image/png;base64,${base64Encode(leaderPhotoBytes!)}';
       }
       if (symbolBytes != null && symbolBytes!.isNotEmpty) {
-        params['symbolImage'] = 'data:image/png;base64,${base64Encode(symbolBytes!)}';
+        final sB64 = 'data:image/png;base64,${base64Encode(symbolBytes!)}';
+        params['symbol'] = sB64;
+        params['symbolImage'] = sB64;
       }
       if (candidateNameCtrl.text.trim().isNotEmpty) {
         params['candidateName'] = candidateNameCtrl.text.trim();

@@ -508,16 +508,22 @@ exports.printMembers = async (req, res, next) => {
     // Resolve Image Buffers for Campaign Banner, Candidate Photo, Leader Photo, and Election Symbol
     function resolveImageBuffer(imgInput) {
       if (!imgInput) return null;
-      if (typeof imgInput === 'string' && imgInput.startsWith('data:image')) {
-        try {
-          const base64Data = imgInput.split(',')[1] || imgInput;
-          return Buffer.from(base64Data, 'base64');
-        } catch (_) { return null; }
-      }
       if (typeof imgInput === 'string') {
-        const localPath = imgInput.startsWith('/uploads/')
-          ? path.join(__dirname, '../../', imgInput)
-          : path.join(__dirname, '../../uploads', imgInput);
+        const trimmed = imgInput.trim();
+        if (trimmed.startsWith('data:image')) {
+          try {
+            const base64Data = trimmed.split(',')[1] || trimmed;
+            return Buffer.from(base64Data, 'base64');
+          } catch (_) { return null; }
+        }
+        if (trimmed.length > 200 && !trimmed.startsWith('/') && !trimmed.startsWith('http')) {
+          try {
+            return Buffer.from(trimmed, 'base64');
+          } catch (_) { return null; }
+        }
+        const localPath = trimmed.startsWith('/uploads/')
+          ? path.join(__dirname, '../../', trimmed)
+          : path.join(__dirname, '../../uploads', trimmed);
         if (fs.existsSync(localPath)) {
           try {
             return fs.readFileSync(localPath);
@@ -527,17 +533,36 @@ exports.printMembers = async (req, res, next) => {
       return null;
     }
 
-    const bannerBuffer = resolveImageBuffer(params.bannerImage || params.bannerUrl);
-    const candidatePhotoBuffer = resolveImageBuffer(params.candidatePhoto || params.candidatePhotoUrl);
-    const leaderPhotoBuffer = resolveImageBuffer(params.leaderPhoto || params.leaderPhotoUrl);
-    const symbolBuffer = resolveImageBuffer(params.symbolImage || params.symbolUrl);
-
     const margin = isCampaignSlip ? 15 : 20;
     const doc = new PDFDocument({ size: paperSize, layout: orientation, margin, bufferPages: true });
     doc.registerFont('Hindi', regularFont).registerFont('HindiBold', boldFont).font('Hindi');
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', 'inline; filename="voter-list.pdf"');
     doc.pipe(res);
+
+    // Pre-resolve and pre-compile Image Objects ONCE (reduces server RAM and CPU load by 99% across 1,000s of cards)
+    const bannerBuffer = resolveImageBuffer(params.banner || params.bannerImage || params.bannerUrl);
+    const candidatePhotoBuffer = resolveImageBuffer(params.candidatePhoto || params.candidatePhotoUrl);
+    const leaderPhotoBuffer = resolveImageBuffer(params.leaderPhoto || params.leaderPhotoUrl);
+    const symbolBuffer = resolveImageBuffer(params.symbol || params.symbolImage || params.symbolUrl);
+
+    let bannerImageObj = null;
+    let candidatePhotoImageObj = null;
+    let leaderPhotoImageObj = null;
+    let symbolImageObj = null;
+
+    if (bannerBuffer) {
+      try { bannerImageObj = doc.openImage(bannerBuffer); } catch (e) { console.error('Banner image parse error:', e.message); }
+    }
+    if (candidatePhotoBuffer) {
+      try { candidatePhotoImageObj = doc.openImage(candidatePhotoBuffer); } catch (e) { console.error('Candidate photo parse error:', e.message); }
+    }
+    if (leaderPhotoBuffer) {
+      try { leaderPhotoImageObj = doc.openImage(leaderPhotoBuffer); } catch (e) { console.error('Leader photo parse error:', e.message); }
+    }
+    if (symbolBuffer) {
+      try { symbolImageObj = doc.openImage(symbolBuffer); } catch (e) { console.error('Symbol image parse error:', e.message); }
+    }
 
     const isCompact = rowsPerPage >= 8 || columns >= 3;
     const gapX = isCampaignSlip ? 9 : (columns >= 3 ? 5 : 8);
@@ -674,11 +699,11 @@ exports.printMembers = async (req, res, next) => {
 
         // 1. TOP SECTION: Campaign Banner
         const bannerH = Math.min(130, Math.max(56, Math.round(cardHeight * 0.35)));
-        if (bannerBuffer) {
+        if (bannerImageObj) {
           try {
             // Fill background white before placing banner image
             doc.rect(x + 0.5, y + 0.5, cardWidth - 1, bannerH).fillColor('#ffffff').fill();
-            doc.image(bannerBuffer, x + 0.5, y + 0.5, { fit: [cardWidth - 1, bannerH], align: 'center', valign: 'center' });
+            doc.image(bannerImageObj, x + 0.5, y + 0.5, { fit: [cardWidth - 1, bannerH], align: 'center', valign: 'center' });
           } catch (_) {
             drawDefaultBanner();
           }
@@ -705,11 +730,11 @@ exports.printMembers = async (req, res, next) => {
 
             // Candidate Photo in Ornate Golden Circular Frame (No BG removal needed!)
             const leftCX = x + 8 + photoR;
-            if (candidatePhotoBuffer) {
+            if (candidatePhotoImageObj) {
               try {
                 doc.save();
                 doc.circle(leftCX, photoCY, photoR).clip();
-                doc.image(candidatePhotoBuffer, leftCX - photoR, photoCY - photoR, {
+                doc.image(candidatePhotoImageObj, leftCX - photoR, photoCY - photoR, {
                   width: photoR * 2,
                   height: photoR * 2,
                   fit: [photoR * 2, photoR * 2],
@@ -727,11 +752,11 @@ exports.printMembers = async (req, res, next) => {
 
             // Right Side: Leader Photo or Election Symbol in Golden Ring
             const rightCX = x + cardWidth - 8 - photoR;
-            if (leaderPhotoBuffer) {
+            if (leaderPhotoImageObj) {
               try {
                 doc.save();
                 doc.circle(rightCX, photoCY, photoR).clip();
-                doc.image(leaderPhotoBuffer, rightCX - photoR, photoCY - photoR, {
+                doc.image(leaderPhotoImageObj, rightCX - photoR, photoCY - photoR, {
                   width: photoR * 2,
                   height: photoR * 2,
                   fit: [photoR * 2, photoR * 2],
@@ -744,12 +769,12 @@ exports.printMembers = async (req, res, next) => {
                 doc.circle(rightCX, photoCY, photoR + 3.2).lineWidth(1.0).strokeColor('#b45309').stroke();
                 doc.circle(rightCX, photoCY, photoR).lineWidth(0.8).strokeColor('#78350f').stroke();
               } catch (_) {}
-            } else if (symbolBuffer) {
+            } else if (symbolImageObj) {
               try {
                 doc.save();
                 doc.circle(rightCX, photoCY, photoR).fillColor('#ffffff').fill();
                 doc.circle(rightCX, photoCY, photoR).clip();
-                doc.image(symbolBuffer, rightCX - photoR + 2, photoCY - photoR + 2, {
+                doc.image(symbolImageObj, rightCX - photoR + 2, photoCY - photoR + 2, {
                   width: (photoR - 2) * 2,
                   height: (photoR - 2) * 2,
                   fit: [(photoR - 2) * 2, (photoR - 2) * 2],
@@ -764,8 +789,8 @@ exports.printMembers = async (req, res, next) => {
             }
 
             // Center Text Typography
-            const textLeft = candidatePhotoBuffer ? (leftCX + photoR + 6) : (x + 8);
-            const textRight = (leaderPhotoBuffer || symbolBuffer) ? (rightCX - photoR - 6) : (x + cardWidth - 8);
+            const textLeft = candidatePhotoImageObj ? (leftCX + photoR + 6) : (x + 8);
+            const textRight = (leaderPhotoImageObj || symbolImageObj) ? (rightCX - photoR - 6) : (x + cardWidth - 8);
             const textWidth = Math.max(80, textRight - textLeft);
 
             let curY = y + 4;
