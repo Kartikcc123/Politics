@@ -1,10 +1,10 @@
 # Secrets / environment
 .env
+.env*
 .env.*
-!.env.example
-backend/.env
+*.env*
+backend/.env*
 backend/.env.*
-!backend/.env.example
 
 # APK Binaries
 apk/
