@@ -1629,29 +1629,29 @@ class _ConfigurablePrintPageState extends State<ConfigurablePrintPage> {
                   child: const Icon(Icons.how_to_vote_rounded, color: Color(0xffd97706), size: 26),
                 ),
                 const SizedBox(width: 12),
-                const Expanded(
+                Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Row(
                         children: [
-                          Text(
+                          const Text(
                             '🌟 प्रत्याशी चुनाव प्रचार पर्ची (8 पर्ची/पेज)',
                             style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: navy),
                           ),
-                          SizedBox(width: 6),
+                          const SizedBox(width: 6),
                           Container(
-                            padding: EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                            decoration: BoxDecoration(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                            decoration: const BoxDecoration(
                               color: Color(0xffdc2626),
                               borderRadius: BorderRadius.all(Radius.circular(6)),
                             ),
-                            child: Text('नया', style: TextStyle(color: Colors.white, fontSize: 9.5, fontWeight: FontWeight.bold)),
+                            child: const Text('नया', style: TextStyle(color: Colors.white, fontSize: 9.5, fontWeight: FontWeight.bold)),
                           ),
                         ],
                       ),
-                      SizedBox(height: 2),
-                      Text(
+                      const SizedBox(height: 2),
+                      const Text(
                         'ऊपर प्रत्याशी प्रचार फोटो/बैनर + फाड़ने वाली लाइन + मतदाता विवरण, फोटो व वार्ड बॉक्स',
                         style: TextStyle(fontSize: 11.5, color: muted),
                       ),
