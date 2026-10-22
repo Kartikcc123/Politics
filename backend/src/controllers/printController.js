@@ -58,7 +58,8 @@ function escapeRegex(value) {
 }
 
 function applyPrintFilters(req, filter) {
-  const q = String(req.query.q || '').trim();
+  const query = { ...(req.query || {}), ...(req.body || {}) };
+  const q = String(query.q || '').trim();
   if (q) filter.$or = [
     'name', 'surname', 'mobile', 'altMobile', 'voterId', 'guardianName',
     'houseNumber', 'address', 'location', 'village', 'gramPanchayat',
@@ -66,7 +67,7 @@ function applyPrintFilters(req, filter) {
     'assemblyName', 'partNumber',
   ].map((key) => ({ [key]: new RegExp(escapeRegex(q), 'i') }));
 
-  const vilParam = req.query.village || req.query.gaon || req.query.gav;
+  const vilParam = query.village || query.gaon || query.gav;
   if (vilParam) {
     const vRegex = hindiFlexibleRegex(vilParam);
     filter.$and = [...(filter.$and || []), {
@@ -77,12 +78,12 @@ function applyPrintFilters(req, filter) {
     }];
   }
 
-  const gpParam = req.query.gramPanchayat || req.query.panchayat;
+  const gpParam = query.gramPanchayat || query.panchayat;
   if (gpParam) {
     filter.gramPanchayat = hindiFlexibleRegex(gpParam);
   }
 
-  const samitiWardParam = req.query.samitiWard || req.query.panchayatSamitiWard;
+  const samitiWardParam = query.samitiWard || query.panchayatSamitiWard;
   if (samitiWardParam) {
     filter.panchayatSamitiWard = hindiFlexibleRegex(samitiWardParam);
   }
@@ -91,9 +92,9 @@ function applyPrintFilters(req, filter) {
     'tehsil', 'municipality', 'caste',
     'organizationPost', 'location', 'sectionName', 'assemblyName',
   ]) {
-    if (req.query[key]) filter[key] = new RegExp(escapeRegex(req.query[key]), 'i');
+    if (query[key]) filter[key] = new RegExp(escapeRegex(query[key]), 'i');
   }
-  const samitiParam = req.query.tehsil || req.query.samiti || req.query.simiti || req.query.panchayatSamiti;
+  const samitiParam = query.tehsil || query.samiti || query.simiti || query.panchayatSamiti;
   if (samitiParam) {
     filter.tehsil = hindiFlexibleRegex(samitiParam);
   }
@@ -101,17 +102,17 @@ function applyPrintFilters(req, filter) {
     'supportLevel', 'area', 'gender', 'verificationStatus', 'assemblyNumber',
     'sectionNumber',
   ]) {
-    if (req.query[key]) filter[key] = req.query[key];
+    if (query[key]) filter[key] = query[key];
   }
-  if (req.query.partNumber) {
-    const parts = String(req.query.partNumber).split(',').map((p) => p.trim()).filter(Boolean);
+  if (query.partNumber) {
+    const parts = String(query.partNumber).split(',').map((p) => p.trim()).filter(Boolean);
     if (parts.length > 1) {
       filter.partNumber = { $in: parts };
     } else if (parts.length === 1) {
       filter.partNumber = parts[0];
     }
   }
-  const wardParam = req.query.wardNumber || req.query.ward || req.query.municipalWard;
+  const wardParam = query.wardNumber || query.ward || query.municipalWard;
   if (wardParam) {
     const w = String(wardParam).replace(/\D/g, '').trim();
     if (w) {
@@ -126,33 +127,33 @@ function applyPrintFilters(req, filter) {
       }];
     }
   }
-  if (req.query.letter) {
-    filter.name = new RegExp(`^${escapeRegex(String(req.query.letter).trim())}`, 'i');
+  if (query.letter) {
+    filter.name = new RegExp(`^${escapeRegex(String(query.letter).trim())}`, 'i');
   }
-  if (req.query.hasMobile === 'true' || req.query.withMobileOnly === 'true') {
+  if (query.hasMobile === 'true' || query.withMobileOnly === 'true') {
     filter.mobile = { $nin: ['', null], $exists: true };
   }
-  if (req.query.favorite === 'true' || req.query.favoritesOnly === 'true' || req.query.isFavorite === 'true') {
+  if (query.favorite === 'true' || query.favoritesOnly === 'true' || query.isFavorite === 'true') {
     filter.isFavorite = true;
   }
-  if (req.query.verified === 'true' || req.query.verifiedOnly === 'true') {
+  if (query.verified === 'true' || query.verifiedOnly === 'true') {
     filter.verificationStatus = 'verified';
   }
-  if (req.query.missingMobile === 'true') {
+  if (query.missingMobile === 'true') {
     filter.$and = [...(filter.$and || []), { $or: [{ mobile: '' }, { mobile: null }, { mobile: { $exists: false } }] }];
   }
-  if (req.query.missingHouse === 'true') {
+  if (query.missingHouse === 'true') {
     filter.$and = [...(filter.$and || []), { $or: [{ houseNumber: '' }, { houseNumber: null }, { houseNumber: { $exists: false } }] }];
   }
 
-  const partyPref = req.query.partyPreference || req.query.party;
+  const partyPref = query.partyPreference || query.party;
   if (partyPref && partyPref !== 'all') {
     filter.partyPreference = partyPref;
   }
 
-  const ids = String(req.query.ids || '').split(',').map((id) => id.trim()).filter(Boolean);
-  const excluded = String(req.query.excludedIds || '').split(',').map((id) => id.trim()).filter(Boolean);
-  if (ids.length && req.query.selectAll !== 'true') filter._id = { $in: ids };
+  const ids = String(query.ids || '').split(',').map((id) => id.trim()).filter(Boolean);
+  const excluded = String(query.excludedIds || '').split(',').map((id) => id.trim()).filter(Boolean);
+  if (ids.length && query.selectAll !== 'true') filter._id = { $in: ids };
   if (excluded.length) {
     filter._id = filter._id || {};
     filter._id.$nin = excluded;
@@ -401,14 +402,15 @@ exports.printMembers = async (req, res, next) => {
   try {
     const filter = applyMemberScope(req.currentUser, {});
     applyPrintFilters(req, filter);
-    const limit = Math.min(Math.max(Number(req.query.limit) || 10000, 1), 10000);
+    const params = { ...(req.query || {}), ...(req.body || {}) };
+    const limit = Math.min(Math.max(Number(params.limit) || 10000, 1), 10000);
     const isWardPrint = Boolean(
-      req.query.wardNumber ||
-      req.query.scope === 'specific_ward' ||
-      req.query.electoralListType === 'municipal' ||
-      req.query.sortBy === 'wardVoterSerial' ||
-      req.query.rollType === 'municipal' ||
-      req.query.rollType === 'ward' ||
+      params.wardNumber ||
+      params.scope === 'specific_ward' ||
+      params.electoralListType === 'municipal' ||
+      params.sortBy === 'wardVoterSerial' ||
+      params.rollType === 'municipal' ||
+      params.rollType === 'ward' ||
       req.currentUser?.allowedRollType === 'municipal' ||
       (Array.isArray(req.currentUser?.assignedWards) && req.currentUser.assignedWards.length > 0)
     );
@@ -454,7 +456,6 @@ exports.printMembers = async (req, res, next) => {
       });
     }
 
-    const params = { ...(req.query || {}), ...(req.body || {}) };
     const getPhotoSource = await loadPhotoSources(members, params.photo !== 'false');
 
     const selected = [...new Set(String(params.fields || 'name,voterId,voterSerial,wardNumber,partNumber,guardianName,mobile,village,gramPanchayat')

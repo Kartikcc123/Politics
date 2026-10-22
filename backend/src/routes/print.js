@@ -8,6 +8,8 @@ const upload = require('../middleware/upload');
 
 router.get('/members.pdf', auth, permission('canPrintProfiles'), controller.printMembers);
 router.post('/members.pdf', auth, permission('canPrintProfiles'), controller.printMembers);
+router.get('/members.profiles.pdf', auth, permission('canPrintProfiles'), controller.printMembers);
+router.post('/members.profiles.pdf', auth, permission('canPrintProfiles'), controller.printMembers);
 router.post('/upload-banner', auth, upload.single('banner'), controller.uploadBanner);
 router.get('/members.xlsx', auth, permission('canExportData'), exportController.membersXlsx);
 router.post('/members.xlsx', auth, permission('canExportData'), exportController.membersXlsx);

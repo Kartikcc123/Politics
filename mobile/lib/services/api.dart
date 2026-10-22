@@ -305,14 +305,30 @@ class Api {
 
   Future<DownloadedFile> download(String path,
       {Map<String, String?> query = const {},
-      String fallbackName = 'download'}) async {
+      String fallbackName = 'download',
+      String method = 'GET'}) async {
     final clean = <String, String>{};
     for (final entry in query.entries) {
       final value = entry.value;
       if (value != null && value.isNotEmpty) clean[entry.key] = value;
     }
-    final uri = Uri.parse('$baseUrl$path').replace(queryParameters: clean);
-    final res = await _withNetworkRetry(() => http.get(uri, headers: headers));
+    final hasLargePayload = clean.values.any((v) => v.length > 512);
+    final usePost = method == 'POST' || hasLargePayload;
+
+    final http.Response res;
+    if (usePost) {
+      final uri = Uri.parse('$baseUrl$path');
+      final postHeaders = Map<String, String>.from(headers)
+        ..['Content-Type'] = 'application/json';
+      res = await _withNetworkRetry(() => http.post(
+            uri,
+            headers: postHeaders,
+            body: json.encode(clean),
+          ));
+    } else {
+      final uri = Uri.parse('$baseUrl$path').replace(queryParameters: clean);
+      res = await _withNetworkRetry(() => http.get(uri, headers: headers));
+    }
     if (res.statusCode == 401) return _expireSession();
     if (res.statusCode >= 400) {
       final contentType = res.headers['content-type'] ?? '';
