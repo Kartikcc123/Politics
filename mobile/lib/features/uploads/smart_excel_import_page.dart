@@ -565,7 +565,7 @@ class _MappingRow extends StatelessWidget {
           const SizedBox(width: 10),
           Expanded(
             child: DropdownButtonFormField<String>(
-              initialValue: value,
+              value: value,
               decoration: const InputDecoration(labelText: 'Voter field'),
               items: [
                 const DropdownMenuItem(value: '', child: Text('छोड़ें')),

@@ -145,6 +145,11 @@ function applyPrintFilters(req, filter) {
     filter.$and = [...(filter.$and || []), { $or: [{ houseNumber: '' }, { houseNumber: null }, { houseNumber: { $exists: false } }] }];
   }
 
+  const partyPref = req.query.partyPreference || req.query.party;
+  if (partyPref && partyPref !== 'all') {
+    filter.partyPreference = partyPref;
+  }
+
   const ids = String(req.query.ids || '').split(',').map((id) => id.trim()).filter(Boolean);
   const excluded = String(req.query.excludedIds || '').split(',').map((id) => id.trim()).filter(Boolean);
   if (ids.length && req.query.selectAll !== 'true') filter._id = { $in: ids };
@@ -449,17 +454,27 @@ exports.printMembers = async (req, res, next) => {
       });
     }
 
-    const getPhotoSource = await loadPhotoSources(members, req.query.photo !== 'false');
+    const params = { ...(req.query || {}), ...(req.body || {}) };
+    const getPhotoSource = await loadPhotoSources(members, params.photo !== 'false');
 
-    const selected = [...new Set(String(req.query.fields || 'name,voterId,voterSerial,wardNumber,partNumber,guardianName,mobile,village,gramPanchayat')
+    const selected = [...new Set(String(params.fields || 'name,voterId,voterSerial,wardNumber,partNumber,guardianName,mobile,village,gramPanchayat')
       .split(',').map((key) => key.trim()).filter((key) => fields[key]))];
 
-    // Configurable Rows & Columns per Page (Admin control for 30 voters per page, etc.)
-    let columns = Number(req.query.columns);
-    let rowsPerPage = Number(req.query.rowsPerPage);
-    const votersPerPage = Number(req.query.votersPerPage);
+    // Check if Campaign Voter Slip format is requested (8 per page: 2 columns x 4 rows)
+    const isCampaignSlip = params.layout === 'campaign' ||
+      params.campaignSlip === 'true' ||
+      params.densityPreset === 'campaign_8' ||
+      Number(params.votersPerPage) === 8;
 
-    if (votersPerPage && (!columns || !rowsPerPage)) {
+    // Configurable Rows & Columns per Page (Admin control for 30 voters per page, etc.)
+    let columns = Number(params.columns);
+    let rowsPerPage = Number(params.rowsPerPage);
+    const votersPerPage = Number(params.votersPerPage);
+
+    if (isCampaignSlip) {
+      columns = 2;
+      rowsPerPage = 4;
+    } else if (votersPerPage && (!columns || !rowsPerPage)) {
       if (votersPerPage >= 30) { columns = 3; rowsPerPage = 10; }
       else if (votersPerPage === 24) { columns = 3; rowsPerPage = 8; }
       else if (votersPerPage === 20) { columns = 2; rowsPerPage = 10; }
@@ -473,13 +488,34 @@ exports.printMembers = async (req, res, next) => {
       rowsPerPage = Math.max(2, Math.min(15, rowsPerPage || (columns === 3 ? 10 : 8)));
     }
 
-    const includePhoto = req.query.photo !== 'false';
-    const paperSize = ['A4', 'A3', 'LETTER', 'LEGAL'].includes(String(req.query.paperSize).toUpperCase())
-      ? String(req.query.paperSize).toUpperCase() : 'A4';
-    const orientation = req.query.orientation === 'landscape' ? 'landscape' : 'portrait';
-    const title = String(req.query.title || 'मतदाता सूची 2026').slice(0, 100);
+    const includePhoto = params.photo !== 'false';
+    const paperSize = ['A4', 'A3', 'LETTER', 'LEGAL'].includes(String(params.paperSize).toUpperCase())
+      ? String(params.paperSize).toUpperCase() : 'A4';
+    const orientation = params.orientation === 'landscape' ? 'landscape' : 'portrait';
+    const title = String(params.title || 'मतदाता सूची 2026').slice(0, 100);
 
-    const margin = 20;
+    // Resolve Campaign Banner Image if provided
+    let bannerBuffer = null;
+    const bannerInput = params.bannerImage || params.bannerUrl;
+    if (bannerInput) {
+      if (typeof bannerInput === 'string' && bannerInput.startsWith('data:image')) {
+        try {
+          const base64Data = bannerInput.split(',')[1] || bannerInput;
+          bannerBuffer = Buffer.from(base64Data, 'base64');
+        } catch (_) {}
+      } else if (typeof bannerInput === 'string') {
+        const localPath = bannerInput.startsWith('/uploads/')
+          ? path.join(__dirname, '../../', bannerInput)
+          : path.join(__dirname, '../../uploads', bannerInput);
+        if (fs.existsSync(localPath)) {
+          try {
+            bannerBuffer = fs.readFileSync(localPath);
+          } catch (_) {}
+        }
+      }
+    }
+
+    const margin = isCampaignSlip ? 15 : 20;
     const doc = new PDFDocument({ size: paperSize, layout: orientation, margin, bufferPages: true });
     doc.registerFont('Hindi', regularFont).registerFont('HindiBold', boldFont).font('Hindi');
     res.setHeader('Content-Type', 'application/pdf');
@@ -487,10 +523,10 @@ exports.printMembers = async (req, res, next) => {
     doc.pipe(res);
 
     const isCompact = rowsPerPage >= 8 || columns >= 3;
-    const gapX = columns >= 3 ? 5 : 8;
-    const gapY = rowsPerPage >= 8 ? 4 : 8;
-    const topY = isCompact ? 38 : 50;
-    const bottomY = doc.page.height - 22;
+    const gapX = isCampaignSlip ? 9 : (columns >= 3 ? 5 : 8);
+    const gapY = isCampaignSlip ? 8 : (rowsPerPage >= 8 ? 4 : 8);
+    const topY = isCampaignSlip ? margin : (isCompact ? 38 : 50);
+    const bottomY = isCampaignSlip ? (doc.page.height - margin) : (doc.page.height - 22);
     const usableWidth = doc.page.width - margin * 2;
     const usableHeight = bottomY - topY;
     const cardWidth = (usableWidth - gapX * (columns - 1)) / columns;
@@ -595,12 +631,12 @@ exports.printMembers = async (req, res, next) => {
       doc.addPage();
     }
 
-    // 2. Draw Voter Cards in Configured Grid (e.g. 30 per page = 3 columns x 10 rows)
-    drawHeader();
+    // 2. Draw Voter Cards in Configured Grid
+    if (!isCampaignSlip) drawHeader();
     for (let i = 0; i < members.length; i++) {
       if (i > 0 && i % pageSize === 0) {
         doc.addPage();
-        drawHeader();
+        if (!isCampaignSlip) drawHeader();
       }
 
       const m = members[i];
@@ -610,109 +646,289 @@ exports.printMembers = async (req, res, next) => {
       const x = margin + c * (cardWidth + gapX);
       const y = topY + r * (cardHeight + gapY);
 
-      // Card border
-      doc.roundedRect(x, y, cardWidth, cardHeight, 3.5).lineWidth(0.5).strokeColor('#94a3b8').stroke();
+      if (isCampaignSlip) {
+        // =========================================================================
+        // CANDIDATE CAMPAIGN VOTER SLIP (8 Per Page: 2 Columns x 4 Rows)
+        // With Banner Image, Scissor Tear-off Divider, Voter Info, Photo, Ward Box, & Voting Hours
+        // =========================================================================
 
-      // Header strip
-      const headerH = Math.min(14, Math.max(10.5, cardHeight * 0.2));
-      doc.rect(x, y, cardWidth, headerH).fillColor('#f8fafc').fill();
-      doc.rect(x, y + headerH, cardWidth, 0.5).fillColor('#e2e8f0').fill();
+        // Outer Card Border
+        doc.roundedRect(x, y, cardWidth, cardHeight, 3).lineWidth(0.8).strokeColor('#334155').stroke();
 
-      // Serial
-      const serialNum = isWardPrint
-        ? (m.wardVoterSerial ? String(m.wardVoterSerial) : (m.voterSerial ? String(m.voterSerial) : String(i + 1)))
-        : (m.voterSerial ? String(m.voterSerial) : (m.wardVoterSerial ? String(m.wardVoterSerial) : String(i + 1)));
-      const serialSize = isCompact ? 7.5 : 9;
-      doc.font('HindiBold').fontSize(serialSize).fillColor('#1d4ed8').text(serialNum, x + 4, y + (headerH - serialSize) / 2);
-
-      // EPIC / Voter ID
-      if (m.voterId) {
-        const epicSize = isCompact ? 6.8 : 8;
-        doc.font('HindiBold').fontSize(epicSize).fillColor('#334155').text(m.voterId, x, y + (headerH - epicSize) / 2 + 0.2, { width: cardWidth - 4, align: 'right' });
-      }
-
-      // Photo
-      let photoW = 0;
-      if (includePhoto) {
-        photoW = Math.min(38, Math.max(26, cardWidth * 0.22));
-        const photoH = Math.min(cardHeight - headerH - 5, photoW * 1.35);
-        const photoX = x + cardWidth - photoW - 3.5;
-        const photoY = y + headerH + 2;
-
-        const img = getPhotoSource(m);
-        if (img) {
+        // 1. TOP SECTION: Campaign Banner
+        const bannerH = 68;
+        if (bannerBuffer) {
           try {
-            doc.roundedRect(photoX, photoY, photoW, photoH, 2).strokeColor('#cbd5e1').stroke();
-            doc.image(img, photoX, photoY, { fit: [photoW, photoH], align: 'center', valign: 'center' });
+            doc.image(bannerBuffer, x + 0.5, y + 0.5, { fit: [cardWidth - 1, bannerH], align: 'center', valign: 'center' });
           } catch (_) {
-            doc.roundedRect(photoX, photoY, photoW, photoH, 2).strokeColor('#cbd5e1').stroke();
-            doc.font('Hindi').fontSize(5.5).fillColor('#94a3b8').text('Photo', photoX, photoY + (photoH / 2) - 3, { width: photoW, align: 'center' });
+            drawDefaultBanner();
           }
         } else {
-          doc.roundedRect(photoX, photoY, photoW, photoH, 2).strokeColor('#cbd5e1').stroke();
-          doc.font('Hindi').fontSize(5.5).fillColor('#94a3b8').text('Photo', photoX, photoY + (photoH / 2) - 3, { width: photoW, align: 'center' });
+          drawDefaultBanner();
         }
-      }
 
-      // Text lines
-      const textX = x + 4;
-      const textW = cardWidth - (includePhoto ? photoW + 9 : 8);
-      let textY = y + headerH + 2;
-
-      const name = ((m.name || '') + ' ' + (m.surname || '')).trim() || '-';
-      const guardian = m.guardianName || m.relativeName || '-';
-      const house = m.houseNumber || '-';
-      const gender = labels.gender[m.gender] ? (m.gender === 'male' ? 'पु.' : (m.gender === 'female' ? 'म.' : labels.gender[m.gender])) : (m.gender || '-');
-      const age = m.age ? String(m.age) : '-';
-
-      if (isCompact) {
-        // Compact 4-5 line voter slip format
-        const nameSize = rowsPerPage >= 10 ? 7.2 : 7.8;
-        doc.font('HindiBold').fontSize(nameSize).fillColor('#0f172a').text(name, textX, textY, { width: textW, lineBreak: false });
-        textY += (rowsPerPage >= 10 ? 9.8 : 10.5);
-
-        doc.font('Hindi').fontSize(6.5).fillColor('#334155').text('पिता/पति: ' + guardian, textX, textY, { width: textW, lineBreak: false });
-        textY += 9;
-
-        doc.font('Hindi').fontSize(6.5).fillColor('#334155').text('मकान सं.: ' + house, textX, textY, { width: textW, lineBreak: false });
-        textY += 9;
-
-        let ageLine = 'उम्र: ' + age + '  लिंग: ' + gender;
-        if (m.mobile) ageLine += '  📱' + m.mobile;
-        doc.font('Hindi').fontSize(6.2).fillColor('#334155').text(ageLine, textX, textY, { width: textW, lineBreak: false });
-        textY += 9;
-
-        let extraLine = '';
-        if (m.caste) extraLine += 'जाति: ' + m.caste;
-        if (m.village) extraLine += (extraLine ? ' | ' : '') + m.village;
-        else if (m.wardNumber) extraLine += (extraLine ? ' | ' : '') + 'वार्ड ' + m.wardNumber;
-        if (extraLine && cardHeight >= 68) {
-          doc.font('Hindi').fontSize(5.8).fillColor('#64748b').text(extraLine, textX, textY, { width: textW, lineBreak: false });
+        function drawDefaultBanner() {
+          doc.rect(x + 0.5, y + 0.5, cardWidth - 1, bannerH).fillColor('#fef9c3').fill();
+          const gpName = m.gramPanchayat || params.gramPanchayat || sampleMember.gramPanchayat || 'ग्राम पंचायत';
+          const postName = params.candidatePost || 'सरपंच';
+          doc.font('HindiBold').fontSize(8.5).fillColor('#b45309').text(`ग्राम पंचायत ${gpName} से ${postName} पद हेतु`, x + 4, y + 5, { width: cardWidth - 8, align: 'center' });
+          doc.font('HindiBold').fontSize(16.5).fillColor('#1d4ed8').text(params.candidateName || 'सुनीता देवी', x + 4, y + 17, { width: cardWidth - 8, align: 'center' });
+          if (params.candidatePhone) {
+            doc.font('HindiBold').fontSize(8.5).fillColor('#0f172a').text(`मो. ${params.candidatePhone}`, x + 4, y + 37, { width: cardWidth - 8, align: 'center' });
+          }
+          doc.font('HindiBold').fontSize(9).fillColor('#b91c1c').text(params.candidateSlogan || 'को वोट देकर भारी मतों से विजयी बनावें।', x + 4, y + 50, { width: cardWidth - 8, align: 'center' });
         }
+
+        // 2. TEAR-OFF SCISSOR LINE
+        const dividerY = y + bannerH + 1;
+        doc.save();
+        doc.dash(2.5, { space: 2.5 }).moveTo(x + 2, dividerY).lineTo(x + cardWidth - 2, dividerY).lineWidth(0.6).strokeColor('#64748b').stroke();
+        doc.restore();
+
+        const tearOffText = '✂ मतदान तिथि से पूर्व बांटी गयी पर्ची, मतदान केन्द्र में जाने से पहले ऊपर का हिस्सा फाड़ दें। ✂';
+        doc.font('Hindi').fontSize(5.6).fillColor('#475569').text(tearOffText, x, dividerY + 1.5, { width: cardWidth, align: 'center' });
+
+        // 3. VOTER DATA AREA
+        const contentY = dividerY + 10;
+        const contentH = cardHeight - bannerH - 12 - 16;
+        const col1W = 132;
+        const col2W = 58;
+        const col3W = cardWidth - col1W - col2W - 8;
+        const col1X = x + 4;
+        const col2X = col1X + col1W + 2;
+        const col3X = col2X + col2W + 2;
+
+        // Serial Box
+        const serialNum = isWardPrint
+          ? (m.wardVoterSerial ? String(m.wardVoterSerial) : (m.voterSerial ? String(m.voterSerial) : String(i + 1)))
+          : (m.voterSerial ? String(m.voterSerial) : (m.wardVoterSerial ? String(m.wardVoterSerial) : String(i + 1)));
+
+        doc.roundedRect(col1X, contentY, 36, 16, 2).lineWidth(0.6).strokeColor('#0f172a').stroke();
+        doc.font('HindiBold').fontSize(11).fillColor('#0f172a').text(serialNum, col1X, contentY + 2.5, { width: 36, align: 'center' });
+
+        // EPIC Box
+        const epicBoxW = col1W - 40;
+        doc.roundedRect(col1X + 40, contentY, epicBoxW, 16, 2).lineWidth(0.6).strokeColor('#0f172a').stroke();
+        doc.font('HindiBold').fontSize(9).fillColor('#0f172a').text(m.voterId || '-', col1X + 40, contentY + 3.5, { width: epicBoxW, align: 'center' });
+
+        // Voter Lines
+        let voterLineY = contentY + 20;
+        const name = ((m.name || '') + ' ' + (m.surname || '')).trim() || '-';
+        const guardian = m.guardianName || m.relativeName || '-';
+        const relationLabel = m.gender === 'female' && m.relativeName ? 'पति का नाम' : 'पिता का नाम';
+        const house = m.houseNumber || '-';
+        const gender = labels.gender[m.gender] ? (m.gender === 'male' ? 'पुरुष' : (m.gender === 'female' ? 'महिला' : labels.gender[m.gender])) : (m.gender || '-');
+        const age = m.age ? String(m.age) : '-';
+
+        doc.font('Hindi').fontSize(8.5).fillColor('#0f172a').text('नाम: ', col1X, voterLineY, { continued: true });
+        doc.font('HindiBold').fontSize(9.5).fillColor('#090d16').text(name, { lineBreak: false });
+        voterLineY += 13.5;
+
+        doc.font('Hindi').fontSize(8.2).fillColor('#1e293b').text(`${relationLabel}: ${guardian}`, col1X, voterLineY, { width: col1W, lineBreak: false });
+        voterLineY += 12.5;
+
+        doc.font('Hindi').fontSize(8.2).fillColor('#1e293b').text(`मकान संख्या: ${house}`, col1X, voterLineY, { width: col1W, lineBreak: false });
+        voterLineY += 12.5;
+
+        doc.font('Hindi').fontSize(8.2).fillColor('#1e293b').text(`आयु: ${age}   लिंग: ${gender}`, col1X, voterLineY, { width: col1W, lineBreak: false });
+
+        // Col 2: Voter Photo Box
+        const photoBoxW = 52;
+        const photoBoxH = 68;
+        const photoBoxX = col2X + (col2W - photoBoxW) / 2;
+        const photoBoxY = contentY + (contentH - photoBoxH) / 2 - 2;
+
+        doc.roundedRect(photoBoxX, photoBoxY, photoBoxW, photoBoxH, 2).lineWidth(0.6).strokeColor('#64748b').stroke();
+        if (includePhoto) {
+          const voterImg = getPhotoSource(m);
+          if (voterImg) {
+            try {
+              doc.image(voterImg, photoBoxX, photoBoxY, { fit: [photoBoxW, photoBoxH], align: 'center', valign: 'center' });
+            } catch (_) {
+              doc.font('Hindi').fontSize(6.5).fillColor('#94a3b8').text('फोटो', photoBoxX, photoBoxY + photoBoxH / 2 - 4, { width: photoBoxW, align: 'center' });
+            }
+          } else {
+            doc.font('Hindi').fontSize(6.5).fillColor('#94a3b8').text('फोटो', photoBoxX, photoBoxY + photoBoxH / 2 - 4, { width: photoBoxW, align: 'center' });
+          }
+        }
+
+        // Col 3: Booth, Ward & Polling Station Box
+        doc.roundedRect(col3X, contentY, col3W, contentH - 4, 3).lineWidth(0.7).strokeColor('#0f172a').stroke();
+        
+        // Header in Col 3 (GP / Location)
+        const locationHeader = m.village || m.gramPanchayat || sampleMember.gramPanchayat || 'माण्डल';
+        doc.font('HindiBold').fontSize(8.5).fillColor('#0f172a').text(locationHeader, col3X + 2, contentY + 3, { width: col3W - 4, align: 'center' });
+        doc.moveTo(col3X, contentY + 16).lineTo(col3X + col3W, contentY + 16).lineWidth(0.5).strokeColor('#cbd5e1').stroke();
+
+        // WARD NUMBER (HIGHLIGHTED IN BOLD RED!)
+        const wardNum = m.wardNumber || (Array.isArray(m.municipalWardNumbers) && m.municipalWardNumbers[0]) || params.wardNumber || '-';
+        doc.font('HindiBold').fontSize(11.5).fillColor('#dc2626').text(`वार्ड : ${wardNum}`, col3X + 2, contentY + 18.5, { width: col3W - 4, align: 'center' });
+        doc.moveTo(col3X, contentY + 34).lineTo(col3X + col3W, contentY + 34).lineWidth(0.5).strokeColor('#cbd5e1').stroke();
+
+        // Assembly / Part numbers
+        const asmNum = m.assemblyNumber || sampleMember.assemblyNumber || '179';
+        const partNo = m.partNumber || sampleMember.partNumber || '-';
+        doc.font('Hindi').fontSize(7.0).fillColor('#1e293b').text(`वि. सं. ${asmNum} / प. सं. ${partNo}`, col3X + 2, contentY + 36.5, { width: col3W - 4, align: 'center' });
+        doc.moveTo(col3X, contentY + 47).lineTo(col3X + col3W, contentY + 47).lineWidth(0.5).strokeColor('#cbd5e1').stroke();
+
+        // Polling Station Building Name
+        const boothDesc = params.pollingStation || m.sectionName || m.partName || (m.gramPanchayat ? `राजकीय विद्यालय, ${m.gramPanchayat}` : 'मतदान केंद्र');
+        doc.font('Hindi').fontSize(6.5).fillColor('#1e293b').text(boothDesc, col3X + 3, contentY + 49, { width: col3W - 6, align: 'center', height: 42, lineBreak: true });
+
+        // 4. BOTTOM RED FOOTER STRIP
+        const footerH = 16;
+        const footerY = y + cardHeight - footerH;
+        doc.rect(x + 0.5, footerY, cardWidth - 1, footerH).fillColor('#dc2626').fill();
+        const votingTime = params.pollingTime || 'मतदान समय : प्रातः 7 से सायं 6 बजे तक';
+        doc.font('HindiBold').fontSize(8.5).fillColor('#ffffff').text(votingTime, x, footerY + 3.5, { width: cardWidth, align: 'center' });
+        doc.font('Hindi').fontSize(7.5).fillColor('#ffffff').text(String(i + 1), x, footerY + 4, { width: cardWidth - 8, align: 'right' });
       } else {
-        // Spacious format for fewer rows / cards
-        const nameSize = 9.5;
-        doc.font('HindiBold').fontSize(nameSize).fillColor('#0f172a').text(name, textX, textY, { width: textW, lineBreak: false });
-        textY += 13;
+        // =========================================================================
+        // STANDARD VOTER LIST CARD GRID
+        // =========================================================================
 
-        doc.font('Hindi').fontSize(8).fillColor('#334155').text('पिता/पति: ' + guardian, textX, textY, { width: textW, lineBreak: false });
-        textY += 11;
+        // Card border
+        doc.roundedRect(x, y, cardWidth, cardHeight, 2.5).lineWidth(0.6).strokeColor('#94a3b8').stroke();
 
-        doc.font('Hindi').fontSize(8).fillColor('#334155').text('मकान संख्या: ' + house, textX, textY, { width: textW, lineBreak: false });
-        textY += 11;
+        // Header strip height dynamically scaled
+        const headerH = Math.max(13, Math.min(17, cardHeight * 0.18));
+        doc.rect(x, y, cardWidth, headerH).fillColor('#f1f5f9').fill();
+        doc.rect(x, y + headerH, cardWidth, 0.5).fillColor('#cbd5e1').fill();
 
-        let ageLine = 'उम्र: ' + age + ' वर्ष  |  लिंग: ' + (labels.gender[m.gender] || m.gender || '-');
-        doc.font('Hindi').fontSize(7.5).fillColor('#334155').text(ageLine, textX, textY, { width: textW, lineBreak: false });
-        textY += 11;
+        // Serial
+        const serialNum = isWardPrint
+          ? (m.wardVoterSerial ? String(m.wardVoterSerial) : (m.voterSerial ? String(m.voterSerial) : String(i + 1)))
+          : (m.voterSerial ? String(m.voterSerial) : (m.wardVoterSerial ? String(m.wardVoterSerial) : String(i + 1)));
+        const serialSize = cardHeight >= 85 ? (columns <= 2 ? 10.5 : 9) : (cardHeight >= 70 ? 8.5 : 7.5);
+        doc.font('HindiBold').fontSize(serialSize).fillColor('#1e40af').text(serialNum, x + 5, y + (headerH - serialSize) / 2 + 0.5);
 
-        if (m.mobile) {
-          doc.font('Hindi').fontSize(7.5).fillColor('#1e40af').text('मोबाइल: ' + m.mobile, textX, textY, { width: textW, lineBreak: false });
-          textY += 11;
+        // EPIC / Voter ID
+        if (m.voterId) {
+          const epicSize = cardHeight >= 85 ? (columns <= 2 ? 9.5 : 8.2) : (cardHeight >= 70 ? 7.8 : 7.0);
+          doc.font('HindiBold').fontSize(epicSize).fillColor('#0f172a').text(m.voterId, x, y + (headerH - epicSize) / 2 + 0.5, { width: cardWidth - 6, align: 'right' });
         }
 
-        if (m.caste || m.village || m.wardNumber) {
-          const detail = [m.caste ? 'जाति: ' + m.caste : '', m.village ? 'गाँव: ' + m.village : '', m.wardNumber ? 'वार्ड: ' + m.wardNumber : ''].filter(Boolean).join(' | ');
-          doc.font('Hindi').fontSize(7).fillColor('#64748b').text(detail, textX, textY, { width: textW, lineBreak: false });
+        // Dynamic Photo sizing to fill card height proportionally
+        let photoW = 0;
+        if (includePhoto) {
+          const availPhotoH = cardHeight - headerH - 8;
+          if (columns <= 2) {
+            photoW = Math.min(48, Math.max(36, cardWidth * 0.185));
+            const photoH = Math.min(availPhotoH, Math.round(photoW * 1.3));
+            const photoX = x + cardWidth - photoW - 5;
+            const photoY = y + headerH + 4;
+
+            const img = getPhotoSource(m);
+            doc.roundedRect(photoX, photoY, photoW, photoH, 2).lineWidth(0.5).strokeColor('#94a3b8').stroke();
+            if (img) {
+              try {
+                doc.image(img, photoX, photoY, { fit: [photoW, photoH], align: 'center', valign: 'center' });
+              } catch (_) {
+                doc.font('Hindi').fontSize(6).fillColor('#94a3b8').text('Photo', photoX, photoY + (photoH / 2) - 4, { width: photoW, align: 'center' });
+              }
+            } else {
+              doc.font('Hindi').fontSize(6).fillColor('#94a3b8').text('Photo', photoX, photoY + (photoH / 2) - 4, { width: photoW, align: 'center' });
+            }
+          } else {
+            photoW = Math.min(36, Math.max(26, cardWidth * 0.21));
+            const photoH = Math.min(availPhotoH, Math.round(photoW * 1.3));
+            const photoX = x + cardWidth - photoW - 4;
+            const photoY = y + headerH + 3;
+
+            const img = getPhotoSource(m);
+            doc.roundedRect(photoX, photoY, photoW, photoH, 2).lineWidth(0.5).strokeColor('#94a3b8').stroke();
+            if (img) {
+              try {
+                doc.image(img, photoX, photoY, { fit: [photoW, photoH], align: 'center', valign: 'center' });
+              } catch (_) {
+                doc.font('Hindi').fontSize(5.5).fillColor('#94a3b8').text('Photo', photoX, photoY + (photoH / 2) - 3, { width: photoW, align: 'center' });
+              }
+            } else {
+              doc.font('Hindi').fontSize(5.5).fillColor('#94a3b8').text('Photo', photoX, photoY + (photoH / 2) - 3, { width: photoW, align: 'center' });
+            }
+          }
+        }
+
+        // Text lines with dynamic typography filling the card
+        const textX = x + (columns <= 2 ? 6 : 4);
+        const textW = cardWidth - (includePhoto ? photoW + (columns <= 2 ? 14 : 9) : (columns <= 2 ? 12 : 8));
+        let textY = y + headerH + (cardHeight >= 85 ? 4.5 : 3);
+
+        const name = ((m.name || '') + ' ' + (m.surname || '')).trim() || '-';
+        const guardian = m.guardianName || m.relativeName || '-';
+        const house = m.houseNumber || '-';
+        const gender = labels.gender[m.gender] ? (m.gender === 'male' ? 'पु.' : (m.gender === 'female' ? 'म.' : labels.gender[m.gender])) : (m.gender || '-');
+        const age = m.age ? String(m.age) : '-';
+
+        if (columns <= 2) {
+          // 2-Column Layout (e.g. 16 or 20 per page): Large, bold, dark, perfectly filling the box
+          const isTall = cardHeight >= 85;
+          const nameSize = isTall ? 11.0 : 9.5;
+          const line1Step = isTall ? 14.0 : 12.0;
+          const detailSize = isTall ? 9.0 : 8.0;
+          const lineStep = isTall ? 12.8 : 11.0;
+          const subDetailSize = isTall ? 8.2 : 7.2;
+
+          // Line 1: Name
+          doc.font('HindiBold').fontSize(nameSize).fillColor('#090d16').text(name, textX, textY, { width: textW, lineBreak: false });
+          textY += line1Step;
+
+          // Line 2: Guardian
+          doc.font('Hindi').fontSize(detailSize).fillColor('#1e293b').text('पिता/पति: ' + guardian, textX, textY, { width: textW, lineBreak: false });
+          textY += lineStep;
+
+          // Line 3: House
+          doc.font('Hindi').fontSize(detailSize).fillColor('#1e293b').text('मकान सं.: ' + house, textX, textY, { width: textW, lineBreak: false });
+          textY += lineStep;
+
+          // Line 4: Age, Gender, Mobile
+          let ageLine = 'उम्र: ' + age + '  लिंग: ' + gender;
+          if (m.mobile) ageLine += '   📱' + m.mobile;
+          doc.font('Hindi').fontSize(detailSize).fillColor('#1e293b').text(ageLine, textX, textY, { width: textW, lineBreak: false });
+          textY += lineStep;
+
+          // Line 5: Caste & Location
+          let extraLine = '';
+          if (m.caste) extraLine += 'जाति: ' + m.caste;
+          if (m.village) extraLine += (extraLine ? ' | ' : '') + m.village;
+          else if (m.wardNumber) extraLine += (extraLine ? ' | ' : '') + 'वार्ड ' + m.wardNumber;
+          if (extraLine) {
+            doc.font('Hindi').fontSize(subDetailSize).fillColor('#334155').text(extraLine, textX, textY, { width: textW, lineBreak: false });
+          }
+        } else {
+          // 3-Column Layout (e.g. 30 per page): Crisp, compact, filling height cleanly
+          const nameSize = cardHeight >= 70 ? 8.8 : 7.5;
+          const line1Step = cardHeight >= 70 ? 11.0 : 9.8;
+          const detailSize = cardHeight >= 70 ? 7.5 : 6.6;
+          const lineStep = cardHeight >= 70 ? 10.4 : 9.2;
+          const subDetailSize = cardHeight >= 70 ? 6.8 : 6.0;
+
+          // Line 1: Name
+          doc.font('HindiBold').fontSize(nameSize).fillColor('#090d16').text(name, textX, textY, { width: textW, lineBreak: false });
+          textY += line1Step;
+
+          // Line 2: Guardian
+          doc.font('Hindi').fontSize(detailSize).fillColor('#1e293b').text('पिता/पति: ' + guardian, textX, textY, { width: textW, lineBreak: false });
+          textY += lineStep;
+
+          // Line 3: House
+          doc.font('Hindi').fontSize(detailSize).fillColor('#1e293b').text('मकान सं.: ' + house, textX, textY, { width: textW, lineBreak: false });
+          textY += lineStep;
+
+          // Line 4: Age & Gender
+          let ageLine = 'उम्र: ' + age + '  लिंग: ' + gender;
+          if (m.mobile) ageLine += '  📱' + m.mobile;
+          doc.font('Hindi').fontSize(detailSize).fillColor('#1e293b').text(ageLine, textX, textY, { width: textW, lineBreak: false });
+          textY += lineStep;
+
+          // Line 5: Caste & Location
+          let extraLine = '';
+          if (m.caste) extraLine += 'जाति: ' + m.caste;
+          if (m.village) extraLine += (extraLine ? ' | ' : '') + m.village;
+          else if (m.wardNumber) extraLine += (extraLine ? ' | ' : '') + 'वार्ड ' + m.wardNumber;
+          if (extraLine && cardHeight >= 66) {
+            doc.font('Hindi').fontSize(subDetailSize).fillColor('#334155').text(extraLine, textX, textY, { width: textW, lineBreak: false });
+          }
         }
       }
     }
@@ -736,5 +952,21 @@ exports.printMembers = async (req, res, next) => {
     }
     doc.end();
   } catch (error) { next(error); }
+};
+
+exports.uploadBanner = async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: 'कृपया बैनर इमेज अपलोड करें' });
+    }
+    const relativePath = `/uploads/${req.file.filename}`;
+    return res.json({
+      success: true,
+      url: relativePath,
+      filename: req.file.filename,
+    });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
 };
 

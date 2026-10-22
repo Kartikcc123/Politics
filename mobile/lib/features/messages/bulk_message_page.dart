@@ -4,6 +4,7 @@ import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import 'package:share_plus/share_plus.dart';
 
@@ -353,15 +354,29 @@ class _BulkMessagePageState extends State<BulkMessagePage> {
 
   Future<void> directShareToWhatsApp() async {
     final rendered = renderVoterMessage(null);
+    final textToSend = rendered.trim().isNotEmpty ? rendered : null;
     if (attachPhoto && pickedImagePath != null && File(pickedImagePath!).existsSync()) {
       try {
+        final ext = pickedImagePath!.toLowerCase();
+        final mime = ext.endsWith('.png') ? 'image/png' : 'image/jpeg';
         await SharePlus.instance.share(
-          ShareParams(text: rendered, files: [XFile(pickedImagePath!)]),
+          ShareParams(
+            text: textToSend,
+            files: [XFile(pickedImagePath!, mimeType: mime, name: pickedImageName ?? 'poster.jpg')],
+            subject: 'मतदाता संदेश',
+          ),
         );
         return;
-      } catch (_) {}
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('शेयर नहीं हो सका: $e')));
+        }
+        return;
+      }
     }
-    await SharePlus.instance.share(ShareParams(text: rendered));
+    if (textToSend != null) {
+      await SharePlus.instance.share(ShareParams(text: textToSend));
+    }
   }
 
   Future<void> saveSender() async {
@@ -578,7 +593,7 @@ class _BulkMessagePageState extends State<BulkMessagePage> {
                       width: 260,
                       child: DropdownButtonFormField<String>(
                         key: ValueKey('sender-$senderId-${senders.length}'),
-                        initialValue: senderId.isEmpty ? null : senderId,
+                        value: senderId.isEmpty ? null : senderId,
                         decoration: const InputDecoration(labelText: 'WhatsApp Sender नंबर'),
                         items: senders
                             .map((sender) => DropdownMenuItem(
@@ -720,6 +735,13 @@ class _BulkMessagePageState extends State<BulkMessagePage> {
                                 preview = null;
                                 loadPreview();
                               })),
+                      _FilterPicker('पार्टी फ़िल्टर', Icons.flag_rounded, selectedLabels['party'],
+                          () => selectFilter('party', 'पार्टी फ़िल्टर'), () => setState(() {
+                                selectedFilters.remove('party');
+                                selectedLabels.remove('party');
+                                preview = null;
+                                loadPreview();
+                              })),
                     ]),
                     const SizedBox(height: 10),
                     Row(
@@ -848,7 +870,7 @@ class _BulkMessagePageState extends State<BulkMessagePage> {
                                   secondary: IconButton(
                                     icon: const Icon(Icons.message_rounded, color: green, size: 20),
                                     tooltip: 'व्यक्तिगत WhatsApp संदेश भेजें',
-                                    onPressed: () {
+                                    onPressed: () async {
                                       if (mob.isEmpty) {
                                         ScaffoldMessenger.of(context).showSnackBar(
                                           const SnackBar(content: Text('इस मतदाता का मोबाइल नंबर नहीं है।')),
@@ -856,7 +878,29 @@ class _BulkMessagePageState extends State<BulkMessagePage> {
                                         return;
                                       }
                                       final msg = renderVoterMessage(v);
-                                      openWhatsApp(context, mob, message: msg);
+                                      if (attachPhoto && pickedImagePath != null && File(pickedImagePath!).existsSync()) {
+                                        await Clipboard.setData(ClipboardData(text: mob));
+                                        if (context.mounted) {
+                                          ScaffoldMessenger.of(context).showSnackBar(
+                                            SnackBar(
+                                              content: Text('फोटो तैयार! $name का नंबर ($mob) कॉपी हुआ। WhatsApp में पेस्ट करें।'),
+                                              backgroundColor: const Color(0xff16a34a),
+                                              duration: const Duration(seconds: 3),
+                                            ),
+                                          );
+                                        }
+                                        final ext = pickedImagePath!.toLowerCase();
+                                        final mime = ext.endsWith('.png') ? 'image/png' : 'image/jpeg';
+                                        await SharePlus.instance.share(
+                                          ShareParams(
+                                            text: msg.trim().isNotEmpty ? msg : null,
+                                            files: [XFile(pickedImagePath!, mimeType: mime, name: pickedImageName ?? 'poster.jpg')],
+                                            subject: 'मतदाता संदेश - $name',
+                                          ),
+                                        );
+                                      } else {
+                                        openWhatsApp(context, mob, message: msg);
+                                      }
                                     },
                                   ),
                                   title: Row(
@@ -1003,7 +1047,7 @@ class _BulkMessagePageState extends State<BulkMessagePage> {
                     SizedBox(
                       width: 220,
                       child: DropdownButtonFormField<String>(
-                        initialValue: eventType,
+                        value: eventType,
                         decoration: const InputDecoration(labelText: 'टेम्पलेट प्रकार'),
                         items: typeLabels.entries
                             .map((e) => DropdownMenuItem(value: e.key, child: Text(e.value)))
@@ -1184,14 +1228,29 @@ class _FastSendSheetState extends State<_FastSendSheet> {
 
     _sentIndices.add(_currentIndex);
 
+    final textToSend = msg.trim().isNotEmpty ? msg : null;
+
     if (widget.imagePath != null && File(widget.imagePath!).existsSync()) {
+      if (mobile.isNotEmpty) {
+        await Clipboard.setData(ClipboardData(text: mobile));
+      }
       try {
+        final ext = widget.imagePath!.toLowerCase();
+        final mime = ext.endsWith('.png') ? 'image/png' : 'image/jpeg';
         await SharePlus.instance.share(
-          ShareParams(text: msg, files: [XFile(widget.imagePath!)]),
+          ShareParams(
+            text: textToSend,
+            files: [XFile(widget.imagePath!, mimeType: mime, name: 'poster.jpg')],
+            subject: 'मतदाता संदेश',
+          ),
         );
-      } catch (_) {}
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('शेयर नहीं हो सका: $e')));
+        }
+      }
     } else {
-      if (mounted) {
+      if (mounted && mobile.isNotEmpty) {
         await openWhatsApp(context, mobile, message: msg);
       }
     }
@@ -1501,6 +1560,16 @@ class _MessageFilterDialogState extends State<_MessageFilterDialog> {
   }
 
   Future<void> loadOptions() async {
+    if (widget.field == 'party') {
+      options = [
+        {'value': 'bjp', 'label': 'भाजपा (BJP)'},
+        {'value': 'congress', 'label': 'कांग्रेस (INC)'},
+        {'value': 'nota', 'label': 'नोटा (NOTA)'},
+        {'value': 'other', 'label': 'अन्य (Other / निर्दलीय)'},
+      ];
+      if (mounted) setState(() => loading = false);
+      return;
+    }
     try {
       final q = <String, String>{
         'field': widget.field,
@@ -1524,6 +1593,7 @@ class _MessageFilterDialogState extends State<_MessageFilterDialog> {
     if (field == 'ward') return {'wardNumber': val};
     if (field == 'booth') return {'partNumber': val};
     if (field == 'caste') return {'caste': val};
+    if (field == 'party') return {'partyPreference': val};
     if (field == 'assembly') return {'assemblyName': val};
     return {field: val};
   }

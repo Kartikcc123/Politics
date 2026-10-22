@@ -258,6 +258,13 @@ const samitiHierarchyData = <String, Map<String, dynamic>>{
           {'name': 'कोशिथल', 'parts': '', 'pop': 950}
         ]
       },
+      'कोशिथल': {
+        'wards': 17,
+        'pop': 4500,
+        'villages': [
+          {'name': 'कोशिथल', 'parts': '', 'pop': 4500}
+        ]
+      },
       'अरनिया': {
         'wards': 7,
         'pop': 1800,

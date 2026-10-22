@@ -10,12 +10,12 @@ import '../core/theme.dart';
 String voterPhotoUrl(dynamic value, [dynamic fallback]) {
   var photo = '';
   if (value is Map) {
-    photo = '${value['photo'] ?? value['sourceDocument']?['ocrCardImage'] ?? value['ocrCardImage'] ?? ''}'.trim();
+    photo = '${value['photo'] ?? value['photoUrl'] ?? ''}'.trim();
   } else {
     photo = '${value ?? ''}'.trim();
     if (photo.isEmpty && fallback != null) {
       if (fallback is Map) {
-        photo = '${fallback['photo'] ?? fallback['sourceDocument']?['ocrCardImage'] ?? fallback['ocrCardImage'] ?? ''}'.trim();
+        photo = '${fallback['photo'] ?? fallback['photoUrl'] ?? ''}'.trim();
       } else {
         photo = '${fallback ?? ''}'.trim();
       }

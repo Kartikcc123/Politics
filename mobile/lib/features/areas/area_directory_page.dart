@@ -134,7 +134,7 @@ class _AreaDirectoryPageState extends State<AreaDirectoryPage> {
                       hintText: 'नाम 1, नाम 2')),
               const SizedBox(height: 12),
               DropdownButtonFormField<String>(
-                initialValue: type,
+                value: type,
                 decoration:
                     const InputDecoration(labelText: 'क्षेत्र का प्रकार'),
                 items: const {

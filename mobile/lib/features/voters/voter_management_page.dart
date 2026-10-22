@@ -64,7 +64,8 @@ class VoterManagementPage extends StatefulWidget {
   State<VoterManagementPage> createState() => _VoterManagementPageState();
 }
 
-class _VoterManagementPageState extends State<VoterManagementPage> {
+class _VoterManagementPageState extends State<VoterManagementPage>
+    with WidgetsBindingObserver {
   final search = TextEditingController();
   final sectionNumber = TextEditingController();
   final boothNumber = TextEditingController();
@@ -114,7 +115,10 @@ class _VoterManagementPageState extends State<VoterManagementPage> {
   int currentPage = 1;
   late Future<Map<String, dynamic>> dashboardFuture;
   late Future<VoterPageResult> votersFuture;
+  VoterPageResult? _lastVoterPageResult;
   Timer? searchDebounce;
+  Timer? _autoSyncTimer;
+  int _pendingDraftsCount = 0;
   static const int pageSize = 50;
 
   String get _defaultRollType {
@@ -124,7 +128,57 @@ class _VoterManagementPageState extends State<VoterManagementPage> {
     return u['allowedRollType'] ?? 'municipal';
   }
 
+  void _onDataChanged() {
+    _checkPendingEdits();
+  }
+
+  Future<void> _checkPendingEdits() async {
+    final edits = await OfflineVoterCache.getPendingEdits();
+    if (mounted && _pendingDraftsCount != edits.length) {
+      setState(() => _pendingDraftsCount = edits.length);
+    }
+  }
+
+  Future<void> _triggerAutoSync({bool notifyIfNone = false}) async {
+    if (!mounted) return;
+    await _checkPendingEdits();
+    final hasPending = await OfflineVoterCache.hasPendingEdits();
+    if (!hasPending) {
+      if (notifyIfNone && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('कोई ऑफलाइन बदलाव सिंक के लिए शेष नहीं है ✅'),
+          duration: Duration(seconds: 2),
+        ));
+      }
+      return;
+    }
+
+    final synced = await OfflineVoterCache.syncPendingEdits();
+    if (synced > 0 && mounted) {
+      final remaining = await OfflineVoterCache.getPendingEdits();
+      setState(() {
+        _pendingDraftsCount = remaining.length;
+        refreshVoters();
+      });
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        backgroundColor: const Color(0xff16a34a),
+        behavior: SnackBarBehavior.floating,
+        content: Text(
+            '🎉 $synced ऑफलाइन बदलाव लाइव सर्वर पर सुरक्षित (Sync) हो गए! ✅'),
+      ));
+    }
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _triggerAutoSync();
+      _checkPendingEdits();
+    }
+  }
+
   void refreshVoters() {
+    _checkPendingEdits();
     votersFuture = OfflineVoterCache.loadPage(
       query: filterQuery,
       page: currentPage,
@@ -133,6 +187,7 @@ class _VoterManagementPageState extends State<VoterManagementPage> {
   }
 
   void filtersChanged() => setState(() {
+        _lastVoterPageResult = null;
         currentPage = 1;
         refreshVoters();
       });
@@ -218,11 +273,21 @@ class _VoterManagementPageState extends State<VoterManagementPage> {
       }
     }
     dashboardFuture = api.get('/api/reports/dashboard');
+    WidgetsBinding.instance.addObserver(this);
+    api.dataVersion.addListener(_onDataChanged);
+    _checkPendingEdits();
+    _autoSyncTimer = Timer.periodic(const Duration(seconds: 12), (_) {
+      _triggerAutoSync();
+    });
+    _triggerAutoSync();
     refreshVoters();
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    api.dataVersion.removeListener(_onDataChanged);
+    _autoSyncTimer?.cancel();
     searchDebounce?.cancel();
     search.dispose();
     sectionNumber.dispose();
@@ -1424,7 +1489,7 @@ class _VoterManagementPageState extends State<VoterManagementPage> {
               ]),
               const SizedBox(height: 14),
               DropdownButtonFormField<String>(
-                initialValue: nextSupplementType,
+                value: nextSupplementType,
                 decoration: const InputDecoration(
                     labelText: 'नामावली / पूरक सूची (List Type)',
                     prefixIcon: Icon(Icons.menu_book_outlined)),
@@ -1449,7 +1514,7 @@ class _VoterManagementPageState extends State<VoterManagementPage> {
               ],
               const SizedBox(height: 12),
               DropdownButtonFormField<String>(
-                initialValue: nextSupport,
+                value: nextSupport,
                 decoration: const InputDecoration(
                     labelText: 'श्रेणी',
                     prefixIcon: Icon(Icons.groups_rounded)),
@@ -1465,7 +1530,7 @@ class _VoterManagementPageState extends State<VoterManagementPage> {
               ),
               const SizedBox(height: 12),
               DropdownButtonFormField<String>(
-                initialValue: nextGender,
+                value: nextGender,
                 decoration: const InputDecoration(
                     labelText: 'लिंग', prefixIcon: Icon(Icons.person_outline)),
                 items: const [
@@ -1644,7 +1709,7 @@ class _VoterManagementPageState extends State<VoterManagementPage> {
               ),
               const SizedBox(height: 12),
               DropdownButtonFormField<String>(
-                initialValue: nextVerification,
+                value: nextVerification,
                 decoration: const InputDecoration(
                     labelText: 'डेटा स्थिति',
                     prefixIcon: Icon(Icons.fact_check_outlined)),
@@ -1660,7 +1725,7 @@ class _VoterManagementPageState extends State<VoterManagementPage> {
               ),
               const SizedBox(height: 12),
               DropdownButtonFormField<String>(
-                initialValue: nextProfileCompletion,
+                value: nextProfileCompletion,
                 decoration: const InputDecoration(
                     labelText: 'सर्वे जानकारी',
                     prefixIcon: Icon(Icons.fact_check_outlined)),
@@ -2166,8 +2231,38 @@ class _VoterManagementPageState extends State<VoterManagementPage> {
       'रायपुर': 17,
       'सागरेव': 9,
       'सुरास': 7,
+      'कोशिथल': 17,
+      'कोशीथल': 17,
+      'कोशिथल (सहाड़ा)': 17,
+      'कोशीथल (सहाड़ा)': 17,
+      'सहाड़ा': 17,
+      'सहाडा': 17,
+      'शहाड़ा': 17,
+      'सहड़ा': 17,
+      'सोनियाना': 17,
+      'पोटला': 11,
+      'भगवानपुरा': 11,
+      'गंगापुर (ग्रामीण)': 11,
     };
-    return wardCounts[gpName.trim()] ?? 9;
+    int count = wardCounts[gpName.trim()] ?? 9;
+    final normalized = gpName.trim().toLowerCase();
+    if (normalized.contains('कोशि') ||
+        normalized.contains('कोशी') ||
+        normalized.contains('kosh') ||
+        normalized.contains('सहा') ||
+        normalized.contains('शहा') ||
+        normalized.contains('sahad') ||
+        normalized.contains('shada')) {
+      if (count < 17) count = 17;
+    }
+    final u = api.user;
+    if (u != null && u['assignedWards'] is List) {
+      for (final w in (u['assignedWards'] as List)) {
+        final wInt = int.tryParse('$w') ?? 0;
+        if (wInt > count) count = wInt;
+      }
+    }
+    return count;
   }
 
   Widget _buildPanchayatWardSelectorStrip() {
@@ -2284,12 +2379,103 @@ class _VoterManagementPageState extends State<VoterManagementPage> {
     );
   }
 
+  Widget _buildSyncAndOfflineBanner(bool isOffline) {
+    if (_pendingDraftsCount > 0) {
+      return Container(
+        margin: const EdgeInsets.only(bottom: 10),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        decoration: BoxDecoration(
+          color: const Color(0xfffffbeb),
+          border: Border.all(color: const Color(0xfffde68a)),
+          borderRadius: BorderRadius.circular(12),
+          boxShadow: [
+            BoxShadow(
+              color: const Color(0xffd97706).withOpacity(0.08),
+              blurRadius: 4,
+              offset: const Offset(0, 2),
+            ),
+          ],
+        ),
+        child: Row(
+          children: [
+            const Icon(Icons.cloud_upload_outlined,
+                color: Color(0xffd97706), size: 24),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    '$_pendingDraftsCount बदलाव ऑफलाइन सुरक्षित ⏳',
+                    style: const TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 13,
+                      color: Color(0xff92400e),
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  const Text(
+                    'इंटरनेट चालू होते ही लाइव सर्वर पर अपने आप सिंक हो जाएंगे।',
+                    style: TextStyle(fontSize: 11, color: Color(0xffb45309)),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 6),
+            FilledButton.tonal(
+              onPressed: () => _triggerAutoSync(notifyIfNone: true),
+              style: FilledButton.styleFrom(
+                backgroundColor: const Color(0xfffef3c7),
+                foregroundColor: const Color(0xff92400e),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                minimumSize: Size.zero,
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              ),
+              child: const Text('सिंक करें 🔄',
+                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700)),
+            ),
+          ],
+        ),
+      );
+    }
+    if (isOffline) {
+      return Container(
+        margin: const EdgeInsets.only(bottom: 10),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(
+          color: const Color(0xfff1f5f9),
+          border: Border.all(color: const Color(0xffcbd5e1)),
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: const Row(
+          children: [
+            Icon(Icons.wifi_off_rounded, color: Color(0xff64748b), size: 18),
+            SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                'ऑफलाइन मोड सक्रिय: डिवाइस में सुरक्षित मतदाता सूची दिखाई जा रही है।',
+                style: TextStyle(
+                    fontSize: 12,
+                    color: Color(0xff334155),
+                    fontWeight: FontWeight.w500),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+    return const SizedBox.shrink();
+  }
+
   Widget buildPhoneBookMobile(BuildContext context) => RefreshIndicator(
         onRefresh: () async {
+          await _triggerAutoSync();
           setState(refreshVoters);
           await votersFuture;
         },
         child: ListView(
+          key: const PageStorageKey('voter_phonebook_list'),
           keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
           padding: const EdgeInsets.fromLTRB(16, 8, 16, 96),
           children: [
@@ -2334,69 +2520,53 @@ class _VoterManagementPageState extends State<VoterManagementPage> {
               ),
             ),
             const SizedBox(height: 12),
-            if (api.user?['role'] == 'booth')
-              _BoothWorkStrip(
-                incompleteSelected: profileCompletionStatus == 'pending',
-                reviewSelected: verificationStatus == 'needs_review',
-                onAll: () => setState(() {
-                  support = '';
-                  verificationStatus = '';
-                  profileCompletionStatus = '';
-                  favoriteOnly = false;
-                  currentPage = 1;
-                  refreshVoters();
-                }),
-                onIncomplete: () => setState(() {
-                  support = '';
-                  verificationStatus = '';
-                  profileCompletionStatus = 'pending';
-                  currentPage = 1;
-                  refreshVoters();
-                }),
-                onReview: () => setState(() {
-                  support = '';
-                  profileCompletionStatus = '';
-                  favoriteOnly = false;
-                  verificationStatus = 'needs_review';
-                  currentPage = 1;
-                  refreshVoters();
-                }),
-              )
-            else
-              _PhoneCombinedFilterStrip(
-                contactType: contactTypeFilter,
-                showPersonal: api.user?['role'] != 'booth',
-                partyPreference: partyPreferenceFilter,
-                reviewSelected: verificationStatus == 'needs_review',
-                onAll: () => setState(() {
-                  contactTypeFilter = '';
-                  rollType = _defaultRollType;
-                  matchStatus = '';
-                  support = '';
-                  partyPreferenceFilter = '';
-                  verificationStatus = '';
-                  profileCompletionStatus = '';
-                  favoriteOnly = false;
-                  currentPage = 1;
-                  refreshVoters();
-                }),
-                onAllDoubleTap: () => _setContactTypeFilter('personal'),
-                onParty: (value) => setState(() {
-                  partyPreferenceFilter = value;
-                  verificationStatus = '';
-                  profileCompletionStatus = '';
-                  favoriteOnly = false;
-                  currentPage = 1;
-                  refreshVoters();
-                }),
-                onReview: () => setState(() {
-                  support = '';
-                  partyPreferenceFilter = '';
-                  verificationStatus = 'needs_review';
-                  currentPage = 1;
-                  refreshVoters();
-                }),
-              ),
+            _PhoneCombinedFilterStrip(
+              contactType: contactTypeFilter,
+              showPersonal: api.user?['role'] != 'booth',
+              partyPreference: partyPreferenceFilter,
+              reviewSelected: verificationStatus == 'needs_review',
+              incompleteSelected: profileCompletionStatus == 'pending',
+              onAll: () => setState(() {
+                contactTypeFilter = '';
+                rollType = _defaultRollType;
+                matchStatus = '';
+                support = '';
+                partyPreferenceFilter = '';
+                verificationStatus = '';
+                profileCompletionStatus = '';
+                favoriteOnly = false;
+                currentPage = 1;
+                refreshVoters();
+              }),
+              onAllDoubleTap: () => _setContactTypeFilter('personal'),
+              onParty: (value) => setState(() {
+                partyPreferenceFilter =
+                    partyPreferenceFilter == value ? '' : value;
+                verificationStatus = '';
+                profileCompletionStatus = '';
+                favoriteOnly = false;
+                currentPage = 1;
+                refreshVoters();
+              }),
+              onReview: () => setState(() {
+                support = '';
+                partyPreferenceFilter = '';
+                profileCompletionStatus = '';
+                verificationStatus =
+                    verificationStatus == 'needs_review' ? '' : 'needs_review';
+                currentPage = 1;
+                refreshVoters();
+              }),
+              onIncomplete: () => setState(() {
+                support = '';
+                partyPreferenceFilter = '';
+                verificationStatus = '';
+                profileCompletionStatus =
+                    profileCompletionStatus == 'pending' ? '' : 'pending';
+                currentPage = 1;
+                refreshVoters();
+              }),
+            ),
             const SizedBox(height: 10),
             SingleChildScrollView(
               scrollDirection: Axis.horizontal,
@@ -2571,12 +2741,17 @@ class _VoterManagementPageState extends State<VoterManagementPage> {
             FutureBuilder<VoterPageResult>(
               future: votersFuture,
               builder: (context, snapshot) {
-                if (snapshot.connectionState != ConnectionState.done) {
+                if (snapshot.hasData) {
+                  _lastVoterPageResult = snapshot.data;
+                }
+                final result = snapshot.data ?? _lastVoterPageResult;
+                final isReloading = snapshot.connectionState != ConnectionState.done;
+                if (result == null && isReloading) {
                   return const Padding(
                       padding: EdgeInsets.all(36),
                       child: Center(child: CircularProgressIndicator()));
                 }
-                if (snapshot.hasError) {
+                if (result == null && snapshot.hasError) {
                   return _PhoneMessage(
                     icon: Icons.cloud_off_rounded,
                     title: 'डेटा लोड नहीं हुआ',
@@ -2584,19 +2759,28 @@ class _VoterManagementPageState extends State<VoterManagementPage> {
                     onRetry: () => setState(refreshVoters),
                   );
                 }
-                final result = snapshot.data!;
-                if (result.items.isEmpty) {
+                if (result == null) {
+                  return const SizedBox.shrink();
+                }
+                if (result.items.isEmpty && !isReloading) {
                   final hasWard = municipalWardNumber.text.trim().isNotEmpty;
                   final wVal = municipalWardNumber.text.trim();
                   final gpVal = gramPanchayat.text.trim();
                   return Column(
                     children: [
+                      _buildSyncAndOfflineBanner(result.offline),
                       _PhoneMessage(
-                        icon: Icons.person_search_rounded,
-                        title: 'कोई मतदाता नहीं मिला',
-                        subtitle: hasWard
-                            ? 'वार्ड $wVal में कोई मतदाता नहीं मिला। ${gpVal.isNotEmpty ? '$gpVal के सभी मतदाता देखने के लिए फ़िल्टर हटाएं।' : 'कृपया फ़िल्टर हटाकर खोजें।'}'
-                            : 'नाम की spelling बदलें या फ़िल्टर हटाकर खोजें।',
+                        icon: result.offline
+                            ? Icons.wifi_off_rounded
+                            : Icons.person_search_rounded,
+                        title: result.offline
+                            ? 'ऑफलाइन मोड: कोई सुरक्षित मतदाता नहीं मिला'
+                            : 'कोई मतदाता नहीं मिला',
+                        subtitle: result.offline
+                            ? 'इस फ़िल्टर या खोज का डेटा फोन में पहले सेव नहीं था। इंटरनेट आने पर सूची स्वतः लोड हो जाएगी।'
+                            : (hasWard
+                                ? 'वार्ड $wVal में कोई मतदाता नहीं मिला। ${gpVal.isNotEmpty ? '$gpVal के सभी मतदाता देखने के लिए फ़िल्टर हटाएं।' : 'कृपया फ़िल्टर हटाकर खोजें।'}'
+                                : 'नाम की spelling बदलें या फ़िल्टर हटाकर खोजें।'),
                         onRetry: clearFilters,
                       ),
                     ],
@@ -2604,6 +2788,12 @@ class _VoterManagementPageState extends State<VoterManagementPage> {
                 }
                 return Column(
                   children: [
+                    _buildSyncAndOfflineBanner(result.offline),
+                    if (isReloading)
+                      const Padding(
+                        padding: EdgeInsets.only(bottom: 6),
+                        child: LinearProgressIndicator(minHeight: 2.5),
+                      ),
                     _PhoneContactList(
                       result: result,
                       selectedIds: selectedIds,
@@ -3776,20 +3966,24 @@ class _PhoneCombinedFilterStrip extends StatelessWidget {
     required this.showPersonal,
     required this.partyPreference,
     required this.reviewSelected,
+    this.incompleteSelected = false,
     required this.onAll,
     required this.onAllDoubleTap,
     required this.onParty,
     required this.onReview,
+    this.onIncomplete,
   });
 
   final String contactType;
   final bool showPersonal;
   final String partyPreference;
   final bool reviewSelected;
+  final bool incompleteSelected;
   final VoidCallback onAll;
   final VoidCallback onAllDoubleTap;
   final ValueChanged<String> onParty;
   final VoidCallback onReview;
+  final VoidCallback? onIncomplete;
 
   @override
   Widget build(BuildContext context) {
@@ -3831,7 +4025,7 @@ class _PhoneCombinedFilterStrip extends StatelessWidget {
         );
 
     final allSelected =
-        contactType.isEmpty && partyPreference.isEmpty && !reviewSelected;
+        contactType.isEmpty && partyPreference.isEmpty && !reviewSelected && !incompleteSelected;
     return SingleChildScrollView(
       scrollDirection: Axis.horizontal,
       child: Row(children: [
@@ -3856,6 +4050,15 @@ class _PhoneCombinedFilterStrip extends StatelessWidget {
           selected: reviewSelected,
           onTap: onReview,
         ),
+        if (onIncomplete != null)
+          chip(
+            label: 'जानकारी बाकी',
+            avatar: Icon(Icons.assignment_late_outlined,
+                size: 17, color: incompleteSelected ? Colors.white : const Color(0xffd97706)),
+            color: const Color(0xffd97706),
+            selected: incompleteSelected,
+            onTap: onIncomplete!,
+          ),
       ]),
     );
   }
@@ -4331,6 +4534,12 @@ class _PhoneContactTile extends StatelessWidget {
                             color: const Color(0xff059669),
                           ),
                       ],
+                      if ('${voter['caste'] ?? ''}'.trim().isNotEmpty)
+                        _MembershipBadge(
+                          label: '${voter['caste']}'.trim(),
+                          color: const Color(0xff7c3aed),
+                          icon: Icons.groups_2_rounded,
+                        ),
                       if (voter['groups'] is List && (voter['groups'] as List).isNotEmpty)
                         for (final g in (voter['groups'] as List).take(3))
                           _MembershipBadge(
@@ -5451,7 +5660,7 @@ class _FilterDropdown extends StatelessWidget {
         width: 180,
         child: DropdownButtonFormField<String>(
           key: ValueKey('$label-$value'),
-          initialValue: value,
+          value: value,
           decoration: InputDecoration(labelText: label),
           items: items.entries
               .map((entry) =>
@@ -6455,7 +6664,7 @@ class _PrintOptionsDialogState extends State<_PrintOptionsDialog> {
                 SizedBox(
                   width: 150,
                   child: DropdownButtonFormField<int>(
-                    initialValue: columns,
+                    value: columns,
                     decoration: const InputDecoration(labelText: 'Cards / row'),
                     items: const [
                       DropdownMenuItem(value: 1, child: Text('1 card')),
@@ -6468,7 +6677,7 @@ class _PrintOptionsDialogState extends State<_PrintOptionsDialog> {
                 SizedBox(
                   width: 140,
                   child: DropdownButtonFormField<String>(
-                    initialValue: paperSize,
+                    value: paperSize,
                     decoration: const InputDecoration(labelText: 'Paper'),
                     items: const [
                       DropdownMenuItem(value: 'A4', child: Text('A4')),
@@ -6482,7 +6691,7 @@ class _PrintOptionsDialogState extends State<_PrintOptionsDialog> {
                 SizedBox(
                   width: 160,
                   child: DropdownButtonFormField<String>(
-                    initialValue: orientation,
+                    value: orientation,
                     decoration: const InputDecoration(labelText: 'Direction'),
                     items: const [
                       DropdownMenuItem(
@@ -7147,6 +7356,63 @@ class _VoterRow extends StatelessWidget {
                                     fontSize: 15,
                                     fontWeight: FontWeight.w900)),
                           ),
+                          if (caste.isNotEmpty) ...[
+                            const SizedBox(width: 6),
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 8, vertical: 3),
+                              decoration: BoxDecoration(
+                                color: const Color(0xfffef3c7),
+                                borderRadius: BorderRadius.circular(7),
+                                border: Border.all(
+                                    color: const Color(0xfff59e0b).withValues(alpha: 0.5)),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  const Icon(Icons.people_alt_rounded,
+                                      size: 11, color: Color(0xffb45309)),
+                                  const SizedBox(width: 4),
+                                  Text(
+                                    caste,
+                                    style: const TextStyle(
+                                      color: Color(0xff92400e),
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w900,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                          if (member['_offlineDraft'] == true) ...[
+                            const SizedBox(width: 6),
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 6, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: const Color(0xfffef2f2),
+                                borderRadius: BorderRadius.circular(6),
+                                border: Border.all(color: const Color(0xfff87171)),
+                              ),
+                              child: const Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(Icons.hourglass_top_rounded,
+                                      size: 10, color: Color(0xffdc2626)),
+                                  SizedBox(width: 2),
+                                  Text(
+                                    'ड्राफ्ट ⏳',
+                                    style: TextStyle(
+                                      color: Color(0xffdc2626),
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.w900,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
                         ]),
                         const SizedBox(height: 5),
                         Text(
@@ -7512,23 +7778,97 @@ class _VoterCardImageSectionState extends State<_VoterCardImageSection> {
             ],
           ),
           const SizedBox(height: 10),
-          ClipRRect(
-            borderRadius: BorderRadius.circular(8),
-            child: SizedBox(
-              height: 220,
-              width: double.infinity,
-              child: InteractiveViewer(
-                minScale: 1,
-                maxScale: 5,
-                child: Image.network(
-                  url,
-                  headers: voterPhotoHeaders(url),
-                  fit: BoxFit.contain,
-                  alignment: Alignment.center,
-                  errorBuilder: (_, __, ___) => const Center(
-                    child: Text('कार्ड इमेज लोड नहीं हो सकी',
-                        style: TextStyle(color: muted, fontSize: 12)),
+          GestureDetector(
+            onTap: () {
+              if (url.isNotEmpty) {
+                showDialog<void>(
+                  context: context,
+                  builder: (ctx) => Dialog(
+                    backgroundColor: Colors.transparent,
+                    insetPadding: const EdgeInsets.all(12),
+                    child: Stack(
+                      alignment: Alignment.topRight,
+                      children: [
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(16),
+                          child: Container(
+                            color: Colors.black87,
+                            padding: const EdgeInsets.all(8),
+                            child: InteractiveViewer(
+                              minScale: 0.8,
+                              maxScale: 6.0,
+                              child: Center(
+                                child: Image.network(
+                                  url,
+                                  headers: voterPhotoHeaders(url),
+                                  fit: BoxFit.contain,
+                                  errorBuilder: (_, __, ___) => const Center(
+                                    child: Text('कार्ड इमेज लोड नहीं हो सकी',
+                                        style: TextStyle(color: Colors.white70, fontSize: 14)),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                        Padding(
+                          padding: const EdgeInsets.all(8.0),
+                          child: CircleAvatar(
+                            backgroundColor: Colors.black54,
+                            child: IconButton(
+                              icon: const Icon(Icons.close, color: Colors.white),
+                              onPressed: () => Navigator.pop(ctx),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
+                );
+              }
+            },
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(8),
+              child: Container(
+                color: const Color(0xfff8fafc),
+                height: 220,
+                width: double.infinity,
+                child: Stack(
+                  alignment: Alignment.bottomRight,
+                  children: [
+                    InteractiveViewer(
+                      minScale: 1,
+                      maxScale: 5,
+                      child: Center(
+                        child: Image.network(
+                          url,
+                          headers: voterPhotoHeaders(url),
+                          fit: BoxFit.contain,
+                          alignment: Alignment.center,
+                          errorBuilder: (_, __, ___) => const Center(
+                            child: Text('कार्ड इमेज लोड नहीं हो सकी',
+                                style: TextStyle(color: muted, fontSize: 12)),
+                          ),
+                        ),
+                      ),
+                    ),
+                    Container(
+                      margin: const EdgeInsets.all(8),
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: Colors.black54,
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: const Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.zoom_in, color: Colors.white, size: 14),
+                          SizedBox(width: 4),
+                          Text('ज़ूम हेतु टैप करें', style: TextStyle(color: Colors.white, fontSize: 11)),
+                        ],
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ),
@@ -7566,16 +7906,23 @@ class _VoterDetailPageState extends State<VoterDetailPage> {
   }
 
   Future<void> _refreshProfile() async {
-    widget.onChanged();
     final id = '${voter['_id'] ?? ''}'.trim();
-    if (id.isEmpty) return;
+    if (id.isEmpty) {
+      widget.onChanged();
+      return;
+    }
     try {
       final updated = await api.get('/api/members/$id');
       if (mounted) {
         setState(() => voter = Map<String, dynamic>.from(updated));
       }
+      final list = widget.voterList;
+      if (list != null && widget.currentIndex != null && widget.currentIndex! >= 0 && widget.currentIndex! < list.length) {
+        list[widget.currentIndex!] = Map<String, dynamic>.from(updated);
+      }
+      widget.onChanged();
     } catch (_) {
-      // Parent list refresh still runs; retain the last available profile.
+      widget.onChanged();
     }
   }
 
@@ -7787,7 +8134,8 @@ class _VoterDetailPageState extends State<VoterDetailPage> {
         padding: const EdgeInsets.fromLTRB(16, 20, 16, 36),
         children: [
           Center(
-            child: ClipOval(
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(16),
               child: _VoterPhoto(photo: voter, radius: 55),
             ),
           ),
@@ -8428,7 +8776,7 @@ class _VoterFormState extends State<VoterForm> {
             width: 360,
             child: Column(mainAxisSize: MainAxisSize.min, children: [
               DropdownButtonFormField<int>(
-                initialValue: selected.month,
+                value: selected.month,
                 decoration: const InputDecoration(labelText: 'महीना'),
                 items: List.generate(12, (i) => i + 1)
                     .map((month) => DropdownMenuItem(
@@ -8733,7 +9081,7 @@ class _VoterFormState extends State<VoterForm> {
         formField('address', icon: Icons.location_on_outlined),
         const SizedBox(height: 12),
         DropdownButtonFormField<String>(
-          initialValue: partyPreference,
+          value: partyPreference,
           decoration: const InputDecoration(
               labelText: 'पार्टी', prefixIcon: Icon(Icons.how_to_vote)),
           items: const [

@@ -354,6 +354,11 @@ const buildFilter = (req) => {
     filter.verificationStatus = 'verified';
   }
 
+  const partyPref = params.partyPreference || params.party;
+  if (partyPref && partyPref !== 'all') {
+    filter.partyPreference = partyPref;
+  }
+
   const searchQuery = String(q || search || '').trim();
   if (searchQuery) {
     const qRegex = new RegExp(escapeRegex(searchQuery), 'i');

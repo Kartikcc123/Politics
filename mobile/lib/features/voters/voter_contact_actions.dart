@@ -366,7 +366,7 @@ class _VoterContactActionsState extends State<VoterContactActions> {
                   decoration: const InputDecoration(labelText: 'कार्य')),
               const SizedBox(height: 10),
               DropdownButtonFormField(
-                initialValue: type,
+                value: type,
                 decoration: const InputDecoration(labelText: 'प्रकार'),
                 items: const [
                   DropdownMenuItem(value: 'call', child: Text('कॉल')),
@@ -379,7 +379,7 @@ class _VoterContactActionsState extends State<VoterContactActions> {
               ),
               const SizedBox(height: 10),
               DropdownButtonFormField(
-                initialValue: priority,
+                value: priority,
                 decoration: const InputDecoration(labelText: 'प्राथमिकता'),
                 items: const [
                   DropdownMenuItem(value: 'high', child: Text('उच्च')),

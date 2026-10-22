@@ -107,6 +107,92 @@ const normalizeMemberDates = (data) => {
     data[key] = normalizeMonthDayDate(data[key]);
   }
 };
+const normalizeCasteName = (raw) => {
+  if (!raw) return '';
+  const s = String(raw).trim();
+  const lower = s.toLowerCase();
+
+  if (/^(brahman|brahamn|brahmin|ब्राहमण|ब्राह्मण|brahmane)$/i.test(lower) || lower.includes('brahm') || lower.includes('ब्राह्') || lower.includes('ब्राहम')) {
+    return 'ब्राह्मण';
+  }
+  if (/^(lohar|lauhar|luhar|लोहार|लौहार)$/i.test(lower) || lower.includes('लोहार') || lower.includes('लौहार')) {
+    return 'लोहार';
+  }
+  if (/^(bhambi|भांबी|भाम्भी)$/i.test(lower) || lower.includes('भांब') || lower.includes('भाम्भ')) {
+    return 'भांबी';
+  }
+  if (/^(prajapat|prajapati|kumhar|प्रजापत|कुम्हार)$/i.test(lower) || lower.includes('प्रजाप') || lower.includes('कुम्हा')) {
+    return 'प्रजापत';
+  }
+  if (/^(jain|mahajan|जैन|महाजन)$/i.test(lower) || lower.includes('जैन')) {
+    return 'जैन';
+  }
+  if (/^(teli|sahu|तेली|साहू)$/i.test(lower) || lower.includes('तेली') || lower.includes('साहू')) {
+    return 'तेली';
+  }
+  if (/^(meghwal|balai|salvi|मेघवाल|बलाई|सालवी)$/i.test(lower) || lower.includes('मेघवाल') || lower.includes('सालवी') || lower.includes('बलाई')) {
+    return 'मेघवाल / बलाई';
+  }
+  if (/^(sen|nai|सेन|नाई)$/i.test(lower) || lower.includes('सेन') || lower.includes('नाई')) {
+    return 'सेन (नाई)';
+  }
+  if (/^(rajput|राजपूत)$/i.test(lower) || lower.includes('राजपूत') || lower.includes('rajput')) {
+    return 'राजपूत';
+  }
+  if (/^(jat|jaat|जाट)$/i.test(lower) || lower.includes('जाट') || lower.includes('jat')) {
+    return 'जाट';
+  }
+  if (/^(gurjar|gujjar|गुर्जर)$/i.test(lower) || lower.includes('गुर्जर') || lower.includes('gurjar')) {
+    return 'गुर्जर';
+  }
+  if (/^(muslim|मुस्लिम)$/i.test(lower) || lower.includes('मुस्लिम') || lower.includes('muslim')) {
+    return 'मुस्लिम';
+  }
+  return s;
+};
+
+const getCasteRegex = (caste) => {
+  const c = String(caste || '').trim();
+  const lower = c.toLowerCase();
+  if (lower.includes('brahm') || lower.includes('ब्राह्') || lower.includes('ब्राहम')) {
+    return '^(brahman|brahamn|brahmin|ब्राह्मण|ब्राहमण|शर्मा|जोशी|पालीवाल|पाठक|भट्ट|व्यास|तिवारी)$';
+  }
+  if (lower.includes('लोहार') || lower.includes('लौहार') || lower.includes('lohar')) {
+    return '^(lohar|lauhar|luhar|लोहार|लौहार|गाडोलिया लौहार)$';
+  }
+  if (lower.includes('भांब') || lower.includes('भाम्भ') || lower.includes('bhambi')) {
+    return '^(bhambi|भांबी|भाम्भी)$';
+  }
+  if (lower.includes('प्रजाप') || lower.includes('कुम्हा') || lower.includes('prajapat')) {
+    return '^(prajapat|prajapati|kumhar|प्रजापत|कुम्हार)$';
+  }
+  if (lower.includes('जैन') || lower.includes('महाजन') || lower.includes('jain')) {
+    return '^(jain|mahajan|जैन|महाजन|बाबेल|संचेती|नोलखा|कोठारी|काबरा|गोखरू|बापना)$';
+  }
+  if (lower.includes('तेली') || lower.includes('साहू') || lower.includes('teli')) {
+    return '^(teli|sahu|तेली|साहू)$';
+  }
+  if (lower.includes('मेघवाल') || lower.includes('बलाई') || lower.includes('सालवी') || lower.includes('meghwal')) {
+    return '^(meghwal|balai|salvi|मेघवाल|बलाई|सालवी)$';
+  }
+  if (lower.includes('सेन') || lower.includes('नाई') || lower.includes('sen')) {
+    return '^(sen|nai|सेन|नाई)$';
+  }
+  if (lower.includes('राजपूत') || lower.includes('rajput')) {
+    return '^(rajput|राजपूत)$';
+  }
+  if (lower.includes('जाट') || lower.includes('jat')) {
+    return '^(jat|jaat|जाट)$';
+  }
+  if (lower.includes('गुर्जर') || lower.includes('gurjar')) {
+    return '^(gurjar|gujjar|गुर्जर)$';
+  }
+  if (lower.includes('मुस्लिम') || lower.includes('muslim')) {
+    return '^(muslim|मुस्लिम)$';
+  }
+  return `^${escapeRegex(c)}$`;
+};
+
 const hindiEnglishCollator = new Intl.Collator(['en', 'hi'], {
   numeric: true,
   sensitivity: 'base',
@@ -349,7 +435,7 @@ exports.list = async (req, res, next) => {
     const samitiWardParam = req.query.panchayatSamitiWard || req.query.samitiWard;
     if (samitiWardParam) filter.panchayatSamitiWard = samitiWardParam;
     if (municipality) filter.municipality = hindiFlexibleRegex(municipality);
-    if (caste && caste !== 'all') filter.caste = new RegExp(`^${escapeRegex(String(caste).trim())}$`, 'i');
+    if (caste && caste !== 'all') filter.caste = new RegExp(getCasteRegex(caste), 'i');
     if (organizationPost) filter.organizationPost = searchRegex(organizationPost);
     if (occupation) filter.occupation = searchRegex(occupation);
     if (contactType === 'personal') filter.contactType = 'personal';
@@ -1042,9 +1128,6 @@ exports.filterOptions = async (req, res, next) => {
           { gramPanchayat: { $in: ['', null] }, village: hindiFlexibleRegex(gpParam) }
         ]
       }];
-      if (selectedRoll !== 'assembly') {
-        filter.hasMunicipalMembership = true;
-      }
     }
 
     // 3.5. Panchayat Samiti Ward
@@ -1175,11 +1258,17 @@ exports.filterOptions = async (req, res, next) => {
 
     const consolidatedMap = new Map();
     for (const item of rawItems) {
-      if (consolidatedMap.has(item.value)) {
-        const existing = consolidatedMap.get(item.value);
+      const itemKey = field === 'caste' ? normalizeCasteName(item.value) : item.value;
+      if (consolidatedMap.has(itemKey)) {
+        const existing = consolidatedMap.get(itemKey);
         existing.count += item.count;
       } else {
-        consolidatedMap.set(item.value, { ...item });
+        consolidatedMap.set(itemKey, {
+          ...item,
+          value: itemKey,
+          label: itemKey,
+          filters: field === 'caste' ? { caste: itemKey } : item.filters
+        });
       }
     }
     const items = Array.from(consolidatedMap.values())
@@ -2585,12 +2674,32 @@ exports.fieldValues = async (req, res, next) => {
     ];
 
     const results = await Member.aggregate(pipeline);
-    const items = results.map(r => ({
+    let items = results.map(r => ({
       value: String(r._id).trim(),
       label: String(r._id).trim(),
       count: r.count,
       mobileCount: r.mobileCount
     })).filter(i => i.value.length > 0);
+
+    if (targetField === 'caste') {
+      const canonicalMap = new Map();
+      for (const it of items) {
+        const canonical = normalizeCasteName(it.value);
+        if (!canonicalMap.has(canonical)) {
+          canonicalMap.set(canonical, {
+            value: canonical,
+            label: canonical,
+            count: it.count,
+            mobileCount: it.mobileCount
+          });
+        } else {
+          const exist = canonicalMap.get(canonical);
+          exist.count += it.count;
+          exist.mobileCount += it.mobileCount;
+        }
+      }
+      items = Array.from(canonicalMap.values()).sort((a, b) => b.count - a.count);
+    }
 
     res.json({ items, count: items.length });
   } catch (error) { next(error); }

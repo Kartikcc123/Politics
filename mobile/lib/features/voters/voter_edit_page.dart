@@ -235,7 +235,7 @@ class _VoterEditPageState extends State<VoterEditPage> {
             width: 360,
             child: Column(mainAxisSize: MainAxisSize.min, children: [
               DropdownButtonFormField<int>(
-                initialValue: selected.month,
+                value: selected.month,
                 decoration: const InputDecoration(labelText: 'महीना'),
                 items: List.generate(12, (i) => i + 1)
                     .map((month) => DropdownMenuItem(
@@ -374,6 +374,61 @@ class _VoterEditPageState extends State<VoterEditPage> {
         Navigator.pop(context);
       }
     } catch (error) {
+      // Offline fallback: save locally as draft & queue for auto-sync (WhatsApp style)
+      final voterId = '${currentVoter['_id'] ?? currentVoter['id'] ?? ''}'.trim();
+      if (voterId.isNotEmpty) {
+        final draftVoter = Map<String, dynamic>.from(currentVoter);
+        for (final entry in fields.entries) {
+          draftVoter[entry.key] = entry.value.text.trim();
+        }
+        draftVoter['gender'] = gender;
+        draftVoter['relationType'] = relationType;
+        draftVoter['partyPreference'] = partyPreference;
+        draftVoter['verificationStatus'] = verificationStatus;
+        draftVoter['profileCompletionStatus'] = profileCompletionStatus;
+        draftVoter['_offlineDraft'] = true;
+        draftVoter['_draftSavedAt'] = DateTime.now().toIso8601String();
+
+        final draftBody = <String, dynamic>{
+          for (final entry in fields.entries) entry.key: entry.value.text.trim(),
+          'gender': gender,
+          'relationType': relationType,
+          'partyPreference': partyPreference,
+          'verificationStatus': verificationStatus,
+          'profileCompletionStatus': profileCompletionStatus,
+        };
+
+        await OfflineVoterCache.enqueuePendingEdit(voterId, draftBody);
+        await OfflineVoterCache.merge([draftVoter]);
+        currentVoter = draftVoter;
+
+        final list = widget.voterList;
+        if (list != null && currentIndex >= 0 && currentIndex < list.length) {
+          list[currentIndex] = draftVoter;
+        }
+
+        api.notifyDataChanged();
+        widget.onSaved();
+
+        if (mounted) {
+          final hasNextVoter = widget.voterList != null && currentIndex < widget.voterList!.length - 1;
+          if (autoNext && hasNextVoter) {
+            _switchVoter(currentIndex + 1);
+            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+              backgroundColor: Color(0xffd97706),
+              content: Text('ऑफलाइन ड्राफ्ट सुरक्षित ⏳ (इंटरनेट आने पर अपने आप सर्वर पर सिंक होगा)। अगला मतदाता खुल गया।'),
+            ));
+          } else {
+            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+              backgroundColor: Color(0xffd97706),
+              content: Text('ऑफलाइन ड्राफ्ट सुरक्षित ⏳ (इंटरनेट आने पर अपने आप सर्वर पर सिंक हो जाएगा)'),
+            ));
+            Navigator.pop(context);
+          }
+        }
+        return;
+      }
+
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('$error'.replaceFirst('Exception: ', ''))),
@@ -1220,7 +1275,7 @@ class _VoterEditPageState extends State<VoterEditPage> {
           ValueChanged<String> changed,
           {bool enabled = true}) =>
       DropdownButtonFormField<String>(
-        initialValue: items.containsKey(value) ? value : items.keys.first,
+        value: items.containsKey(value) ? value : items.keys.first,
         decoration: InputDecoration(labelText: label),
         items: items.entries
             .map((e) => DropdownMenuItem(value: e.key, child: Text(e.value)))

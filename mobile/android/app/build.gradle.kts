@@ -7,8 +7,8 @@ plugins {
 
 android {
     namespace = "com.example.political_booth_crm"
-    compileSdk = 36
-    ndkVersion = flutter.ndkVersion
+    compileSdk = 35
+    // ndkVersion = flutter.ndkVersion
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17

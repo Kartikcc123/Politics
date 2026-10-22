@@ -308,7 +308,7 @@ class _FamilyFormState extends State<FamilyForm> {
                 SizedBox(
                   width: 340,
                   child: DropdownButtonFormField<String>(
-                    initialValue: politicalStatus,
+                    value: politicalStatus,
                     decoration:
                         const InputDecoration(labelText: 'राजनीतिक स्थिति'),
                     items: const [
@@ -329,7 +329,7 @@ class _FamilyFormState extends State<FamilyForm> {
                   builder: (booths) => SizedBox(
                     width: 340,
                     child: DropdownButtonFormField<String>(
-                      initialValue: boothId,
+                      value: boothId,
                       decoration: const InputDecoration(labelText: 'बूथ'),
                       items: booths
                           .map((b) => DropdownMenuItem<String>(

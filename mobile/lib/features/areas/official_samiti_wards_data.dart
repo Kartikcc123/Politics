@@ -955,16 +955,33 @@ const Map<String, dynamic> officialSamitiWardsData = {
         "panchayats": {
           "कोशीथल": {
             "name": "कोशीथल",
-            "population": 0,
-            "totalWards": 0,
+            "population": 5798,
+            "totalWards": 17,
+            "wards": ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14", "15", "16", "17"],
             "villages": [
               {
                 "name": "कोशीथल",
-                "population": 0
+                "population": 5530
               },
               {
                 "name": "अरनोटा",
-                "population": 0
+                "population": 268
+              }
+            ]
+          },
+          "कोशिथल": {
+            "name": "कोशिथल",
+            "population": 5798,
+            "totalWards": 17,
+            "wards": ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14", "15", "16", "17"],
+            "villages": [
+              {
+                "name": "कोशिथल",
+                "population": 5530
+              },
+              {
+                "name": "अरनोटा",
+                "population": 268
               }
             ]
           }

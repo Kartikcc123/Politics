@@ -10,6 +10,7 @@ import '../../core/hierarchy_data.dart';
 import '../../core/print_helper.dart';
 import '../../core/theme.dart';
 import '../../utils/excel_generator.dart';
+import '../../widgets/image_crop_dialog.dart';
 
 class ConfigurablePrintPage extends StatefulWidget {
   const ConfigurablePrintPage({super.key});
@@ -45,6 +46,18 @@ class _ConfigurablePrintPageState extends State<ConfigurablePrintPage> {
   bool withMobileOnly = false;
   bool favoritesOnly = false;
   bool verifiedOnly = false;
+  String selectedParty = 'all'; // 'all', 'congress', 'bjp', 'undecided', 'nota', 'other'
+
+  // Candidate Campaign Banner & Slip Customization State
+  String? campaignBannerUrl;
+  Uint8List? campaignBannerBytes;
+  final candidateNameCtrl = TextEditingController(text: 'सुनीता देवी');
+  final candidatePostCtrl = TextEditingController(text: 'सरपंच');
+  final candidatePhoneCtrl = TextEditingController(text: '9829858296');
+  final candidateSloganCtrl = TextEditingController(text: 'को वोट देकर भारी मतों से विजयी बनावें।');
+  final pollingTimeCtrl = TextEditingController(text: 'मतदान समय : प्रातः 7 से सायं 6 बजे तक');
+  final pollingStationCtrl = TextEditingController();
+  bool isUploadingBanner = false;
 
   // Caste Analysis & Filter State
   String? selectedCaste;
@@ -312,6 +325,48 @@ class _ConfigurablePrintPageState extends State<ConfigurablePrintPage> {
       params['title'] = '${params['title']} (केवल वेरिफाइड)';
     }
 
+    if (selectedParty.isNotEmpty && selectedParty != 'all') {
+      params['partyPreference'] = selectedParty;
+      params['party'] = selectedParty;
+      const partyNames = {
+        'congress': 'कांग्रेस',
+        'bjp': 'भाजपा',
+        'undecided': 'अनिर्णायक',
+        'nota': 'नोटा',
+        'other': 'अन्य',
+      };
+      params['title'] = '${params['title']} (${partyNames[selectedParty] ?? selectedParty})';
+    }
+
+    if (densityPreset == 'campaign_8') {
+      params['layout'] = 'campaign';
+      params['campaignSlip'] = 'true';
+      params['votersPerPage'] = '8';
+      params['columns'] = '2';
+      params['rowsPerPage'] = '4';
+      if (campaignBannerUrl != null && campaignBannerUrl!.isNotEmpty) {
+        params['bannerUrl'] = campaignBannerUrl!;
+      }
+      if (candidateNameCtrl.text.trim().isNotEmpty) {
+        params['candidateName'] = candidateNameCtrl.text.trim();
+      }
+      if (candidatePostCtrl.text.trim().isNotEmpty) {
+        params['candidatePost'] = candidatePostCtrl.text.trim();
+      }
+      if (candidatePhoneCtrl.text.trim().isNotEmpty) {
+        params['candidatePhone'] = candidatePhoneCtrl.text.trim();
+      }
+      if (candidateSloganCtrl.text.trim().isNotEmpty) {
+        params['candidateSlogan'] = candidateSloganCtrl.text.trim();
+      }
+      if (pollingTimeCtrl.text.trim().isNotEmpty) {
+        params['pollingTime'] = pollingTimeCtrl.text.trim();
+      }
+      if (pollingStationCtrl.text.trim().isNotEmpty) {
+        params['pollingStation'] = pollingStationCtrl.text.trim();
+      }
+    }
+
     return params;
   }
 
@@ -334,6 +389,9 @@ class _ConfigurablePrintPageState extends State<ConfigurablePrintPage> {
     if (selectedCaste != null && selectedCaste!.isNotEmpty && selectedCaste != 'all') {
       base = '${base}_$selectedCaste';
     }
+    if (selectedParty.isNotEmpty && selectedParty != 'all') {
+      base = '${base}_$selectedParty';
+    }
     return base;
   }
 
@@ -354,6 +412,50 @@ class _ConfigurablePrintPageState extends State<ConfigurablePrintPage> {
       }
     } finally {
       if (mounted) setState(() => isPrinting = false);
+    }
+  }
+
+  Future<void> _handleBannerPickAndCrop() async {
+    try {
+      final picked = await pickAndCropImage(
+        context,
+        title: 'प्रचार बैनर फोटो क्रॉप करें (Campaign Banner)',
+        targetAspectRatio: 3.8, // 278:72 aspect ratio matching the top card banner
+      );
+      if (picked == null) return;
+
+      setState(() => isUploadingBanner = true);
+      final res = await api.uploadFile(
+        '/api/print/upload-banner',
+        filename: picked.name,
+        fileField: 'banner',
+        bytes: picked.bytes,
+        filePath: picked.path,
+      );
+
+      if (mounted) {
+        setState(() {
+          campaignBannerUrl = res['url'];
+          campaignBannerBytes = picked.bytes;
+          isUploadingBanner = false;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('✅ प्रचार बैनर फोटो सफलतापूर्वक सेट हो गया'),
+            backgroundColor: Color(0xff16a34a),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => isUploadingBanner = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('बैनर अपलोड में त्रुटि: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
     }
   }
 
@@ -405,6 +507,8 @@ class _ConfigurablePrintPageState extends State<ConfigurablePrintPage> {
       if (withMobileOnly) 'hasMobile': 'true',
       if (favoritesOnly) 'favorite': 'true',
       if (verifiedOnly) 'verified': 'true',
+      if (selectedParty.isNotEmpty && selectedParty != 'all')
+        'partyPreference': selectedParty,
       'limit': '3000',
       'paged': 'true',
     };
@@ -1285,8 +1389,53 @@ class _ConfigurablePrintPageState extends State<ConfigurablePrintPage> {
               ),
             ],
           ),
+          const Divider(height: 22),
+          const Row(
+            children: [
+              Icon(Icons.flag_rounded, size: 18, color: royalBlue),
+              SizedBox(width: 8),
+              Text(
+                '🚩 पार्टी अनुसार प्रिंट फ़िल्टर (Party Filter):',
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13.5, color: navy),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              _buildPartyFilterChip('all', 'सभी पार्टियां (All)', null),
+              _buildPartyFilterChip('congress', 'कांग्रेस (INC)', const Color(0xff16a34a)),
+              _buildPartyFilterChip('bjp', 'भाजपा (BJP)', const Color(0xffea580c)),
+              _buildPartyFilterChip('undecided', 'अनिर्णायक', const Color(0xff6366f1)),
+              _buildPartyFilterChip('nota', 'नोटा (NOTA)', const Color(0xff64748b)),
+              _buildPartyFilterChip('other', 'अन्य (Other)', const Color(0xff0284c7)),
+            ],
+          ),
         ],
       ),
+    );
+  }
+
+  Widget _buildPartyFilterChip(String value, String label, Color? accentColor) {
+    final isSelected = selectedParty == value;
+    final color = accentColor ?? royalBlue;
+    return ChoiceChip(
+      label: Text(label),
+      selected: isSelected,
+      selectedColor: color.withValues(alpha: 0.16),
+      backgroundColor: Colors.grey.shade100,
+      labelStyle: TextStyle(
+        color: isSelected ? (accentColor ?? royalBlue) : navy,
+        fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+        fontSize: 12.5,
+      ),
+      side: BorderSide(
+        color: isSelected ? (accentColor ?? royalBlue) : Colors.grey.shade300,
+        width: isSelected ? 1.6 : 1,
+      ),
+      onSelected: (_) => setState(() => selectedParty = value),
     );
   }
 
@@ -1443,6 +1592,292 @@ class _ConfigurablePrintPageState extends State<ConfigurablePrintPage> {
             ),
           ],
         ),
+
+        const SizedBox(height: 10),
+        // Specialized Candidate Campaign Slip Format (User's requested format!)
+        InkWell(
+          onTap: () => setState(() {
+            densityPreset = 'campaign_8';
+            columns = 2;
+            rowsPerPage = 4;
+          }),
+          borderRadius: BorderRadius.circular(14),
+          child: Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              gradient: densityPreset == 'campaign_8'
+                  ? const LinearGradient(colors: [Color(0xffeff6ff), Color(0xfffef3c7)])
+                  : null,
+              color: densityPreset == 'campaign_8' ? null : Colors.white,
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(
+                color: densityPreset == 'campaign_8' ? const Color(0xffd97706) : border,
+                width: densityPreset == 'campaign_8' ? 2 : 1,
+              ),
+              boxShadow: densityPreset == 'campaign_8'
+                  ? [BoxShadow(color: const Color(0xfff59e0b).withValues(alpha: 0.15), blurRadius: 8, offset: const Offset(0, 3))]
+                  : null,
+            ),
+            child: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: const Color(0xfffef3c7),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: const Icon(Icons.how_to_vote_rounded, color: Color(0xffd97706), size: 26),
+                ),
+                const SizedBox(width: 12),
+                const Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Text(
+                            '🌟 प्रत्याशी चुनाव प्रचार पर्ची (8 पर्ची/पेज)',
+                            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: navy),
+                          ),
+                          SizedBox(width: 6),
+                          Container(
+                            padding: EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: Color(0xffdc2626),
+                              borderRadius: BorderRadius.all(Radius.circular(6)),
+                            ),
+                            child: Text('नया', style: TextStyle(color: Colors.white, fontSize: 9.5, fontWeight: FontWeight.bold)),
+                          ),
+                        ],
+                      ),
+                      SizedBox(height: 2),
+                      Text(
+                        'ऊपर प्रत्याशी प्रचार फोटो/बैनर + फाड़ने वाली लाइन + मतदाता विवरण, फोटो व वार्ड बॉक्स',
+                        style: TextStyle(fontSize: 11.5, color: muted),
+                      ),
+                    ],
+                  ),
+                ),
+                Radio<String>(
+                  value: 'campaign_8',
+                  groupValue: densityPreset,
+                  activeColor: const Color(0xffd97706),
+                  onChanged: (val) => setState(() {
+                    densityPreset = val!;
+                    columns = 2;
+                    rowsPerPage = 4;
+                  }),
+                ),
+              ],
+            ),
+          ),
+        ),
+
+        // Dedicated Campaign Banner & Slip Configuration
+        if (densityPreset == 'campaign_8') ...[
+          const SizedBox(height: 14),
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: const Color(0xfff59e0b), width: 1.5),
+              boxShadow: [
+                BoxShadow(
+                  color: const Color(0xfff59e0b).withValues(alpha: 0.1),
+                  blurRadius: 10,
+                  offset: const Offset(0, 4),
+                ),
+              ],
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Row(
+                  children: [
+                    Icon(Icons.campaign_rounded, color: Color(0xffd97706), size: 22),
+                    SizedBox(width: 8),
+                    Text(
+                      'प्रत्याशी प्रचार बैनर व पर्ची विवरण',
+                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: navy),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 6),
+                const Text(
+                  'हर मतदाता पर्ची के ऊपर प्रत्याशी की बैनर फोटो व नीचे मतदान केंद्र/वार्ड बॉक्स प्रिंट होगा:',
+                  style: TextStyle(fontSize: 12, color: muted),
+                ),
+                const SizedBox(height: 14),
+
+                // 1. Banner Image Section
+                const Text('1. ऊपर लगाने हेतु प्रचार बैनर फोटो (Banner Image):', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: navy)),
+                const SizedBox(height: 8),
+
+                if (campaignBannerBytes != null || (campaignBannerUrl != null && campaignBannerUrl!.isNotEmpty)) ...[
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(10),
+                    child: Container(
+                      height: 85,
+                      width: double.infinity,
+                      decoration: BoxDecoration(
+                        color: Colors.grey.shade100,
+                        border: Border.all(color: border),
+                      ),
+                      child: campaignBannerBytes != null
+                          ? Image.memory(campaignBannerBytes!, fit: BoxFit.cover)
+                          : Image.network(
+                              campaignBannerUrl!.startsWith('http') ? campaignBannerUrl! : '${api.baseUrl}$campaignBannerUrl',
+                              fit: BoxFit.cover,
+                            ),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      OutlinedButton.icon(
+                        onPressed: isUploadingBanner ? null : _handleBannerPickAndCrop,
+                        icon: const Icon(Icons.crop_rotate_rounded, size: 16),
+                        label: const Text('फोटो बदलें / री-क्रॉप करें'),
+                      ),
+                      const SizedBox(width: 8),
+                      TextButton.icon(
+                        onPressed: () => setState(() {
+                          campaignBannerUrl = null;
+                          campaignBannerBytes = null;
+                        }),
+                        icon: const Icon(Icons.delete_outline, size: 16, color: Colors.red),
+                        label: const Text('हटाएं', style: TextStyle(color: Colors.red)),
+                      ),
+                    ],
+                  ),
+                ] else ...[
+                  InkWell(
+                    onTap: isUploadingBanner ? null : _handleBannerPickAndCrop,
+                    borderRadius: BorderRadius.circular(12),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 16),
+                      decoration: BoxDecoration(
+                        color: const Color(0xfffef3c7).withValues(alpha: 0.4),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: const Color(0xfff59e0b), style: BorderStyle.solid),
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          if (isUploadingBanner)
+                            const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
+                          else
+                            const Icon(Icons.add_photo_alternate_rounded, color: Color(0xffd97706), size: 28),
+                          const SizedBox(width: 12),
+                          Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                isUploadingBanner ? 'बैनर अपलोड हो रहा है...' : 'प्रचार बैनर फोटो चुनें व क्रॉप करें 📷',
+                                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13.5, color: Color(0xffb45309)),
+                              ),
+                              const Text('गैलरी से बैनर चुनें (फोटो कार्ड के साइज अनुसार क्रॉप होगी)', style: TextStyle(fontSize: 11, color: muted)),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+
+                const SizedBox(height: 14),
+                const Divider(),
+                const SizedBox(height: 8),
+
+                // 2. Candidate & Slogan Details
+                const Text('2. प्रत्याशी व चुनाव विवरण (Candidate & Slogan Text):', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: navy)),
+                const SizedBox(height: 10),
+
+                Row(
+                  children: [
+                    Expanded(
+                      flex: 6,
+                      child: TextField(
+                        controller: candidateNameCtrl,
+                        decoration: const InputDecoration(
+                          labelText: 'प्रत्याशी का नाम',
+                          hintText: 'उदा. सुनीता देवी',
+                          isDense: true,
+                          border: OutlineInputBorder(),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      flex: 4,
+                      child: TextField(
+                        controller: candidatePostCtrl,
+                        decoration: const InputDecoration(
+                          labelText: 'पद',
+                          hintText: 'सरपंच / पार्षद',
+                          isDense: true,
+                          border: OutlineInputBorder(),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                Row(
+                  children: [
+                    Expanded(
+                      flex: 5,
+                      child: TextField(
+                        controller: candidatePhoneCtrl,
+                        keyboardType: TextInputType.phone,
+                        decoration: const InputDecoration(
+                          labelText: 'संपर्क मोबाइल',
+                          hintText: '9829858296',
+                          isDense: true,
+                          border: OutlineInputBorder(),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      flex: 5,
+                      child: TextField(
+                        controller: pollingTimeCtrl,
+                        decoration: const InputDecoration(
+                          labelText: 'मतदान समय',
+                          hintText: 'प्रातः 7 से सायं 6 बजे तक',
+                          isDense: true,
+                          border: OutlineInputBorder(),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                TextField(
+                  controller: candidateSloganCtrl,
+                  decoration: const InputDecoration(
+                    labelText: 'नारा / अपील संदेश',
+                    hintText: 'को वोट देकर भारी मतों से विजयी बनावें।',
+                    isDense: true,
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+                const SizedBox(height: 10),
+                TextField(
+                  controller: pollingStationCtrl,
+                  decoration: const InputDecoration(
+                    labelText: 'मतदान केंद्र भवन नाम (ऑप्शनल)',
+                    hintText: 'उदा. 110 - कृषि विभाग हेतु पंचायत समिति कार्यालय माण्डल',
+                    isDense: true,
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
 
         // Custom rows and columns picker
         if (densityPreset == 'custom') ...[
@@ -1794,6 +2229,27 @@ class _ConfigurablePrintPageState extends State<ConfigurablePrintPage> {
               _buildSummaryRow('फोटो शामिल:', includePhoto ? 'हाँ ✅' : 'नहीं ❌'),
               const Divider(height: 16),
               _buildSummaryRow('कुल चयनित फील्ड:', '${selectedFields.length} फील्ड्स'),
+              if (densityPreset == 'campaign_8') ...[
+                const Divider(height: 16),
+                _buildSummaryRow('प्रारूप:', 'प्रत्याशी चुनाव प्रचार पर्ची (8 पर्ची/पेज) 🌟'),
+                _buildSummaryRow('प्रत्याशी नाम:', candidateNameCtrl.text.trim().isNotEmpty ? candidateNameCtrl.text.trim() : 'सुनीता देवी'),
+                _buildSummaryRow('बैनर फोटो:', campaignBannerUrl != null ? 'कस्टम इमेज अपलोड है ✅' : 'मानक ग्राफिक बैनर ✅'),
+              ],
+              if (selectedParty != 'all') ...[
+                const Divider(height: 16),
+                _buildSummaryRow(
+                  'पार्टी फ़िल्टर:',
+                  selectedParty == 'congress'
+                      ? 'कांग्रेस (INC) 🟢'
+                      : selectedParty == 'bjp'
+                          ? 'भाजपा (BJP) 🟠'
+                          : selectedParty == 'undecided'
+                              ? 'अनिर्णायक 🟣'
+                              : selectedParty == 'nota'
+                                  ? 'नोटा (NOTA) ⚪'
+                                  : 'अन्य 🔵',
+                ),
+              ],
             ],
           ),
         ),
@@ -1801,6 +2257,35 @@ class _ConfigurablePrintPageState extends State<ConfigurablePrintPage> {
         const SizedBox(height: 24),
 
         // Action Buttons
+        // 1. Live Interactive PDF Preview (Direct In-App Viewer with Zoom & Pages)
+        Row(
+          children: [
+            Expanded(
+              child: FilledButton.icon(
+                style: FilledButton.styleFrom(
+                  backgroundColor: const Color(0xff0284c7),
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                  elevation: 2,
+                ),
+                onPressed: () => openPdfPreview(
+                  context,
+                  path: '/api/print/members.pdf',
+                  jobName: printJobName,
+                  query: printQueryParams,
+                ),
+                icon: const Icon(Icons.remove_red_eye_rounded, size: 22),
+                label: const Text(
+                  'प्रिंट प्रीव्यू देखें (Live PDF Preview) 👁️',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15.5),
+                ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+
+        // 2. Direct Print Button
         Row(
           children: [
             Expanded(

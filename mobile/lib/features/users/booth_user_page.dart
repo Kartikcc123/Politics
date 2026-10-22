@@ -40,7 +40,7 @@ class _BoothUserPageState extends State<BoothUserPage> with SingleTickerProvider
     const sahadaGps = {
       'सहाड़ा', 'सांगवा', 'सुन्दरपुरा', 'लाखोला', 'पोटलां', 'बांसड़ा',
       'अरनिया', 'समोडी', 'दुदिया', 'गलोदिया', 'महेन्द्र गढ़', 'भूणास',
-      'खांखला', 'उल्लाई', 'जवासिया', 'रायथलियास'
+      'खांखला', 'उल्लाई', 'जवासिया', 'रायथलियास', 'कोशिथल'
     };
     return sahadaGps.contains(gpName.trim());
   }
@@ -696,7 +696,19 @@ class _BoothUserPageState extends State<BoothUserPage> with SingleTickerProvider
         child: Builder(builder: (_) {
           final curGpName = validSelectedPanchayat ?? (pList.isNotEmpty ? '${pList.first['name']}' : '');
           final curGp = pList.firstWhere((p) => '${p['name']}' == curGpName, orElse: () => {});
-          final wards = (curGp['wards'] as List? ?? []).map((w) => w.toString()).toList();
+          var wards = (curGp['wards'] as List? ?? []).map((w) => w.toString()).toList();
+          if (wards.isEmpty ||
+              ((curGpName.contains('कोशिथल') ||
+               curGpName.contains('सहाड़ा') ||
+               curGpName.contains('शहाड़ा')) &&
+                  wards.length < 17)) {
+            final total = (curGpName.contains('कोशिथल') ||
+                    curGpName.contains('सहाड़ा') ||
+                    curGpName.contains('शहाड़ा'))
+                ? 17
+                : (curGp['totalWards'] is int ? curGp['totalWards'] as int : 11);
+            wards = List.generate(total, (i) => '${i + 1}');
+          }
 
           if (wards.isEmpty) {
             return const Center(child: Text('इस पंचायत में वार्ड डेटा उपलब्ध नहीं है।', style: TextStyle(color: muted)));
@@ -1003,44 +1015,126 @@ class _ManagerCard extends StatelessWidget {
         ]),
         const SizedBox(height: 10),
         const Divider(height: 1, color: border),
-        const SizedBox(height: 6),
+        const SizedBox(height: 8),
         Row(children: [
-          Switch(
-            value: active,
-            activeColor: const Color(0xff2563eb),
-            onChanged: onToggleActive,
+          Transform.scale(
+            scale: 0.85,
+            child: Switch(
+              value: active,
+              activeColor: const Color(0xff2563eb),
+              onChanged: onToggleActive,
+            ),
           ),
-          Text(active ? 'सक्रिय (Active)' : 'निष्क्रिय (Disabled)', style: TextStyle(color: active ? navy : muted, fontSize: 12)),
+          Text(active ? 'सक्रिय' : 'निष्क्रिय',
+              style: TextStyle(
+                  color: active ? const Color(0xff16a34a) : muted,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 12)),
           const Spacer(),
           if (onShowWorkStats != null)
-            IconButton(
-              tooltip: 'कार्य विवरण (Work Stats)',
-              onPressed: onShowWorkStats,
-              icon: const Icon(Icons.assessment_rounded, color: Color(0xff7c3aed), size: 20),
+            InkWell(
+              onTap: onShowWorkStats,
+              borderRadius: BorderRadius.circular(8),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: const Color(0xfff5f3ff),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: const Color(0xffddd6fe)),
+                ),
+                child: const Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.assessment_rounded,
+                        color: Color(0xff7c3aed), size: 16),
+                    SizedBox(width: 4),
+                    Text('कार्य विवरण',
+                        style: TextStyle(
+                            color: Color(0xff7c3aed),
+                            fontSize: 11,
+                            fontWeight: FontWeight.bold)),
+                  ],
+                ),
+              ),
             ),
-          if (phone.isNotEmpty) ...[
-            IconButton(
-              tooltip: 'कॉल करें ($phone)',
-              onPressed: () => callNumber(context, phone),
-              icon: const Icon(Icons.call_rounded, color: green, size: 20),
+        ]),
+        const SizedBox(height: 8),
+        Wrap(
+          alignment: WrapAlignment.end,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          spacing: 8,
+          runSpacing: 6,
+          children: [
+            if (phone.isNotEmpty) ...[
+              OutlinedButton.icon(
+                icon: const Icon(Icons.call_rounded, size: 14, color: green),
+                label: const Text('कॉल',
+                    style: TextStyle(
+                        fontSize: 12,
+                        color: green,
+                        fontWeight: FontWeight.bold)),
+                onPressed: () => callNumber(context, phone),
+                style: OutlinedButton.styleFrom(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  side: const BorderSide(color: Color(0xffbbf7d0)),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8)),
+                  visualDensity: VisualDensity.compact,
+                ),
+              ),
+              OutlinedButton.icon(
+                icon: const Icon(Icons.chat_rounded,
+                    size: 14, color: Color(0xff25d366)),
+                label: const Text('WhatsApp',
+                    style: TextStyle(
+                        fontSize: 12,
+                        color: Color(0xff16a34a),
+                        fontWeight: FontWeight.bold)),
+                onPressed: () => openWhatsApp(context, phone,
+                    message: 'नमस्कार $name जी,'),
+                style: OutlinedButton.styleFrom(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  side: const BorderSide(color: Color(0xffbbf7d0)),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8)),
+                  visualDensity: VisualDensity.compact,
+                ),
+              ),
+            ],
+            FilledButton.icon(
+              icon:
+                  const Icon(Icons.edit_rounded, size: 15, color: Colors.white),
+              label: const Text('एडिट करें',
+                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+              onPressed: onEdit,
+              style: FilledButton.styleFrom(
+                backgroundColor: const Color(0xff2563eb),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8)),
+                visualDensity: VisualDensity.compact,
+              ),
             ),
-            IconButton(
-              tooltip: 'WhatsApp संदेश भेजें',
-              onPressed: () => openWhatsApp(context, phone, message: 'नमस्कार $name जी,'),
-              icon: const Icon(Icons.chat_rounded, color: Color(0xff25d366), size: 20),
+            FilledButton.icon(
+              icon: const Icon(Icons.delete_outline_rounded,
+                  size: 15, color: Colors.white),
+              label: const Text('हटाएं',
+                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+              onPressed: onDelete,
+              style: FilledButton.styleFrom(
+                backgroundColor: Colors.red.shade600,
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8)),
+                visualDensity: VisualDensity.compact,
+              ),
             ),
           ],
-          IconButton(
-            tooltip: 'संपादित करें',
-            onPressed: onEdit,
-            icon: const Icon(Icons.edit_rounded, color: Color(0xff2563eb), size: 20),
-          ),
-          IconButton(
-            tooltip: 'हटाएं',
-            onPressed: onDelete,
-            icon: const Icon(Icons.delete_outline_rounded, color: Colors.red, size: 20),
-          ),
-        ]),
+        ),
       ]),
     );
   }
@@ -1069,47 +1163,123 @@ class _MiniUserRow extends StatelessWidget {
     final phone = '${user['phone'] ?? ''}'.trim();
     final name = '${user['name'] ?? ''}'.trim();
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-      decoration: BoxDecoration(color: const Color(0xfff8fafc), borderRadius: BorderRadius.circular(10), border: Border.all(color: border)),
-      child: Row(children: [
-        const Icon(Icons.person, size: 16, color: Color(0xff2563eb)),
-        const SizedBox(width: 8),
-        Expanded(
-          child: Text('$name (${phone.isNotEmpty ? phone : user['email']})',
-              maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: navy, fontSize: 12, fontWeight: FontWeight.bold)),
-        ),
-        if (onShowWorkStats != null) ...[
-          IconButton(
-            icon: const Icon(Icons.assessment_rounded, size: 18, color: Color(0xff7c3aed)),
-            tooltip: 'कार्य विवरण',
-            onPressed: onShowWorkStats,
-            padding: const EdgeInsets.symmetric(horizontal: 4),
-            constraints: const BoxConstraints(),
+      margin: const EdgeInsets.symmetric(vertical: 3),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(
+        color: const Color(0xfff8fafc),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.person, size: 16, color: Color(0xff2563eb)),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  '$name (${phone.isNotEmpty ? phone : user['email']})',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                      color: navy, fontSize: 13, fontWeight: FontWeight.bold),
+                ),
+              ),
+            ],
           ),
-          const SizedBox(width: 4),
+          const SizedBox(height: 6),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.end,
+            children: [
+              if (onShowWorkStats != null) ...[
+                IconButton(
+                  icon: const Icon(Icons.assessment_rounded,
+                      size: 18, color: Color(0xff7c3aed)),
+                  tooltip: 'कार्य विवरण',
+                  onPressed: onShowWorkStats,
+                  padding: const EdgeInsets.symmetric(horizontal: 4),
+                  constraints: const BoxConstraints(),
+                ),
+                const SizedBox(width: 4),
+              ],
+              if (phone.isNotEmpty) ...[
+                IconButton(
+                  icon: const Icon(Icons.call_rounded, size: 18, color: green),
+                  tooltip: 'कॉल करें ($phone)',
+                  onPressed: () => callNumber(context, phone),
+                  padding: const EdgeInsets.symmetric(horizontal: 4),
+                  constraints: const BoxConstraints(),
+                ),
+                const SizedBox(width: 4),
+                IconButton(
+                  icon: const Icon(Icons.chat_rounded,
+                      size: 18, color: Color(0xff25d366)),
+                  tooltip: 'WhatsApp',
+                  onPressed: () => openWhatsApp(context, phone,
+                      message: 'नमस्कार $name जी,'),
+                  padding: const EdgeInsets.symmetric(horizontal: 4),
+                  constraints: const BoxConstraints(),
+                ),
+                const SizedBox(width: 6),
+              ],
+              InkWell(
+                onTap: onEdit,
+                borderRadius: BorderRadius.circular(6),
+                child: Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: const Color(0xffeff6ff),
+                    borderRadius: BorderRadius.circular(6),
+                    border: Border.all(color: const Color(0xffbfdbfe)),
+                  ),
+                  child: const Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.edit_rounded,
+                          size: 14, color: Color(0xff2563eb)),
+                      SizedBox(width: 4),
+                      Text('एडिट',
+                          style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.bold,
+                              color: Color(0xff2563eb))),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(width: 6),
+              InkWell(
+                onTap: onDelete,
+                borderRadius: BorderRadius.circular(6),
+                child: Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: const Color(0xfffef2f2),
+                    borderRadius: BorderRadius.circular(6),
+                    border: Border.all(color: const Color(0xfffecaca)),
+                  ),
+                  child: const Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.delete_outline_rounded,
+                          size: 14, color: Colors.red),
+                      SizedBox(width: 4),
+                      Text('हटाएं',
+                          style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.red)),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
         ],
-        if (phone.isNotEmpty) ...[
-          IconButton(
-            icon: const Icon(Icons.call_rounded, size: 18, color: green),
-            tooltip: 'कॉल करें ($phone)',
-            onPressed: () => callNumber(context, phone),
-            padding: const EdgeInsets.symmetric(horizontal: 4),
-            constraints: const BoxConstraints(),
-          ),
-          const SizedBox(width: 4),
-          IconButton(
-            icon: const Icon(Icons.chat_rounded, size: 18, color: Color(0xff25d366)),
-            tooltip: 'WhatsApp',
-            onPressed: () => openWhatsApp(context, phone, message: 'नमस्कार $name जी,'),
-            padding: const EdgeInsets.symmetric(horizontal: 4),
-            constraints: const BoxConstraints(),
-          ),
-          const SizedBox(width: 6),
-        ],
-        IconButton(icon: const Icon(Icons.edit, size: 16, color: Color(0xff2563eb)), onPressed: onEdit, padding: EdgeInsets.zero, constraints: const BoxConstraints()),
-        const SizedBox(width: 8),
-        IconButton(icon: const Icon(Icons.delete, size: 16, color: Colors.red), onPressed: onDelete, padding: EdgeInsets.zero, constraints: const BoxConstraints()),
-      ]),
+      ),
     );
   }
 }
@@ -1434,7 +1604,23 @@ class _AddEditManagerDialogState extends State<_AddEditManagerDialog> {
     setState(() => saving = true);
 
     final curGp = widget.panchayats.firstWhere((p) => '${p['name']}' == selectedGp, orElse: () => {});
-    final allGpWards = (curGp['wards'] as List? ?? []).map((w) => w.toString()).toList();
+    var allGpWards = (curGp['wards'] as List? ?? []).map((w) => w.toString()).toList();
+    final is17WardGp = selectedGp != null &&
+        (selectedGp!.contains('कोशिथल') ||
+         selectedGp!.contains('कोशीथल') ||
+         selectedGp!.toLowerCase().contains('kosh') ||
+         selectedGp!.contains('सहाड़ा') ||
+         selectedGp!.contains('सहाडा') ||
+         selectedGp!.contains('शहाड़ा') ||
+         selectedGp!.toLowerCase().contains('sahada') ||
+         selectedGp!.toLowerCase().contains('shada') ||
+         selectedGp!.contains('रायपुर'));
+    if (allGpWards.isEmpty || (is17WardGp && allGpWards.length < 17)) {
+      final total = is17WardGp
+          ? 17
+          : (curGp['totalWards'] is int && (curGp['totalWards'] as int) > 0 ? curGp['totalWards'] as int : 11);
+      allGpWards = List.generate(total, (i) => '${i + 1}');
+    }
 
     List<String> assignedWardsList = [];
     List<String> assignedGpsList = [];
@@ -1562,7 +1748,24 @@ class _AddEditManagerDialogState extends State<_AddEditManagerDialog> {
   @override
   Widget build(BuildContext context) {
     final curGp = widget.panchayats.firstWhere((p) => '${p['name']}' == selectedGp, orElse: () => {});
-    final wards = (curGp['wards'] as List? ?? []).map((w) => w.toString()).toList();
+    var wards = (curGp['wards'] as List? ?? []).map((w) => w.toString()).toList();
+    if (wards.isEmpty ||
+        ((selectedGp != null &&
+            (selectedGp!.contains('कोशिथल') ||
+             selectedGp!.contains('सहाड़ा') ||
+             selectedGp!.contains('शहाड़ा'))) &&
+            wards.length < 17)) {
+      final total = (selectedGp != null &&
+              (selectedGp!.contains('कोशिथल') ||
+               selectedGp!.contains('सहाड़ा') ||
+               selectedGp!.contains('शहाड़ा')))
+          ? 17
+          : (curGp['totalWards'] is int ? curGp['totalWards'] as int : 11);
+      wards = List.generate(total, (i) => '${i + 1}');
+    }
+
+    final screenWidth = MediaQuery.of(context).size.width;
+    final screenHeight = MediaQuery.of(context).size.height;
 
     return AlertDialog(
       titlePadding: const EdgeInsets.fromLTRB(20, 18, 20, 12),
@@ -1577,8 +1780,8 @@ class _AddEditManagerDialogState extends State<_AddEditManagerDialog> {
         ),
       ]),
       content: SizedBox(
-        width: 600,
-        height: 580,
+        width: screenWidth.clamp(300.0, 600.0),
+        height: (screenHeight * 0.82).clamp(380.0, 680.0),
         child: SingleChildScrollView(
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             const SizedBox(height: 10),

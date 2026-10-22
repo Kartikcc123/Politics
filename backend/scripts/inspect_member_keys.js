@@ -1,63 +1,29 @@
-const https = require('https');
+const mongoose = require('mongoose');
 
-const targetHost = 'politics.mathxmedia.tech';
+const uri = 'mongodb+srv://Politic:Shree123@cluster0.lsrvqwd.mongodb.net/test?appName=Cluster0';
 
-function apiRequest(urlPath, token = '') {
-  return new Promise((resolve, reject) => {
-    const headers = {};
-    if (token) headers['Authorization'] = 'Bearer ' + token;
+async function run() {
+  try {
+    await mongoose.connect(uri, { serverSelectionTimeoutMS: 15000 });
+    const db = mongoose.connection.db;
 
-    const req = https.request({
-      hostname: targetHost,
-      path: urlPath,
-      method: 'GET',
-      headers: headers
-    }, (res) => {
-      let buf = '';
-      res.on('data', d => buf += d);
-      res.on('end', () => {
-        try {
-          resolve({ status: res.statusCode, body: JSON.parse(buf) });
-        } catch(e) {
-          resolve({ status: res.statusCode, raw: buf });
-        }
-      });
-    });
+    const docs = await db.collection('members').find({}).limit(3).toArray();
+    console.log('Sample 3 members raw docs:', JSON.stringify(docs, null, 2));
 
-    req.on('error', reject);
-    req.end();
-  });
-}
+    // Get all keys across 100 docs
+    const keysSet = new Set();
+    const sample = await db.collection('members').find({}).limit(100).toArray();
+    for (const doc of sample) {
+      for (const k of Object.keys(doc)) keysSet.add(k);
+    }
+    console.log('Keys in members:', Array.from(keysSet));
 
-async function inspect() {
-  const loginRes = await new Promise((resolve, reject) => {
-    const data = JSON.stringify({ email: 'admin@example.com', password: 'AdminPass123' });
-    const req = https.request({
-      hostname: targetHost,
-      path: '/api/auth/login',
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Content-Length': data.length }
-    }, (res) => {
-      let buf = '';
-      res.on('data', d => buf += d);
-      res.on('end', () => resolve({ status: res.statusCode, body: JSON.parse(buf) }));
-    });
-    req.on('error', reject);
-    req.write(data);
-    req.end();
-  });
-
-  const token = loginRes.body.token;
-
-  const res = await apiRequest('/api/members?rollType=all&limit=1000', token);
-  const members = Array.isArray(res.body) ? res.body : (res.body?.items || res.body?.members || []);
-
-  const pdfMembers = members.filter(m => m.photo || m.sourceDocument?.ocrCardImage || m.sourceDocument?.type === 'pdf');
-  console.log(`Found ${pdfMembers.length} members with PDF source / photo out of ${members.length}`);
-
-  if (pdfMembers.length > 0) {
-    console.log('PDF Member Sample:', JSON.stringify(pdfMembers[0], null, 2));
+  } catch (err) {
+    console.error('Error:', err);
+  } finally {
+    await mongoose.disconnect();
+    process.exit(0);
   }
 }
 
-inspect().catch(console.error);
+run();
