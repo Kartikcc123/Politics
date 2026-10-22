@@ -5,9 +5,10 @@
       "वार्ड संख्या 1": {
         "wardNumber": "1",
         "wardLabel": "वार्ड संख्या 1",
+        "zilaWard": "जिला परिषद वार्ड संख्या 4",
         "panchayats": {
-          "भींटा": {
-            "name": "भींटा",
+          "भीटा": {
+            "name": "भीटा",
             "population": 4872,
             "totalWards": 11,
             "villages": [
@@ -41,13 +42,13 @@
               }
             ]
           },
-          "कलालखेड़ी": {
-            "name": "कलालखेड़ी",
+          "कलाल खेडी": {
+            "name": "कलाल खेडी",
             "population": 0,
             "totalWards": 0,
             "villages": [
               {
-                "name": "कलालखेड़ी",
+                "name": "कलाल खेडी",
                 "population": 918
               }
             ]
@@ -65,133 +66,18 @@
           }
         }
       },
-      "वार्ड संख्या 14": {
-        "wardNumber": "14",
-        "wardLabel": "वार्ड संख्या 14",
-        "panchayats": {
-          "कलालखेड़ी": {
-            "name": "कलालखेड़ी",
-            "population": 2868,
-            "totalWards": 7,
-            "villages": [
-              {
-                "name": "थोरियाखेड़ी",
-                "population": 711
-              }
-            ]
-          },
-          "पीथा का खेड़ा": {
-            "name": "पीथा का खेड़ा",
-            "population": 0,
-            "totalWards": 0,
-            "villages": [
-              {
-                "name": "लडकी",
-                "population": 1276
-              }
-            ]
-          },
-          "बोराणा": {
-            "name": "बोराणा",
-            "population": 4616,
-            "totalWards": 11,
-            "villages": [
-              {
-                "name": "बोराणा",
-                "population": 4616
-              }
-            ]
-          }
-        }
-      },
-      "वार्ड संख्या 15": {
-        "wardNumber": "15",
-        "wardLabel": "वार्ड संख्या 15",
-        "panchayats": {
-          "कलालखेड़ी": {
-            "name": "कलालखेड़ी",
-            "population": 0,
-            "totalWards": 0,
-            "villages": [
-              {
-                "name": "बाड़ी",
-                "population": 1239
-              }
-            ]
-          },
-          "थला": {
-            "name": "थला",
-            "population": 0,
-            "totalWards": 0,
-            "villages": [
-              {
-                "name": "पिथलपुरा",
-                "population": 557
-              }
-            ]
-          },
-          "सुरास": {
-            "name": "सुरास",
-            "population": 2771,
-            "totalWards": 7,
-            "villages": [
-              {
-                "name": "सुरास",
-                "population": 1179
-              },
-              {
-                "name": "लक्ष्मीपुरा",
-                "population": 0
-              },
-              {
-                "name": "भीलखेड़ी",
-                "population": 205
-              }
-            ]
-          },
-          "बागोलिया": {
-            "name": "बागोलिया",
-            "population": 3144,
-            "totalWards": 9,
-            "villages": [
-              {
-                "name": "बागोलिया",
-                "population": 1444
-              },
-              {
-                "name": "अर्जुनगढ़",
-                "population": 128
-              },
-              {
-                "name": "पाटियाखेड़ा",
-                "population": 720
-              }
-            ]
-          },
-          "सगरेव": {
-            "name": "सगरेव",
-            "population": 0,
-            "totalWards": 0,
-            "villages": [
-              {
-                "name": "जगपुरा",
-                "population": 514
-              }
-            ]
-          }
-        }
-      },
       "वार्ड संख्या 2": {
         "wardNumber": "2",
         "wardLabel": "वार्ड संख्या 2",
+        "zilaWard": "जिला परिषद वार्ड संख्या 5",
         "panchayats": {
-          "पीथा का खेड़ा": {
-            "name": "पीथा का खेड़ा",
+          "पीथा का खेड़ा": {
+            "name": "पीथा का खेड़ा",
             "population": 4354,
             "totalWards": 11,
             "villages": [
               {
-                "name": "पीथा का खेड़ा",
+                "name": "पीथा का खेड़ा",
                 "population": 1140
               },
               {
@@ -214,24 +100,24 @@
             "totalWards": 0,
             "villages": [
               {
-                "name": "थोरियाखेड़ा",
+                "name": "थोरियाखेडा",
                 "population": 382
               }
             ]
           },
-          "गल्यावड़ी": {
-            "name": "गल्यावड़ी",
+          "गल्यावडी": {
+            "name": "गल्यावडी",
             "population": 0,
             "totalWards": 0,
             "villages": [
               {
-                "name": "पचातरों का खेड़ा",
+                "name": "पचातरों का खेडा",
                 "population": 578
               }
             ]
           },
-          "पालरा": {
-            "name": "पालरा",
+          "पालरां": {
+            "name": "पालरां",
             "population": 2685,
             "totalWards": 7,
             "villages": [
@@ -243,9 +129,249 @@
           }
         }
       },
+      "वार्ड संख्या 3": {
+        "wardNumber": "3",
+        "wardLabel": "वार्ड संख्या 3",
+        "zilaWard": "जिला परिषद वार्ड संख्या 5",
+        "panchayats": {
+          "कोट": {
+            "name": "कोट",
+            "population": 3063,
+            "totalWards": 9,
+            "villages": [
+              {
+                "name": "कोट",
+                "population": 2001
+              },
+              {
+                "name": "छातोल",
+                "population": 411
+              },
+              {
+                "name": "मेरनियाखेड़ा",
+                "population": 651
+              }
+            ]
+          },
+          "बागड़": {
+            "name": "बागड़",
+            "population": 3261,
+            "totalWards": 9,
+            "villages": [
+              {
+                "name": "बागड़",
+                "population": 1199
+              },
+              {
+                "name": "मंडी",
+                "population": 493
+              },
+              {
+                "name": "मियाला",
+                "population": 854
+              },
+              {
+                "name": "जलामली",
+                "population": 546
+              },
+              {
+                "name": "कारोल",
+                "population": 169
+              }
+            ]
+          }
+        }
+      },
+      "वार्ड संख्या 4": {
+        "wardNumber": "4",
+        "wardLabel": "वार्ड संख्या 4",
+        "zilaWard": "जिला परिषद वार्ड संख्या 5",
+        "panchayats": {
+          "चारोट": {
+            "name": "चारोट",
+            "population": 0,
+            "totalWards": 0,
+            "villages": [
+              {
+                "name": "आसुणा",
+                "population": 715
+              },
+              {
+                "name": "किशोरपुरा",
+                "population": 251
+              }
+            ]
+          },
+          "मौखुन्दा": {
+            "name": "मौखुन्दा",
+            "population": 3327,
+            "totalWards": 9,
+            "villages": [
+              {
+                "name": "मौखुन्दा",
+                "population": 2751
+              },
+              {
+                "name": "तेलीखेडा",
+                "population": 0
+              },
+              {
+                "name": "माण्डकाखेडा",
+                "population": 576
+              }
+            ]
+          },
+          "मासिंगपुरा": {
+            "name": "मासिंगपुरा",
+            "population": 2797,
+            "totalWards": 7,
+            "villages": [
+              {
+                "name": "मासिंगपुरा",
+                "population": 1250
+              },
+              {
+                "name": "ठिकरिया",
+                "population": 388
+              }
+            ]
+          },
+          "पालरां": {
+            "name": "पालरां",
+            "population": 0,
+            "totalWards": 0,
+            "villages": [
+              {
+                "name": "खाननिया",
+                "population": 339
+              }
+            ]
+          }
+        }
+      },
+      "वार्ड संख्या 5": {
+        "wardNumber": "5",
+        "wardLabel": "वार्ड संख्या 5",
+        "zilaWard": "जिला परिषद वार्ड संख्या 5",
+        "panchayats": {
+          "चारोट": {
+            "name": "चारोट",
+            "population": 0,
+            "totalWards": 0,
+            "villages": [
+              {
+                "name": "सिंहपुरा",
+                "population": 625
+              }
+            ]
+          },
+          "गलवा": {
+            "name": "गलवा",
+            "population": 0,
+            "totalWards": 0,
+            "villages": [
+              {
+                "name": "रालीखेडा",
+                "population": 308
+              }
+            ]
+          },
+          "मासिंगपुरा": {
+            "name": "मासिंगपुरा",
+            "population": 0,
+            "totalWards": 0,
+            "villages": [
+              {
+                "name": "डांगडा",
+                "population": 380
+              },
+              {
+                "name": "डांगडी",
+                "population": 779
+              }
+            ]
+          },
+          "झडोल": {
+            "name": "झडोल",
+            "population": 3741,
+            "totalWards": 9,
+            "villages": [
+              {
+                "name": "झडोल",
+                "population": 3430
+              },
+              {
+                "name": "नयाखेड़ा",
+                "population": 311
+              }
+            ]
+          }
+        }
+      },
+      "वार्ड संख्या 6": {
+        "wardNumber": "6",
+        "wardLabel": "वार्ड संख्या 6",
+        "zilaWard": "जिला परिषद वार्ड संख्या 5",
+        "panchayats": {
+          "चारोट": {
+            "name": "चारोट",
+            "population": 0,
+            "totalWards": 0,
+            "villages": [
+              {
+                "name": "गोविन्दपुरा",
+                "population": 431
+              }
+            ]
+          },
+          "गलवा": {
+            "name": "गलवा",
+            "population": 2896,
+            "totalWards": 7,
+            "villages": [
+              {
+                "name": "गलवा",
+                "population": 1555
+              },
+              {
+                "name": "सज्जनपुरा",
+                "population": 0
+              },
+              {
+                "name": "लाठियाखेडी",
+                "population": 217
+              },
+              {
+                "name": "टोकरा",
+                "population": 816
+              },
+              {
+                "name": "रतनपुरा",
+                "population": 0
+              }
+            ]
+          },
+          "देवरिया": {
+            "name": "देवरिया",
+            "population": 2902,
+            "totalWards": 7,
+            "villages": [
+              {
+                "name": "देवरिया",
+                "population": 2902
+              },
+              {
+                "name": "मानपुरा",
+                "population": 0
+              }
+            ]
+          }
+        }
+      },
       "वार्ड संख्या 7": {
         "wardNumber": "7",
         "wardLabel": "वार्ड संख्या 7",
+        "zilaWard": "जिला परिषद वार्ड संख्या 6",
         "panchayats": {
           "खेमाणा": {
             "name": "खेमाणा",
@@ -279,7 +405,7 @@
             "totalWards": 7,
             "villages": [
               {
-                "name": "रेबारियों की ढाणी",
+                "name": "रेबारियो की ढ़ाणी",
                 "population": 400
               },
               {
@@ -287,7 +413,7 @@
                 "population": 603
               },
               {
-                "name": "नान्दूड़ा",
+                "name": "नान्दुडा",
                 "population": 275
               },
               {
@@ -302,200 +428,18 @@
           }
         }
       },
-      "वार्ड संख्या 4": {
-        "wardNumber": "4",
-        "wardLabel": "वार्ड संख्या 4",
-        "panchayats": {
-          "चारोट": {
-            "name": "चारोट",
-            "population": 0,
-            "totalWards": 0,
-            "villages": [
-              {
-                "name": "आसुणा",
-                "population": 715
-              },
-              {
-                "name": "किशोरपुरा",
-                "population": 251
-              }
-            ]
-          },
-          "मोखुन्दा": {
-            "name": "मोखुन्दा",
-            "population": 3327,
-            "totalWards": 9,
-            "villages": [
-              {
-                "name": "मौखुन्दा",
-                "population": 2751
-              },
-              {
-                "name": "तेलीखेड़ा",
-                "population": 0
-              },
-              {
-                "name": "माण्डकाखेड़ा",
-                "population": 576
-              }
-            ]
-          },
-          "मासिंगपुरा": {
-            "name": "मासिंगपुरा",
-            "population": 2797,
-            "totalWards": 7,
-            "villages": [
-              {
-                "name": "मासिंगपुरा",
-                "population": 1250
-              },
-              {
-                "name": "ठिकरिया",
-                "population": 388
-              }
-            ]
-          },
-          "पालरा": {
-            "name": "पालरा",
-            "population": 0,
-            "totalWards": 0,
-            "villages": [
-              {
-                "name": "खाननिया",
-                "population": 339
-              }
-            ]
-          }
-        }
-      },
-      "वार्ड संख्या 6": {
-        "wardNumber": "6",
-        "wardLabel": "वार्ड संख्या 6",
-        "panchayats": {
-          "चारोट": {
-            "name": "चारोट",
-            "population": 0,
-            "totalWards": 0,
-            "villages": [
-              {
-                "name": "गोविन्दपुरा",
-                "population": 431
-              }
-            ]
-          },
-          "गलवा": {
-            "name": "गलवा",
-            "population": 2896,
-            "totalWards": 7,
-            "villages": [
-              {
-                "name": "गलवा",
-                "population": 1555
-              },
-              {
-                "name": "सज्जनपुरा",
-                "population": 0
-              },
-              {
-                "name": "लाठियाखेड़ी",
-                "population": 217
-              },
-              {
-                "name": "टोकरा",
-                "population": 816
-              },
-              {
-                "name": "रतनपुरा",
-                "population": 0
-              }
-            ]
-          },
-          "देवरिया": {
-            "name": "देवरिया",
-            "population": 2902,
-            "totalWards": 7,
-            "villages": [
-              {
-                "name": "देवरिया",
-                "population": 2902
-              },
-              {
-                "name": "मानपुरा",
-                "population": 0
-              }
-            ]
-          }
-        }
-      },
-      "वार्ड संख्या 5": {
-        "wardNumber": "5",
-        "wardLabel": "वार्ड संख्या 5",
-        "panchayats": {
-          "चारोट": {
-            "name": "चारोट",
-            "population": 0,
-            "totalWards": 0,
-            "villages": [
-              {
-                "name": "सिंहपुरा",
-                "population": 625
-              }
-            ]
-          },
-          "गलवा": {
-            "name": "गलवा",
-            "population": 0,
-            "totalWards": 0,
-            "villages": [
-              {
-                "name": "रालीखेड़ा",
-                "population": 308
-              }
-            ]
-          },
-          "मासिंगपुरा": {
-            "name": "मासिंगपुरा",
-            "population": 0,
-            "totalWards": 0,
-            "villages": [
-              {
-                "name": "डांगडा",
-                "population": 380
-              },
-              {
-                "name": "डांगडी",
-                "population": 779
-              }
-            ]
-          },
-          "झाड़ोल": {
-            "name": "झाड़ोल",
-            "population": 3741,
-            "totalWards": 9,
-            "villages": [
-              {
-                "name": "झडोल",
-                "population": 3430
-              },
-              {
-                "name": "नयाखेड़ा",
-                "population": 311
-              }
-            ]
-          }
-        }
-      },
       "वार्ड संख्या 8": {
         "wardNumber": "8",
         "wardLabel": "वार्ड संख्या 8",
+        "zilaWard": "जिला परिषद वार्ड संख्या 5",
         "panchayats": {
-          "गल्यावड़ी": {
-            "name": "गल्यावड़ी",
+          "गल्यावडी": {
+            "name": "गल्यावडी",
             "population": 2791,
             "totalWards": 7,
             "villages": [
               {
-                "name": "गल्यावड़ी",
+                "name": "गल्यावडी",
                 "population": 1652
               },
               {
@@ -540,193 +484,10 @@
           }
         }
       },
-      "वार्ड संख्या 10": {
-        "wardNumber": "10",
-        "wardLabel": "वार्ड संख्या 10",
-        "panchayats": {
-          "नाहरी": {
-            "name": "नाहरी",
-            "population": 3050,
-            "totalWards": 9,
-            "villages": [
-              {
-                "name": "नाहरी",
-                "population": 3050
-              },
-              {
-                "name": "फतेहपुरा",
-                "population": 0
-              },
-              {
-                "name": "दुल्हेपुरा",
-                "population": 0
-              }
-            ]
-          },
-          "पनोतिया": {
-            "name": "पनोतिया",
-            "population": 0,
-            "totalWards": 0,
-            "villages": [
-              {
-                "name": "जोगरास",
-                "population": 1295
-              }
-            ]
-          },
-          "बोरियापुरा": {
-            "name": "बोरियापुरा",
-            "population": 0,
-            "totalWards": 0,
-            "villages": [
-              {
-                "name": "रेवाडा",
-                "population": 629
-              },
-              {
-                "name": "शिवनाथपुरा",
-                "population": 315
-              }
-            ]
-          },
-          "नारायणखेड़ा": {
-            "name": "नारायणखेड़ा",
-            "population": 3049,
-            "totalWards": 9,
-            "villages": [
-              {
-                "name": "नारायणखेड़ा",
-                "population": 828
-              },
-              {
-                "name": "सरंगु",
-                "population": 202
-              }
-            ]
-          }
-        }
-      },
-      "वार्ड संख्या 11": {
-        "wardNumber": "11",
-        "wardLabel": "वार्ड संख्या 11",
-        "panchayats": {
-          "पनोतिया": {
-            "name": "पनोतिया",
-            "population": 2961,
-            "totalWards": 7,
-            "villages": [
-              {
-                "name": "पनोतिया",
-                "population": 1666
-              }
-            ]
-          },
-          "नाथड़ियास": {
-            "name": "नाथड़ियास",
-            "population": 2999,
-            "totalWards": 7,
-            "villages": [
-              {
-                "name": "नाथडियास",
-                "population": 2362
-              },
-              {
-                "name": "मोटरों का खेड़ा",
-                "population": 0
-              },
-              {
-                "name": "आसपुर",
-                "population": 637
-              },
-              {
-                "name": "देवली",
-                "population": 675
-              }
-            ]
-          },
-          "नारायणखेड़ा": {
-            "name": "नारायणखेड़ा",
-            "population": 0,
-            "totalWards": 0,
-            "villages": [
-              {
-                "name": "खुटिया",
-                "population": 949
-              },
-              {
-                "name": "आम्बाखेड़ा",
-                "population": 369
-              },
-              {
-                "name": "तेल्याखेड़ी",
-                "population": 376
-              },
-              {
-                "name": "खुटियाखेड़ा",
-                "population": 325
-              },
-              {
-                "name": "नारायणखेड़ा",
-                "population": 610
-              },
-              {
-                "name": "सरंगु",
-                "population": 345
-              }
-            ]
-          }
-        }
-      },
-      "वार्ड संख्या 12": {
-        "wardNumber": "12",
-        "wardLabel": "वार्ड संख्या 12",
-        "panchayats": {
-          "थला": {
-            "name": "थला",
-            "population": 3651,
-            "totalWards": 9,
-            "villages": [
-              {
-                "name": "थला",
-                "population": 1980
-              },
-              {
-                "name": "मोखमपुरा",
-                "population": 1114
-              }
-            ]
-          },
-          "बागोलिया": {
-            "name": "बागोलिया",
-            "population": 0,
-            "totalWards": 0,
-            "villages": [
-              {
-                "name": "गाडरीखेड़ा",
-                "population": 852
-              }
-            ]
-          },
-          "सगरेव": {
-            "name": "सगरेव",
-            "population": 3601,
-            "totalWards": 9,
-            "villages": [
-              {
-                "name": "सगरेव",
-                "population": 3087
-              },
-              {
-                "name": "नयाखेड़ा जाटान्",
-                "population": 0
-              }
-            ]
-          }
-        }
-      },
       "वार्ड संख्या 9": {
         "wardNumber": "9",
         "wardLabel": "वार्ड संख्या 9",
+        "zilaWard": "जिला परिषद वार्ड संख्या 6",
         "panchayats": {
           "आशाहोली": {
             "name": "आशाहोली",
@@ -775,53 +536,176 @@
           }
         }
       },
-      "वार्ड संख्या 3": {
-        "wardNumber": "3",
-        "wardLabel": "वार्ड संख्या 3",
+      "वार्ड संख्या 10": {
+        "wardNumber": "10",
+        "wardLabel": "वार्ड संख्या 10",
+        "zilaWard": "जिला परिषद वार्ड संख्या 6",
         "panchayats": {
-          "कोट": {
-            "name": "कोट",
-            "population": 3063,
+          "नाहरी": {
+            "name": "नाहरी",
+            "population": 3050,
             "totalWards": 9,
             "villages": [
               {
-                "name": "कोट",
-                "population": 2001
+                "name": "नाहरी",
+                "population": 3050
               },
               {
-                "name": "छातोल",
-                "population": 411
+                "name": "फतेहपुरा",
+                "population": 0
               },
               {
-                "name": "मेरनियाखेड़ा",
-                "population": 651
+                "name": "दुल्हेपुरा",
+                "population": 0
               }
             ]
           },
-          "बागड़": {
-            "name": "बागड़",
-            "population": 3261,
+          "पनोतिया": {
+            "name": "पनोतिया",
+            "population": 0,
+            "totalWards": 0,
+            "villages": [
+              {
+                "name": "जोगरास",
+                "population": 1295
+              }
+            ]
+          },
+          "बोरियापुरा": {
+            "name": "बोरियापुरा",
+            "population": 0,
+            "totalWards": 0,
+            "villages": [
+              {
+                "name": "रेवाडा",
+                "population": 629
+              },
+              {
+                "name": "शिवनाथपुरा",
+                "population": 315
+              }
+            ]
+          },
+          "नारायणखेड़ा": {
+            "name": "नारायणखेड़ा",
+            "population": 3049,
             "totalWards": 9,
             "villages": [
               {
-                "name": "बागड़",
-                "population": 1199
+                "name": "नारायणखेड़ा",
+                "population": 828
               },
               {
-                "name": "मंडी",
-                "population": 493
+                "name": "सरंगु",
+                "population": 202
+              }
+            ]
+          }
+        }
+      },
+      "वार्ड संख्या 11": {
+        "wardNumber": "11",
+        "wardLabel": "वार्ड संख्या 11",
+        "zilaWard": "जिला परिषद वार्ड संख्या 6",
+        "panchayats": {
+          "पनोतिया": {
+            "name": "पनोतिया",
+            "population": 2961,
+            "totalWards": 7,
+            "villages": [
+              {
+                "name": "पनोतिया",
+                "population": 1666
+              }
+            ]
+          },
+          "नाथडियास": {
+            "name": "नाथडियास",
+            "population": 2999,
+            "totalWards": 7,
+            "villages": [
+              {
+                "name": "नाथडियास",
+                "population": 2362
               },
               {
-                "name": "मियाला",
-                "population": 854
+                "name": "मोटरों का खेडा",
+                "population": 0
               },
               {
-                "name": "जलामली",
-                "population": 546
+                "name": "आसपुर",
+                "population": 637
+              }
+            ]
+          },
+          "नारायणखेड़ा": {
+            "name": "नारायणखेड़ा",
+            "population": 0,
+            "totalWards": 0,
+            "villages": [
+              {
+                "name": "खुटिया",
+                "population": 949
               },
               {
-                "name": "कारोल",
-                "population": 169
+                "name": "आम्बाखेड़ा",
+                "population": 369
+              },
+              {
+                "name": "तेल्याखेड़ी",
+                "population": 376
+              },
+              {
+                "name": "खुटियाखेड़ा",
+                "population": 325
+              }
+            ]
+          }
+        }
+      },
+      "वार्ड संख्या 12": {
+        "wardNumber": "12",
+        "wardLabel": "वार्ड संख्या 12",
+        "zilaWard": "जिला परिषद वार्ड संख्या 4",
+        "panchayats": {
+          "थला": {
+            "name": "थला",
+            "population": 3651,
+            "totalWards": 9,
+            "villages": [
+              {
+                "name": "थला",
+                "population": 1980
+              },
+              {
+                "name": "मोखमपुरा",
+                "population": 1114
+              }
+            ]
+          },
+          "बागोलिया": {
+            "name": "बागोलिया",
+            "population": 0,
+            "totalWards": 0,
+            "villages": [
+              {
+                "name": "गाडरीखेडा",
+                "population": 852
+              }
+            ]
+          },
+          "सगरेव": {
+            "name": "सगरेव",
+            "population": 3601,
+            "totalWards": 9,
+            "villages": [
+              {
+                "name": "सगरेव",
+                "population": 3087
+              },
+              {
+                "name": "नयाखेड़ा जाटान्",
+                "population": 0
               }
             ]
           }
@@ -830,6 +714,7 @@
       "वार्ड संख्या 13": {
         "wardNumber": "13",
         "wardLabel": "वार्ड संख्या 13",
+        "zilaWard": "जिला परिषद वार्ड संख्या 4",
         "panchayats": {
           "रायपुर": {
             "name": "रायपुर",
@@ -847,50 +732,146 @@
             ]
           }
         }
+      },
+      "वार्ड संख्या 14": {
+        "wardNumber": "14",
+        "wardLabel": "वार्ड संख्या 14",
+        "zilaWard": "जिला परिषद वार्ड संख्या 4",
+        "panchayats": {
+          "कलाल खेडी": {
+            "name": "कलाल खेडी",
+            "population": 2868,
+            "totalWards": 7,
+            "villages": [
+              {
+                "name": "थोरियाखेडी",
+                "population": 711
+              }
+            ]
+          },
+          "पीथा का खेड़ा": {
+            "name": "पीथा का खेड़ा",
+            "population": 0,
+            "totalWards": 0,
+            "villages": [
+              {
+                "name": "लडकी",
+                "population": 1276
+              }
+            ]
+          },
+          "बोराणा": {
+            "name": "बोराणा",
+            "population": 4616,
+            "totalWards": 11,
+            "villages": [
+              {
+                "name": "बोराणा",
+                "population": 4616
+              }
+            ]
+          }
+        }
+      },
+      "वार्ड संख्या 15": {
+        "wardNumber": "15",
+        "wardLabel": "वार्ड संख्या 15",
+        "zilaWard": "जिला परिषद वार्ड संख्या 4",
+        "panchayats": {
+          "कलाल खेडी": {
+            "name": "कलाल खेडी",
+            "population": 0,
+            "totalWards": 0,
+            "villages": [
+              {
+                "name": "बाडी",
+                "population": 1239
+              }
+            ]
+          },
+          "थला": {
+            "name": "थला",
+            "population": 0,
+            "totalWards": 0,
+            "villages": [
+              {
+                "name": "पिथलपुरा",
+                "population": 557
+              }
+            ]
+          },
+          "सुरास": {
+            "name": "सुरास",
+            "population": 2771,
+            "totalWards": 7,
+            "villages": [
+              {
+                "name": "सुरास",
+                "population": 1179
+              },
+              {
+                "name": "लक्ष्मीपुरा",
+                "population": 0
+              },
+              {
+                "name": "भीलखेडी",
+                "population": 205
+              }
+            ]
+          },
+          "बागोलिया": {
+            "name": "बागोलिया",
+            "population": 3144,
+            "totalWards": 9,
+            "villages": [
+              {
+                "name": "बागोलिया",
+                "population": 1444
+              },
+              {
+                "name": "अर्जुनगढ",
+                "population": 128
+              },
+              {
+                "name": "पाटियाखेडा",
+                "population": 720
+              }
+            ]
+          },
+          "सगरेव": {
+            "name": "सगरेव",
+            "population": 0,
+            "totalWards": 0,
+            "villages": [
+              {
+                "name": "जगपुरा",
+                "population": 514
+              }
+            ]
+          }
+        }
       }
     }
   },
   "सहाड़ा": {
     "name": "सहाड़ा",
     "wards": {
-      "वार्ड संख्या 18": {
-        "wardNumber": "18",
-        "wardLabel": "वार्ड संख्या 18",
+      "वार्ड संख्या 1": {
+        "wardNumber": "1",
+        "wardLabel": "वार्ड संख्या 1",
+        "zilaWard": "जिला परिषद वार्ड संख्या 6",
         "panchayats": {
-          "आमली": {
-            "name": "आमली",
+          "कोशीथल": {
+            "name": "कोशीथल",
             "population": 0,
             "totalWards": 0,
             "villages": [
               {
-                "name": "आमली",
+                "name": "कोशीथल",
                 "population": 0
               },
               {
-                "name": "बालाजी नगर",
-                "population": 0
-              },
-              {
-                "name": "रामरतन नगर",
-                "population": 0
-              },
-              {
-                "name": "संतोष नगर",
-                "population": 0
-              }
-            ]
-          },
-          "चीडखेडा": {
-            "name": "चीडखेडा",
-            "population": 0,
-            "totalWards": 0,
-            "villages": [
-              {
-                "name": "चीडखेडा",
-                "population": 0
-              },
-              {
-                "name": "अडसीपुरा",
+                "name": "अरनोटा",
                 "population": 0
               }
             ]
@@ -900,6 +881,7 @@
       "वार्ड संख्या 2": {
         "wardNumber": "2",
         "wardLabel": "वार्ड संख्या 2",
+        "zilaWard": "जिला परिषद वार्ड संख्या 7",
         "panchayats": {
           "उम्मेदपुरा": {
             "name": "उम्मेदपुरा",
@@ -949,21 +931,56 @@
           }
         }
       },
-      "वार्ड संख्या 1": {
-        "wardNumber": "1",
-        "wardLabel": "वार्ड संख्या 1",
+      "वार्ड संख्या 3": {
+        "wardNumber": "3",
+        "wardLabel": "वार्ड संख्या 3",
+        "zilaWard": "जिला परिषद वार्ड संख्या 7",
         "panchayats": {
-          "कोशीथल": {
-            "name": "कोशीथल",
+          "डेलाना": {
+            "name": "डेलाना",
             "population": 0,
             "totalWards": 0,
             "villages": [
               {
-                "name": "कोशीथल",
+                "name": "डेलाना",
                 "population": 0
               },
               {
-                "name": "अरनोटा",
+                "name": "कालीमंगरी",
+                "population": 0
+              },
+              {
+                "name": "खातीखेडा",
+                "population": 0
+              },
+              {
+                "name": "रधुनाथपुरा",
+                "population": 0
+              },
+              {
+                "name": "माणकनगर",
+                "population": 0
+              }
+            ]
+          }
+        }
+      },
+      "वार्ड संख्या 4": {
+        "wardNumber": "4",
+        "wardLabel": "वार्ड संख्या 4",
+        "zilaWard": "जिला परिषद वार्ड संख्या 9",
+        "panchayats": {
+          "सहाडा": {
+            "name": "सहाडा",
+            "population": 0,
+            "totalWards": 0,
+            "villages": [
+              {
+                "name": "सहाडा",
+                "population": 0
+              },
+              {
+                "name": "शंकरपुरा",
                 "population": 0
               }
             ]
@@ -973,6 +990,7 @@
       "वार्ड संख्या 5": {
         "wardNumber": "5",
         "wardLabel": "वार्ड संख्या 5",
+        "zilaWard": "जिला परिषद वार्ड संख्या 7",
         "panchayats": {
           "चावण्डिया": {
             "name": "चावण्डिया",
@@ -1028,6 +1046,7 @@
       "वार्ड संख्या 6": {
         "wardNumber": "6",
         "wardLabel": "वार्ड संख्या 6",
+        "zilaWard": "जिला परिषद वार्ड संख्या 8",
         "panchayats": {
           "कांगणी": {
             "name": "कांगणी",
@@ -1039,7 +1058,7 @@
                 "population": 0
               },
               {
-                "name": "गाडरीखेड़ा",
+                "name": "गाडरीखेडा",
                 "population": 0
               },
               {
@@ -1088,9 +1107,71 @@
           }
         }
       },
+      "वार्ड संख्या 7": {
+        "wardNumber": "7",
+        "wardLabel": "वार्ड संख्या 7",
+        "zilaWard": "जिला परिषद वार्ड संख्या 8",
+        "panchayats": {
+          "गोवलिया": {
+            "name": "गोवलिया",
+            "population": 0,
+            "totalWards": 0,
+            "villages": [
+              {
+                "name": "गोवलिया",
+                "population": 0
+              },
+              {
+                "name": "खजुरिया",
+                "population": 0
+              },
+              {
+                "name": "कालाखेडा",
+                "population": 0
+              },
+              {
+                "name": "गोवलिया का खेडा",
+                "population": 0
+              },
+              {
+                "name": "भगवानपुरा",
+                "population": 0
+              },
+              {
+                "name": "रूपपुरा",
+                "population": 0
+              }
+            ]
+          },
+          "नेगडिया खेडा": {
+            "name": "नेगडिया खेडा",
+            "population": 0,
+            "totalWards": 0,
+            "villages": [
+              {
+                "name": "नेगडिया खेडा",
+                "population": 0
+              },
+              {
+                "name": "छापरी",
+                "population": 0
+              },
+              {
+                "name": "फूखिया",
+                "population": 0
+              },
+              {
+                "name": "अर्जुनपुरा",
+                "population": 0
+              }
+            ]
+          }
+        }
+      },
       "वार्ड संख्या 8": {
         "wardNumber": "8",
         "wardLabel": "वार्ड संख्या 8",
+        "zilaWard": "जिला परिषद वार्ड संख्या 8",
         "panchayats": {
           "कांगणी": {
             "name": "कांगणी",
@@ -1155,69 +1236,10 @@
           }
         }
       },
-      "वार्ड संख्या 7": {
-        "wardNumber": "7",
-        "wardLabel": "वार्ड संख्या 7",
-        "panchayats": {
-          "गोवलिया": {
-            "name": "गोवलिया",
-            "population": 0,
-            "totalWards": 0,
-            "villages": [
-              {
-                "name": "गोवलिया",
-                "population": 0
-              },
-              {
-                "name": "खजुरिया",
-                "population": 0
-              },
-              {
-                "name": "कालाखेडा",
-                "population": 0
-              },
-              {
-                "name": "गोवलिया का खेडा",
-                "population": 0
-              },
-              {
-                "name": "भगवानपुरा",
-                "population": 0
-              },
-              {
-                "name": "रूपपुरा",
-                "population": 0
-              }
-            ]
-          },
-          "नेगडिया खेडा": {
-            "name": "नेगडिया खेडा",
-            "population": 0,
-            "totalWards": 0,
-            "villages": [
-              {
-                "name": "नेगडिया खेडा",
-                "population": 0
-              },
-              {
-                "name": "छापरी",
-                "population": 0
-              },
-              {
-                "name": "फूखिया",
-                "population": 0
-              },
-              {
-                "name": "अर्जुनपुरा",
-                "population": 0
-              }
-            ]
-          }
-        }
-      },
       "वार्ड संख्या 9": {
         "wardNumber": "9",
         "wardLabel": "वार्ड संख्या 9",
+        "zilaWard": "जिला परिषद वार्ड संख्या 8",
         "panchayats": {
           "माझावास": {
             "name": "माझावास",
@@ -1270,6 +1292,7 @@
       "वार्ड संख्या 10": {
         "wardNumber": "10",
         "wardLabel": "वार्ड संख्या 10",
+        "zilaWard": "जिला परिषद वार्ड संख्या 8",
         "panchayats": {
           "पोटलां": {
             "name": "पोटलां",
@@ -1287,6 +1310,7 @@
       "वार्ड संख्या 11": {
         "wardNumber": "11",
         "wardLabel": "वार्ड संख्या 11",
+        "zilaWard": "जिला परिषद वार्ड संख्या 9",
         "panchayats": {
           "सरगांव": {
             "name": "सरगांव",
@@ -1332,130 +1356,86 @@
           }
         }
       },
-      "वार्ड संख्या 4": {
-        "wardNumber": "4",
-        "wardLabel": "वार्ड संख्या 4",
+      "वार्ड संख्या 12": {
+        "wardNumber": "12",
+        "wardLabel": "वार्ड संख्या 12",
+        "zilaWard": "जिला परिषद वार्ड संख्या 9",
         "panchayats": {
-          "सहाडा": {
-            "name": "सहाडा",
+          "लाखोला": {
+            "name": "लाखोला",
             "population": 0,
             "totalWards": 0,
             "villages": [
               {
-                "name": "सहाडा",
+                "name": "लाखोला",
                 "population": 0
               },
               {
-                "name": "शंकरपुरा",
-                "population": 0
-              }
-            ]
-          }
-        }
-      },
-      "वार्ड संख्या 3": {
-        "wardNumber": "3",
-        "wardLabel": "वार्ड संख्या 3",
-        "panchayats": {
-          "डेलाना": {
-            "name": "डेलाना",
-            "population": 0,
-            "totalWards": 0,
-            "villages": [
-              {
-                "name": "डेलाना",
+                "name": "नयाखेडा",
                 "population": 0
               },
               {
-                "name": "कालीमंगरी",
-                "population": 0
-              },
-              {
-                "name": "खातीखेडा",
-                "population": 0
-              },
-              {
-                "name": "रधुनाथपुरा",
-                "population": 0
-              },
-              {
-                "name": "माणकनगर",
-                "population": 0
-              }
-            ]
-          }
-        }
-      },
-      "वार्ड संख्या 19": {
-        "wardNumber": "19",
-        "wardLabel": "वार्ड संख्या 19",
-        "panchayats": {
-          "नान्दशा खालसा": {
-            "name": "नान्दशा खालसा",
-            "population": 0,
-            "totalWards": 0,
-            "villages": [
-              {
-                "name": "नान्दशा खालसा",
-                "population": 0
-              },
-              {
-                "name": "झुमपुरा",
+                "name": "बघेरा",
                 "population": 0
               }
             ]
           },
-          "उम्मेदपुरा": {
-            "name": "उम्मेदपुरा",
+          "गुढा": {
+            "name": "गुढा",
             "population": 0,
             "totalWards": 0,
             "villages": [
               {
-                "name": "पालरा",
+                "name": "गुढा",
                 "population": 0
               },
               {
-                "name": "सुरत सिंह जी का खेडा",
+                "name": "गुढा खेडा",
                 "population": 0
               }
             ]
           }
         }
       },
-      "वार्ड संख्या 15": {
-        "wardNumber": "15",
-        "wardLabel": "वार्ड संख्या 15",
+      "वार्ड संख्या 13": {
+        "wardNumber": "13",
+        "wardLabel": "वार्ड संख्या 13",
+        "zilaWard": "जिला परिषद वार्ड संख्या 9",
         "panchayats": {
-          "शिवरती": {
-            "name": "शिवरती",
+          "अरनिया खालसा": {
+            "name": "अरनिया खालसा",
             "population": 0,
             "totalWards": 0,
             "villages": [
               {
-                "name": "शिवरती",
+                "name": "अरनिया खालसा",
                 "population": 0
               },
               {
-                "name": "कालाढुंढा",
+                "name": "रामपुरिया",
                 "population": 0
               },
               {
-                "name": "दरीबा",
+                "name": "चमरसिंह जी का खेडा",
+                "population": 0
+              },
+              {
+                "name": "बिकराई",
                 "population": 0
               }
             ]
           },
-          "महेन्द्रगढ": {
-            "name": "महेन्द्रगढ",
+          "सोनियाणा": {
+            "name": "सोनियाणा",
             "population": 0,
             "totalWards": 0,
             "villages": [
               {
-                "name": "महेन्द्रगढ",
+                "name": "सोनियाणा",
                 "population": 0
               },
               {
-                "name": "पाबुनगर",
+                "name": "रामाखेडा",
                 "population": 0
               }
             ]
@@ -1465,6 +1445,7 @@
       "वार्ड संख्या 14": {
         "wardNumber": "14",
         "wardLabel": "वार्ड संख्या 14",
+        "zilaWard": "जिला परिषद वार्ड संख्या 7",
         "panchayats": {
           "शिवरती": {
             "name": "शिवरती",
@@ -1514,9 +1495,51 @@
           }
         }
       },
+      "वार्ड संख्या 15": {
+        "wardNumber": "15",
+        "wardLabel": "वार्ड संख्या 15",
+        "zilaWard": "जिला परिषद वार्ड संख्या 7",
+        "panchayats": {
+          "शिवरती": {
+            "name": "शिवरती",
+            "population": 0,
+            "totalWards": 0,
+            "villages": [
+              {
+                "name": "शिवरती",
+                "population": 0
+              },
+              {
+                "name": "कालाढुंढा",
+                "population": 0
+              },
+              {
+                "name": "दरीबा",
+                "population": 0
+              }
+            ]
+          },
+          "महेन्द्रगढ": {
+            "name": "महेन्द्रगढ",
+            "population": 0,
+            "totalWards": 0,
+            "villages": [
+              {
+                "name": "महेन्द्रगढ",
+                "population": 0
+              },
+              {
+                "name": "पाबुनगर",
+                "population": 0
+              }
+            ]
+          }
+        }
+      },
       "वार्ड संख्या 16": {
         "wardNumber": "16",
         "wardLabel": "वार्ड संख्या 16",
+        "zilaWard": "जिला परिषद वार्ड संख्या 9",
         "panchayats": {
           "ढोसर": {
             "name": "ढोसर",
@@ -1562,93 +1585,10 @@
           }
         }
       },
-      "वार्ड संख्या 12": {
-        "wardNumber": "12",
-        "wardLabel": "वार्ड संख्या 12",
-        "panchayats": {
-          "लाखोला": {
-            "name": "लाखोला",
-            "population": 0,
-            "totalWards": 0,
-            "villages": [
-              {
-                "name": "लाखोला",
-                "population": 0
-              },
-              {
-                "name": "नयाखेडा",
-                "population": 0
-              },
-              {
-                "name": "बघेरा",
-                "population": 0
-              }
-            ]
-          },
-          "गुढा": {
-            "name": "गुढा",
-            "population": 0,
-            "totalWards": 0,
-            "villages": [
-              {
-                "name": "गुढा",
-                "population": 0
-              },
-              {
-                "name": "गुढा खेडा",
-                "population": 0
-              }
-            ]
-          }
-        }
-      },
-      "वार्ड संख्या 13": {
-        "wardNumber": "13",
-        "wardLabel": "वार्ड संख्या 13",
-        "panchayats": {
-          "अरनिया खालसा": {
-            "name": "अरनिया खालसा",
-            "population": 0,
-            "totalWards": 0,
-            "villages": [
-              {
-                "name": "अरनिया खालसा",
-                "population": 0
-              },
-              {
-                "name": "रामपुरिया",
-                "population": 0
-              },
-              {
-                "name": "चमरसिंह जी का खेडा",
-                "population": 0
-              },
-              {
-                "name": "बिकराई",
-                "population": 0
-              }
-            ]
-          },
-          "सोनियाणा": {
-            "name": "सोनियाणा",
-            "population": 0,
-            "totalWards": 0,
-            "villages": [
-              {
-                "name": "सोनियाणा",
-                "population": 0
-              },
-              {
-                "name": "रामाखेडा",
-                "population": 0
-              }
-            ]
-          }
-        }
-      },
       "वार्ड संख्या 17": {
         "wardNumber": "17",
         "wardLabel": "वार्ड संख्या 17",
+        "zilaWard": "जिला परिषद वार्ड संख्या 9",
         "panchayats": {
           "भूणास": {
             "name": "भूणास",
@@ -1685,6 +1625,88 @@
             ]
           }
         }
+      },
+      "वार्ड संख्या 18": {
+        "wardNumber": "18",
+        "wardLabel": "वार्ड संख्या 18",
+        "zilaWard": "जिला परिषद वार्ड संख्या 7",
+        "panchayats": {
+          "आमली": {
+            "name": "आमली",
+            "population": 0,
+            "totalWards": 0,
+            "villages": [
+              {
+                "name": "आमली",
+                "population": 0
+              },
+              {
+                "name": "बालाजी नगर",
+                "population": 0
+              },
+              {
+                "name": "रामरतन नगर",
+                "population": 0
+              },
+              {
+                "name": "संतोष नगर",
+                "population": 0
+              }
+            ]
+          },
+          "चीडखेडा": {
+            "name": "चीडखेडा",
+            "population": 0,
+            "totalWards": 0,
+            "villages": [
+              {
+                "name": "चीडखेडा",
+                "population": 0
+              },
+              {
+                "name": "अडसीपुरा",
+                "population": 0
+              }
+            ]
+          }
+        }
+      },
+      "वार्ड संख्या 19": {
+        "wardNumber": "19",
+        "wardLabel": "वार्ड संख्या 19",
+        "zilaWard": "जिला परिषद वार्ड संख्या 7",
+        "panchayats": {
+          "नान्दशा खालसा": {
+            "name": "नान्दशा खालसा",
+            "population": 0,
+            "totalWards": 0,
+            "villages": [
+              {
+                "name": "नान्दशा खालसा",
+                "population": 0
+              },
+              {
+                "name": "झुमपुरा",
+                "population": 0
+              }
+            ]
+          },
+          "उम्मेदपुरा": {
+            "name": "उम्मेदपुरा",
+            "population": 0,
+            "totalWards": 0,
+            "villages": [
+              {
+                "name": "पालरा",
+                "population": 0
+              },
+              {
+                "name": "सुरत सिंह जी का खेडा",
+                "population": 0
+              }
+            ]
+          }
+        }
       }
     }
   },
@@ -1694,6 +1716,7 @@
       "वार्ड संख्या 16": {
         "wardNumber": "16",
         "wardLabel": "वार्ड संख्या 16",
+        "zilaWard": "जिला परिषद वार्ड संख्या 29",
         "panchayats": {
           "बीलिया कलां": {
             "name": "बीलिया कलां",
@@ -1715,6 +1738,7 @@
       "वार्ड संख्या 17": {
         "wardNumber": "17",
         "wardLabel": "वार्ड संख्या 17",
+        "zilaWard": "जिला परिषद वार्ड संख्या 11",
         "panchayats": {
           "दरीबा": {
             "name": "दरीबा",
@@ -1752,9 +1776,97 @@
           }
         }
       },
+      "वार्ड संख्या 18": {
+        "wardNumber": "18",
+        "wardLabel": "वार्ड संख्या 18",
+        "zilaWard": "जिला परिषद वार्ड संख्या 28",
+        "panchayats": {
+          "गुन्दली": {
+            "name": "गुन्दली",
+            "population": 0,
+            "totalWards": 0,
+            "villages": [
+              {
+                "name": "गुन्दली",
+                "population": 0
+              },
+              {
+                "name": "दादीया",
+                "population": 0
+              }
+            ]
+          },
+          "ओझाघर": {
+            "name": "ओझाघर",
+            "population": 0,
+            "totalWards": 0,
+            "villages": [
+              {
+                "name": "ओझाघर",
+                "population": 0
+              },
+              {
+                "name": "रायडा",
+                "population": 0
+              },
+              {
+                "name": "रघुनाथपुरा",
+                "population": 0
+              },
+              {
+                "name": "राजपुरा",
+                "population": 0
+              },
+              {
+                "name": "लापलियाखेडा",
+                "population": 0
+              },
+              {
+                "name": "टीलाखेडा",
+                "population": 0
+              }
+            ]
+          }
+        }
+      },
+      "वार्ड संख्या 19": {
+        "wardNumber": "19",
+        "wardLabel": "वार्ड संख्या 19",
+        "zilaWard": "जिला परिषद वार्ड संख्या 28",
+        "panchayats": {
+          "सांगवा": {
+            "name": "सांगवा",
+            "population": 0,
+            "totalWards": 0,
+            "villages": [
+              {
+                "name": "सांगवा",
+                "population": 0
+              },
+              {
+                "name": "तिलोली",
+                "population": 0
+              },
+              {
+                "name": "एकलिंगपुरा",
+                "population": 0
+              },
+              {
+                "name": "आबाखेडी",
+                "population": 0
+              },
+              {
+                "name": "छापरी",
+                "population": 0
+              }
+            ]
+          }
+        }
+      },
       "वार्ड संख्या 20": {
         "wardNumber": "20",
         "wardLabel": "वार्ड संख्या 20",
+        "zilaWard": "जिला परिषद वार्ड संख्या 11",
         "panchayats": {
           "दरीबा": {
             "name": "दरीबा",
@@ -1811,94 +1923,10 @@
           }
         }
       },
-      "वार्ड संख्या 18": {
-        "wardNumber": "18",
-        "wardLabel": "वार्ड संख्या 18",
-        "panchayats": {
-          "गुन्दली": {
-            "name": "गुन्दली",
-            "population": 0,
-            "totalWards": 0,
-            "villages": [
-              {
-                "name": "गुन्दली",
-                "population": 0
-              },
-              {
-                "name": "दादीया",
-                "population": 0
-              }
-            ]
-          },
-          "ओझाघर": {
-            "name": "ओझाघर",
-            "population": 0,
-            "totalWards": 0,
-            "villages": [
-              {
-                "name": "ओझाघर",
-                "population": 0
-              },
-              {
-                "name": "रायडा",
-                "population": 0
-              },
-              {
-                "name": "रघुनाथपुरा",
-                "population": 0
-              },
-              {
-                "name": "राजपुरा",
-                "population": 0
-              },
-              {
-                "name": "लापलियाखेडा",
-                "population": 0
-              },
-              {
-                "name": "टीलाखेडा",
-                "population": 0
-              }
-            ]
-          }
-        }
-      },
-      "वार्ड संख्या 19": {
-        "wardNumber": "19",
-        "wardLabel": "वार्ड संख्या 19",
-        "panchayats": {
-          "सांगवा": {
-            "name": "सांगवा",
-            "population": 0,
-            "totalWards": 0,
-            "villages": [
-              {
-                "name": "सांगवा",
-                "population": 0
-              },
-              {
-                "name": "तिलोली",
-                "population": 0
-              },
-              {
-                "name": "एकलिंगपुरा",
-                "population": 0
-              },
-              {
-                "name": "आबाखेडी",
-                "population": 0
-              },
-              {
-                "name": "छापरी",
-                "population": 0
-              }
-            ]
-          }
-        }
-      },
       "वार्ड संख्या 21": {
         "wardNumber": "21",
         "wardLabel": "वार्ड संख्या 21",
+        "zilaWard": "जिला परिषद वार्ड संख्या 28",
         "panchayats": {
           "कारोईकलां": {
             "name": "कारोईकलां",
@@ -1928,6 +1956,7 @@
       "वार्ड संख्या 22": {
         "wardNumber": "22",
         "wardLabel": "वार्ड संख्या 22",
+        "zilaWard": "जिला परिषद वार्ड संख्या 29",
         "panchayats": {
           "मोमी": {
             "name": "मोमी",
@@ -1995,6 +2024,7 @@
       "वार्ड संख्या 23": {
         "wardNumber": "23",
         "wardLabel": "वार्ड संख्या 23",
+        "zilaWard": "जिला परिषद वार्ड संख्या 28",
         "panchayats": {
           "गुरलां": {
             "name": "गुरलां",
@@ -2042,6 +2072,7 @@
       "वार्ड संख्या 24": {
         "wardNumber": "24",
         "wardLabel": "वार्ड संख्या 24",
+        "zilaWard": "जिला परिषद वार्ड संख्या 29",
         "panchayats": {
           "भोपालगढ": {
             "name": "भोपालगढ",
@@ -2097,6 +2128,7 @@
       "वार्ड संख्या 25": {
         "wardNumber": "25",
         "wardLabel": "वार्ड संख्या 25",
+        "zilaWard": "जिला परिषद वार्ड संख्या 29",
         "panchayats": {
           "ओज्याडा": {
             "name": "ओज्याडा",
@@ -2144,6 +2176,7 @@
       "वार्ड संख्या 26": {
         "wardNumber": "26",
         "wardLabel": "वार्ड संख्या 26",
+        "zilaWard": "जिला परिषद वार्ड संख्या 29",
         "panchayats": {
           "बरडोद": {
             "name": "बरडोद",
@@ -2176,6 +2209,7 @@
       "वार्ड संख्या 27": {
         "wardNumber": "27",
         "wardLabel": "वार्ड संख्या 27",
+        "zilaWard": "जिला परिषद वार्ड संख्या 29",
         "panchayats": {
           "खैराबाद": {
             "name": "खैराबाद",

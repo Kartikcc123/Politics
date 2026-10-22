@@ -458,6 +458,137 @@ class _SamitiHierarchyPageState extends State<SamitiHierarchyPage> {
     );
   }
 
+  void _handleVillageClick(String vName, String currentGp) {
+    final cleanV = vName.trim();
+    final matches = villageToSamitiWardsLookup[cleanV] ??
+        villageToSamitiWardsLookup[vName] ??
+        [];
+
+    if (matches.length > 1) {
+      // Village is common across multiple Samiti Wards or Gram Panchayats!
+      showModalBottomSheet(
+        context: context,
+        backgroundColor: Colors.white,
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        ),
+        builder: (ctx) => Padding(
+          padding: const EdgeInsets.fromLTRB(18, 20, 18, 30),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: const Color(0xffeff6ff),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: const Icon(Icons.location_on_rounded, color: Color(0xff2563eb), size: 20),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'गाँव: $cleanV',
+                          style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 16, color: navy),
+                        ),
+                        const Text(
+                          'यह गाँव एक से अधिक वार्ड/पंचायत में सम्मिलित है',
+                          style: TextStyle(fontSize: 11.5, color: muted, fontWeight: FontWeight.bold),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 14),
+              const Text(
+                'कृपया संबंधित वार्ड चुनें:',
+                style: TextStyle(fontWeight: FontWeight.w800, fontSize: 13, color: navy),
+              ),
+              const SizedBox(height: 8),
+              Flexible(
+                child: ListView.separated(
+                  shrinkWrap: true,
+                  itemCount: matches.length,
+                  separatorBuilder: (_, __) => const SizedBox(height: 8),
+                  itemBuilder: (context, idx) {
+                    final m = matches[idx];
+                    final sName = '${m['samiti'] ?? ''}'.trim();
+                    final wLabel = '${m['samitiWard'] ?? ''}'.trim();
+                    final gp = '${m['gramPanchayat'] ?? ''}'.trim();
+                    final pop = m['population'] as int? ?? 0;
+
+                    return InkWell(
+                      onTap: () {
+                        Navigator.pop(ctx);
+                        _openVoters(
+                          village: cleanV,
+                          gramPanchayat: gp,
+                          samitiWard: wLabel,
+                          samiti: sName,
+                        );
+                      },
+                      borderRadius: BorderRadius.circular(12),
+                      child: Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: const Color(0xfff8fafc),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: border),
+                        ),
+                        child: Row(
+                          children: [
+                            const Icon(Icons.account_balance_rounded, color: Color(0xff2563eb), size: 20),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    '$sName · $wLabel',
+                                    style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 14, color: navy),
+                                  ),
+                                  Text(
+                                    'पंचायत: $gp ${pop > 0 ? "• जनसंख्या: $pop" : ""}',
+                                    style: const TextStyle(fontSize: 12, color: muted),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            const Icon(Icons.arrow_forward_ios_rounded, size: 14, color: Color(0xff2563eb)),
+                          ],
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    } else if (matches.length == 1) {
+      final m = matches.first;
+      _openVoters(
+        village: cleanV,
+        gramPanchayat: '${m['gramPanchayat'] ?? currentGp}'.trim(),
+        samitiWard: '${m['samitiWard'] ?? ''}'.trim(),
+        samiti: '${m['samiti'] ?? ''}'.trim(),
+      );
+    } else {
+      _openVoters(
+        village: cleanV,
+        gramPanchayat: currentGp,
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return DefaultTabController(
@@ -906,10 +1037,7 @@ class _SamitiHierarchyPageState extends State<SamitiHierarchyPage> {
                                                     visualDensity: VisualDensity.compact,
                                                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                                                   ),
-                                                  onPressed: () => _openVoters(
-                                                    village: vName,
-                                                    gramPanchayat: gpName,
-                                                  ),
+                                                  onPressed: () => _handleVillageClick(vName, gpName),
                                                   child: const Text('मतदाता ➔', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800)),
                                                 ),
                                               ],

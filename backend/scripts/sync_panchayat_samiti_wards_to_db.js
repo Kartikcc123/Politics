@@ -18,8 +18,9 @@ function normalizeName(str) {
 }
 
 async function syncSamitiWards() {
-  console.log('Connecting to MongoDB...');
-  await mongoose.connect('mongodb://187.127.173.42:27017/political_crm');
+  const mongoUri = process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/politics';
+  console.log(`Connecting to MongoDB at ${mongoUri}...`);
+  await mongoose.connect(mongoUri);
   const Member = mongoose.model('Member', new mongoose.Schema({}, { strict: false }));
 
   const hierarchyPath = path.join(__dirname, '../src/config/official_samiti_ward_hierarchy.json');

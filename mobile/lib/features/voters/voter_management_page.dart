@@ -2265,11 +2265,76 @@ class _VoterManagementPageState extends State<VoterManagementPage>
     return count;
   }
 
+  Map<String, int>? _currentScopeWardCounts;
+  String _lastScopeKey = '';
+
+  Future<void> _fetchScopeWards() async {
+    final gp = gramPanchayat.text.trim();
+    final vName = village.text.trim();
+    if (gp.isEmpty && vName.isEmpty) {
+      if (mounted && _currentScopeWardCounts != null) {
+        setState(() => _currentScopeWardCounts = null);
+      }
+      return;
+    }
+    final key = '$gp::$vName';
+    if (_lastScopeKey == key && _currentScopeWardCounts != null) return;
+    _lastScopeKey = key;
+
+    try {
+      final res = await api.getQuery('/api/members/field-values', {
+        'field': 'wardNumber',
+        if (gp.isNotEmpty) 'gramPanchayat': gp,
+        if (vName.isNotEmpty) 'village': vName,
+        'limit': '100',
+      });
+      final items = res['items'] as List? ?? [];
+      final Map<String, int> counts = {};
+      for (final item in items) {
+        if (item is Map) {
+          final rawVal = '${item['value'] ?? item['label'] ?? ''}';
+          final numVal = rawVal.replaceAll(RegExp(r'\D'), '').trim();
+          final c = (item['count'] as num?)?.toInt() ?? 0;
+          if (numVal.isNotEmpty && c > 0) {
+            counts[numVal] = (counts[numVal] ?? 0) + c;
+          }
+        }
+      }
+      if (mounted) {
+        setState(() {
+          _currentScopeWardCounts = counts;
+        });
+      }
+    } catch (_) {}
+  }
+
   Widget _buildPanchayatWardSelectorStrip() {
     final gp = gramPanchayat.text.trim();
-    if (gp.isEmpty) return const SizedBox.shrink();
-    final totalWards = _getGpTotalWards(gp);
+    final vName = village.text.trim();
+    if (gp.isEmpty && vName.isEmpty) return const SizedBox.shrink();
+
+    // Trigger fetch if scope changed
+    if (_lastScopeKey != '$gp::$vName') {
+      _fetchScopeWards();
+    }
+
     final activeWard = municipalWardNumber.text.trim();
+    final titleText = vName.isNotEmpty
+        ? (gp.isNotEmpty ? 'गाँव: $vName ($gp) • वार्ड चुनें' : 'गाँव: $vName • वार्ड चुनें')
+        : 'ग्राम पंचायत: $gp • वार्ड चुनें';
+
+    final List<String> wardNumbersToShow;
+    final Map<String, int> countsMap;
+
+    if (_currentScopeWardCounts != null && _currentScopeWardCounts!.isNotEmpty) {
+      countsMap = _currentScopeWardCounts!;
+      wardNumbersToShow = countsMap.keys.toList()
+        ..sort((a, b) => (int.tryParse(a) ?? 0).compareTo(int.tryParse(b) ?? 0));
+    } else {
+      countsMap = const {};
+      final total = _getGpTotalWards(gp.isNotEmpty ? gp : vName);
+      wardNumbersToShow = List.generate(total, (idx) => '${idx + 1}');
+    }
 
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
@@ -2293,11 +2358,13 @@ class _VoterManagementPageState extends State<VoterManagementPage>
             children: [
               const Icon(Icons.location_city_rounded, size: 16, color: Color(0xff2563eb)),
               const SizedBox(width: 6),
-              Text(
-                'ग्राम पंचायत: $gp (वार्ड चुनें)',
-                style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 13, color: Color(0xff1e40af)),
+              Expanded(
+                child: Text(
+                  titleText,
+                  style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 13, color: Color(0xff1e40af)),
+                  overflow: TextOverflow.ellipsis,
+                ),
               ),
-              const Spacer(),
               if (activeWard.isNotEmpty)
                 InkWell(
                   onTap: () {
@@ -2344,13 +2411,15 @@ class _VoterManagementPageState extends State<VoterManagementPage>
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                   ),
                 ),
-                ...List.generate(totalWards, (idx) {
-                  final wNum = '${idx + 1}';
+                ...wardNumbersToShow.map((wNum) {
                   final isSel = activeWard == wNum;
+                  final count = countsMap[wNum] ?? 0;
+                  final chipLabel = count > 0 ? 'वार्ड $wNum ($count)' : 'वार्ड $wNum';
+
                   return Padding(
                     padding: const EdgeInsets.only(right: 6),
                     child: ChoiceChip(
-                      label: Text('$gp वार्ड $wNum'),
+                      label: Text(chipLabel),
                       selected: isSel,
                       onSelected: (selected) {
                         setState(() {
