@@ -233,7 +233,7 @@ class _VoterManagementPageState extends State<VoterManagementPage>
     }
     if (widget.initialWard != null && widget.initialWard!.isNotEmpty) {
       municipalWardNumber.text = widget.initialWard!;
-      rollType = 'all';
+      rollType = 'municipal';
     }
     if (widget.initialPanchayatSamitiWard != null && widget.initialPanchayatSamitiWard!.isNotEmpty) {
       samitiWardFilter = widget.initialPanchayatSamitiWard!;
@@ -2370,6 +2370,7 @@ class _VoterManagementPageState extends State<VoterManagementPage>
                   onTap: () {
                     setState(() {
                       municipalWardNumber.clear();
+                      rollType = 'municipal';
                       currentPage = 1;
                       selectedIds.clear();
                       refreshVoters();
@@ -2396,6 +2397,7 @@ class _VoterManagementPageState extends State<VoterManagementPage>
                       if (activeWard.isEmpty) return;
                       setState(() {
                         municipalWardNumber.clear();
+                        rollType = 'municipal';
                         currentPage = 1;
                         selectedIds.clear();
                         refreshVoters();
@@ -2440,6 +2442,7 @@ class _VoterManagementPageState extends State<VoterManagementPage>
                       onSelected: (selected) {
                         setState(() {
                           municipalWardNumber.text = isSel ? '' : wNum;
+                          rollType = isSel ? _defaultRollType : 'municipal';
                           currentPage = 1;
                           selectedIds.clear();
                           refreshVoters();
@@ -7802,7 +7805,300 @@ class _VoterCardImageSection extends StatefulWidget {
 }
 
 class _VoterCardImageSectionState extends State<_VoterCardImageSection> {
-  int _selectedTab = 0;
+  int _selectedTab = 0; // 0: Ward Card, 1: Assembly Card, 2: Both Cards
+
+  @override
+  void initState() {
+    super.initState();
+    final voter = widget.voter;
+    final hasWard = '${voter['wardCardImage'] ?? ''}'.trim().isNotEmpty ||
+        '${voter['wardNumber'] ?? ''}'.trim().isNotEmpty ||
+        '${voter['wardVoterSerial'] ?? ''}'.trim().isNotEmpty;
+    _selectedTab = hasWard ? 0 : 1;
+  }
+
+  void _openZoomDialog(BuildContext context, String imageUrl, String title) {
+    if (imageUrl.isEmpty) return;
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => Dialog(
+        backgroundColor: Colors.transparent,
+        insetPadding: const EdgeInsets.all(12),
+        child: Stack(
+          alignment: Alignment.topRight,
+          children: [
+            ClipRRect(
+              borderRadius: BorderRadius.circular(16),
+              child: Container(
+                color: Colors.black87,
+                padding: const EdgeInsets.all(12),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                      margin: const EdgeInsets.only(bottom: 8),
+                      decoration: BoxDecoration(
+                        color: Colors.black54,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Text(
+                        title,
+                        style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14),
+                      ),
+                    ),
+                    Flexible(
+                      child: InteractiveViewer(
+                        minScale: 0.8,
+                        maxScale: 6.0,
+                        child: Center(
+                          child: Image.network(
+                            imageUrl,
+                            headers: voterPhotoHeaders(imageUrl),
+                            fit: BoxFit.contain,
+                            errorBuilder: (_, __, ___) => const Center(
+                              child: Text('कार्ड इमेज लोड नहीं हो सकी',
+                                  style: TextStyle(color: Colors.white70, fontSize: 14)),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.all(8.0),
+              child: CircleAvatar(
+                backgroundColor: Colors.black54,
+                child: IconButton(
+                  icon: const Icon(Icons.close, color: Colors.white),
+                  onPressed: () => Navigator.pop(ctx),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSingleCardBox({
+    required BuildContext context,
+    required String title,
+    required String badgeText,
+    required Color badgeBg,
+    required Color badgeColor,
+    required String cardPath,
+    required IconData icon,
+    required List<String> footerDetails,
+    required Widget digitalFallback,
+    double height = 230,
+  }) {
+    final url = cardPath.isNotEmpty ? voterPhotoUrl(cardPath) : '';
+    final hasImg = url.isNotEmpty;
+
+    return Container(
+      decoration: BoxDecoration(
+        color: const Color(0xfff8fafc),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: badgeBg.withOpacity(0.35), width: 1.2),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Header Bar
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+            decoration: BoxDecoration(
+              color: badgeBg.withOpacity(0.12),
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(11)),
+            ),
+            child: Row(
+              children: [
+                Icon(icon, size: 16, color: badgeColor),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    title,
+                    style: TextStyle(fontWeight: FontWeight.w800, fontSize: 12.5, color: badgeColor),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: badgeColor,
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: Text(
+                    badgeText,
+                    style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 11),
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          // Card Content
+          if (hasImg)
+            GestureDetector(
+              onTap: () => _openZoomDialog(context, url, '$title - $badgeText'),
+              child: Container(
+                height: height,
+                width: double.infinity,
+                color: Colors.white,
+                child: Stack(
+                  alignment: Alignment.bottomRight,
+                  children: [
+                    InteractiveViewer(
+                      minScale: 1,
+                      maxScale: 4,
+                      child: Center(
+                        child: Image.network(
+                          url,
+                          headers: voterPhotoHeaders(url),
+                          fit: BoxFit.contain,
+                          alignment: Alignment.center,
+                          errorBuilder: (_, __, ___) => digitalFallback,
+                        ),
+                      ),
+                    ),
+                    Container(
+                      margin: const EdgeInsets.all(8),
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: Colors.black.withOpacity(0.65),
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: const Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.zoom_in, color: Colors.white, size: 14),
+                          SizedBox(width: 4),
+                          Text('ज़ूम हेतु टैप करें', style: TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold)),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            )
+          else
+            SizedBox(
+              height: height,
+              width: double.infinity,
+              child: digitalFallback,
+            ),
+
+          // Footer Details Chips
+          if (footerDetails.isNotEmpty)
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              decoration: const BoxDecoration(
+                color: Color(0xfff1f5f9),
+                borderRadius: BorderRadius.vertical(bottom: Radius.circular(11)),
+              ),
+              child: Wrap(
+                spacing: 8,
+                runSpacing: 4,
+                children: footerDetails.map((f) => Text(
+                  f,
+                  style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: Color(0xff334155)),
+                )).toList(),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDigitalSlipView({
+    required String headerTitle,
+    required Color headerColor,
+    required String serialBoxLabel,
+    required String serialBoxValue,
+    required String epicValue,
+    required Map<String, dynamic> voter,
+  }) {
+    final name = '${voter['name'] ?? '-'} ${voter['surname'] ?? ''}'.trim();
+    final guardian = '${voter['guardianName'] ?? voter['relativeName'] ?? '-'}'.trim();
+    final house = '${voter['houseNumber'] ?? '-'}'.trim();
+    final age = '${voter['age'] ?? '-'}'.trim();
+    final gender = '${voter['gender'] ?? '-'}'.trim();
+    final gp = '${voter['gramPanchayat'] ?? ''}'.trim();
+    final vil = '${voter['village'] ?? ''}'.trim();
+
+    return Container(
+      color: Colors.white,
+      padding: const EdgeInsets.all(10),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            decoration: BoxDecoration(
+              color: headerColor.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(6),
+            ),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    headerTitle,
+                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11, color: headerColor),
+                  ),
+                ),
+                Text(
+                  epicValue.isNotEmpty ? epicValue : '-',
+                  style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 11, color: navy),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 8),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                decoration: BoxDecoration(
+                  color: headerColor.withOpacity(0.12),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: headerColor.withOpacity(0.3)),
+                ),
+                child: Column(
+                  children: [
+                    Text(serialBoxLabel, style: TextStyle(fontSize: 9.5, fontWeight: FontWeight.bold, color: headerColor)),
+                    const SizedBox(height: 2),
+                    Text(serialBoxValue, style: TextStyle(fontSize: 16, fontWeight: FontWeight.w900, color: headerColor)),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('नाम: $name', style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 13, color: navy)),
+                    const SizedBox(height: 3),
+                    Text('पिता/पति: $guardian', style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 11.5, color: Color(0xff334155))),
+                    const SizedBox(height: 3),
+                    Text('मकान नं.: $house  ·  आयु: $age  ·  लिंग: $gender', style: const TextStyle(fontSize: 11, color: muted)),
+                    if (vil.isNotEmpty || gp.isNotEmpty) ...[
+                      const SizedBox(height: 3),
+                      Text('स्थान: ${[vil, gp].where((s) => s.isNotEmpty).join(' · ')}', style: const TextStyle(fontSize: 10.5, color: muted)),
+                    ],
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -7814,13 +8110,77 @@ class _VoterCardImageSectionState extends State<_VoterCardImageSection> {
             : '${voter['ocrCardImage'] ?? voter['cardImage'] ?? ''}')
         .trim();
 
-    final hasWard = wardCard.isNotEmpty;
-    final hasAsm = asmCard.isNotEmpty && asmCard != wardCard;
+    final wardSerial = '${voter['wardVoterSerial'] ?? ''}'.trim();
+    final asmSerial = '${voter['voterSerial'] ?? ''}'.trim();
+    final partNo = '${voter['partNumber'] ?? ''}'.trim();
+    final rawWard = '${voter['wardNumber'] ?? ''}'.trim();
+    final epic = '${voter['voterId'] ?? ''}'.trim();
 
-    if (!hasWard && !hasAsm) return const SizedBox.shrink();
+    // Effective ward image path
+    final effectiveWardCard = wardCard.isNotEmpty
+        ? wardCard
+        : ((rawWard.isNotEmpty || wardSerial.isNotEmpty) ? '${voter['cardImage'] ?? ''}'.trim() : '');
 
-    final activePath = (_selectedTab == 0 && hasWard) ? wardCard : (hasAsm ? asmCard : wardCard);
-    final url = voterPhotoUrl(activePath);
+    // Effective assembly image path
+    final effectiveAsmCard = asmCard.isNotEmpty ? asmCard : '${voter['cardImage'] ?? ''}'.trim();
+
+    final hasAnyCard = effectiveWardCard.isNotEmpty || effectiveAsmCard.isNotEmpty || rawWard.isNotEmpty || partNo.isNotEmpty;
+    if (!hasAnyCard) return const SizedBox.shrink();
+
+    final wardBadge = 'वार्ड #${rawWard.isNotEmpty ? rawWard : '-'}${wardSerial.isNotEmpty ? ' • क्र. #$wardSerial' : ''}';
+    final asmBadge = 'भाग #${partNo.isNotEmpty ? partNo : '-'}${asmSerial.isNotEmpty ? ' • क्र. #$asmSerial' : ''}';
+
+    final wardFooter = [
+      if (rawWard.isNotEmpty) 'वार्ड: $rawWard',
+      if (wardSerial.isNotEmpty) 'मतदाता क्र.: $wardSerial',
+      if ('${voter['gramPanchayat'] ?? ''}'.trim().isNotEmpty) 'पं.: ${voter['gramPanchayat']}',
+      if ('${voter['village'] ?? ''}'.trim().isNotEmpty) 'गाँव: ${voter['village']}',
+    ];
+
+    final asmFooter = [
+      if (partNo.isNotEmpty) 'भाग नं.: $partNo',
+      if (asmSerial.isNotEmpty) 'वि.स. क्र.: $asmSerial',
+      if (epic.isNotEmpty) 'EPIC: $epic',
+      if ('${voter['sectionName'] ?? ''}'.trim().isNotEmpty) 'अनुभाग: ${voter['sectionName']}',
+    ];
+
+    final wardCardWidget = _buildSingleCardBox(
+      context: context,
+      title: 'वार्ड मतदाता पर्ची 🗳️',
+      badgeText: wardBadge,
+      badgeBg: const Color(0xff059669),
+      badgeColor: const Color(0xff059669),
+      cardPath: effectiveWardCard,
+      icon: Icons.how_to_reg_rounded,
+      footerDetails: wardFooter,
+      digitalFallback: _buildDigitalSlipView(
+        headerTitle: 'राज्य निर्वाचन आयोग राजस्थान | वार्ड पर्ची',
+        headerColor: const Color(0xff059669),
+        serialBoxLabel: 'वार्ड क्रमांक',
+        serialBoxValue: wardSerial.isNotEmpty ? wardSerial : '-',
+        epicValue: epic,
+        voter: voter,
+      ),
+    );
+
+    final asmCardWidget = _buildSingleCardBox(
+      context: context,
+      title: 'विधानसभा मतदाता पर्ची 🏛️',
+      badgeText: asmBadge,
+      badgeBg: const Color(0xff2563eb),
+      badgeColor: const Color(0xff2563eb),
+      cardPath: effectiveAsmCard,
+      icon: Icons.account_balance_rounded,
+      footerDetails: asmFooter,
+      digitalFallback: _buildDigitalSlipView(
+        headerTitle: 'भारत निर्वाचन आयोग | विधानसभा पर्ची',
+        headerColor: const Color(0xff2563eb),
+        serialBoxLabel: 'वि.स. क्रमांक',
+        serialBoxValue: asmSerial.isNotEmpty ? asmSerial : '-',
+        epicValue: epic,
+        voter: voter,
+      ),
+    );
 
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
@@ -7839,17 +8199,20 @@ class _VoterCardImageSectionState extends State<_VoterCardImageSection> {
               const SizedBox(width: 8),
               const Expanded(
                 child: Text(
-                  'मतदाता कार्ड पर्ची (Voter Card)',
-                  style: TextStyle(fontWeight: FontWeight.w900, color: navy, fontSize: 15),
+                  'मतदाता कार्ड पर्ची (Voter Cards)',
+                  style: TextStyle(fontWeight: FontWeight.w900, color: navy, fontSize: 14.5),
                 ),
               ),
-              if (hasWard && hasAsm)
-                Row(
+              SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     ChoiceChip(
                       label: const Text('वार्ड पर्ची', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
                       selected: _selectedTab == 0,
+                      selectedColor: const Color(0xff059669),
+                      labelStyle: TextStyle(color: _selectedTab == 0 ? Colors.white : const Color(0xff065f46)),
                       onSelected: (val) => setState(() => _selectedTab = 0),
                       visualDensity: VisualDensity.compact,
                       materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
@@ -7858,110 +8221,57 @@ class _VoterCardImageSectionState extends State<_VoterCardImageSection> {
                     ChoiceChip(
                       label: const Text('विधानसभा', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
                       selected: _selectedTab == 1,
+                      selectedColor: const Color(0xff2563eb),
+                      labelStyle: TextStyle(color: _selectedTab == 1 ? Colors.white : const Color(0xff1e3a8a)),
                       onSelected: (val) => setState(() => _selectedTab = 1),
+                      visualDensity: VisualDensity.compact,
+                      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    ),
+                    const SizedBox(width: 4),
+                    ChoiceChip(
+                      label: const Text('दोनों कार्ड 👥', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+                      selected: _selectedTab == 2,
+                      selectedColor: const Color(0xff7c3aed),
+                      labelStyle: TextStyle(color: _selectedTab == 2 ? Colors.white : const Color(0xff5b21b6)),
+                      onSelected: (val) => setState(() => _selectedTab = 2),
                       visualDensity: VisualDensity.compact,
                       materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
                     ),
                   ],
                 ),
+              ),
             ],
           ),
-          const SizedBox(height: 10),
-          GestureDetector(
-            onTap: () {
-              if (url.isNotEmpty) {
-                showDialog<void>(
-                  context: context,
-                  builder: (ctx) => Dialog(
-                    backgroundColor: Colors.transparent,
-                    insetPadding: const EdgeInsets.all(12),
-                    child: Stack(
-                      alignment: Alignment.topRight,
-                      children: [
-                        ClipRRect(
-                          borderRadius: BorderRadius.circular(16),
-                          child: Container(
-                            color: Colors.black87,
-                            padding: const EdgeInsets.all(8),
-                            child: InteractiveViewer(
-                              minScale: 0.8,
-                              maxScale: 6.0,
-                              child: Center(
-                                child: Image.network(
-                                  url,
-                                  headers: voterPhotoHeaders(url),
-                                  fit: BoxFit.contain,
-                                  errorBuilder: (_, __, ___) => const Center(
-                                    child: Text('कार्ड इमेज लोड नहीं हो सकी',
-                                        style: TextStyle(color: Colors.white70, fontSize: 14)),
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ),
-                        ),
-                        Padding(
-                          padding: const EdgeInsets.all(8.0),
-                          child: CircleAvatar(
-                            backgroundColor: Colors.black54,
-                            child: IconButton(
-                              icon: const Icon(Icons.close, color: Colors.white),
-                              onPressed: () => Navigator.pop(ctx),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                );
-              }
-            },
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(8),
-              child: Container(
-                color: const Color(0xfff8fafc),
-                height: 220,
-                width: double.infinity,
-                child: Stack(
-                  alignment: Alignment.bottomRight,
-                  children: [
-                    InteractiveViewer(
-                      minScale: 1,
-                      maxScale: 5,
-                      child: Center(
-                        child: Image.network(
-                          url,
-                          headers: voterPhotoHeaders(url),
-                          fit: BoxFit.contain,
-                          alignment: Alignment.center,
-                          errorBuilder: (_, __, ___) => const Center(
-                            child: Text('कार्ड इमेज लोड नहीं हो सकी',
-                                style: TextStyle(color: muted, fontSize: 12)),
-                          ),
-                        ),
-                      ),
-                    ),
-                    Container(
-                      margin: const EdgeInsets.all(8),
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: Colors.black54,
-                        borderRadius: BorderRadius.circular(6),
-                      ),
-                      child: const Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(Icons.zoom_in, color: Colors.white, size: 14),
-                          SizedBox(width: 4),
-                          Text('ज़ूम हेतु टैप करें', style: TextStyle(color: Colors.white, fontSize: 11)),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
+          const SizedBox(height: 12),
+
+          // Display selected card(s)
+          if (_selectedTab == 0)
+            wardCardWidget
+          else if (_selectedTab == 1)
+            asmCardWidget
+          else
+            LayoutBuilder(
+              builder: (ctx, constraints) {
+                if (constraints.maxWidth >= 600) {
+                  return Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(child: wardCardWidget),
+                      const SizedBox(width: 12),
+                      Expanded(child: asmCardWidget),
+                    ],
+                  );
+                } else {
+                  return Column(
+                    children: [
+                      wardCardWidget,
+                      const SizedBox(height: 12),
+                      asmCardWidget,
+                    ],
+                  );
+                }
+              },
             ),
-          ),
         ],
       ),
     );
@@ -8330,16 +8640,21 @@ class _VoterDetailPageState extends State<VoterDetailPage> {
                 title: displayVoterId,
                 subtitle: 'EPIC नंबर'),
             _ProfileInfoRow(
+                icon: Icons.how_to_reg_rounded,
+                title: (municipalWards.isNotEmpty ? municipalWards : ('${voter['wardNumber'] ?? ''}'.trim().isNotEmpty ? '${voter['wardNumber']}'.trim() : '-')) == '-'
+                    ? 'वार्ड अनुपलब्ध'
+                    : 'वार्ड #${municipalWards.isNotEmpty ? municipalWards : voter['wardNumber']}${('${voter['wardVoterSerial'] ?? ''}'.trim().isNotEmpty) ? '  ·  मतदाता क्रमांक #${voter['wardVoterSerial']}' : ''}',
+                subtitle: 'वार्ड विवरण (वार्ड संख्या व क्रमांक)'),
+            _ProfileInfoRow(
+                icon: Icons.account_balance_rounded,
+                title: '${voter['partNumber'] ?? ''}'.trim().isEmpty
+                    ? 'भाग अनुपलब्ध'
+                    : 'भाग #${voter['partNumber']}${('${voter['voterSerial'] ?? ''}'.trim().isNotEmpty) ? '  ·  मतदाता क्रमांक #${voter['voterSerial']}' : ''}',
+                subtitle: 'विधानसभा विवरण (भाग व क्रमांक)'),
+            _ProfileInfoRow(
                 icon: Icons.how_to_vote_outlined,
                 title: rollStatus,
                 subtitle: 'नामावली स्थिति'),
-            if (hasMunicipal)
-              _ProfileInfoRow(
-                  icon: Icons.location_city_outlined,
-                  title: municipalWards.isEmpty
-                      ? 'वार्ड संख्या अनुपलब्ध'
-                      : 'वार्ड $municipalWards',
-                  subtitle: 'वार्ड सदस्यता'),
             _ProfileInfoRow(
                 icon: Icons.location_on_rounded,
                 title: place.isEmpty ? '${voter['address'] ?? '-'}' : place,
