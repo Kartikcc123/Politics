@@ -304,12 +304,19 @@ class _ConfigurablePrintPageState extends State<ConfigurablePrintPage> {
     } else if (scopeType == 'specific_ward' && selectedWard != null && selectedWard!.isNotEmpty) {
       if (selectedGramPanchayat != null) params['gramPanchayat'] = selectedGramPanchayat!;
       params['wardNumber'] = selectedWard!;
+      params['scope'] = 'specific_ward';
+      params['electoralListType'] = 'municipal';
+      params['sortBy'] = 'wardVoterSerial';
       params['title'] = '${selectedGramPanchayat ?? selectedSamiti} - वार्ड $selectedWard मतदाता सूची';
     } else if (scopeType == 'specific_part' && selectedPart != null && selectedPart!.isNotEmpty) {
       params['partNumber'] = selectedPart!;
+      params['scope'] = 'specific_part';
       params['title'] = 'भाग #$selectedPart ${selectedGramPanchayat != null ? "($selectedGramPanchayat)" : ""} मतदाता सूची';
     } else {
       if (selectedGramPanchayat != null) params['gramPanchayat'] = selectedGramPanchayat!;
+      params['scope'] = 'all_wards';
+      params['electoralListType'] = 'municipal';
+      params['sortBy'] = 'wardVoterSerial';
       params['title'] = '$selectedGramPanchayat संपूर्ण पंचायत मतदाता सूची';
     }
 

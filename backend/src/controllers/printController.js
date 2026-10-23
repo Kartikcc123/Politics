@@ -406,7 +406,11 @@ exports.printMembers = async (req, res, next) => {
     const limit = Math.min(Math.max(Number(params.limit) || 10000, 1), 10000);
     const isWardPrint = Boolean(
       params.wardNumber ||
+      params.gramPanchayat ||
+      params.panchayat ||
       params.scope === 'specific_ward' ||
+      params.scope === 'all_wards' ||
+      params.scope === 'all_gp' ||
       params.electoralListType === 'municipal' ||
       params.sortBy === 'wardVoterSerial' ||
       params.rollType === 'municipal' ||
@@ -427,28 +431,48 @@ exports.printMembers = async (req, res, next) => {
     };
 
     if (isWardPrint) {
-      // Sort strictly by Ward Serial Number 1, 2, 3, 4, 5...
+      // Sort strictly by Ward Number (1, 2, 3...) then Ward Voter Serial (1, 2, 3...)
       members.sort((a, b) => {
+        // Members with municipal/ward membership come first
+        const hasMA = a.hasMunicipalMembership ? 1 : 0;
+        const hasMB = b.hasMunicipalMembership ? 1 : 0;
+        if (hasMA !== hasMB) return hasMB - hasMA;
+
+        // Ward Number (1, 2, 3, ...)
+        const wA = parseNum(a.wardNumber || (Array.isArray(a.municipalWardNumbers) && a.municipalWardNumbers[0]));
+        const wB = parseNum(b.wardNumber || (Array.isArray(b.municipalWardNumbers) && b.municipalWardNumbers[0]));
+        if (wA !== wB) return wA - wB;
+
+        // Ward Voter Serial Number 1, 2, 3...
         const sA = parseNum(a.wardVoterSerial);
         const sB = parseNum(b.wardVoterSerial);
         if (sA !== sB) return sA - sB;
+
+        // Assembly Serial fallback
         const vA = parseNum(a.voterSerial);
         const vB = parseNum(b.voterSerial);
         if (vA !== vB) return vA - vB;
+
         const hA = parseNum(a.houseNumber);
         const hB = parseNum(b.houseNumber);
         if (hA !== hB) return hA - hB;
         return (a.name || '').localeCompare(b.name || '', 'hi');
       });
     } else {
-      // Sort strictly by Vidhan Sabha Serial Number 1, 2, 3, 4, 5...
+      // Sort strictly by Part/Booth Number then Vidhan Sabha Serial Number 1, 2, 3, 4, 5...
       members.sort((a, b) => {
+        const pA = parseNum(a.partNumber);
+        const pB = parseNum(b.partNumber);
+        if (pA !== pB) return pA - pB;
+
         const sA = parseNum(a.voterSerial);
         const sB = parseNum(b.voterSerial);
         if (sA !== sB) return sA - sB;
+
         const wA = parseNum(a.wardVoterSerial);
         const wB = parseNum(b.wardVoterSerial);
         if (wA !== wB) return wA - wB;
+
         const hA = parseNum(a.houseNumber);
         const hB = parseNum(b.houseNumber);
         if (hA !== hB) return hA - hB;
@@ -666,8 +690,16 @@ exports.printMembers = async (req, res, next) => {
       // Box 4: Polling Station & Address Details
       doc.roundedRect(margin + 15, coverY, usableWidth - 30, 75, 6).fillOpacity(0.03).fillAndStroke('#16a34a', '#bbf7d0').fillOpacity(1);
       doc.font('HindiBold').fontSize(11).fillColor('#15803d').text('4. मतदान केंद्र भवन व संपर्क विवरण (Polling Station Details):', margin + 25, coverY + 8);
-      doc.font('Hindi').fontSize(9.5).fillColor('#1f2937');
-      doc.text(`मतदान केंद्र भवन: ${sampleMember.sectionName || sampleMember.partName || (uniqueGps ? `राजकीय विद्यालय, ${uniqueGps}` : 'राजकीय उच्च प्राथमिक विद्यालय')}`, margin + 35, coverY + 28);
+      let coverBoothName = '';
+      if (params.pollingStation && params.pollingStation.trim()) {
+        coverBoothName = params.pollingStation.trim();
+      } else if (isWardPrint || uniqueGps) {
+        coverBoothName = `राजकीय उच्च माध्यमिक विद्यालय, ${uniqueGps || sampleMember.gramPanchayat || 'ग्राम पंचायत भवन'}`;
+      } else {
+        const cleanPartName = (sampleMember.partName || '').replace(/^भाग\s*सं(?:ख्या)?\.?\s*\d+\s*[-:]?\s*/i, '').trim();
+        coverBoothName = cleanPartName || 'राजकीय उच्च माध्यमिक विद्यालय';
+      }
+      doc.text(`मतदान केंद्र भवन: ${coverBoothName}`, margin + 35, coverY + 28);
       doc.text(`थाना / डाकघर: ${sampleMember.policeStation || 'रायपुर'} / ${sampleMember.postOffice || 'रायपुर'}  |  पिन कोड: ${sampleMember.pinCode || '311803'}`, margin + 35, coverY + 48);
 
       doc.addPage();
@@ -866,7 +898,7 @@ exports.printMembers = async (req, res, next) => {
         doc.roundedRect(col1X + 40, contentY, epicBoxW, 17, 2).lineWidth(0.8).strokeColor('#334155').fillColor('#f8fafc').fillAndStroke();
         doc.font('HindiBold').fontSize(10.5).fillColor('#0f172a').text(m.voterId || '-', col1X + 40, contentY + 3, { width: epicBoxW, align: 'center' });
 
-        // Voter Lines (Large, Bold, High-Contrast Typography)
+        // Voter Lines (Large, Bold, High-Contrast Uniform Typography)
         let voterLineY = contentY + 21;
         const name = ((m.name || '') + ' ' + (m.surname || '')).trim() || '-';
         const guardian = m.guardianName || m.relativeName || '-';
@@ -876,25 +908,25 @@ exports.printMembers = async (req, res, next) => {
         const age = m.age ? String(m.age) : '-';
 
         // Voter Name: Extra Bold, 11.5pt
-        doc.font('Hindi').fontSize(9.5).fillColor('#334155').text('नाम: ', col1X, voterLineY, { continued: true });
+        doc.font('HindiBold').fontSize(9.5).fillColor('#1e293b').text('नाम: ', col1X, voterLineY, { continued: true });
         doc.font('HindiBold').fontSize(11.5).fillColor('#000000').text(name, { lineBreak: false });
         voterLineY += 13.5;
 
-        // Guardian: 9.5pt
-        doc.font('Hindi').fontSize(9.0).fillColor('#334155').text(`${relationLabel}: `, col1X, voterLineY, { continued: true });
-        doc.font('HindiBold').fontSize(9.5).fillColor('#0f172a').text(guardian, { lineBreak: false });
+        // Guardian: 9.8pt
+        doc.font('HindiBold').fontSize(9.2).fillColor('#1e293b').text(`${relationLabel}: `, col1X, voterLineY, { continued: true });
+        doc.font('HindiBold').fontSize(9.8).fillColor('#000000').text(guardian, { lineBreak: false });
         voterLineY += 12.5;
 
-        // House: 9.5pt
-        doc.font('Hindi').fontSize(9.0).fillColor('#334155').text('मकान संख्या: ', col1X, voterLineY, { continued: true });
-        doc.font('HindiBold').fontSize(9.5).fillColor('#0f172a').text(house, { lineBreak: false });
+        // House: 9.8pt
+        doc.font('HindiBold').fontSize(9.2).fillColor('#1e293b').text('मकान संख्या: ', col1X, voterLineY, { continued: true });
+        doc.font('HindiBold').fontSize(9.8).fillColor('#000000').text(house, { lineBreak: false });
         voterLineY += 12.5;
 
-        // Age & Gender: 9.5pt
-        doc.font('Hindi').fontSize(9.0).fillColor('#334155').text('आयु: ', col1X, voterLineY, { continued: true });
-        doc.font('HindiBold').fontSize(9.5).fillColor('#0f172a').text(`${age}   `, { continued: true });
-        doc.font('Hindi').fontSize(9.0).fillColor('#334155').text('लिंग: ', { continued: true });
-        doc.font('HindiBold').fontSize(9.5).fillColor('#0f172a').text(gender, { lineBreak: false });
+        // Age & Gender: 9.8pt
+        doc.font('HindiBold').fontSize(9.2).fillColor('#1e293b').text('आयु: ', col1X, voterLineY, { continued: true });
+        doc.font('HindiBold').fontSize(9.8).fillColor('#000000').text(`${age}   `, { continued: true });
+        doc.font('HindiBold').fontSize(9.2).fillColor('#1e293b').text('लिंग: ', { continued: true });
+        doc.font('HindiBold').fontSize(9.8).fillColor('#000000').text(gender, { lineBreak: false });
 
         // Optional Mobile
         if (m.mobile) {
@@ -915,10 +947,10 @@ exports.printMembers = async (req, res, next) => {
             try {
               doc.image(voterImg, photoBoxX, photoBoxY, { fit: [photoBoxW, photoBoxH], align: 'center', valign: 'center' });
             } catch (_) {
-              doc.font('Hindi').fontSize(6.5).fillColor('#94a3b8').text('फोटो', photoBoxX, photoBoxY + photoBoxH / 2 - 4, { width: photoBoxW, align: 'center' });
+              doc.font('HindiBold').fontSize(6.5).fillColor('#94a3b8').text('फोटो', photoBoxX, photoBoxY + photoBoxH / 2 - 4, { width: photoBoxW, align: 'center' });
             }
           } else {
-            doc.font('Hindi').fontSize(6.5).fillColor('#94a3b8').text('फोटो', photoBoxX, photoBoxY + photoBoxH / 2 - 4, { width: photoBoxW, align: 'center' });
+            doc.font('HindiBold').fontSize(6.5).fillColor('#94a3b8').text('फोटो', photoBoxX, photoBoxY + photoBoxH / 2 - 4, { width: photoBoxW, align: 'center' });
           }
         }
 
@@ -938,9 +970,25 @@ exports.printMembers = async (req, res, next) => {
         // POLLING STATION LABEL
         doc.font('HindiBold').fontSize(8.2).fillColor('#ffffff').text('मतदान केंद्र', col3X + 2, contentY + 41, { width: col3W - 4, align: 'center' });
 
-        // Polling Station Building Name
-        const boothDesc = params.pollingStation || m.sectionName || m.partName || (m.gramPanchayat ? `राजकीय विद्यालय, ${m.gramPanchayat}` : 'मतदान केंद्र');
-        doc.font('Hindi').fontSize(6.8).fillColor('#ffffff').text(boothDesc, col3X + 2, contentY + 53, { width: col3W - 4, align: 'center', height: 38, lineBreak: true });
+        // Polling Station Building Name (Never use sectionName/mohalla)
+        let boothDesc = '';
+        if (params.pollingStation && params.pollingStation.trim()) {
+          boothDesc = params.pollingStation.trim();
+        } else if (isWardPrint) {
+          const gpName = m.gramPanchayat || params.gramPanchayat || sampleMember.gramPanchayat || '';
+          const vilName = (m.village && m.village !== gpName) ? m.village : '';
+          if (vilName && vilName !== 'गाँव उपलब्ध नहीं') {
+            boothDesc = `राजकीय विद्यालय, ${vilName}`;
+          } else if (gpName) {
+            boothDesc = `राजकीय उच्च माध्यमिक विद्यालय, ${gpName}`;
+          } else {
+            boothDesc = 'ग्राम पंचायत भवन';
+          }
+        } else {
+          const cleanPartName = (m.partName || '').replace(/^भाग\s*सं(?:ख्या)?\.?\s*\d+\s*[-:]?\s*/i, '').trim();
+          boothDesc = cleanPartName || (m.gramPanchayat ? `राजकीय विद्यालय, ${m.gramPanchayat}` : 'मतदान केंद्र');
+        }
+        doc.font('HindiBold').fontSize(7.2).fillColor('#ffffff').text(boothDesc, col3X + 2, contentY + 52, { width: col3W - 4, align: 'center', height: 38, lineBreak: true });
 
         // 4. BOTTOM RED FOOTER STRIP
         const footerH = 16;
@@ -978,47 +1026,47 @@ exports.printMembers = async (req, res, next) => {
         // Dynamic Photo sizing to fill card height proportionally
         let photoW = 0;
         if (includePhoto) {
-          const availPhotoH = cardHeight - headerH - 8;
+          const availPhotoH = cardHeight - headerH - 6;
           if (columns <= 2) {
-            photoW = Math.min(48, Math.max(36, cardWidth * 0.185));
-            const photoH = Math.min(availPhotoH, Math.round(photoW * 1.3));
+            photoW = Math.min(58, Math.max(44, Math.round(cardWidth * 0.22)));
+            const photoH = Math.min(availPhotoH, Math.round(photoW * 1.28));
             const photoX = x + cardWidth - photoW - 5;
-            const photoY = y + headerH + 4;
+            const photoY = y + headerH + Math.max(2, Math.round((cardHeight - headerH - photoH) / 2));
 
             const img = getPhotoSource(m);
-            doc.roundedRect(photoX, photoY, photoW, photoH, 2).lineWidth(0.5).strokeColor('#94a3b8').stroke();
+            doc.roundedRect(photoX, photoY, photoW, photoH, 2).lineWidth(0.6).strokeColor('#64748b').stroke();
             if (img) {
               try {
                 doc.image(img, photoX, photoY, { fit: [photoW, photoH], align: 'center', valign: 'center' });
               } catch (_) {
-                doc.font('Hindi').fontSize(6).fillColor('#94a3b8').text('Photo', photoX, photoY + (photoH / 2) - 4, { width: photoW, align: 'center' });
+                doc.font('HindiBold').fontSize(6.5).fillColor('#94a3b8').text('फोटो', photoX, photoY + (photoH / 2) - 4, { width: photoW, align: 'center' });
               }
             } else {
-              doc.font('Hindi').fontSize(6).fillColor('#94a3b8').text('Photo', photoX, photoY + (photoH / 2) - 4, { width: photoW, align: 'center' });
+              doc.font('HindiBold').fontSize(6.5).fillColor('#94a3b8').text('फोटो', photoX, photoY + (photoH / 2) - 4, { width: photoW, align: 'center' });
             }
           } else {
-            photoW = Math.min(36, Math.max(26, cardWidth * 0.21));
-            const photoH = Math.min(availPhotoH, Math.round(photoW * 1.3));
+            photoW = Math.min(38, Math.max(28, Math.round(cardWidth * 0.22)));
+            const photoH = Math.min(availPhotoH, Math.round(photoW * 1.28));
             const photoX = x + cardWidth - photoW - 4;
-            const photoY = y + headerH + 3;
+            const photoY = y + headerH + Math.max(2, Math.round((cardHeight - headerH - photoH) / 2));
 
             const img = getPhotoSource(m);
-            doc.roundedRect(photoX, photoY, photoW, photoH, 2).lineWidth(0.5).strokeColor('#94a3b8').stroke();
+            doc.roundedRect(photoX, photoY, photoW, photoH, 0.5).lineWidth(0.5).strokeColor('#94a3b8').stroke();
             if (img) {
               try {
                 doc.image(img, photoX, photoY, { fit: [photoW, photoH], align: 'center', valign: 'center' });
               } catch (_) {
-                doc.font('Hindi').fontSize(5.5).fillColor('#94a3b8').text('Photo', photoX, photoY + (photoH / 2) - 3, { width: photoW, align: 'center' });
+                doc.font('HindiBold').fontSize(5.5).fillColor('#94a3b8').text('फोटो', photoX, photoY + (photoH / 2) - 3, { width: photoW, align: 'center' });
               }
             } else {
-              doc.font('Hindi').fontSize(5.5).fillColor('#94a3b8').text('Photo', photoX, photoY + (photoH / 2) - 3, { width: photoW, align: 'center' });
+              doc.font('HindiBold').fontSize(5.5).fillColor('#94a3b8').text('फोटो', photoX, photoY + (photoH / 2) - 3, { width: photoW, align: 'center' });
             }
           }
         }
 
-        // Text lines with dynamic typography filling the card
+        // Text lines with uniform bold typography filling the card
         const textX = x + (columns <= 2 ? 6 : 4);
-        const textW = cardWidth - (includePhoto ? photoW + (columns <= 2 ? 14 : 9) : (columns <= 2 ? 12 : 8));
+        const textW = cardWidth - (includePhoto ? photoW + (columns <= 2 ? 12 : 8) : (columns <= 2 ? 10 : 6));
         let textY = y + headerH + (cardHeight >= 85 ? 4.5 : 3);
 
         const name = ((m.name || '') + ' ' + (m.surname || '')).trim() || '-';
@@ -1027,74 +1075,73 @@ exports.printMembers = async (req, res, next) => {
         const gender = labels.gender[m.gender] ? (m.gender === 'male' ? 'पु.' : (m.gender === 'female' ? 'म.' : labels.gender[m.gender])) : (m.gender || '-');
         const age = m.age ? String(m.age) : '-';
 
+        let extraLine = '';
+        const castePart = m.caste ? (m.subCaste ? `${m.caste} (${m.subCaste})` : m.caste) : (m.subCaste || '');
+        if (castePart) extraLine += 'जाति: ' + castePart;
+        const wardStr = m.wardNumber ? `वार्ड ${m.wardNumber}` : '';
+        const locParts = [m.village, wardStr].filter(Boolean);
+        if (locParts.length) extraLine += (extraLine ? ' | ' : '') + locParts.join(' - ');
+
         if (columns <= 2) {
-          // 2-Column Layout (e.g. 16 or 20 per page): Large, bold, dark, perfectly filling the box
+          // 2-Column Layout (e.g. 16 or 20 per page): Large, uniform bold, dark, perfectly filling the box
           const isTall = cardHeight >= 85;
-          const nameSize = isTall ? 11.0 : 9.5;
-          const line1Step = isTall ? 14.0 : 12.0;
-          const detailSize = isTall ? 9.0 : 8.0;
-          const lineStep = isTall ? 12.8 : 11.0;
-          const subDetailSize = isTall ? 8.2 : 7.2;
+          const nameSize = isTall ? 10.5 : 9.5;
+          const line1Step = isTall ? 13.5 : 12.0;
+          const detailSize = isTall ? 8.8 : 8.0;
+          const lineStep = isTall ? 12.0 : 10.8;
+          const subDetailSize = isTall ? 8.0 : 7.2;
 
           // Line 1: Name
-          doc.font('HindiBold').fontSize(nameSize).fillColor('#090d16').text(name, textX, textY, { width: textW, lineBreak: false });
+          doc.font('HindiBold').fontSize(nameSize).fillColor('#000000').text(name, textX, textY, { width: textW, lineBreak: false });
           textY += line1Step;
 
           // Line 2: Guardian
-          doc.font('Hindi').fontSize(detailSize).fillColor('#1e293b').text('पिता/पति: ' + guardian, textX, textY, { width: textW, lineBreak: false });
+          doc.font('HindiBold').fontSize(detailSize).fillColor('#0f172a').text('पिता/पति: ' + guardian, textX, textY, { width: textW, lineBreak: false });
           textY += lineStep;
 
           // Line 3: House
-          doc.font('Hindi').fontSize(detailSize).fillColor('#1e293b').text('मकान सं.: ' + house, textX, textY, { width: textW, lineBreak: false });
+          doc.font('HindiBold').fontSize(detailSize).fillColor('#0f172a').text('मकान सं.: ' + house, textX, textY, { width: textW, lineBreak: false });
           textY += lineStep;
 
           // Line 4: Age, Gender, Mobile
-          let ageLine = 'उम्र: ' + age + '  लिंग: ' + gender;
-          if (m.mobile) ageLine += '   📱' + m.mobile;
-          doc.font('Hindi').fontSize(detailSize).fillColor('#1e293b').text(ageLine, textX, textY, { width: textW, lineBreak: false });
+          let ageLine = 'उम्र: ' + age + '  |  लिंग: ' + gender;
+          if (m.mobile) ageLine += '  |  मो.: ' + m.mobile;
+          doc.font('HindiBold').fontSize(detailSize).fillColor('#0f172a').text(ageLine, textX, textY, { width: textW, lineBreak: false });
           textY += lineStep;
 
-          // Line 5: Caste & Location
-          let extraLine = '';
-          if (m.caste) extraLine += 'जाति: ' + m.caste;
-          if (m.village) extraLine += (extraLine ? ' | ' : '') + m.village;
-          else if (m.wardNumber) extraLine += (extraLine ? ' | ' : '') + 'वार्ड ' + m.wardNumber;
+          // Line 5: Caste, SubCaste & Ward/Village
           if (extraLine) {
-            doc.font('Hindi').fontSize(subDetailSize).fillColor('#334155').text(extraLine, textX, textY, { width: textW, lineBreak: false });
+            doc.font('HindiBold').fontSize(subDetailSize).fillColor('#1e293b').text(extraLine, textX, textY, { width: textW, lineBreak: false });
           }
         } else {
-          // 3-Column Layout (e.g. 30 per page): Crisp, compact, filling height cleanly
-          const nameSize = cardHeight >= 70 ? 8.8 : 7.5;
-          const line1Step = cardHeight >= 70 ? 11.0 : 9.8;
-          const detailSize = cardHeight >= 70 ? 7.5 : 6.6;
-          const lineStep = cardHeight >= 70 ? 10.4 : 9.2;
+          // 3-Column Layout (e.g. 30 per page): Crisp, compact, uniform bold
+          const nameSize = cardHeight >= 70 ? 8.5 : 7.6;
+          const line1Step = cardHeight >= 70 ? 10.8 : 9.8;
+          const detailSize = cardHeight >= 70 ? 7.6 : 6.8;
+          const lineStep = cardHeight >= 70 ? 10.0 : 9.0;
           const subDetailSize = cardHeight >= 70 ? 6.8 : 6.0;
 
           // Line 1: Name
-          doc.font('HindiBold').fontSize(nameSize).fillColor('#090d16').text(name, textX, textY, { width: textW, lineBreak: false });
+          doc.font('HindiBold').fontSize(nameSize).fillColor('#000000').text(name, textX, textY, { width: textW, lineBreak: false });
           textY += line1Step;
 
           // Line 2: Guardian
-          doc.font('Hindi').fontSize(detailSize).fillColor('#1e293b').text('पिता/पति: ' + guardian, textX, textY, { width: textW, lineBreak: false });
+          doc.font('HindiBold').fontSize(detailSize).fillColor('#0f172a').text('पिता/पति: ' + guardian, textX, textY, { width: textW, lineBreak: false });
           textY += lineStep;
 
           // Line 3: House
-          doc.font('Hindi').fontSize(detailSize).fillColor('#1e293b').text('मकान सं.: ' + house, textX, textY, { width: textW, lineBreak: false });
+          doc.font('HindiBold').fontSize(detailSize).fillColor('#0f172a').text('मकान सं.: ' + house, textX, textY, { width: textW, lineBreak: false });
           textY += lineStep;
 
           // Line 4: Age & Gender
-          let ageLine = 'उम्र: ' + age + '  लिंग: ' + gender;
-          if (m.mobile) ageLine += '  📱' + m.mobile;
-          doc.font('Hindi').fontSize(detailSize).fillColor('#1e293b').text(ageLine, textX, textY, { width: textW, lineBreak: false });
+          let ageLine = 'उम्र: ' + age + '  |  लिंग: ' + gender;
+          if (m.mobile) ageLine += '  |  मो.: ' + m.mobile;
+          doc.font('HindiBold').fontSize(detailSize).fillColor('#0f172a').text(ageLine, textX, textY, { width: textW, lineBreak: false });
           textY += lineStep;
 
-          // Line 5: Caste & Location
-          let extraLine = '';
-          if (m.caste) extraLine += 'जाति: ' + m.caste;
-          if (m.village) extraLine += (extraLine ? ' | ' : '') + m.village;
-          else if (m.wardNumber) extraLine += (extraLine ? ' | ' : '') + 'वार्ड ' + m.wardNumber;
+          // Line 5: Caste, SubCaste & Ward/Village
           if (extraLine && cardHeight >= 66) {
-            doc.font('Hindi').fontSize(subDetailSize).fillColor('#334155').text(extraLine, textX, textY, { width: textW, lineBreak: false });
+            doc.font('HindiBold').fontSize(subDetailSize).fillColor('#1e293b').text(extraLine, textX, textY, { width: textW, lineBreak: false });
           }
         }
       }

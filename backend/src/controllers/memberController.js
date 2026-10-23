@@ -575,9 +575,9 @@ exports.list = async (req, res, next) => {
       if (hasSpecificWard) {
         sortObj = { wardVoterSerial: 1, voterSerial: 1, name: 1 };
       } else if (gramPanchayat) {
-        sortObj = { wardNumber: 1, wardVoterSerial: 1, voterSerial: 1, name: 1 };
+        sortObj = { hasMunicipalMembership: -1, wardNumber: 1, wardVoterSerial: 1, voterSerial: 1, name: 1 };
       } else if (isWardScope) {
-        sortObj = { wardVoterSerial: 1, voterSerial: 1, name: 1 };
+        sortObj = { hasMunicipalMembership: -1, wardNumber: 1, wardVoterSerial: 1, voterSerial: 1, name: 1 };
       } else if (hasLocationScope) {
         sortObj = { voterSerial: 1, name: 1 };
       } else {
@@ -588,9 +588,9 @@ exports.list = async (req, res, next) => {
     } else if (hasSpecificWard) {
       sortObj = { wardVoterSerial: 1, voterSerial: 1, name: 1 };
     } else if (gramPanchayat) {
-      sortObj = { wardNumber: 1, wardVoterSerial: 1, voterSerial: 1, name: 1 };
+      sortObj = { hasMunicipalMembership: -1, wardNumber: 1, wardVoterSerial: 1, voterSerial: 1, name: 1 };
     } else if (isWardScope) {
-      sortObj = { wardVoterSerial: 1, voterSerial: 1, name: 1 };
+      sortObj = { hasMunicipalMembership: -1, wardNumber: 1, wardVoterSerial: 1, voterSerial: 1, name: 1 };
     } else if (hasLocationScope) {
       sortObj = { voterSerial: 1, name: 1 };
     }

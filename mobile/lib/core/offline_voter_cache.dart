@@ -423,9 +423,24 @@ class OfflineVoterCache {
       return true;
     }).toList();
 
+    final hasWardSort = (query['gramPanchayat'] ?? '').isNotEmpty ||
+        (query['municipalWard'] ?? '').isNotEmpty ||
+        (query['wardNumber'] ?? '').isNotEmpty ||
+        (query['panchayatSamitiWard'] ?? '').isNotEmpty ||
+        (query['samitiWard'] ?? '').isNotEmpty ||
+        (query['rollType'] == 'municipal' || query['rollType'] == 'ward');
+
     filtered.sort((a, b) {
       final mapA = a is Map ? a : {};
       final mapB = b is Map ? b : {};
+      if (hasWardSort) {
+        final wA = _parseSerial(mapA['wardNumber']);
+        final wB = _parseSerial(mapB['wardNumber']);
+        if (wA != wB) return wA.compareTo(wB);
+        final wsA = _parseSerial(mapA['wardVoterSerial']);
+        final wsB = _parseSerial(mapB['wardVoterSerial']);
+        if (wsA != wsB) return wsA.compareTo(wsB);
+      }
       final sA = _parseSerial(mapA['voterSerial']);
       final sB = _parseSerial(mapB['voterSerial']);
       if (sA != sB) return sA.compareTo(sB);
