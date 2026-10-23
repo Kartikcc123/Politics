@@ -419,10 +419,19 @@ exports.printMembers = async (req, res, next) => {
       (Array.isArray(req.currentUser?.assignedWards) && req.currentUser.assignedWards.length > 0)
     );
 
-    const members = await Member.find(filter)
+    const sortObj = isWardPrint
+      ? { wardNumber: 1, wardVoterSerial: 1, voterSerial: 1 }
+      : { partNumber: 1, voterSerial: 1, wardVoterSerial: 1 };
+
+    let membersQuery = Member.find(filter)
       .populate('booth ward')
-      .limit(limit)
-      .lean();
+      .collation({ locale: 'en_US', numericOrdering: true })
+      .sort(sortObj);
+
+    if (limit && limit < 10000) {
+      membersQuery = membersQuery.limit(limit);
+    }
+    const members = await membersQuery.lean();
 
     const parseNum = (v) => {
       if (v === null || v === undefined || v === '') return 99999999;
@@ -431,13 +440,8 @@ exports.printMembers = async (req, res, next) => {
     };
 
     if (isWardPrint) {
-      // Sort strictly by Ward Number (1, 2, 3...) then Ward Voter Serial (1, 2, 3...)
+      // Sort strictly by Ward Number (1, 2, 3...) then numeric Ward Voter Serial (1, 2, 3...)
       members.sort((a, b) => {
-        // Members with municipal/ward membership come first
-        const hasMA = a.hasMunicipalMembership ? 1 : 0;
-        const hasMB = b.hasMunicipalMembership ? 1 : 0;
-        if (hasMA !== hasMB) return hasMB - hasMA;
-
         // Ward Number (1, 2, 3, ...)
         const wA = parseNum(a.wardNumber || (Array.isArray(a.municipalWardNumbers) && a.municipalWardNumbers[0]));
         const wB = parseNum(b.wardNumber || (Array.isArray(b.municipalWardNumbers) && b.municipalWardNumbers[0]));
@@ -730,7 +734,7 @@ exports.printMembers = async (req, res, next) => {
         doc.roundedRect(x, y, cardWidth, cardHeight, 3).lineWidth(0.8).strokeColor('#334155').stroke();
 
         // 1. TOP SECTION: Campaign Banner
-        const bannerH = Math.min(130, Math.max(56, Math.round(cardHeight * 0.35)));
+        const bannerH = Math.min(130, Math.max(64, Math.round(cardHeight * 0.38)));
         if (bannerImageObj) {
           try {
             // Fill background white before placing banner image
@@ -757,7 +761,7 @@ exports.printMembers = async (req, res, next) => {
             doc.rect(x + 0.5, y + 0.5, cardWidth - 1, 3.5).fillColor('#f59e0b').fill();
             doc.moveTo(x + 2, y + bannerH).lineTo(x + cardWidth - 2, y + bannerH).lineWidth(0.6).strokeColor('#f59e0b').stroke();
 
-            const photoR = Math.min(26, Math.max(17, Math.round((bannerH - 14) / 2)));
+            const photoR = Math.min(27, Math.max(18, Math.round((bannerH - 16) / 2)));
             const photoCY = y + bannerH / 2;
 
             // Candidate Photo in Ornate Golden Circular Frame
@@ -825,13 +829,13 @@ exports.printMembers = async (req, res, next) => {
             const textRight = (leaderPhotoImageObj || symbolImageObj) ? (rightCX - photoR - 6) : (x + cardWidth - 8);
             const textWidth = Math.max(80, textRight - textLeft);
 
-            let curY = y + 3.5;
+            let curY = y + 4.0;
             if (postName || gpName) {
               if (gpName && postName) {
                 // Display in 2 clean, elegant lines
                 const line1 = `ग्राम पंचायत ${gpName} से`;
                 const line2 = `${postName} पद हेतु`;
-                let h1Size = 7.5;
+                let h1Size = 7.4;
                 doc.font('HindiBold').fontSize(h1Size);
                 while (h1Size > 6.0 && doc.widthOfString(line1) > textWidth) {
                   h1Size -= 0.3;
@@ -840,7 +844,7 @@ exports.printMembers = async (req, res, next) => {
                 doc.fillColor('#9a3412').text(line1, textLeft, curY, { width: textWidth, align: 'center', lineBreak: false });
                 curY += 9.5;
 
-                let h2Size = 8.0;
+                let h2Size = 7.8;
                 doc.font('HindiBold').fontSize(h2Size);
                 while (h2Size > 6.0 && doc.widthOfString(line2) > textWidth) {
                   h2Size -= 0.3;
@@ -861,15 +865,15 @@ exports.printMembers = async (req, res, next) => {
               }
             }
 
-            // Candidate Name: Dynamic Auto-Fit Font Size
-            let nameSize = 14.5;
+            // Candidate Name: Dynamic Auto-Fit Font Size with generous vertical separation
+            let nameSize = 13.0;
             doc.font('HindiBold').fontSize(nameSize);
-            while (nameSize > 9.5 && doc.widthOfString(candName) > textWidth) {
-              nameSize -= 0.5;
+            while (nameSize > 8.5 && doc.widthOfString(candName) > textWidth) {
+              nameSize -= 0.4;
               doc.fontSize(nameSize);
             }
             doc.fillColor('#1d4ed8').text(candName, textLeft, curY, { width: textWidth, align: 'center', lineBreak: false });
-            curY += nameSize + 2.5;
+            curY += nameSize + 8.5; // Generous 8.5pt buffer guarantees zero vowel/matra overlap with next line!
 
             // Optional Tagline: Auto-Fit Font Size
             if (candTagline) {
@@ -881,24 +885,24 @@ exports.printMembers = async (req, res, next) => {
                 doc.fontSize(tagSize);
               }
               doc.fillColor('#1e40af').text(tagFull, textLeft, curY, { width: textWidth, align: 'center', lineBreak: false });
-              curY += 9.0;
+              curY += 10.0;
             }
 
             // Appeal / Slogan
             const sloganText = candSlogan || 'को वोट देकर भारी मतों से विजयी बनावें।';
-            let slogSize = 7.8;
+            let slogSize = 7.4;
             doc.font('HindiBold').fontSize(slogSize);
             while (slogSize > 5.8 && doc.widthOfString(sloganText) > textWidth) {
               slogSize -= 0.3;
               doc.fontSize(slogSize);
             }
             doc.fillColor('#b91c1c').text(sloganText, textLeft, curY, { width: textWidth, align: 'center', lineBreak: false });
-            curY += 9.5;
+            curY += 10.5;
 
             // Mobile Number
             if (candPhone) {
               const phoneText = `मो. ${candPhone}`;
-              let phoneSize = 7.6;
+              let phoneSize = 7.2;
               doc.font('HindiBold').fontSize(phoneSize);
               while (phoneSize > 6.0 && doc.widthOfString(phoneText) > textWidth) {
                 phoneSize -= 0.4;
@@ -933,7 +937,7 @@ exports.printMembers = async (req, res, next) => {
         doc.font('Hindi').fontSize(5.6).fillColor('#475569').text(tearOffText, x, dividerY + 1.5, { width: cardWidth, align: 'center' });
 
         // 3. VOTER DATA AREA
-        const contentY = dividerY + 10;
+        const contentY = dividerY + 9.5;
         const contentH = cardHeight - bannerH - 12 - 16;
         const col1W = 136;
         const col2W = 54;
@@ -950,16 +954,17 @@ exports.printMembers = async (req, res, next) => {
         doc.roundedRect(col1X, contentY, 36, 17, 2).lineWidth(0.8).strokeColor('#2563eb').fillColor('#eff6ff').fillAndStroke();
         doc.font('HindiBold').fontSize(12).fillColor('#1e40af').text(serialNum, col1X, contentY + 2.5, { width: 36, align: 'center' });
 
-        // EPIC Box (Highlighted in Dark Slate, with clean synthetic ID detection & single-line guarantee)
-        const rawEpic = String(m.voterId || '').trim();
-        const isSynthetic = (rawEpic.startsWith('WARD') && rawEpic.includes('_')) || rawEpic.startsWith('REV-') || rawEpic.startsWith('DRAFT');
-        const displayEpic = isSynthetic ? (m.wardVoterSerial ? `वार्ड क्र. #${m.wardVoterSerial}` : '-') : (rawEpic || '-');
+        // EPIC Box (Highlighted in Dark Slate, showing actual official EPIC number)
+        const rawEpic = String(m.voterId || m.epic || '').trim();
+        const displayEpic = (rawEpic.startsWith('WARD_') || !rawEpic)
+          ? (m.assemblyVoterId && !m.assemblyVoterId.startsWith('WARD_') ? m.assemblyVoterId : '-')
+          : rawEpic;
 
         const epicBoxW = col1W - 40;
-        let epicFontSize = 10.5;
+        let epicFontSize = 10.0;
         doc.font('HindiBold').fontSize(epicFontSize);
-        while (epicFontSize > 7.0 && doc.widthOfString(displayEpic) > (epicBoxW - 6)) {
-          epicFontSize -= 0.5;
+        while (epicFontSize > 6.5 && doc.widthOfString(displayEpic) > (epicBoxW - 6)) {
+          epicFontSize -= 0.4;
           doc.fontSize(epicFontSize);
         }
         doc.roundedRect(col1X + 40, contentY, epicBoxW, 17, 2).lineWidth(0.8).strokeColor('#334155').fillColor('#f8fafc').fillAndStroke();
