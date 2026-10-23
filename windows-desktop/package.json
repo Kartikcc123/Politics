@@ -1,0 +1,16 @@
+{
+  "name": "politics-crm-windows",
+  "version": "1.0.0",
+  "description": "Politics CRM Windows Desktop Application",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "build": "electron-packager . \"Politics CRM\" --platform=win32 --arch=x64 --out=dist --overwrite"
+  },
+  "author": "Politics Team",
+  "license": "ISC",
+  "devDependencies": {
+    "electron": "^41.7.1",
+    "electron-packager": "^17.1.2"
+  }
+}
