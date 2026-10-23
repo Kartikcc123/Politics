@@ -1102,8 +1102,13 @@ class _SamitiHierarchyPageState extends State<SamitiHierarchyPage> {
   // ============================================================================
   Widget _buildSamitiWardsTab() {
     // 1. Get Samiti data from liveHierarchyData or fallback to officialSamitiWardsData
-    final samitiWardsAll = (liveHierarchyData?['samitiWards'] as Map<String, dynamic>?) ?? officialSamitiWardsData;
-    final currentSamitiData = (samitiWardsAll[selectedSamitiForWards] as Map<String, dynamic>?) ?? {};
+    final rawSamitiWards = liveHierarchyData?['samitiWards'] as Map<String, dynamic>?;
+    final samitiWardsAll = (rawSamitiWards != null && rawSamitiWards.isNotEmpty)
+        ? rawSamitiWards
+        : officialSamitiWardsData;
+    final currentSamitiData = (samitiWardsAll[selectedSamitiForWards] as Map<String, dynamic>?) ??
+        (officialSamitiWardsData[selectedSamitiForWards] as Map<String, dynamic>?) ??
+        {};
     final wardsMap = (currentSamitiData['wards'] as Map<String, dynamic>?) ?? {};
 
     // Sort ward keys numerically
