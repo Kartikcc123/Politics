@@ -992,11 +992,11 @@ class _VoterManagementPageState extends State<VoterManagementPage>
           ),
         );
       } else {
-        final savedPath = await saveBytes(fallbackFilename, Uint8List.fromList(bytes));
-        if (savedPath != null && mounted) {
+        await saveBytes(fallbackFilename, Uint8List.fromList(bytes));
+        if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text('✅ एक्सेल फ़ाइल सुरक्षित हो गई: $fallbackFilename'),
+              content: Text('✅ एक्सेल फ़ाइल डाउनलोड हो गई: $fallbackFilename (${allMembers.length} मतदाता)'),
               backgroundColor: const Color(0xff16a34a),
             ),
           );
@@ -6864,6 +6864,8 @@ class _ExcelExportDialogState extends State<_ExcelExportDialog> {
     'organizationPost': {'label': 'संगठन पद (Post)', 'cat': 'विवरण'},
     'supportLevel': {'label': 'समर्थन स्तर (Support)', 'cat': 'राजनीतिक'},
     'partyPreference': {'label': 'पार्टी रुझान (Party)', 'cat': 'राजनीतिक'},
+    'isFavorite': {'label': 'पसंदीदा (⭐ Favorite)', 'cat': 'राजनीतिक'},
+    'favoriteRating': {'label': 'स्टार रेटिंग (Rating)', 'cat': 'राजनीतिक'},
     'sectionName': {'label': 'अनुभाग (Section)', 'cat': 'पता'},
     'address': {'label': 'पता (Address)', 'cat': 'पता'},
   };
@@ -6885,6 +6887,7 @@ class _ExcelExportDialogState extends State<_ExcelExportDialog> {
     'mobile',
     'caste',
     'supportLevel',
+    'partyPreference',
   };
 
   late final Set<String> selectedFields;
@@ -6951,8 +6954,19 @@ class _ExcelExportDialogState extends State<_ExcelExportDialog> {
                     'कॉलम चुनें (${selectedFields.length}/${availableFields.length}):',
                     style: const TextStyle(fontWeight: FontWeight.w700, color: navy, fontSize: 13),
                   ),
-                  Row(
+                  Wrap(
+                    spacing: 4,
                     children: [
+                      TextButton(
+                        onPressed: () {
+                          setState(() {
+                            selectedFields.clear();
+                            selectedFields.addAll(['name', 'mobile', 'partyPreference', 'wardNumber', 'voterSerial', 'gramPanchayat']);
+                          });
+                        },
+                        style: TextButton.styleFrom(visualDensity: VisualDensity.compact),
+                        child: const Text('📱 केवल मोबाइल+पार्टी', style: TextStyle(fontWeight: FontWeight.bold)),
+                      ),
                       TextButton(
                         onPressed: () {
                           setState(() {

@@ -27,6 +27,8 @@ class ExcelGenerator {
     'organizationPost': {'label': 'संगठन पद (Designation)'},
     'supportLevel': {'label': 'समर्थन स्तर (Support)'},
     'partyPreference': {'label': 'पार्टी रुझान (Party)'},
+    'isFavorite': {'label': 'पसंदीदा (⭐ Favorite)'},
+    'favoriteRating': {'label': 'स्टार रेटिंग (Rating)'},
     'sectionName': {'label': 'अनुभाग (Section)'},
     'address': {'label': 'पता (Address)'},
   };
@@ -105,6 +107,11 @@ class ExcelGenerator {
         final p = m['party'];
         if (p is Map) return '${p['name'] ?? m['partyPreference'] ?? ''}'.trim();
         return '${m['partyPreference'] ?? ''}'.trim();
+      case 'isFavorite':
+        return (m['isFavorite'] == true) ? 'हाँ' : 'नहीं';
+      case 'favoriteRating':
+        final r = m['favoriteRating'];
+        return r != null && r != 0 ? '$r★' : '';
       case 'sectionName':
         final sNum = '${m['sectionNumber'] ?? ''}'.trim();
         final sName = '${m['sectionName'] ?? ''}'.trim();

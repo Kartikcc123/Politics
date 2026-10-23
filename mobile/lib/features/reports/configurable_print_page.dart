@@ -65,6 +65,14 @@ class _ConfigurablePrintPageState extends State<ConfigurablePrintPage> {
   final pollingStationCtrl = TextEditingController();
   bool isUploadingBanner = false;
 
+  // Color Theme & Typography Controls
+  String selectedColorTheme = 'saffron_crimson';
+  String selectedTextScale = 'medium'; // 'small', 'medium', 'large', 'extra_large'
+  String customPrimaryHex = 'b91c1c';
+  String customBannerBgHex = 'fffdf6';
+  String customBorderHex = 'f59e0b';
+  String customTextHex = '1d4ed8';
+
   // Caste Analysis & Filter State
   String? selectedCaste;
   List<Map<String, dynamic>> casteBreakdown = [];
@@ -397,6 +405,14 @@ class _ConfigurablePrintPageState extends State<ConfigurablePrintPage> {
       if (pollingStationCtrl.text.trim().isNotEmpty) {
         params['pollingStation'] = pollingStationCtrl.text.trim();
       }
+      params['colorTheme'] = selectedColorTheme;
+      params['textScale'] = selectedTextScale;
+      if (selectedColorTheme == 'custom') {
+        params['customPrimaryColor'] = '#$customPrimaryHex';
+        params['customBannerBg'] = '#$customBannerBgHex';
+        params['customBorderColor'] = '#$customBorderHex';
+        params['customTextColor'] = '#$customTextHex';
+      }
     }
 
     return params;
@@ -651,11 +667,11 @@ class _ConfigurablePrintPageState extends State<ConfigurablePrintPage> {
     try {
       final bytes = await _buildClientExcel();
       final filename = '$printJobName.xlsx';
-      final savedPath = await saveBytes(filename, Uint8List.fromList(bytes));
-      if (savedPath != null && mounted) {
+      await saveBytes(filename, Uint8List.fromList(bytes));
+      if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('✅ एक्सेल फ़ाइल सुरक्षित हो गई: $filename'),
+            content: Text('✅ एक्सेल फ़ाइल डाउनलोड हो गई: $filename'),
             backgroundColor: const Color(0xff16a34a),
           ),
         );
@@ -2098,13 +2114,169 @@ class _ConfigurablePrintPageState extends State<ConfigurablePrintPage> {
                 const SizedBox(height: 10),
                 TextField(
                   controller: pollingStationCtrl,
-                  decoration: const InputDecoration(
-                    labelText: 'मतदान केंद्र भवन नाम (ऑप्शनल)',
-                    hintText: 'उदा. 110 - कृषि विभाग हेतु पंचायत समिति कार्यालय माण्डल',
+                  decoration: InputDecoration(
+                    labelText: 'मतदान केंद्र भवन नाम (वार्ड अनुसार / कस्टम)',
+                    hintText: 'उदा. राजकीय उच्च माध्यमिक विद्यालय, ${selectedGramPanchayat ?? "नाथडियास"}',
                     isDense: true,
-                    border: OutlineInputBorder(),
+                    border: const OutlineInputBorder(),
+                    helperText: 'यहाँ जो लिखेंगे वह मतदान केंद्र बॉक्स में प्रिंट होगा (खाली रखने पर सरकारी स्कूल नाम स्वतः आएगा)',
+                    helperMaxLines: 2,
+                    prefixIcon: const Icon(Icons.how_to_vote_outlined, size: 20),
                   ),
                 ),
+                const SizedBox(height: 14),
+                const Divider(),
+                const SizedBox(height: 8),
+
+                // 4. Color Themes & Typography Customization (5 Presets + 1 Custom)
+                Row(
+                  children: [
+                    const Icon(Icons.palette_outlined, size: 18, color: navy),
+                    const SizedBox(width: 6),
+                    const Text('4. कलर थीम व डिज़ाइन (5 कलर सेट + 1 कस्टम):', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: navy)),
+                  ],
+                ),
+                const SizedBox(height: 10),
+
+                // Theme Presets Grid
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    _buildThemePresetCard(
+                      key: 'saffron_crimson',
+                      title: 'राजसी केशरिया & लाल',
+                      subtitle: 'डिफ़ॉल्ट प्रीमियम',
+                      bannerColor: const Color(0xfffffdf6),
+                      primaryColor: const Color(0xffb91c1c),
+                      borderColor: const Color(0xfff59e0b),
+                    ),
+                    _buildThemePresetCard(
+                      key: 'royal_blue',
+                      title: 'शाही नीला & गोल्ड',
+                      subtitle: 'कांग्रेस / डेमोक्रेटिक',
+                      bannerColor: const Color(0xfff0f7ff),
+                      primaryColor: const Color(0xff1d4ed8),
+                      borderColor: const Color(0xffd97706),
+                    ),
+                    _buildThemePresetCard(
+                      key: 'tiranga_green',
+                      title: 'तिरंगा हरा & संतरी',
+                      subtitle: 'राष्ट्रीय तिरंगा थीम',
+                      bannerColor: const Color(0xfffffbf0),
+                      primaryColor: const Color(0xff15803d),
+                      borderColor: const Color(0xffea580c),
+                    ),
+                    _buildThemePresetCard(
+                      key: 'imperial_maroon',
+                      title: 'शाही मरून & विंटेज',
+                      subtitle: 'रीगल वाइन & गोल्ड',
+                      bannerColor: const Color(0xfffff7ed),
+                      primaryColor: const Color(0xff881337),
+                      borderColor: const Color(0xffca8a04),
+                    ),
+                    _buildThemePresetCard(
+                      key: 'slate_dark',
+                      title: 'मॉडर्न स्लेट & डार्क',
+                      subtitle: 'एग्जीक्यूटिव स्लेट',
+                      bannerColor: const Color(0xfff8fafc),
+                      primaryColor: const Color(0xff1e293b),
+                      borderColor: const Color(0xff475569),
+                    ),
+                    _buildThemePresetCard(
+                      key: 'custom',
+                      title: '🎨 कस्टम थीम',
+                      subtitle: 'अपनी पसंद के रंग',
+                      bannerColor: Color(int.parse('0xff$customBannerBgHex')),
+                      primaryColor: Color(int.parse('0xff$customPrimaryHex')),
+                      borderColor: Color(int.parse('0xff$customBorderHex')),
+                    ),
+                  ],
+                ),
+
+                // Custom Colors Input if 'custom' is selected
+                if (selectedColorTheme == 'custom') ...[
+                  const SizedBox(height: 12),
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: const Color(0xfff8fafc),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: const Color(0xffcbd5e1)),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text('कस्टम कलर कोड (HEX):', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: navy)),
+                        const SizedBox(height: 8),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: _buildColorInput(
+                                label: 'वार्ड व फुटर रंग',
+                                initialHex: customPrimaryHex,
+                                onChanged: (v) => setState(() => customPrimaryHex = v),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: _buildColorInput(
+                                label: 'बैनर बैकग्राउंड',
+                                initialHex: customBannerBgHex,
+                                onChanged: (v) => setState(() => customBannerBgHex = v),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: _buildColorInput(
+                                label: 'गोल्ड रिंग / बॉर्डर',
+                                initialHex: customBorderHex,
+                                onChanged: (v) => setState(() => customBorderHex = v),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: _buildColorInput(
+                                label: 'प्रत्याशी नाम रंग',
+                                initialHex: customTextHex,
+                                onChanged: (v) => setState(() => customTextHex = v),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+
+                const SizedBox(height: 14),
+
+                // 5. Text Size Scaling Control
+                Row(
+                  children: [
+                    const Icon(Icons.format_size_rounded, size: 18, color: navy),
+                    const SizedBox(width: 6),
+                    const Text('5. पर्ची टेक्स्ट साइज़ (Font Size Scale):', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: navy)),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    _buildTextSizeChip('small', 'छोटा (90%)'),
+                    const SizedBox(width: 6),
+                    _buildTextSizeChip('medium', 'सामान्य (100%)'),
+                    const SizedBox(width: 6),
+                    _buildTextSizeChip('large', 'बड़ा (110%)'),
+                    const SizedBox(width: 6),
+                    _buildTextSizeChip('extra_large', 'अतिरिक्त बड़ा (120%)'),
+                  ],
+                ),
+                const SizedBox(height: 6),
+                const Text('⚡ ऑटो-फिट गारंटी: टेक्स्ट साइज़ बढ़ाने पर भी टेक्स्ट कभी बॉक्स से बाहर नहीं जाएगा और न ही ओवरलैप होगा।', style: TextStyle(fontSize: 10.5, color: muted)),
                 const SizedBox(height: 14),
                 const Divider(),
                 const SizedBox(height: 6),
@@ -2669,6 +2841,136 @@ class _ConfigurablePrintPageState extends State<ConfigurablePrintPage> {
           child: Text(value, style: const TextStyle(fontWeight: FontWeight.bold, color: navy, fontSize: 13.5)),
         ),
       ],
+    );
+  }
+
+  Widget _buildThemePresetCard({
+    required String key,
+    required String title,
+    required String subtitle,
+    required Color bannerColor,
+    required Color primaryColor,
+    required Color borderColor,
+  }) {
+    final isSelected = selectedColorTheme == key;
+    return InkWell(
+      onTap: () => setState(() => selectedColorTheme = key),
+      borderRadius: BorderRadius.circular(10),
+      child: Container(
+        width: 175,
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+        decoration: BoxDecoration(
+          color: isSelected ? primaryColor.withValues(alpha: 0.08) : Colors.white,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(
+            color: isSelected ? primaryColor : const Color(0xffcbd5e1),
+            width: isSelected ? 2 : 1,
+          ),
+        ),
+        child: Row(
+          children: [
+            // Color Swatches
+            Container(
+              width: 32,
+              height: 32,
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(6),
+                border: Border.all(color: borderColor, width: 1.5),
+                color: bannerColor,
+              ),
+              child: Center(
+                child: Container(
+                  width: 14,
+                  height: 14,
+                  decoration: BoxDecoration(
+                    color: primaryColor,
+                    shape: BoxShape.circle,
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    title,
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 11,
+                      color: isSelected ? primaryColor : const Color(0xff0f172a),
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  Text(
+                    subtitle,
+                    style: const TextStyle(fontSize: 9.5, color: Color(0xff64748b)),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildColorInput({
+    required String label,
+    required String initialHex,
+    required ValueChanged<String> onChanged,
+  }) {
+    Color previewColor;
+    try {
+      previewColor = Color(int.parse('0xff$initialHex'));
+    } catch (_) {
+      previewColor = Colors.grey;
+    }
+    return Row(
+      children: [
+        Container(
+          width: 28,
+          height: 28,
+          decoration: BoxDecoration(
+            color: previewColor,
+            borderRadius: BorderRadius.circular(6),
+            border: Border.all(color: const Color(0xff94a3b8)),
+          ),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: TextFormField(
+            initialValue: initialHex,
+            decoration: InputDecoration(
+              labelText: label,
+              prefixText: '#',
+              isDense: true,
+              border: const OutlineInputBorder(),
+              contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+            ),
+            onChanged: (val) {
+              final clean = val.replaceAll('#', '').trim();
+              if (clean.length == 6) onChanged(clean);
+            },
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildTextSizeChip(String key, String label) {
+    final isSelected = selectedTextScale == key;
+    return ChoiceChip(
+      label: Text(label, style: TextStyle(fontSize: 11, fontWeight: isSelected ? FontWeight.bold : FontWeight.normal)),
+      selected: isSelected,
+      selectedColor: const Color(0xff0284c7).withValues(alpha: 0.18),
+      onSelected: (_) => setState(() => selectedTextScale = key),
+      visualDensity: VisualDensity.compact,
     );
   }
 
