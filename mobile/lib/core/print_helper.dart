@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:printing/printing.dart';
 
 import 'api_client.dart';
+import 'file_saver.dart';
 
 /// Opens the interactive in-app PDF preview screen with zoom, paging, direct print, and share
 Future<void> openPdfPreview(
@@ -126,6 +127,31 @@ class _PdfPreviewScreenState extends State<PdfPreviewScreen> {
           ],
         ),
         actions: [
+          if (_cachedBytes != null)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 4.0, vertical: 8.0),
+              child: FilledButton.icon(
+                style: FilledButton.styleFrom(
+                  backgroundColor: const Color(0xff16a34a),
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 0),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                ),
+                icon: const Icon(Icons.download_rounded, size: 18),
+                label: const Text('PDF सेव करें', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                onPressed: () async {
+                  await saveBytes('${widget.jobName}.pdf', _cachedBytes!);
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('✅ PDF फ़ाइल सफलतापूर्वक डाउनलोड हो गई!'),
+                        backgroundColor: Color(0xff16a34a),
+                      ),
+                    );
+                  }
+                },
+              ),
+            ),
           IconButton(
             icon: const Icon(Icons.refresh_rounded),
             tooltip: 'पुनः लोड करें',

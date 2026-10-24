@@ -3,6 +3,14 @@ const path = require('path');
 const http = require('http');
 const fs = require('fs');
 
+// Ensure Windows 11 uses the standard classic Print Dialog to eliminate "This app doesn't support print preview"
+if (process.platform === 'win32') {
+  try {
+    const { exec } = require('child_process');
+    exec('reg add "HKCU\\Software\\Microsoft\\Print\\UnifiedPrintDialog" /v "PreferLaunchLegacyPrintDialog" /t REG_DWORD /d 1 /f');
+  } catch (_) {}
+}
+
 let mainWindow = null;
 let server = null;
 let serverPort = 0;
