@@ -549,6 +549,11 @@ exports.printMembers = async (req, res, next) => {
             return Buffer.from(trimmed, 'base64');
           } catch (_) { return null; }
         }
+        if (fs.existsSync(trimmed)) {
+          try {
+            return fs.readFileSync(trimmed);
+          } catch (_) { return null; }
+        }
         const localPath = trimmed.startsWith('/uploads/')
           ? path.join(__dirname, '../../', trimmed)
           : path.join(__dirname, '../../uploads', trimmed);
