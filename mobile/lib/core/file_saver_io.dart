@@ -42,11 +42,26 @@ Future<String?> saveBytes(String filename, Uint8List bytes) async {
       fileName: filename,
     );
     if (path == null) return null;
-    await File(path).writeAsBytes(bytes, flush: true);
-    return path;
+    var savePath = path;
+    final dotIdx = filename.lastIndexOf('.');
+    if (dotIdx != -1) {
+      final ext = filename.substring(dotIdx);
+      if (!savePath.toLowerCase().endsWith(ext.toLowerCase())) {
+        savePath = '$savePath$ext';
+      }
+    }
+    await File(savePath).writeAsBytes(bytes, flush: true);
+    return savePath;
   } catch (_) {
-    final dir = await getDownloadsDirectory() ??
-        await getApplicationDocumentsDirectory();
+    Directory? dir;
+    try {
+      dir = await getDownloadsDirectory();
+    } catch (_) {}
+    if (dir == null && Platform.isWindows && Platform.environment['USERPROFILE'] != null) {
+      final userDownloads = Directory('${Platform.environment['USERPROFILE']}\\Downloads');
+      if (userDownloads.existsSync()) dir = userDownloads;
+    }
+    dir ??= await getApplicationDocumentsDirectory();
     final file = File('${dir.path}/$filename');
     await file.writeAsBytes(bytes, flush: true);
     return file.path;

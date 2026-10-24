@@ -1081,8 +1081,8 @@ exports.printMembers = async (req, res, next) => {
           ? (m.wardVoterSerial ? String(m.wardVoterSerial) : (m.voterSerial ? String(m.voterSerial) : String(i + 1)))
           : (m.voterSerial ? String(m.voterSerial) : (m.wardVoterSerial ? String(m.wardVoterSerial) : String(i + 1)));
 
-        doc.roundedRect(col1X, contentY, 36, 17, 2).lineWidth(0.8).strokeColor('#2563eb').fillColor('#eff6ff').fillAndStroke();
-        doc.font('HindiBold').fontSize(12).fillColor('#1e40af').text(serialNum, col1X, contentY + 2.5, { width: 36, align: 'center' });
+        doc.roundedRect(col1X, contentY, 36, 17, 2).lineWidth(0.8).strokeColor(theme.serialBorder).fillColor(theme.serialBg).fillAndStroke();
+        doc.font('HindiBold').fontSize(12).fillColor(theme.serialText).text(serialNum, col1X, contentY + 2.5, { width: 36, align: 'center' });
 
         // EPIC Box (Highlighted in Dark Slate, showing actual official EPIC number)
         const rawEpic = String(m.voterId || m.epic || '').trim();

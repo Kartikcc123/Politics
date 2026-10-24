@@ -1,7 +1,10 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math' as math;
 import 'dart:typed_data';
+import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 
@@ -106,15 +109,40 @@ class _ConfigurablePrintPageState extends State<ConfigurablePrintPage> {
     'gender',
   };
 
+  void _onFieldChanged() {
+    if (mounted) setState(() {});
+  }
+
   @override
   void initState() {
     super.initState();
+    candidateNameCtrl.addListener(_onFieldChanged);
+    candidatePostCtrl.addListener(_onFieldChanged);
+    candidateTaglineCtrl.addListener(_onFieldChanged);
+    candidatePhoneCtrl.addListener(_onFieldChanged);
+    candidateSloganCtrl.addListener(_onFieldChanged);
+    pollingTimeCtrl.addListener(_onFieldChanged);
+    pollingStationCtrl.addListener(_onFieldChanged);
     _loadHierarchy();
     _loadCasteBreakdown();
   }
 
   @override
   void dispose() {
+    candidateNameCtrl.removeListener(_onFieldChanged);
+    candidatePostCtrl.removeListener(_onFieldChanged);
+    candidateTaglineCtrl.removeListener(_onFieldChanged);
+    candidatePhoneCtrl.removeListener(_onFieldChanged);
+    candidateSloganCtrl.removeListener(_onFieldChanged);
+    pollingTimeCtrl.removeListener(_onFieldChanged);
+    pollingStationCtrl.removeListener(_onFieldChanged);
+    candidateNameCtrl.dispose();
+    candidatePostCtrl.dispose();
+    candidateTaglineCtrl.dispose();
+    candidatePhoneCtrl.dispose();
+    candidateSloganCtrl.dispose();
+    pollingTimeCtrl.dispose();
+    pollingStationCtrl.dispose();
     searchController.dispose();
     super.dispose();
   }
@@ -443,9 +471,54 @@ class _ConfigurablePrintPageState extends State<ConfigurablePrintPage> {
     return base;
   }
 
+  Future<Uint8List> _ensureCompactImage(Uint8List bytes, {int maxDimension = 250}) async {
+    try {
+      if (bytes.length < 35 * 1024) return bytes;
+      final probeCodec = await ui.instantiateImageCodec(bytes);
+      final frame = await probeCodec.getNextFrame();
+      final origW = frame.image.width;
+      final origH = frame.image.height;
+      if (origW <= maxDimension && origH <= maxDimension && bytes.length < 60 * 1024) {
+        return bytes;
+      }
+      final int targetW;
+      final int targetH;
+      if (origW >= origH) {
+        targetW = maxDimension;
+        targetH = math.max(1, (origH * maxDimension / origW).round());
+      } else {
+        targetH = maxDimension;
+        targetW = math.max(1, (origW * maxDimension / origH).round());
+      }
+      final codec = await ui.instantiateImageCodec(bytes, targetWidth: targetW, targetHeight: targetH);
+      final resizedFrame = await codec.getNextFrame();
+      final byteData = await resizedFrame.image.toByteData(format: ui.ImageByteFormat.png);
+      if (byteData != null) {
+        return byteData.buffer.asUint8List();
+      }
+    } catch (e) {
+      debugPrint('Compact image error: $e');
+    }
+    return bytes;
+  }
+
   Future<void> _handlePrint() async {
     setState(() => isPrinting = true);
     try {
+      // Ensure all images are safely compressed under 45KB to eliminate Nginx 413 error
+      if (candidatePhotoBytes != null && candidatePhotoBytes!.length > 40 * 1024) {
+        candidatePhotoBytes = await _ensureCompactImage(candidatePhotoBytes!);
+      }
+      if (leaderPhotoBytes != null && leaderPhotoBytes!.length > 40 * 1024) {
+        leaderPhotoBytes = await _ensureCompactImage(leaderPhotoBytes!);
+      }
+      if (symbolBytes != null && symbolBytes!.length > 40 * 1024) {
+        symbolBytes = await _ensureCompactImage(symbolBytes!);
+      }
+      if (campaignBannerBytes != null && campaignBannerBytes!.length > 70 * 1024) {
+        campaignBannerBytes = await _ensureCompactImage(campaignBannerBytes!, maxDimension: 600);
+      }
+
       await printApiPdf(
         context,
         path: '/api/print/members.pdf',
@@ -472,8 +545,9 @@ class _ConfigurablePrintPageState extends State<ConfigurablePrintPage> {
       );
       if (picked == null) return;
 
+      final compactBytes = await _ensureCompactImage(picked.bytes!, maxDimension: 600);
       setState(() {
-        campaignBannerBytes = picked.bytes;
+        campaignBannerBytes = compactBytes;
         isUploadingBanner = true;
       });
 
@@ -482,7 +556,7 @@ class _ConfigurablePrintPageState extends State<ConfigurablePrintPage> {
           '/api/print/upload-banner',
           filename: picked.name,
           fileField: 'banner',
-          bytes: picked.bytes,
+          bytes: compactBytes,
           filePath: picked.path,
         );
         if (mounted && res['url'] != null) {
@@ -526,7 +600,8 @@ class _ConfigurablePrintPageState extends State<ConfigurablePrintPage> {
         targetAspectRatio: 1.0,
       );
       if (picked != null) {
-        setState(() => candidatePhotoBytes = picked.bytes);
+        final compact = await _ensureCompactImage(picked.bytes!);
+        setState(() => candidatePhotoBytes = compact);
       }
     } catch (e) {
       if (mounted) {
@@ -544,7 +619,8 @@ class _ConfigurablePrintPageState extends State<ConfigurablePrintPage> {
         targetAspectRatio: 1.0,
       );
       if (picked != null) {
-        setState(() => leaderPhotoBytes = picked.bytes);
+        final compact = await _ensureCompactImage(picked.bytes!);
+        setState(() => leaderPhotoBytes = compact);
       }
     } catch (e) {
       if (mounted) {
@@ -561,11 +637,54 @@ class _ConfigurablePrintPageState extends State<ConfigurablePrintPage> {
         targetAspectRatio: 1.0,
       );
       if (picked != null) {
-        setState(() => symbolBytes = picked.bytes);
+        final compact = await _ensureCompactImage(picked.bytes!);
+        setState(() => symbolBytes = compact);
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('चुनाव चिह्न चुनने में त्रुटि: $e')));
+      }
+    }
+  }
+
+  Future<void> _setPresetSymbol(String assetPath) async {
+    try {
+      final byteData = await rootBundle.load(assetPath);
+      final bytes = byteData.buffer.asUint8List();
+      final compact = await _ensureCompactImage(bytes);
+      setState(() => symbolBytes = compact);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('✅ चुनाव चिह्न सेट हो गया (आप चाहें तो ✂️ क्रॉप भी कर सकते हैं)'),
+            duration: Duration(seconds: 2),
+            backgroundColor: Color(0xff16a34a),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('चिह्न लोड करने में त्रुटि: $e')));
+      }
+    }
+  }
+
+  Future<void> _handleCropCurrentSymbol() async {
+    if (symbolBytes == null) return;
+    try {
+      final cropped = await cropImageBytes(
+        context,
+        symbolBytes!,
+        title: 'चुनाव चिह्न क्रॉप करें (Crop Symbol)',
+        targetAspectRatio: 1.0,
+      );
+      if (cropped != null) {
+        final compact = await _ensureCompactImage(cropped);
+        setState(() => symbolBytes = compact);
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('क्रॉप करने में त्रुटि: $e')));
       }
     }
   }
@@ -667,12 +786,13 @@ class _ConfigurablePrintPageState extends State<ConfigurablePrintPage> {
     try {
       final bytes = await _buildClientExcel();
       final filename = '$printJobName.xlsx';
-      await saveBytes(filename, Uint8List.fromList(bytes));
-      if (mounted) {
+      final savedPath = await saveBytes(filename, Uint8List.fromList(bytes));
+      if (mounted && savedPath != null) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('✅ एक्सेल फ़ाइल डाउनलोड हो गई: $filename'),
+            content: Text('✅ एक्सेल फ़ाइल सफलतापूर्वक सहेजी गई:\n$savedPath'),
             backgroundColor: const Color(0xff16a34a),
+            duration: const Duration(seconds: 4),
           ),
         );
       }
@@ -1821,6 +1941,9 @@ class _ConfigurablePrintPageState extends State<ConfigurablePrintPage> {
                 ),
                 const SizedBox(height: 14),
 
+                // Live Interactive WYSIWYG Slip Preview
+                _buildLiveCardPreviewWidget(),
+
                 // 1. Cards Per Page Selector (Admin Control)
                 const Text('1. पर्ची प्रति पेज संख्या चुनें (Cards Per Page):', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: navy)),
                 const SizedBox(height: 6),
@@ -1931,7 +2054,13 @@ class _ConfigurablePrintPageState extends State<ConfigurablePrintPage> {
                                     decoration: BoxDecoration(
                                       shape: BoxShape.circle,
                                       border: Border.all(color: const Color(0xff22c55e), width: 2),
-                                      image: DecorationImage(image: MemoryImage(symbolBytes!), fit: BoxFit.contain),
+                                      color: Colors.white,
+                                    ),
+                                    child: ClipOval(
+                                      child: Padding(
+                                        padding: const EdgeInsets.all(4.0),
+                                        child: Image.memory(symbolBytes!, fit: BoxFit.contain),
+                                      ),
                                     ),
                                   ),
                                   GestureDetector(
@@ -1941,10 +2070,21 @@ class _ConfigurablePrintPageState extends State<ConfigurablePrintPage> {
                                 ],
                               ),
                               const SizedBox(height: 4),
-                              TextButton(
-                                onPressed: _handleSymbolPick,
-                                style: TextButton.styleFrom(padding: EdgeInsets.zero, minimumSize: const Size(50, 24)),
-                                child: const Text('बदलें', style: TextStyle(fontSize: 11, color: Color(0xff15803d))),
+                              Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  TextButton(
+                                    onPressed: _handleSymbolPick,
+                                    style: TextButton.styleFrom(padding: EdgeInsets.zero, minimumSize: const Size(38, 24)),
+                                    child: const Text('बदलें', style: TextStyle(fontSize: 10.5, color: Color(0xff15803d))),
+                                  ),
+                                  const SizedBox(width: 4),
+                                  TextButton(
+                                    onPressed: _handleCropCurrentSymbol,
+                                    style: TextButton.styleFrom(padding: EdgeInsets.zero, minimumSize: const Size(42, 24)),
+                                    child: const Text('✂️ क्रॉप', style: TextStyle(fontSize: 10.5, color: Color(0xff2563eb), fontWeight: FontWeight.bold)),
+                                  ),
+                                ],
                               ),
                             ] else ...[
                               InkWell(
@@ -1956,8 +2096,43 @@ class _ConfigurablePrintPageState extends State<ConfigurablePrintPage> {
                                 ),
                               ),
                               const SizedBox(height: 4),
-                              const Text('चिह्न चुनें', style: TextStyle(fontSize: 10, color: muted)),
+                              const Text('गैलरी से चुनें', style: TextStyle(fontSize: 10, color: muted)),
                             ],
+                            const SizedBox(height: 4),
+                            // Quick 1-click Preset Party Signs
+                            Wrap(
+                              spacing: 4,
+                              runSpacing: 4,
+                              alignment: WrapAlignment.center,
+                              children: [
+                                InkWell(
+                                  onTap: () => _setPresetSymbol('assets/party/congress.png'),
+                                  borderRadius: BorderRadius.circular(6),
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 3),
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xffe0f2fe),
+                                      borderRadius: BorderRadius.circular(6),
+                                      border: Border.all(color: const Color(0xff38bdf8)),
+                                    ),
+                                    child: const Text('✋ कांग्रेस', style: TextStyle(fontSize: 9.5, fontWeight: FontWeight.bold, color: Color(0xff0369a1))),
+                                  ),
+                                ),
+                                InkWell(
+                                  onTap: () => _setPresetSymbol('assets/party/bjp.png'),
+                                  borderRadius: BorderRadius.circular(6),
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 3),
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xffffedd5),
+                                      borderRadius: BorderRadius.circular(6),
+                                      border: Border.all(color: const Color(0xfffb923c)),
+                                    ),
+                                    child: const Text('🪷 भाजपा', style: TextStyle(fontSize: 9.5, fontWeight: FontWeight.bold, color: Color(0xffc2410c))),
+                                  ),
+                                ),
+                              ],
+                            ),
                           ],
                         ),
                       ),
@@ -2034,6 +2209,7 @@ class _ConfigurablePrintPageState extends State<ConfigurablePrintPage> {
                       flex: 6,
                       child: TextField(
                         controller: candidateNameCtrl,
+                        onChanged: (_) => setState(() {}),
                         decoration: const InputDecoration(
                           labelText: 'प्रत्याशी का नाम',
                           hintText: 'उदा. रामेश्वर लाल',
@@ -2047,6 +2223,7 @@ class _ConfigurablePrintPageState extends State<ConfigurablePrintPage> {
                       flex: 4,
                       child: TextField(
                         controller: candidatePostCtrl,
+                        onChanged: (_) => setState(() {}),
                         decoration: const InputDecoration(
                           labelText: 'पद',
                           hintText: 'सरपंच / पार्षद',
@@ -2062,6 +2239,7 @@ class _ConfigurablePrintPageState extends State<ConfigurablePrintPage> {
                 // Tagline field
                 TextField(
                   controller: candidateTaglineCtrl,
+                  onChanged: (_) => setState(() {}),
                   decoration: const InputDecoration(
                     labelText: 'टैगलाइन (Tagline) 🌟',
                     hintText: 'उदा. "वार्ड के सर्वांगीण विकास के लिए आपका अपना कर्मठ प्रत्याशी"',
@@ -2078,6 +2256,7 @@ class _ConfigurablePrintPageState extends State<ConfigurablePrintPage> {
                       child: TextField(
                         controller: candidatePhoneCtrl,
                         keyboardType: TextInputType.phone,
+                        onChanged: (_) => setState(() {}),
                         decoration: const InputDecoration(
                           labelText: 'संपर्क मोबाइल',
                           hintText: '9829858296',
@@ -2091,6 +2270,7 @@ class _ConfigurablePrintPageState extends State<ConfigurablePrintPage> {
                       flex: 5,
                       child: TextField(
                         controller: pollingTimeCtrl,
+                        onChanged: (_) => setState(() {}),
                         decoration: const InputDecoration(
                           labelText: 'मतदान समय',
                           hintText: 'प्रातः 7 से सायं 6 बजे तक',
@@ -2104,6 +2284,7 @@ class _ConfigurablePrintPageState extends State<ConfigurablePrintPage> {
                 const SizedBox(height: 10),
                 TextField(
                   controller: candidateSloganCtrl,
+                  onChanged: (_) => setState(() {}),
                   decoration: const InputDecoration(
                     labelText: 'नारा / अपील संदेश',
                     hintText: 'को वोट देकर भारी मतों से विजयी बनावें।',
@@ -2114,6 +2295,7 @@ class _ConfigurablePrintPageState extends State<ConfigurablePrintPage> {
                 const SizedBox(height: 10),
                 TextField(
                   controller: pollingStationCtrl,
+                  onChanged: (_) => setState(() {}),
                   decoration: InputDecoration(
                     labelText: 'मतदान केंद्र भवन नाम (वार्ड अनुसार / कस्टम)',
                     hintText: 'उदा. राजकीय उच्च माध्यमिक विद्यालय, ${selectedGramPanchayat ?? "नाथडियास"}',
@@ -2841,6 +3023,522 @@ class _ConfigurablePrintPageState extends State<ConfigurablePrintPage> {
           child: Text(value, style: const TextStyle(fontWeight: FontWeight.bold, color: navy, fontSize: 13.5)),
         ),
       ],
+    );
+  }
+
+  Map<String, Color> _resolveCurrentThemeColors() {
+    switch (selectedColorTheme) {
+      case 'royal_blue':
+        return {
+          'primary': const Color(0xff1d4ed8),
+          'bannerBg': const Color(0xfff0f7ff),
+          'border': const Color(0xffd97706),
+          'text': const Color(0xff1d4ed8),
+          'badge': const Color(0xff2563eb),
+        };
+      case 'tiranga_green':
+        return {
+          'primary': const Color(0xff15803d),
+          'bannerBg': const Color(0xfffffbf0),
+          'border': const Color(0xffea580c),
+          'text': const Color(0xff15803d),
+          'badge': const Color(0xff16a34a),
+        };
+      case 'imperial_maroon':
+        return {
+          'primary': const Color(0xff881337),
+          'bannerBg': const Color(0xfffff7ed),
+          'border': const Color(0xffca8a04),
+          'text': const Color(0xff881337),
+          'badge': const Color(0xff9f1239),
+        };
+      case 'slate_dark':
+        return {
+          'primary': const Color(0xff1e293b),
+          'bannerBg': const Color(0xfff8fafc),
+          'border': const Color(0xff475569),
+          'text': const Color(0xff0f172a),
+          'badge': const Color(0xff334155),
+        };
+      case 'custom':
+        Color parseHex(String hex, Color def) {
+          try {
+            final cleaned = hex.replaceAll('#', '').trim();
+            if (cleaned.length == 6) {
+              return Color(int.parse('0xff$cleaned'));
+            }
+          } catch (_) {}
+          return def;
+        }
+        return {
+          'primary': parseHex(customPrimaryHex, const Color(0xffb91c1c)),
+          'bannerBg': parseHex(customBannerBgHex, const Color(0xfffffdf6)),
+          'border': parseHex(customBorderHex, const Color(0xfff59e0b)),
+          'text': parseHex(customTextHex, const Color(0xff1d4ed8)),
+          'badge': parseHex(customPrimaryHex, const Color(0xffb91c1c)),
+        };
+      case 'saffron_crimson':
+      default:
+        return {
+          'primary': const Color(0xffb91c1c),
+          'bannerBg': const Color(0xfffffdf6),
+          'border': const Color(0xfff59e0b),
+          'text': const Color(0xffb91c1c),
+          'badge': const Color(0xffdc2626),
+        };
+    }
+  }
+
+  double get _fontScaleFactor {
+    switch (selectedTextScale) {
+      case 'small':
+        return 0.90;
+      case 'large':
+        return 1.10;
+      case 'extra_large':
+        return 1.20;
+      case 'medium':
+      default:
+        return 1.0;
+    }
+  }
+
+  Widget _buildLiveCardPreviewWidget() {
+    final theme = _resolveCurrentThemeColors();
+    final primary = theme['primary']!;
+    final bannerBg = theme['bannerBg']!;
+    final borderCol = theme['border']!;
+    final textCol = theme['text']!;
+    final scale = _fontScaleFactor;
+
+    final candidateName = candidateNameCtrl.text.trim().isNotEmpty
+        ? candidateNameCtrl.text.trim()
+        : 'रामेश्वर लाल जाट';
+    final candidatePost = candidatePostCtrl.text.trim().isNotEmpty
+        ? candidatePostCtrl.text.trim()
+        : 'सरपंच पद प्रत्याशी';
+    final candidateTagline = candidateTaglineCtrl.text.trim().isNotEmpty
+        ? candidateTaglineCtrl.text.trim()
+        : 'वार्ड के सर्वांगीण विकास के लिए आपका अपना कर्मठ प्रत्याशी';
+    final candidatePhone = candidatePhoneCtrl.text.trim().isNotEmpty
+        ? candidatePhoneCtrl.text.trim()
+        : '9829858296';
+    final candidateSlogan = candidateSloganCtrl.text.trim().isNotEmpty
+        ? candidateSloganCtrl.text.trim()
+        : 'को अपना अमूल्य मत देकर भारी बहुमत से विजयी बनावें।';
+    final pollingStation = pollingStationCtrl.text.trim().isNotEmpty
+        ? pollingStationCtrl.text.trim()
+        : 'रा.उ.मा.वि. नाथडियास - कमरा नं 1';
+    final pollingTime = pollingTimeCtrl.text.trim().isNotEmpty
+        ? pollingTimeCtrl.text.trim()
+        : 'मतदान समय : प्रातः 7 से सायं 6 बजे तक';
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: borderCol, width: 2),
+        boxShadow: [
+          BoxShadow(
+            color: primary.withValues(alpha: 0.12),
+            blurRadius: 14,
+            offset: const Offset(0, 5),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          // Header Bar
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            decoration: BoxDecoration(
+              color: primary,
+              borderRadius: const BorderRadius.only(
+                topLeft: Radius.circular(14),
+                topRight: Radius.circular(14),
+              ),
+            ),
+            child: Row(
+              children: [
+                const Icon(Icons.remove_red_eye_rounded, size: 16, color: Colors.white),
+                const SizedBox(width: 6),
+                const Text(
+                  'लाइव पर्ची प्रीव्यू (Live WYSIWYG Preview)',
+                  style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12),
+                ),
+                const Spacer(),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.2),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: Text(
+                    'फ़ॉन्ट ${(scale * 100).toInt()}% • $selectedColorTheme',
+                    style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.w600),
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          // Slip Card Body
+          Padding(
+            padding: const EdgeInsets.all(12),
+            child: Container(
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: borderCol, width: 1.5),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  // Candidate Banner Header
+                  if (campaignBannerBytes != null)
+                    ClipRRect(
+                      borderRadius: const BorderRadius.only(
+                        topLeft: Radius.circular(10),
+                        topRight: Radius.circular(10),
+                      ),
+                      child: Image.memory(
+                        campaignBannerBytes!,
+                        height: 70,
+                        width: double.infinity,
+                        fit: BoxFit.cover,
+                      ),
+                    )
+                  else
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: bannerBg,
+                        borderRadius: const BorderRadius.only(
+                          topLeft: Radius.circular(10),
+                          topRight: Radius.circular(10),
+                        ),
+                        border: Border(bottom: BorderSide(color: borderCol, width: 1.5)),
+                      ),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.center,
+                        children: [
+                          // Candidate Photo in Gold Ring
+                          Container(
+                            width: 52,
+                            height: 52,
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              border: Border.all(color: borderCol, width: 2),
+                              color: Colors.white,
+                              boxShadow: [
+                                BoxShadow(
+                                  color: borderCol.withValues(alpha: 0.3),
+                                  blurRadius: 4,
+                                ),
+                              ],
+                            ),
+                            child: ClipOval(
+                              child: candidatePhotoBytes != null
+                                  ? Image.memory(candidatePhotoBytes!, fit: BoxFit.cover)
+                                  : Icon(Icons.person, size: 36, color: primary),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+
+                          // Candidate Details
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.center,
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(
+                                  candidateName,
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.w900,
+                                    fontSize: 15 * scale,
+                                    color: textCol,
+                                    letterSpacing: 0.3,
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  textAlign: TextAlign.center,
+                                ),
+                                const SizedBox(height: 1),
+                                Row(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                                      decoration: BoxDecoration(
+                                        color: primary,
+                                        borderRadius: BorderRadius.circular(4),
+                                      ),
+                                      child: Text(
+                                        candidatePost,
+                                        style: TextStyle(
+                                          color: Colors.white,
+                                          fontWeight: FontWeight.bold,
+                                          fontSize: 10 * scale,
+                                        ),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 6),
+                                    Text(
+                                      '📞 $candidatePhone',
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 10 * scale,
+                                        color: primary,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                if (candidateTagline.isNotEmpty) ...[
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    candidateTagline,
+                                    style: TextStyle(
+                                      fontSize: 9.5 * scale,
+                                      fontWeight: FontWeight.w600,
+                                      color: const Color(0xff475569),
+                                      fontStyle: FontStyle.italic,
+                                    ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    textAlign: TextAlign.center,
+                                  ),
+                                ],
+                                const SizedBox(height: 2),
+                                Text(
+                                  candidateSlogan,
+                                  style: TextStyle(
+                                    fontSize: 9 * scale,
+                                    fontWeight: FontWeight.bold,
+                                    color: primary,
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  textAlign: TextAlign.center,
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+
+                          // Symbol / Leader Photo in Ring
+                          Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Container(
+                                width: 50,
+                                height: 50,
+                                decoration: BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  border: Border.all(color: borderCol, width: 2),
+                                  color: Colors.white,
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: borderCol.withValues(alpha: 0.3),
+                                      blurRadius: 4,
+                                    ),
+                                  ],
+                                ),
+                                child: ClipOval(
+                                  child: symbolBytes != null
+                                      ? Padding(
+                                          padding: const EdgeInsets.all(4),
+                                          child: Image.memory(symbolBytes!, fit: BoxFit.contain),
+                                        )
+                                      : (leaderPhotoBytes != null
+                                          ? Image.memory(leaderPhotoBytes!, fit: BoxFit.cover)
+                                          : Icon(Icons.how_to_vote, size: 30, color: borderCol)),
+                                ),
+                              ),
+                              if (symbolBytes != null)
+                                Text(
+                                  'चुनाव चिह्न',
+                                  style: TextStyle(
+                                    fontSize: 8.5 * scale,
+                                    fontWeight: FontWeight.bold,
+                                    color: primary,
+                                  ),
+                                ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+
+                  // Voter Details Box (Demo Voter with Authentic Details & Scale)
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    color: Colors.white,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        // Ward badge & EPIC badge row
+                        Row(
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: primary,
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                              child: Text(
+                                'वार्ड नं. ${selectedWard ?? "01"}',
+                                style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 10),
+                              ),
+                            ),
+                            const SizedBox(width: 6),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: const Color(0xffeff6ff),
+                                border: Border.all(color: const Color(0xff3b82f6)),
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                              child: const Text(
+                                'EPIC: RJ/19/123/456789',
+                                style: TextStyle(color: Color(0xff1d4ed8), fontWeight: FontWeight.bold, fontSize: 10),
+                              ),
+                            ),
+                            const Spacer(),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: const Color(0xfffef3c7),
+                                border: Border.all(color: const Color(0xffd97706)),
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                              child: const Text(
+                                'क्र.सं. 105',
+                                style: TextStyle(color: Color(0xff92400e), fontWeight: FontWeight.bold, fontSize: 10),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 6),
+
+                        // Voter info with photo
+                        Row(
+                          children: [
+                            // Demo Voter Photo
+                            Container(
+                              width: 50,
+                              height: 60,
+                              decoration: BoxDecoration(
+                                color: const Color(0xfff1f5f9),
+                                borderRadius: BorderRadius.circular(4),
+                                border: Border.all(color: const Color(0xffcbd5e1)),
+                              ),
+                              child: const Icon(Icons.person, color: Color(0xff94a3b8), size: 38),
+                            ),
+                            const SizedBox(width: 10),
+
+                            // Voter Typography
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Row(
+                                    children: [
+                                      Text(
+                                        'मतदाता का नाम: ',
+                                        style: TextStyle(fontSize: 11 * scale, color: const Color(0xff64748b)),
+                                      ),
+                                      Text(
+                                        'मोहन लाल जाट',
+                                        style: TextStyle(
+                                          fontWeight: FontWeight.bold,
+                                          fontSize: 12 * scale,
+                                          color: const Color(0xff0f172a),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 2),
+                                  Row(
+                                    children: [
+                                      Text(
+                                        'पिता/पति का नाम: ',
+                                        style: TextStyle(fontSize: 10.5 * scale, color: const Color(0xff64748b)),
+                                      ),
+                                      Text(
+                                        'रामेश्वर लाल',
+                                        style: TextStyle(
+                                          fontWeight: FontWeight.w600,
+                                          fontSize: 11 * scale,
+                                          color: const Color(0xff1e293b),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 2),
+                                  Row(
+                                    children: [
+                                      Text(
+                                        'मकान संख्या: 24   |   आयु: 42 वर्ष   |   लिंग: पुरुष',
+                                        style: TextStyle(
+                                          fontSize: 10 * scale,
+                                          fontWeight: FontWeight.w500,
+                                          color: const Color(0xff475569),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+
+                  // Polling Station & Time Footer Bar
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+                    decoration: BoxDecoration(
+                      color: primary,
+                      borderRadius: const BorderRadius.only(
+                        bottomLeft: Radius.circular(10),
+                        bottomRight: Radius.circular(10),
+                      ),
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Expanded(
+                          child: Text(
+                            '📍 $pollingStation',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 9.5 * scale,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        Text(
+                          pollingTime,
+                          style: TextStyle(
+                            color: Colors.white.withValues(alpha: 0.95),
+                            fontSize: 8.5 * scale,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 

@@ -76,6 +76,27 @@ Future<PlatformFile?> pickAndCropImage(
   );
 }
 
+/// Crops an existing in-memory Uint8List image
+Future<Uint8List?> cropImageBytes(
+  BuildContext context,
+  Uint8List rawBytes, {
+  String title = 'फोटो क्रॉप करें',
+  bool circular = false,
+  double targetAspectRatio = 1.0,
+}) async {
+  if (!context.mounted) return null;
+  return await showDialog<Uint8List>(
+    context: context,
+    barrierDismissible: false,
+    builder: (ctx) => ImageCropDialog(
+      imageBytes: rawBytes,
+      title: title,
+      circular: circular,
+      aspectRatio: targetAspectRatio,
+    ),
+  );
+}
+
 class ImageCropDialog extends StatefulWidget {
   const ImageCropDialog({
     super.key,
@@ -283,7 +304,7 @@ class _ImageCropDialogState extends State<ImageCropDialog> {
                                 child: Container(
                                   width: cropBoxSize,
                                   height: cropBoxSize,
-                                  color: Colors.black,
+                                  color: Colors.white,
                                   child: Stack(
                                     children: [
                                       // Interactive Pan & Zoom
