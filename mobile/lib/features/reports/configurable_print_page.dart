@@ -3594,7 +3594,7 @@ class _ConfigurablePrintPageState extends State<ConfigurablePrintPage> {
                                 textAlign: TextAlign.center,
                               ),
                               Text(
-                                pollingStation.isNotEmpty ? pollingStation : 'राजकीय विद्यालय, तेल्याखेड़ी',
+                                pollingStation.isNotEmpty ? pollingStation : 'राजकीय विद्यालय, तेज्याखेड़ी',
                                 style: TextStyle(
                                   color: primaryTextColor,
                                   fontWeight: FontWeight.bold,
