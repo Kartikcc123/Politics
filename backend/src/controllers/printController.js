@@ -653,8 +653,11 @@ exports.printMembers = async (req, res, next) => {
       tiranga_green: {
         bannerBg: '#fffbf0',
         bannerBorder: '#ea580c',
-        bannerRing2: '#c2410c',
-        bannerRing3: '#9a3412',
+        bannerRing2: '#d97706',
+        bannerRing3: '#b45309',
+        photoRing: '#d4af37',
+        photoRing2: '#f59e0b',
+        photoRing3: '#b45309',
         headerL1: '#c2410c',
         headerL2: '#15803d',
         candName: '#15803d',
@@ -667,7 +670,7 @@ exports.printMembers = async (req, res, next) => {
         wardBoxBg: '#15803d',
         wardBoxText: '#ffffff',
         wardDivider: '#fef08a',
-        footerBg: '#16a34a',
+        footerBg: '#0f5132',
         footerText: '#ffffff',
       },
       imperial_maroon: {
@@ -952,9 +955,9 @@ exports.printMembers = async (req, res, next) => {
                 doc.restore();
 
                 // Multi-layered Golden Metallic Ring
-                doc.circle(leftCX, photoCY, photoR + 1.6).lineWidth(2.0).strokeColor(theme.bannerBorder).stroke();
-                doc.circle(leftCX, photoCY, photoR + 2.8).lineWidth(0.8).strokeColor(theme.bannerRing2).stroke();
-                doc.circle(leftCX, photoCY, photoR).lineWidth(0.7).strokeColor(theme.bannerRing3).stroke();
+                doc.circle(leftCX, photoCY, photoR + 1.6).lineWidth(2.0).strokeColor(theme.photoRing || theme.bannerBorder).stroke();
+                doc.circle(leftCX, photoCY, photoR + 2.8).lineWidth(0.8).strokeColor(theme.photoRing2 || theme.bannerRing2).stroke();
+                doc.circle(leftCX, photoCY, photoR).lineWidth(0.7).strokeColor(theme.photoRing3 || theme.bannerRing3).stroke();
               } catch (_) {}
             }
 
@@ -973,9 +976,9 @@ exports.printMembers = async (req, res, next) => {
                 });
                 doc.restore();
 
-                doc.circle(rightCX, photoCY, photoR + 1.6).lineWidth(2.0).strokeColor(theme.bannerBorder).stroke();
-                doc.circle(rightCX, photoCY, photoR + 2.8).lineWidth(0.8).strokeColor(theme.bannerRing2).stroke();
-                doc.circle(rightCX, photoCY, photoR).lineWidth(0.7).strokeColor(theme.bannerRing3).stroke();
+                doc.circle(rightCX, photoCY, photoR + 1.6).lineWidth(2.0).strokeColor(theme.photoRing || theme.bannerBorder).stroke();
+                doc.circle(rightCX, photoCY, photoR + 2.8).lineWidth(0.8).strokeColor(theme.photoRing2 || theme.bannerRing2).stroke();
+                doc.circle(rightCX, photoCY, photoR).lineWidth(0.7).strokeColor(theme.photoRing3 || theme.bannerRing3).stroke();
               } catch (_) {}
             } else if (symbolImageObj) {
               try {
@@ -991,8 +994,8 @@ exports.printMembers = async (req, res, next) => {
                 });
                 doc.restore();
 
-                doc.circle(rightCX, photoCY, photoR + 1.6).lineWidth(1.8).strokeColor(theme.bannerBorder).stroke();
-                doc.circle(rightCX, photoCY, photoR + 2.8).lineWidth(0.8).strokeColor(theme.bannerRing2).stroke();
+                doc.circle(rightCX, photoCY, photoR + 1.6).lineWidth(1.8).strokeColor(theme.photoRing || theme.bannerBorder).stroke();
+                doc.circle(rightCX, photoCY, photoR + 2.8).lineWidth(0.8).strokeColor(theme.photoRing2 || theme.bannerRing2).stroke();
               } catch (_) {}
             }
 
