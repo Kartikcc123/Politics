@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../core/api_client.dart';
 import '../../core/file_saver.dart';
@@ -70,7 +71,8 @@ class _ConfigurablePrintPageState extends State<ConfigurablePrintPage> {
 
   // Color Theme & Typography Controls
   String selectedColorTheme = 'saffron_crimson';
-  String selectedTextScale = 'medium'; // 'small', 'medium', 'large', 'extra_large'
+  String selectedTextScale = 'medium'; // 'extra_small_70', 'small_80', 'small', 'medium', 'large', 'extra_large'
+  double customFontScale = 1.0;
   String customPrimaryHex = 'b91c1c';
   String customBannerBgHex = 'fffdf6';
   String customBorderHex = 'f59e0b';
@@ -109,8 +111,152 @@ class _ConfigurablePrintPageState extends State<ConfigurablePrintPage> {
     'gender',
   };
 
+  static const _prefPrefix = 'admin_campaign_card_v1_';
+
   void _onFieldChanged() {
-    if (mounted) setState(() {});
+    if (mounted) {
+      setState(() {});
+      _saveCampaignSettings();
+    }
+  }
+
+  Future<void> _saveCampaignSettings() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('${_prefPrefix}name', candidateNameCtrl.text);
+      await prefs.setString('${_prefPrefix}post', candidatePostCtrl.text);
+      await prefs.setString('${_prefPrefix}tagline', candidateTaglineCtrl.text);
+      await prefs.setString('${_prefPrefix}phone', candidatePhoneCtrl.text);
+      await prefs.setString('${_prefPrefix}slogan', candidateSloganCtrl.text);
+      await prefs.setString('${_prefPrefix}time', pollingTimeCtrl.text);
+      await prefs.setString('${_prefPrefix}station', pollingStationCtrl.text);
+      await prefs.setString('${_prefPrefix}theme', selectedColorTheme);
+      await prefs.setDouble('${_prefPrefix}fontScale', customFontScale);
+      await prefs.setString('${_prefPrefix}textScale', selectedTextScale);
+      await prefs.setString('${_prefPrefix}customPrimary', customPrimaryHex);
+      await prefs.setString('${_prefPrefix}customBannerBg', customBannerBgHex);
+      await prefs.setString('${_prefPrefix}customBorder', customBorderHex);
+      await prefs.setString('${_prefPrefix}customText', customTextHex);
+      await prefs.setStringList('${_prefPrefix}fields', selectedFields.toList());
+
+      if (candidatePhotoBytes != null && candidatePhotoBytes!.isNotEmpty) {
+        await prefs.setString('${_prefPrefix}cand_photo', base64Encode(candidatePhotoBytes!));
+      } else {
+        await prefs.remove('${_prefPrefix}cand_photo');
+      }
+
+      if (leaderPhotoBytes != null && leaderPhotoBytes!.isNotEmpty) {
+        await prefs.setString('${_prefPrefix}leader_photo', base64Encode(leaderPhotoBytes!));
+      } else {
+        await prefs.remove('${_prefPrefix}leader_photo');
+      }
+
+      if (symbolBytes != null && symbolBytes!.isNotEmpty) {
+        await prefs.setString('${_prefPrefix}symbol', base64Encode(symbolBytes!));
+      } else {
+        await prefs.remove('${_prefPrefix}symbol');
+      }
+
+      if (campaignBannerBytes != null && campaignBannerBytes!.isNotEmpty) {
+        await prefs.setString('${_prefPrefix}banner', base64Encode(campaignBannerBytes!));
+      } else {
+        await prefs.remove('${_prefPrefix}banner');
+      }
+    } catch (e) {
+      debugPrint('Error saving campaign card settings: $e');
+    }
+  }
+
+  Future<void> _loadSavedCampaignSettings() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final n = prefs.getString('${_prefPrefix}name');
+      if (n != null && n.trim().isNotEmpty) candidateNameCtrl.text = n;
+      final p = prefs.getString('${_prefPrefix}post');
+      if (p != null && p.trim().isNotEmpty) candidatePostCtrl.text = p;
+      final t = prefs.getString('${_prefPrefix}tagline');
+      if (t != null) candidateTaglineCtrl.text = t;
+      final ph = prefs.getString('${_prefPrefix}phone');
+      if (ph != null) candidatePhoneCtrl.text = ph;
+      final sl = prefs.getString('${_prefPrefix}slogan');
+      if (sl != null && sl.trim().isNotEmpty) candidateSloganCtrl.text = sl;
+      final tm = prefs.getString('${_prefPrefix}time');
+      if (tm != null && tm.trim().isNotEmpty) pollingTimeCtrl.text = tm;
+      final st = prefs.getString('${_prefPrefix}station');
+      if (st != null) pollingStationCtrl.text = st;
+      final th = prefs.getString('${_prefPrefix}theme');
+      if (th != null && th.isNotEmpty) selectedColorTheme = th;
+      final fs = prefs.getDouble('${_prefPrefix}fontScale');
+      if (fs != null && fs > 0) customFontScale = fs;
+      final ts = prefs.getString('${_prefPrefix}textScale');
+      if (ts != null && ts.isNotEmpty) selectedTextScale = ts;
+      final cp = prefs.getString('${_prefPrefix}customPrimary');
+      if (cp != null && cp.isNotEmpty) customPrimaryHex = cp;
+      final cbg = prefs.getString('${_prefPrefix}customBannerBg');
+      if (cbg != null && cbg.isNotEmpty) customBannerBgHex = cbg;
+      final cb = prefs.getString('${_prefPrefix}customBorder');
+      if (cb != null && cb.isNotEmpty) customBorderHex = cb;
+      final ct = prefs.getString('${_prefPrefix}customText');
+      if (ct != null && ct.isNotEmpty) customTextHex = ct;
+      final flds = prefs.getStringList('${_prefPrefix}fields');
+      if (flds != null && flds.isNotEmpty) {
+        selectedFields.clear();
+        selectedFields.addAll(flds);
+      }
+
+      final cPhoto = prefs.getString('${_prefPrefix}cand_photo');
+      if (cPhoto != null && cPhoto.isNotEmpty) {
+        try { candidatePhotoBytes = base64Decode(cPhoto); } catch (_) {}
+      }
+      final lPhoto = prefs.getString('${_prefPrefix}leader_photo');
+      if (lPhoto != null && lPhoto.isNotEmpty) {
+        try { leaderPhotoBytes = base64Decode(lPhoto); } catch (_) {}
+      }
+      final sImg = prefs.getString('${_prefPrefix}symbol');
+      if (sImg != null && sImg.isNotEmpty) {
+        try { symbolBytes = base64Decode(sImg); } catch (_) {}
+      }
+      final bImg = prefs.getString('${_prefPrefix}banner');
+      if (bImg != null && bImg.isNotEmpty) {
+        try { campaignBannerBytes = base64Decode(bImg); } catch (_) {}
+      }
+
+      if (mounted) setState(() {});
+    } catch (e) {
+      debugPrint('Error loading saved campaign settings: $e');
+    }
+  }
+
+  Future<void> _resetCampaignSettings() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      for (final key in prefs.getKeys().where((k) => k.startsWith(_prefPrefix))) {
+        await prefs.remove(key);
+      }
+      setState(() {
+        candidateNameCtrl.clear();
+        candidatePostCtrl.clear();
+        candidateTaglineCtrl.clear();
+        candidatePhoneCtrl.clear();
+        candidateSloganCtrl.clear();
+        pollingTimeCtrl.text = 'मतदान समय : प्रातः 7 से सायं 6 बजे तक';
+        pollingStationCtrl.clear();
+        candidatePhotoBytes = null;
+        leaderPhotoBytes = null;
+        symbolBytes = null;
+        campaignBannerBytes = null;
+        customFontScale = 1.0;
+        selectedTextScale = 'medium';
+        selectedColorTheme = 'saffron_crimson';
+      });
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('कार्ड सेटिंग्स रीसेट हो गई हैं।')),
+        );
+      }
+    } catch (e) {
+      debugPrint('Error resetting campaign settings: $e');
+    }
   }
 
   @override
@@ -125,6 +271,7 @@ class _ConfigurablePrintPageState extends State<ConfigurablePrintPage> {
     pollingStationCtrl.addListener(_onFieldChanged);
     _loadHierarchy();
     _loadCasteBreakdown();
+    _loadSavedCampaignSettings();
   }
 
   @override
@@ -435,6 +582,8 @@ class _ConfigurablePrintPageState extends State<ConfigurablePrintPage> {
       }
       params['colorTheme'] = selectedColorTheme;
       params['textScale'] = selectedTextScale;
+      params['fontScale'] = _fontScaleFactor.toStringAsFixed(2);
+      params['textScaleFactor'] = _fontScaleFactor.toStringAsFixed(2);
       if (selectedColorTheme == 'custom') {
         params['customPrimaryColor'] = '#$customPrimaryHex';
         params['customBannerBg'] = '#$customBannerBgHex';
@@ -569,6 +718,8 @@ class _ConfigurablePrintPageState extends State<ConfigurablePrintPage> {
         debugPrint('Banner upload note: $uploadErr');
       }
 
+      _saveCampaignSettings();
+
       if (mounted) {
         setState(() => isUploadingBanner = false);
         ScaffoldMessenger.of(context).showSnackBar(
@@ -602,6 +753,7 @@ class _ConfigurablePrintPageState extends State<ConfigurablePrintPage> {
       if (picked != null) {
         final compact = await _ensureCompactImage(picked.bytes!);
         setState(() => candidatePhotoBytes = compact);
+        _saveCampaignSettings();
       }
     } catch (e) {
       if (mounted) {
@@ -621,6 +773,7 @@ class _ConfigurablePrintPageState extends State<ConfigurablePrintPage> {
       if (picked != null) {
         final compact = await _ensureCompactImage(picked.bytes!);
         setState(() => leaderPhotoBytes = compact);
+        _saveCampaignSettings();
       }
     } catch (e) {
       if (mounted) {
@@ -639,6 +792,7 @@ class _ConfigurablePrintPageState extends State<ConfigurablePrintPage> {
       if (picked != null) {
         final compact = await _ensureCompactImage(picked.bytes!);
         setState(() => symbolBytes = compact);
+        _saveCampaignSettings();
       }
     } catch (e) {
       if (mounted) {
@@ -653,6 +807,7 @@ class _ConfigurablePrintPageState extends State<ConfigurablePrintPage> {
       final bytes = byteData.buffer.asUint8List();
       final compact = await _ensureCompactImage(bytes);
       setState(() => symbolBytes = compact);
+      _saveCampaignSettings();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -681,6 +836,7 @@ class _ConfigurablePrintPageState extends State<ConfigurablePrintPage> {
       if (cropped != null) {
         final compact = await _ensureCompactImage(cropped);
         setState(() => symbolBytes = compact);
+        _saveCampaignSettings();
       }
     } catch (e) {
       if (mounted) {
@@ -2002,7 +2158,7 @@ class _ConfigurablePrintPageState extends State<ConfigurablePrintPage> {
                                     ),
                                   ),
                                   GestureDetector(
-                                    onTap: () => setState(() => candidatePhotoBytes = null),
+                                    onTap: () { setState(() => candidatePhotoBytes = null); _saveCampaignSettings(); },
                                     child: const CircleAvatar(radius: 10, backgroundColor: Colors.red, child: Icon(Icons.close, size: 12, color: Colors.white)),
                                   ),
                                 ],
@@ -2064,7 +2220,7 @@ class _ConfigurablePrintPageState extends State<ConfigurablePrintPage> {
                                     ),
                                   ),
                                   GestureDetector(
-                                    onTap: () => setState(() => symbolBytes = null),
+                                    onTap: () { setState(() => symbolBytes = null); _saveCampaignSettings(); },
                                     child: const CircleAvatar(radius: 10, backgroundColor: Colors.red, child: Icon(Icons.close, size: 12, color: Colors.white)),
                                   ),
                                 ],
@@ -2166,7 +2322,7 @@ class _ConfigurablePrintPageState extends State<ConfigurablePrintPage> {
                                     ),
                                   ),
                                   GestureDetector(
-                                    onTap: () => setState(() => leaderPhotoBytes = null),
+                                    onTap: () { setState(() => leaderPhotoBytes = null); _saveCampaignSettings(); },
                                     child: const CircleAvatar(radius: 10, backgroundColor: Colors.red, child: Icon(Icons.close, size: 12, color: Colors.white)),
                                   ),
                                 ],
@@ -2439,26 +2595,101 @@ class _ConfigurablePrintPageState extends State<ConfigurablePrintPage> {
 
                 // 5. Text Size Scaling Control
                 Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    const Icon(Icons.format_size_rounded, size: 18, color: navy),
-                    const SizedBox(width: 6),
-                    const Text('5. पर्ची टेक्स्ट साइज़ (Font Size Scale):', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: navy)),
+                    Row(
+                      children: [
+                        const Icon(Icons.format_size_rounded, size: 18, color: navy),
+                        const SizedBox(width: 6),
+                        const Text('5. पर्ची टेक्स्ट साइज़ (Font Size Scale):', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: navy)),
+                      ],
+                    ),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                      decoration: BoxDecoration(
+                        color: const Color(0xff0284c7).withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: Text(
+                        '${(_fontScaleFactor * 100).toInt()}%',
+                        style: const TextStyle(fontWeight: FontWeight.bold, color: Color(0xff0284c7), fontSize: 13),
+                      ),
+                    ),
                   ],
                 ),
                 const SizedBox(height: 8),
+                SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: Row(
+                    children: [
+                      _buildTextSizeChip('extra_small_70', 'बहुत छोटा (70%)', 0.70),
+                      const SizedBox(width: 6),
+                      _buildTextSizeChip('small_80', 'छोटा (80%)', 0.80),
+                      const SizedBox(width: 6),
+                      _buildTextSizeChip('small', 'मध्यम छोटा (90%)', 0.90),
+                      const SizedBox(width: 6),
+                      _buildTextSizeChip('medium', 'सामान्य (100%)', 1.00),
+                      const SizedBox(width: 6),
+                      _buildTextSizeChip('large', 'बड़ा (110%)', 1.10),
+                      const SizedBox(width: 6),
+                      _buildTextSizeChip('extra_large', 'अतिरिक्त बड़ा (120%)', 1.20),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 10),
+                // Smooth Fine-Grained Slider Control (70% to 130%)
                 Row(
                   children: [
-                    _buildTextSizeChip('small', 'छोटा (90%)'),
-                    const SizedBox(width: 6),
-                    _buildTextSizeChip('medium', 'सामान्य (100%)'),
-                    const SizedBox(width: 6),
-                    _buildTextSizeChip('large', 'बड़ा (110%)'),
-                    const SizedBox(width: 6),
-                    _buildTextSizeChip('extra_large', 'अतिरिक्त बड़ा (120%)'),
+                    const Text('70%', style: TextStyle(fontSize: 11, color: muted, fontWeight: FontWeight.bold)),
+                    Expanded(
+                      child: Slider(
+                        value: _fontScaleFactor.clamp(0.70, 1.30),
+                        min: 0.70,
+                        max: 1.30,
+                        divisions: 12,
+                        label: '${(_fontScaleFactor * 100).toInt()}%',
+                        activeColor: const Color(0xff0284c7),
+                        onChanged: (val) {
+                          setState(() {
+                            customFontScale = double.parse(val.toStringAsFixed(2));
+                            if (val <= 0.75) {
+                              selectedTextScale = 'extra_small_70';
+                            } else if (val <= 0.85) {
+                              selectedTextScale = 'small_80';
+                            } else if (val <= 0.95) {
+                              selectedTextScale = 'small';
+                            } else if (val <= 1.05) {
+                              selectedTextScale = 'medium';
+                            } else if (val <= 1.15) {
+                              selectedTextScale = 'large';
+                            } else {
+                              selectedTextScale = 'extra_large';
+                            }
+                          });
+                          _saveCampaignSettings();
+                        },
+                      ),
+                    ),
+                    const Text('130%', style: TextStyle(fontSize: 11, color: muted, fontWeight: FontWeight.bold)),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                Row(
+                  children: [
+                    const Icon(Icons.check_circle_outline_rounded, size: 14, color: Color(0xff16a34a)),
+                    const SizedBox(width: 4),
+                    const Expanded(
+                      child: Text('कार्ड डिज़ाइन एवं डेटा स्वतः सुरक्षित (Auto-Saved) रहेगा। बार-बार भरने की आवश्यकता नहीं।', style: TextStyle(fontSize: 11, color: Color(0xff15803d), fontWeight: FontWeight.w600)),
+                    ),
+                    TextButton(
+                      style: TextButton.styleFrom(visualDensity: VisualDensity.compact, padding: EdgeInsets.zero),
+                      onPressed: _resetCampaignSettings,
+                      child: const Text('रीसेट करें', style: TextStyle(fontSize: 11, color: Colors.red)),
+                    ),
                   ],
                 ),
                 const SizedBox(height: 6),
-                const Text('⚡ ऑटो-फिट गारंटी: टेक्स्ट साइज़ बढ़ाने पर भी टेक्स्ट कभी बॉक्स से बाहर नहीं जाएगा और न ही ओवरलैप होगा।', style: TextStyle(fontSize: 10.5, color: muted)),
+                const Text('⚡ ऑटो-फिट गारंटी: टेक्स्ट साइज़ 70% से 130% तक बदलने पर भी कार्ड में कोई टेक्स्ट या फोटो ओवरलैप नहीं होगा।', style: TextStyle(fontSize: 10.5, color: muted)),
                 const SizedBox(height: 14),
                 const Divider(),
                 const SizedBox(height: 6),
@@ -2468,10 +2699,13 @@ class _ConfigurablePrintPageState extends State<ConfigurablePrintPage> {
                     const Text('या पूर्व-निर्मित पूरा बैनर लगाएं (Full Banner):', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: navy)),
                     if (campaignBannerBytes != null || campaignBannerUrl != null)
                       TextButton.icon(
-                        onPressed: () => setState(() {
-                          campaignBannerBytes = null;
-                          campaignBannerUrl = null;
-                        }),
+                        onPressed: () {
+                          setState(() {
+                            campaignBannerBytes = null;
+                            campaignBannerUrl = null;
+                          });
+                          _saveCampaignSettings();
+                        },
                         icon: const Icon(Icons.close, size: 14, color: Colors.red),
                         label: const Text('हटाएं', style: TextStyle(fontSize: 11, color: Colors.red)),
                       )
@@ -2799,6 +3033,7 @@ class _ConfigurablePrintPageState extends State<ConfigurablePrintPage> {
                       if (selectedFields.length > 1) selectedFields.remove(key);
                     }
                   });
+                  _saveCampaignSettings();
                 },
               );
             }).toList(),
@@ -3090,7 +3325,14 @@ class _ConfigurablePrintPageState extends State<ConfigurablePrintPage> {
   }
 
   double get _fontScaleFactor {
+    if (customFontScale != 1.0) {
+      return customFontScale;
+    }
     switch (selectedTextScale) {
+      case 'extra_small_70':
+        return 0.70;
+      case 'small_80':
+        return 0.80;
       case 'small':
         return 0.90;
       case 'large':
@@ -3498,39 +3740,73 @@ class _ConfigurablePrintPageState extends State<ConfigurablePrintPage> {
                               ),
                               const SizedBox(height: 2),
 
-                              // Guardian
-                              RichText(
-                                text: TextSpan(
-                                  children: [
-                                    TextSpan(text: 'पिता का नाम: ', style: TextStyle(fontSize: 9.5 * scale, fontWeight: FontWeight.bold, color: const Color(0xff1e293b))),
-                                    TextSpan(text: 'लड्डू लाल', style: TextStyle(fontSize: 9.5 * scale, fontWeight: FontWeight.bold, color: Colors.black)),
-                                  ],
+                              // Guardian (if selected)
+                              if (selectedFields.contains('guardianName') || selectedFields.isEmpty) ...[
+                                RichText(
+                                  text: TextSpan(
+                                    children: [
+                                      TextSpan(text: 'पिता का नाम: ', style: TextStyle(fontSize: 9.0 * scale, fontWeight: FontWeight.bold, color: const Color(0xff1e293b))),
+                                      TextSpan(text: 'लड्डू लाल', style: TextStyle(fontSize: 9.0 * scale, fontWeight: FontWeight.bold, color: Colors.black)),
+                                    ],
+                                  ),
                                 ),
-                              ),
-                              const SizedBox(height: 2),
+                                const SizedBox(height: 2),
+                              ],
 
-                              // House
-                              RichText(
-                                text: TextSpan(
-                                  children: [
-                                    TextSpan(text: 'मकान संख्या: ', style: TextStyle(fontSize: 9.5 * scale, fontWeight: FontWeight.bold, color: const Color(0xff1e293b))),
-                                    TextSpan(text: '235', style: TextStyle(fontSize: 9.5 * scale, fontWeight: FontWeight.bold, color: Colors.black)),
-                                  ],
+                              // House (if selected)
+                              if (selectedFields.contains('houseNumber') || selectedFields.isEmpty) ...[
+                                RichText(
+                                  text: TextSpan(
+                                    children: [
+                                      TextSpan(text: 'मकान संख्या: ', style: TextStyle(fontSize: 9.0 * scale, fontWeight: FontWeight.bold, color: const Color(0xff1e293b))),
+                                      TextSpan(text: '235', style: TextStyle(fontSize: 9.0 * scale, fontWeight: FontWeight.bold, color: Colors.black)),
+                                    ],
+                                  ),
                                 ),
-                              ),
-                              const SizedBox(height: 2),
+                                const SizedBox(height: 2),
+                              ],
 
-                              // Age & Gender
-                              RichText(
-                                text: TextSpan(
-                                  children: [
-                                    TextSpan(text: 'आयु: ', style: TextStyle(fontSize: 9.5 * scale, fontWeight: FontWeight.bold, color: const Color(0xff1e293b))),
-                                    TextSpan(text: '24   ', style: TextStyle(fontSize: 9.5 * scale, fontWeight: FontWeight.bold, color: Colors.black)),
-                                    TextSpan(text: 'लिंग: ', style: TextStyle(fontSize: 9.5 * scale, fontWeight: FontWeight.bold, color: const Color(0xff1e293b))),
-                                    TextSpan(text: 'पुरुष', style: TextStyle(fontSize: 9.5 * scale, fontWeight: FontWeight.bold, color: Colors.black)),
-                                  ],
+                              // Age & Gender (if selected)
+                              if (selectedFields.contains('age') || selectedFields.contains('gender') || selectedFields.isEmpty) ...[
+                                RichText(
+                                  text: TextSpan(
+                                    children: [
+                                      TextSpan(text: 'आयु: ', style: TextStyle(fontSize: 9.0 * scale, fontWeight: FontWeight.bold, color: const Color(0xff1e293b))),
+                                      TextSpan(text: '24   ', style: TextStyle(fontSize: 9.0 * scale, fontWeight: FontWeight.bold, color: Colors.black)),
+                                      TextSpan(text: 'लिंग: ', style: TextStyle(fontSize: 9.0 * scale, fontWeight: FontWeight.bold, color: const Color(0xff1e293b))),
+                                      TextSpan(text: 'पुरुष', style: TextStyle(fontSize: 9.0 * scale, fontWeight: FontWeight.bold, color: Colors.black)),
+                                    ],
+                                  ),
                                 ),
-                              ),
+                                const SizedBox(height: 2),
+                              ],
+
+                              // Mobile (if selected)
+                              if (selectedFields.contains('mobile')) ...[
+                                Text(
+                                  '📱 9829012345',
+                                  style: TextStyle(fontSize: 8.8 * scale, fontWeight: FontWeight.bold, color: const Color(0xff15803d)),
+                                ),
+                                const SizedBox(height: 2),
+                              ],
+
+                              // Caste (if selected)
+                              if (selectedFields.contains('caste')) ...[
+                                Text(
+                                  'जाति: ब्राह्मण',
+                                  style: TextStyle(fontSize: 8.5 * scale, fontWeight: FontWeight.bold, color: const Color(0xff4338ca)),
+                                ),
+                                const SizedBox(height: 2),
+                              ],
+
+                              // Village (if selected)
+                              if (selectedFields.contains('village')) ...[
+                                Text(
+                                  'गाँव: नाथडियास',
+                                  style: TextStyle(fontSize: 8.5 * scale, fontWeight: FontWeight.bold, color: const Color(0xff334155)),
+                                ),
+                                const SizedBox(height: 2),
+                              ],
                             ],
                           ),
                         ),
@@ -3665,7 +3941,7 @@ class _ConfigurablePrintPageState extends State<ConfigurablePrintPage> {
     final isPrimLight = primaryColor.computeLuminance() > 0.6;
     final activeThemeColor = isPrimLight ? const Color(0xff2563eb) : primaryColor;
     return InkWell(
-      onTap: () => setState(() => selectedColorTheme = key),
+      onTap: () { setState(() => selectedColorTheme = key); _saveCampaignSettings(); },
       borderRadius: BorderRadius.circular(10),
       child: Container(
         width: 175,
@@ -3775,13 +4051,19 @@ class _ConfigurablePrintPageState extends State<ConfigurablePrintPage> {
     );
   }
 
-  Widget _buildTextSizeChip(String key, String label) {
-    final isSelected = selectedTextScale == key;
+  Widget _buildTextSizeChip(String key, String label, double scaleVal) {
+    final isSelected = (selectedTextScale == key) || (_fontScaleFactor == scaleVal);
     return ChoiceChip(
       label: Text(label, style: TextStyle(fontSize: 11, fontWeight: isSelected ? FontWeight.bold : FontWeight.normal)),
       selected: isSelected,
       selectedColor: const Color(0xff0284c7).withValues(alpha: 0.18),
-      onSelected: (_) => setState(() => selectedTextScale = key),
+      onSelected: (_) {
+        setState(() {
+          selectedTextScale = key;
+          customFontScale = scaleVal;
+        });
+        _saveCampaignSettings();
+      },
       visualDensity: VisualDensity.compact,
     );
   }
