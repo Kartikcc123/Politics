@@ -3110,6 +3110,8 @@ class _ConfigurablePrintPageState extends State<ConfigurablePrintPage> {
     final borderCol = theme['border']!;
     final textCol = theme['text']!;
     final scale = _fontScaleFactor;
+    final isPrimaryLight = primary.computeLuminance() > 0.55;
+    final primaryTextColor = isPrimaryLight ? const Color(0xff0f172a) : Colors.white;
 
     final candidateName = candidateNameCtrl.text.trim().isNotEmpty
         ? candidateNameCtrl.text.trim()
@@ -3196,7 +3198,7 @@ class _ConfigurablePrintPageState extends State<ConfigurablePrintPage> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  // Candidate Banner Header
+                  // Candidate Banner Header OR Official Election Slip Header
                   if (campaignBannerBytes != null)
                     ClipRRect(
                       borderRadius: const BorderRadius.only(
@@ -3210,7 +3212,7 @@ class _ConfigurablePrintPageState extends State<ConfigurablePrintPage> {
                         fit: BoxFit.cover,
                       ),
                     )
-                  else
+                  else if (candidateName.isNotEmpty)
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
                       decoration: BoxDecoration(
@@ -3274,11 +3276,12 @@ class _ConfigurablePrintPageState extends State<ConfigurablePrintPage> {
                                       decoration: BoxDecoration(
                                         color: primary,
                                         borderRadius: BorderRadius.circular(4),
+                                        border: isPrimaryLight ? Border.all(color: const Color(0xff94a3b8), width: 1.0) : null,
                                       ),
                                       child: Text(
                                         candidatePost,
                                         style: TextStyle(
-                                          color: Colors.white,
+                                          color: primaryTextColor,
                                           fontWeight: FontWeight.bold,
                                           fontSize: 10 * scale,
                                         ),
@@ -3369,164 +3372,272 @@ class _ConfigurablePrintPageState extends State<ConfigurablePrintPage> {
                           ),
                         ],
                       ),
+                    )
+                  else
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 7),
+                      decoration: BoxDecoration(
+                        color: const Color(0xfff8fafc),
+                        borderRadius: const BorderRadius.only(
+                          topLeft: Radius.circular(10),
+                          topRight: Radius.circular(10),
+                        ),
+                        border: Border(bottom: BorderSide(color: borderCol, width: 1.0)),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.center,
+                        children: [
+                          Container(
+                            height: 3,
+                            width: double.infinity,
+                            decoration: BoxDecoration(
+                              color: const Color(0xff1e40af),
+                              borderRadius: BorderRadius.circular(2),
+                            ),
+                          ),
+                          const SizedBox(height: 5),
+                          const Text(
+                            'राजस्थान राज्य निर्वाचन आयोग | मतदाता सूचना पर्ची',
+                            style: TextStyle(fontSize: 9.5, fontWeight: FontWeight.bold, color: Color(0xff1e40af)),
+                            textAlign: TextAlign.center,
+                          ),
+                          const SizedBox(height: 3),
+                          Text(
+                            'ग्राम पंचायत : ${selectedGramPanchayat ?? "नारायणखेड़ा"} (वार्ड संख्या : ${selectedWard ?? "5"})',
+                            style: TextStyle(fontSize: 12.5 * scale, fontWeight: FontWeight.bold, color: const Color(0xff0f172a)),
+                            textAlign: TextAlign.center,
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            'विधानसभा क्षेत्र सं. 179  |  भाग संख्या : ${selectedPart ?? "87"}',
+                            style: TextStyle(fontSize: 8.5 * scale, color: const Color(0xff475569), fontWeight: FontWeight.w500),
+                            textAlign: TextAlign.center,
+                          ),
+                        ],
+                      ),
                     ),
 
-                  // Voter Details Box (Demo Voter with Authentic Details & Scale)
-                  Container(
-                    padding: const EdgeInsets.all(8),
-                    color: Colors.white,
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        // Ward badge & EPIC badge row
-                        Row(
-                          children: [
-                            Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                              decoration: BoxDecoration(
-                                color: primary,
-                                borderRadius: BorderRadius.circular(4),
-                              ),
-                              child: Text(
-                                'वार्ड नं. ${selectedWard ?? "01"}',
-                                style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 10),
-                              ),
-                            ),
-                            const SizedBox(width: 6),
-                            Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                              decoration: BoxDecoration(
-                                color: const Color(0xffeff6ff),
-                                border: Border.all(color: const Color(0xff3b82f6)),
-                                borderRadius: BorderRadius.circular(4),
-                              ),
-                              child: const Text(
-                                'EPIC: RJ/19/123/456789',
-                                style: TextStyle(color: Color(0xff1d4ed8), fontWeight: FontWeight.bold, fontSize: 10),
-                              ),
-                            ),
-                            const Spacer(),
-                            Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                              decoration: BoxDecoration(
-                                color: const Color(0xfffef3c7),
-                                border: Border.all(color: const Color(0xffd97706)),
-                                borderRadius: BorderRadius.circular(4),
-                              ),
-                              child: const Text(
-                                'क्र.सं. 105',
-                                style: TextStyle(color: Color(0xff92400e), fontWeight: FontWeight.bold, fontSize: 10),
-                              ),
-                            ),
-                          ],
+                  // Tear-off dashed divider
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 3, horizontal: 8),
+                    child: Row(
+                      children: List.generate(
+                        40,
+                        (index) => Expanded(
+                          child: Container(
+                            color: index % 2 == 0 ? Colors.transparent : const Color(0xff94a3b8),
+                            height: 1,
+                          ),
                         ),
-                        const SizedBox(height: 6),
+                      ),
+                    ),
+                  ),
+                  const Text(
+                    '--- मतदान तिथि से पूर्व बांटी गयी पर्ची, मतदान केन्द्र में जाने से पहले ऊपर का हिस्सा फाड़ दें ---',
+                    style: TextStyle(fontSize: 7, color: Color(0xff64748b)),
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 4),
 
-                        // Voter info with photo
-                        Row(
-                          children: [
-                            // Demo Voter Photo
-                            Container(
-                              width: 50,
-                              height: 60,
-                              decoration: BoxDecoration(
-                                color: const Color(0xfff1f5f9),
-                                borderRadius: BorderRadius.circular(4),
-                                border: Border.all(color: const Color(0xffcbd5e1)),
-                              ),
-                              child: const Icon(Icons.person, color: Color(0xff94a3b8), size: 38),
-                            ),
-                            const SizedBox(width: 10),
-
-                            // Voter Typography
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
+                  // Voter Details Box (Realistic 3-Column Layout: Details + Photo + Ward Box)
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                    color: Colors.white,
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        // Col 1: Serial + EPIC + Voter typography
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              // Serial + EPIC Box
+                              Row(
                                 children: [
-                                  Row(
-                                    children: [
-                                      Text(
-                                        'मतदाता का नाम: ',
-                                        style: TextStyle(fontSize: 11 * scale, color: const Color(0xff64748b)),
-                                      ),
-                                      Text(
-                                        'मोहन लाल जाट',
-                                        style: TextStyle(
-                                          fontWeight: FontWeight.bold,
-                                          fontSize: 12 * scale,
-                                          color: const Color(0xff0f172a),
-                                        ),
-                                      ),
-                                    ],
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xfff1f5f9),
+                                      borderRadius: BorderRadius.circular(3),
+                                      border: Border.all(color: const Color(0xff475569), width: 0.8),
+                                    ),
+                                    child: Text(
+                                      '1',
+                                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 10 * scale, color: const Color(0xff0f172a)),
+                                    ),
                                   ),
-                                  const SizedBox(height: 2),
-                                  Row(
-                                    children: [
-                                      Text(
-                                        'पिता/पति का नाम: ',
-                                        style: TextStyle(fontSize: 10.5 * scale, color: const Color(0xff64748b)),
+                                  const SizedBox(width: 4),
+                                  Expanded(
+                                    child: Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1.5),
+                                      decoration: BoxDecoration(
+                                        color: const Color(0xfff8fafc),
+                                        borderRadius: BorderRadius.circular(3),
+                                        border: Border.all(color: const Color(0xff334155), width: 0.8),
                                       ),
-                                      Text(
-                                        'रामेश्वर लाल',
-                                        style: TextStyle(
-                                          fontWeight: FontWeight.w600,
-                                          fontSize: 11 * scale,
-                                          color: const Color(0xff1e293b),
-                                        ),
+                                      child: Text(
+                                        'SNE1889906',
+                                        style: TextStyle(fontWeight: FontWeight.bold, fontSize: 9.5 * scale, color: const Color(0xff0f172a)),
+                                        textAlign: TextAlign.center,
+                                        overflow: TextOverflow.ellipsis,
                                       ),
-                                    ],
-                                  ),
-                                  const SizedBox(height: 2),
-                                  Row(
-                                    children: [
-                                      Text(
-                                        'मकान संख्या: 24   |   आयु: 42 वर्ष   |   लिंग: पुरुष',
-                                        style: TextStyle(
-                                          fontSize: 10 * scale,
-                                          fontWeight: FontWeight.w500,
-                                          color: const Color(0xff475569),
-                                        ),
-                                      ),
-                                    ],
+                                    ),
                                   ),
                                 ],
                               ),
-                            ),
-                          ],
+                              const SizedBox(height: 5),
+
+                              // Name
+                              RichText(
+                                text: TextSpan(
+                                  children: [
+                                    TextSpan(text: 'नाम: ', style: TextStyle(fontSize: 10 * scale, fontWeight: FontWeight.bold, color: const Color(0xff1e293b))),
+                                    TextSpan(text: 'भैरू लाल', style: TextStyle(fontSize: 10.5 * scale, fontWeight: FontWeight.bold, color: Colors.black)),
+                                  ],
+                                ),
+                              ),
+                              const SizedBox(height: 2),
+
+                              // Guardian
+                              RichText(
+                                text: TextSpan(
+                                  children: [
+                                    TextSpan(text: 'पिता का नाम: ', style: TextStyle(fontSize: 9.5 * scale, fontWeight: FontWeight.bold, color: const Color(0xff1e293b))),
+                                    TextSpan(text: 'लड्डू लाल', style: TextStyle(fontSize: 9.5 * scale, fontWeight: FontWeight.bold, color: Colors.black)),
+                                  ],
+                                ),
+                              ),
+                              const SizedBox(height: 2),
+
+                              // House
+                              RichText(
+                                text: TextSpan(
+                                  children: [
+                                    TextSpan(text: 'मकान संख्या: ', style: TextStyle(fontSize: 9.5 * scale, fontWeight: FontWeight.bold, color: const Color(0xff1e293b))),
+                                    TextSpan(text: '235', style: TextStyle(fontSize: 9.5 * scale, fontWeight: FontWeight.bold, color: Colors.black)),
+                                  ],
+                                ),
+                              ),
+                              const SizedBox(height: 2),
+
+                              // Age & Gender
+                              RichText(
+                                text: TextSpan(
+                                  children: [
+                                    TextSpan(text: 'आयु: ', style: TextStyle(fontSize: 9.5 * scale, fontWeight: FontWeight.bold, color: const Color(0xff1e293b))),
+                                    TextSpan(text: '24   ', style: TextStyle(fontSize: 9.5 * scale, fontWeight: FontWeight.bold, color: Colors.black)),
+                                    TextSpan(text: 'लिंग: ', style: TextStyle(fontSize: 9.5 * scale, fontWeight: FontWeight.bold, color: const Color(0xff1e293b))),
+                                    TextSpan(text: 'पुरुष', style: TextStyle(fontSize: 9.5 * scale, fontWeight: FontWeight.bold, color: Colors.black)),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+
+                        // Col 2: Voter Photo Box
+                        Container(
+                          width: 46,
+                          height: 58,
+                          decoration: BoxDecoration(
+                            color: const Color(0xfff1f5f9),
+                            borderRadius: BorderRadius.circular(3),
+                            border: Border.all(color: const Color(0xffcbd5e1), width: 1.0),
+                          ),
+                          child: const Icon(Icons.person, color: Color(0xff94a3b8), size: 36),
+                        ),
+                        const SizedBox(width: 6),
+
+                        // Col 3: Dedicated Ward & Polling Station Box (Auto-Contrast applied!)
+                        Container(
+                          width: 82,
+                          padding: const EdgeInsets.symmetric(horizontal: 3, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: primary,
+                            borderRadius: BorderRadius.circular(4),
+                            border: isPrimaryLight ? Border.all(color: const Color(0xff475569), width: 1.0) : null,
+                          ),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                'वार्ड नंबर',
+                                style: TextStyle(
+                                  color: primaryTextColor,
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 8 * scale,
+                                ),
+                                textAlign: TextAlign.center,
+                              ),
+                              Text(
+                                '${selectedWard ?? "5"}',
+                                style: TextStyle(
+                                  color: primaryTextColor,
+                                  fontWeight: FontWeight.w900,
+                                  fontSize: 16 * scale,
+                                ),
+                                textAlign: TextAlign.center,
+                              ),
+                              Container(
+                                margin: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                                height: 0.8,
+                                color: isPrimaryLight ? const Color(0xff94a3b8) : const Color(0xfffef08a),
+                              ),
+                              Text(
+                                'मतदान केंद्र',
+                                style: TextStyle(
+                                  color: primaryTextColor,
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 7 * scale,
+                                ),
+                                textAlign: TextAlign.center,
+                              ),
+                              Text(
+                                pollingStation.isNotEmpty ? pollingStation : 'राजकीय विद्यालय, तेल्याखेड़ी',
+                                style: TextStyle(
+                                  color: primaryTextColor,
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 6.8 * scale,
+                                ),
+                                textAlign: TextAlign.center,
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ],
+                          ),
                         ),
                       ],
                     ),
                   ),
 
-                  // Polling Station & Time Footer Bar
+                  // Polling Time & Serial Footer Bar (Auto-Contrast applied!)
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                     decoration: BoxDecoration(
                       color: primary,
                       borderRadius: const BorderRadius.only(
                         bottomLeft: Radius.circular(10),
                         bottomRight: Radius.circular(10),
                       ),
+                      border: isPrimaryLight ? const Border(top: BorderSide(color: Color(0xff64748b), width: 0.8)) : null,
                     ),
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        Expanded(
-                          child: Text(
-                            '📍 $pollingStation',
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontWeight: FontWeight.bold,
-                              fontSize: 9.5 * scale,
-                            ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
                         Text(
                           pollingTime,
                           style: TextStyle(
-                            color: Colors.white.withValues(alpha: 0.95),
+                            color: primaryTextColor,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 8.8 * scale,
+                          ),
+                        ),
+                        Text(
+                          '1',
+                          style: TextStyle(
+                            color: primaryTextColor,
+                            fontWeight: FontWeight.bold,
                             fontSize: 8.5 * scale,
                           ),
                         ),
@@ -3551,6 +3662,8 @@ class _ConfigurablePrintPageState extends State<ConfigurablePrintPage> {
     required Color borderColor,
   }) {
     final isSelected = selectedColorTheme == key;
+    final isPrimLight = primaryColor.computeLuminance() > 0.6;
+    final activeThemeColor = isPrimLight ? const Color(0xff2563eb) : primaryColor;
     return InkWell(
       onTap: () => setState(() => selectedColorTheme = key),
       borderRadius: BorderRadius.circular(10),
@@ -3558,10 +3671,10 @@ class _ConfigurablePrintPageState extends State<ConfigurablePrintPage> {
         width: 175,
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
         decoration: BoxDecoration(
-          color: isSelected ? primaryColor.withValues(alpha: 0.08) : Colors.white,
+          color: isSelected ? activeThemeColor.withValues(alpha: 0.08) : Colors.white,
           borderRadius: BorderRadius.circular(10),
           border: Border.all(
-            color: isSelected ? primaryColor : const Color(0xffcbd5e1),
+            color: isSelected ? activeThemeColor : const Color(0xffcbd5e1),
             width: isSelected ? 2 : 1,
           ),
         ),
@@ -3583,6 +3696,7 @@ class _ConfigurablePrintPageState extends State<ConfigurablePrintPage> {
                   decoration: BoxDecoration(
                     color: primaryColor,
                     shape: BoxShape.circle,
+                    border: isPrimLight ? Border.all(color: const Color(0xff94a3b8), width: 1) : null,
                   ),
                 ),
               ),
@@ -3598,7 +3712,7 @@ class _ConfigurablePrintPageState extends State<ConfigurablePrintPage> {
                     style: TextStyle(
                       fontWeight: FontWeight.bold,
                       fontSize: 11,
-                      color: isSelected ? primaryColor : const Color(0xff0f172a),
+                      color: isSelected ? activeThemeColor : const Color(0xff0f172a),
                     ),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,

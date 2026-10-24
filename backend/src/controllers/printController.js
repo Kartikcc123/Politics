@@ -710,6 +710,41 @@ exports.printMembers = async (req, res, next) => {
     const selectedThemeKey = params.colorTheme || params.theme || 'saffron_crimson';
     const baseTheme = THEMES[selectedThemeKey] || THEMES.saffron_crimson;
 
+    function isColorLight(hex) {
+      if (!hex) return false;
+      const clean = String(hex).replace('#', '').trim();
+      if (clean.length !== 6 && clean.length !== 3) return false;
+      let r, g, b;
+      if (clean.length === 6) {
+        r = parseInt(clean.substring(0, 2), 16);
+        g = parseInt(clean.substring(2, 4), 16);
+        b = parseInt(clean.substring(4, 6), 16);
+      } else {
+        r = parseInt(clean[0] + clean[0], 16);
+        g = parseInt(clean[1] + clean[1], 16);
+        b = parseInt(clean[2] + clean[2], 16);
+      }
+      if (isNaN(r) || isNaN(g) || isNaN(b)) return false;
+      return (r * 299 + g * 587 + b * 114) / 1000 > 155;
+    }
+
+    const wardBoxBgColor = params.customPrimaryColor || (selectedThemeKey === 'custom' ? (params.primaryColor || '#b91c1c') : baseTheme.wardBoxBg);
+    const isWardLight = isColorLight(wardBoxBgColor);
+    const wardBoxTextColor = isWardLight ? '#0f172a' : (baseTheme.wardBoxText || '#ffffff');
+    const wardDividerColor = isWardLight ? '#94a3b8' : (baseTheme.wardDivider || '#fef08a');
+    const customBorder = params.customBorderColor;
+    const isBorderLight = isColorLight(customBorder);
+    const wardBoxBorderColor = isWardLight
+      ? ((customBorder && !isBorderLight) ? customBorder : '#475569')
+      : (customBorder && !isBorderLight ? customBorder : null);
+
+    const footerBgColor = params.customPrimaryColor || (selectedThemeKey === 'custom' ? (params.footerColor || '#dc2626') : baseTheme.footerBg);
+    const isFooterLight = isColorLight(footerBgColor);
+    const footerTextColor = isFooterLight ? '#0f172a' : (params.customFooterTextColor || baseTheme.footerText || '#ffffff');
+    const footerBorderColor = isFooterLight
+      ? ((customBorder && !isBorderLight) ? customBorder : '#64748b')
+      : null;
+
     const theme = {
       bannerBg: params.customBannerBg || (selectedThemeKey === 'custom' ? (params.bannerBg || '#fffdf6') : baseTheme.bannerBg),
       bannerBorder: params.customBorderColor || (selectedThemeKey === 'custom' ? (params.borderColor || '#f59e0b') : baseTheme.bannerBorder),
@@ -724,11 +759,13 @@ exports.printMembers = async (req, res, next) => {
       serialBorder: baseTheme.serialBorder,
       serialBg: baseTheme.serialBg,
       serialText: baseTheme.serialText,
-      wardBoxBg: params.customPrimaryColor || (selectedThemeKey === 'custom' ? (params.primaryColor || '#b91c1c') : baseTheme.wardBoxBg),
-      wardBoxText: baseTheme.wardBoxText,
-      wardDivider: baseTheme.wardDivider,
-      footerBg: params.customPrimaryColor || (selectedThemeKey === 'custom' ? (params.footerColor || '#dc2626') : baseTheme.footerBg),
-      footerText: params.customFooterTextColor || baseTheme.footerText,
+      wardBoxBg: wardBoxBgColor,
+      wardBoxText: wardBoxTextColor,
+      wardDivider: wardDividerColor,
+      wardBoxBorder: wardBoxBorderColor,
+      footerBg: footerBgColor,
+      footerText: footerTextColor,
+      footerBorder: footerBorderColor,
     };
 
     const textScale = Math.min(1.22, Math.max(0.85, Number(params.fontScale || params.textScaleFactor) || (params.textScale === 'small' ? 0.92 : (params.textScale === 'large' ? 1.08 : (params.textScale === 'extra_large' ? 1.15 : 1.0)))));
@@ -1170,8 +1207,11 @@ exports.printMembers = async (req, res, next) => {
           }
         }
 
-        // Col 3: Booth, Ward & Polling Station Box (Theme Based Dynamic Styling)
+        // Col 3: Booth, Ward & Polling Station Box (Theme Based Dynamic Styling with Auto-Contrast)
         doc.roundedRect(col3X, contentY, col3W, contentH - 4, 4).fillColor(theme.wardBoxBg).fill();
+        if (theme.wardBoxBorder) {
+          doc.roundedRect(col3X, contentY, col3W, contentH - 4, 4).lineWidth(0.9).strokeColor(theme.wardBoxBorder).stroke();
+        }
         
         // WARD HEADER
         doc.font('HindiBold').fontSize(8.5 * textScale).fillColor(theme.wardBoxText).text('वार्ड नंबर', col3X + 2, contentY + 2.5, { width: col3W - 4, align: 'center', lineBreak: false });
@@ -1227,10 +1267,13 @@ exports.printMembers = async (req, res, next) => {
         }
         doc.fillColor(theme.wardBoxText).text(boothDesc, col3X + 2, contentY + 46.5, { width: col3W - 4, align: 'center', height: 25 });
 
-        // 4. BOTTOM FOOTER STRIP (Theme Based)
+        // 4. BOTTOM FOOTER STRIP (Theme Based with Auto-Contrast)
         const footerH = 16;
         const footerY = y + cardHeight - footerH;
         doc.rect(x + 0.5, footerY, cardWidth - 1, footerH).fillColor(theme.footerBg).fill();
+        if (theme.footerBorder) {
+          doc.moveTo(x + 0.5, footerY).lineTo(x + cardWidth - 0.5, footerY).lineWidth(0.8).strokeColor(theme.footerBorder).stroke();
+        }
         const votingTime = params.pollingTime || 'मतदान समय : प्रातः 7 से सायं 6 बजे तक';
         doc.font('HindiBold').fontSize(9.2 * textScale).fillColor(theme.footerText).text(votingTime, x, footerY + 3, { width: cardWidth, align: 'center' });
         doc.font('Hindi').fontSize(8.0 * textScale).fillColor(theme.footerText).text(String(i + 1), x, footerY + 3.5, { width: cardWidth - 8, align: 'right' });
