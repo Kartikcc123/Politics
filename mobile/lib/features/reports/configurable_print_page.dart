@@ -133,6 +133,8 @@ class _ConfigurablePrintPageState extends State<ConfigurablePrintPage> {
       await prefs.setString('${_prefPrefix}theme', selectedColorTheme);
       await prefs.setDouble('${_prefPrefix}fontScale', customFontScale);
       await prefs.setString('${_prefPrefix}textScale', selectedTextScale);
+      await prefs.setString('${_prefPrefix}densityPreset', densityPreset);
+      await prefs.setInt('${_prefPrefix}cardsPerPage', campaignCardsPerPage);
       await prefs.setString('${_prefPrefix}customPrimary', customPrimaryHex);
       await prefs.setString('${_prefPrefix}customBannerBg', customBannerBgHex);
       await prefs.setString('${_prefPrefix}customBorder', customBorderHex);
@@ -190,6 +192,10 @@ class _ConfigurablePrintPageState extends State<ConfigurablePrintPage> {
       if (fs != null && fs > 0) customFontScale = fs;
       final ts = prefs.getString('${_prefPrefix}textScale');
       if (ts != null && ts.isNotEmpty) selectedTextScale = ts;
+      final dp = prefs.getString('${_prefPrefix}densityPreset');
+      if (dp != null && dp.isNotEmpty) densityPreset = dp;
+      final cpp = prefs.getInt('${_prefPrefix}cardsPerPage');
+      if (cpp != null && cpp > 0) campaignCardsPerPage = cpp;
       final cp = prefs.getString('${_prefPrefix}customPrimary');
       if (cp != null && cp.isNotEmpty) customPrimaryHex = cp;
       final cbg = prefs.getString('${_prefPrefix}customBannerBg');
@@ -561,6 +567,8 @@ class _ConfigurablePrintPageState extends State<ConfigurablePrintPage> {
       }
       if (candidateNameCtrl.text.trim().isNotEmpty) {
         params['candidateName'] = candidateNameCtrl.text.trim();
+      } else if (candidatePhotoBytes != null || leaderPhotoBytes != null || symbolBytes != null) {
+        params['candidateName'] = 'कर्मठ प्रत्याशी';
       }
       if (candidatePostCtrl.text.trim().isNotEmpty) {
         params['candidatePost'] = candidatePostCtrl.text.trim();
@@ -2049,11 +2057,14 @@ class _ConfigurablePrintPageState extends State<ConfigurablePrintPage> {
                   value: 'campaign_8',
                   groupValue: densityPreset,
                   activeColor: const Color(0xffd97706),
-                  onChanged: (val) => setState(() {
-                    densityPreset = val!;
-                    columns = 2;
-                    rowsPerPage = 4;
-                  }),
+                  onChanged: (val) {
+                    setState(() {
+                      densityPreset = val!;
+                      columns = 2;
+                      rowsPerPage = 4;
+                    });
+                    _saveCampaignSettings();
+                  },
                 ),
               ],
             ),
@@ -2113,9 +2124,12 @@ class _ConfigurablePrintPageState extends State<ConfigurablePrintPage> {
                       selectedColor: const Color(0xfff59e0b),
                       backgroundColor: Colors.white,
                       labelStyle: TextStyle(color: isSel ? Colors.white : navy, fontWeight: isSel ? FontWeight.bold : FontWeight.normal),
-                      onSelected: (val) => setState(() {
-                        if (val) campaignCardsPerPage = count;
-                      }),
+                      onSelected: (val) {
+                        if (val) {
+                          setState(() => campaignCardsPerPage = count);
+                          _saveCampaignSettings();
+                        }
+                      },
                     );
                   }).toList(),
                 ),
