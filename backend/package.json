@@ -10,8 +10,7 @@
     "seed:admin": "node src/seedAdmin.js",
     "data:reset-members": "node src/resetMemberData.js",
     "data:import-raipur-master": "node src/importRaipurMaster.js",
-    "test:ocr-golden": "node scripts/compareOcrGolden.js",
-    "postinstall": "node scripts/patchWhatsappWeb.js"
+    "test:ocr-golden": "node scripts/compareOcrGolden.js"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1119.0",
