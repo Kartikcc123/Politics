@@ -130,6 +130,14 @@ function applyPrintFilters(req, filter) {
   if (query.letter) {
     filter.name = new RegExp(`^${escapeRegex(String(query.letter).trim())}`, 'i');
   }
+  if (query.isDeleted === 'true' || query.vilopan === 'true') {
+    filter.isDeleted = true;
+  } else if (query.isDeleted === 'false') {
+    filter.isDeleted = { $ne: true };
+  }
+  if (query.supplementType) {
+    filter.supplementType = query.supplementType;
+  }
   if (query.hasMobile === 'true' || query.withMobileOnly === 'true') {
     filter.mobile = { $nin: ['', null], $exists: true };
   }
@@ -609,6 +617,12 @@ exports.printMembers = async (req, res, next) => {
       if (fs.existsSync(pPath)) defaultPartySymbolImageObj = doc.openImage(fs.readFileSync(pPath));
     } catch (e) { console.error('Default party symbol load error:', e.message); }
 
+    let bannerTemplateCleanImageObj = null;
+    try {
+      const btcPath = path.join(__dirname, '../assets/banner_template_clean.png');
+      if (fs.existsSync(btcPath)) bannerTemplateCleanImageObj = doc.openImage(fs.readFileSync(btcPath));
+    } catch (e) { console.error('Banner template clean load error:', e.message); }
+
     const effectiveSymbolImageObj = symbolImageObj || defaultPartySymbolImageObj;
 
     const isCompact = rowsPerPage >= 8 || columns >= 3;
@@ -954,8 +968,15 @@ exports.printMembers = async (req, res, next) => {
         // =========================================================================
 
         const isCompactCard = cardHeight < 170;
+        const isDeletedVoter = Boolean(
+          m.isDeleted === true ||
+          m.deletionReason ||
+          m.deletionSupplement ||
+          (m.supplementType && /del|vilop|विलोपित|निरस्त/i.test(String(m.supplementType))) ||
+          (params.isDeleted === 'true' || params.vilopan === 'true')
+        );
 
-        // 0. Double Tiranga Luxury Border (Outer Green + Inner Saffron with Top Center Voting Emblem)
+        // 0. Double Tiranga Luxury Border (Outer Green + Inner Saffron)
         doc.roundedRect(x, y, cardWidth, cardHeight, 4.5).lineWidth(1.2).strokeColor('#0e8742').stroke();
         doc.roundedRect(x + 1.8, y + 1.8, cardWidth - 3.6, cardHeight - 3.6, 3.0).lineWidth(0.9).strokeColor('#f37021').stroke();
 
@@ -994,8 +1015,13 @@ exports.printMembers = async (req, res, next) => {
         // Allocates 40% of card height when 5-6 lines are present, leaving 60% for voter details (zero overlap!).
         const bannerFraction = bannerLineCount >= 5 ? 0.40 : (bannerLineCount >= 4 ? 0.36 : 0.33);
         const bannerH = Math.max(50, Math.min(76, Math.round(cardHeight * bannerFraction)));
-        const photoR = Math.max(16, Math.min(23, Math.round((bannerH - 12) / 2)));
-        const photoCY = y + 2 + (bannerH - 2) / 2;
+        const scaleX = (cardWidth - 4) / 1024;
+        const scaleY = (bannerH - 2) / 280;
+
+        const leftCX = x + 2 + 96 * scaleX;
+        const rightCX = x + 2 + 928 * scaleX;
+        const photoCY = y + 2 + 130 * scaleY;
+        const photoR = 86 * scaleY;
 
         if (bannerImageObj) {
           try {
@@ -1008,28 +1034,30 @@ exports.printMembers = async (req, res, next) => {
           drawDefaultBanner();
         }
 
-        // Top Center Break & Voting Finger Emblem (Drawn on top so it never gets covered)
-        if (votingFingerImageObj) {
-          const iconW = isCompactCard ? 34 : 40;
-          const iconH = isCompactCard ? 17 : 20;
-          const iconX = x + cardWidth / 2 - iconW / 2;
-          const iconY = y - (isCompactCard ? 4.5 : 5.0);
-          // Clean white break clears border lines right under the finger
-          doc.rect(x + cardWidth / 2 - 5, y - 1.5, 10, 4.0).fillColor('#ffffff').fill();
-          doc.image(votingFingerImageObj, iconX, iconY, { width: iconW, height: iconH });
-        }
-
         function drawDefaultBanner() {
           if (hasCampaignDetails) {
             if (!candName) {
               candName = postName ? '' : 'कर्मठ प्रत्याशी';
             }
 
-            // Rich Graphic Designer Election Campaign Banner with Theme Styling
-            doc.roundedRect(x + 2, y + 2, cardWidth - 4, bannerH - 2, 2).fillColor(theme.bannerBg).fill();
+            // Draw Clean Tiranga Wave Banner Header Background
+            if (bannerTemplateCleanImageObj) {
+              try {
+                doc.save();
+                doc.roundedRect(x + 2, y + 2, cardWidth - 4, bannerH - 2, 2.0).clip();
+                doc.image(bannerTemplateCleanImageObj, x + 2, y + 2, {
+                  width: cardWidth - 4,
+                  height: bannerH - 2,
+                });
+                doc.restore();
+              } catch (_) {
+                doc.roundedRect(x + 2, y + 2, cardWidth - 4, bannerH - 2, 2).fillColor(theme.bannerBg).fill();
+              }
+            } else {
+              doc.roundedRect(x + 2, y + 2, cardWidth - 4, bannerH - 2, 2).fillColor(theme.bannerBg).fill();
+            }
 
-            // Candidate Photo in Ornate Golden Circular Frame
-            const leftCX = x + 8 + photoR;
+            // Candidate Photo in Left Circular Golden Frame
             if (candidatePhotoImageObj) {
               try {
                 doc.save();
@@ -1042,16 +1070,11 @@ exports.printMembers = async (req, res, next) => {
                   valign: 'center',
                 });
                 doc.restore();
-
-                // Multi-layered Golden Metallic Ring
-                doc.circle(leftCX, photoCY, photoR + 1.6).lineWidth(1.8).strokeColor(theme.photoRing || '#d4af37').stroke();
-                doc.circle(leftCX, photoCY, photoR + 2.6).lineWidth(0.7).strokeColor(theme.photoRing2 || '#f59e0b').stroke();
-                doc.circle(leftCX, photoCY, photoR).lineWidth(0.5).strokeColor(theme.photoRing3 || '#b45309').stroke();
               } catch (_) {}
             }
+            doc.circle(leftCX, photoCY, photoR).lineWidth(1.2).strokeColor('#d4af37').stroke();
 
             // Right Side: Leader Photo in Golden Ring
-            const rightCX = x + cardWidth - 8 - photoR;
             if (leaderPhotoImageObj) {
               try {
                 doc.save();
@@ -1064,73 +1087,61 @@ exports.printMembers = async (req, res, next) => {
                   valign: 'center',
                 });
                 doc.restore();
-
-                doc.circle(rightCX, photoCY, photoR + 1.6).lineWidth(1.8).strokeColor(theme.photoRing || '#d4af37').stroke();
-                doc.circle(rightCX, photoCY, photoR + 2.6).lineWidth(0.7).strokeColor(theme.photoRing2 || '#f59e0b').stroke();
-                doc.circle(rightCX, photoCY, photoR).lineWidth(0.5).strokeColor(theme.photoRing3 || '#b45309').stroke();
               } catch (_) {}
             }
+            doc.circle(rightCX, photoCY, photoR).lineWidth(1.2).strokeColor('#d4af37').stroke();
 
-            // Party Symbol / Election Sign
-            if (effectiveSymbolImageObj) {
-              const symbolR = leaderPhotoImageObj
-                ? Math.max(9.5, Math.min(13.5, Math.round(photoR * 0.60)))
-                : photoR;
-              const symbolCX = leaderPhotoImageObj ? (rightCX - photoR - symbolR - 3.5) : rightCX;
-              const symbolCY = leaderPhotoImageObj ? (y + 4.0 + symbolR) : photoCY;
+            // Custom Party Symbol (if user passed specific custom symbol, overlay it on top center)
+            if (symbolImageObj) {
+              const centerCX = x + cardWidth / 2;
+              const centerCY = y + 2 + 52 * scaleY;
+              const centerR = 34 * scaleY;
               try {
                 doc.save();
-                doc.circle(symbolCX, symbolCY, symbolR).fillColor('#ffffff').fill();
-                doc.circle(symbolCX, symbolCY, symbolR).clip();
-                doc.image(effectiveSymbolImageObj, symbolCX - symbolR, symbolCY - symbolR, {
-                  width: symbolR * 2,
-                  height: symbolR * 2,
-                  fit: [symbolR * 2, symbolR * 2],
+                doc.circle(centerCX, centerCY, centerR).fillColor('#ffffff').fill();
+                doc.circle(centerCX, centerCY, centerR).clip();
+                doc.image(symbolImageObj, centerCX - centerR, centerCY - centerR, {
+                  width: centerR * 2,
+                  height: centerR * 2,
+                  fit: [centerR * 2, centerR * 2],
                   align: 'center',
                   valign: 'center',
                 });
                 doc.restore();
-                if (leaderPhotoImageObj) {
-                  doc.circle(symbolCX, symbolCY, symbolR).lineWidth(0.6).strokeColor('#0e8742').stroke();
-                } else {
-                  doc.circle(symbolCX, symbolCY, symbolR + 1.6).lineWidth(1.8).strokeColor(theme.photoRing || '#d4af37').stroke();
-                  doc.circle(symbolCX, symbolCY, symbolR + 2.6).lineWidth(0.7).strokeColor(theme.photoRing2 || '#f59e0b').stroke();
-                  doc.circle(symbolCX, symbolCY, symbolR).lineWidth(0.5).strokeColor(theme.photoRing3 || '#b45309').stroke();
-                }
+                doc.circle(centerCX, centerCY, centerR).lineWidth(0.8).strokeColor('#16a34a').stroke();
               } catch (_) {}
             }
 
             // Center Text Typography with intelligent Auto-Balancing
-            const textLeft = candidatePhotoImageObj ? (leftCX + photoR + 3) : (x + 8);
-            const textRight = leaderPhotoImageObj ? (rightCX - photoR - 3) : (effectiveSymbolImageObj ? (rightCX - photoR - 3) : (x + cardWidth - 8));
+            const textLeft = leftCX + photoR + 4;
+            const textRight = rightCX - photoR - 4;
             const textWidth = Math.max(70, textRight - textLeft);
 
-            // Dynamic element heights and font sizes:
             const h1Size = isCompactCard ? 6.2 : 7.6;
             const h2Size = isCompactCard ? 5.8 : 7.2;
-            const nameSize = isCompactCard ? 10.5 : 13.0;
-            const tagSize = isCompactCard ? 5.0 : 6.5;
-            const slogSize = isCompactCard ? 5.0 : 6.8;
+            const nameSize = isCompactCard ? 10.5 : 12.5;
+            const tagSize = isCompactCard ? 5.0 : 6.4;
+            const slogSize = isCompactCard ? 5.0 : 6.4;
             const phoneSize = isCompactCard ? 5.6 : 7.0;
 
             const h1H = h1Size * 1.15;
             const h2H = h2Size * 1.15;
-            const nameH = nameSize * 1.25;
+            const nameBoxH = isCompactCard ? 13.5 : 15.5;
             const tagH = tagSize * 1.15;
             const slogH = slogSize * 1.15;
             const phoneH = phoneSize * 1.15;
 
+            const startTextY = y + (isCompactCard ? 16.5 : 18.0);
             let totalContentH = 0;
             if (gpName) totalContentH += h1H;
             if (postName) totalContentH += h2H;
-            if (candName) totalContentH += nameH;
+            if (candName) totalContentH += nameBoxH;
             if (candTagline) totalContentH += tagH;
-            if (candSlogan) totalContentH += slogH;
+            if (candSlogan || hasCampaignDetails) totalContentH += slogH;
             if (candPhone) totalContentH += phoneH;
 
-            const startTextY = votingFingerImageObj ? (y + (isCompactCard ? 13.2 : 14.5)) : (y + 2.2);
-            const availBannerH = bannerH - (startTextY - y) - 2.2;
-            const extraGap = Math.max(0.6, Math.min(3.2, (availBannerH - totalContentH) / Math.max(1, bannerLineCount - 1)));
+            const availBannerH = bannerH - (startTextY - y) - 2.0;
+            const extraGap = Math.max(0.4, Math.min(2.5, (availBannerH - totalContentH) / Math.max(1, bannerLineCount - 1)));
 
             let curY = startTextY;
             const mainTextColor = '#091431';
@@ -1155,13 +1166,26 @@ exports.printMembers = async (req, res, next) => {
               curY += h2H + extraGap;
             }
 
-            // Line 3: Candidate Name (Clean Hero spacing)
+            // Line 3: Candidate Name inside Trapezoid Ribbon Box
             if (candName) {
+              const slant = isCompactCard ? 6.0 : 7.5;
+              const boxW = Math.min(textWidth, 128);
+              const boxX = textLeft + (textWidth - boxW) / 2;
+
+              doc.save();
+              doc.polygon(
+                [boxX + slant, curY],
+                [boxX + boxW - slant, curY],
+                [boxX + boxW, curY + nameBoxH],
+                [boxX, curY + nameBoxH]
+              ).fillColor('#091f42').fill();
+              doc.restore();
+
               let sN = nameSize * textScale;
               doc.font('HindiBold').fontSize(sN);
-              while (sN > 7.0 && doc.widthOfString(candName) > textWidth) { sN -= 0.4; doc.fontSize(sN); }
-              doc.fillColor(mainTextColor).text(candName, textLeft, curY, { width: textWidth, align: 'center', lineBreak: false });
-              curY += nameH + extraGap + 0.4;
+              while (sN > 7.0 && doc.widthOfString(candName) > (boxW - slant * 2 - 4)) { sN -= 0.4; doc.fontSize(sN); }
+              doc.fillColor('#ffffff').text(candName, boxX, curY + (nameBoxH - sN) / 2 - 0.5, { width: boxW, align: 'center', lineBreak: false });
+              curY += nameBoxH + extraGap + 0.4;
             }
 
             // Line 4: Tagline
@@ -1174,8 +1198,8 @@ exports.printMembers = async (req, res, next) => {
               curY += tagH + extraGap;
             }
 
-            // Line 5: Slogan
-            if (candSlogan) {
+            // Line 5: Slogan (Right above mobile number)
+            if (candSlogan || hasCampaignDetails) {
               const sloganText = candSlogan || 'को अपना अमूल्य मत देकर भारी मतों से विजयी बनावें।';
               let sS = slogSize * textScale;
               doc.font('HindiBold').fontSize(sS);
@@ -1184,13 +1208,28 @@ exports.printMembers = async (req, res, next) => {
               curY += slogH + extraGap;
             }
 
-            // Line 6: Phone Number (Strictly auto-anchored with safe buffer)
+            // Line 6: Phone Number flanked by tricolor accent lines
             if (candPhone) {
               const phoneText = `मो. ${candPhone}`;
               let sP = phoneSize * textScale;
               doc.font('HindiBold').fontSize(sP);
               while (sP > 4.5 && doc.widthOfString(phoneText) > textWidth) { sP -= 0.3; doc.fontSize(sP); }
+              const phoneW = doc.widthOfString(phoneText);
               const safePhoneY = Math.min(curY, y + bannerH - phoneH - 1.8);
+              const phoneX = textLeft + (textWidth - phoneW) / 2;
+
+              const stripeW = 20;
+              const leftStripeX = phoneX - stripeW - 5;
+              const rightStripeX = phoneX + phoneW + 5;
+              const stripeY = safePhoneY + phoneH * 0.45;
+
+              if (stripeW > 10) {
+                doc.moveTo(leftStripeX, stripeY - 1.2).lineTo(leftStripeX + stripeW, stripeY - 1.2).lineWidth(0.8).strokeColor('#f37021').stroke();
+                doc.moveTo(rightStripeX, stripeY - 1.2).lineTo(rightStripeX + stripeW, stripeY - 1.2).lineWidth(0.8).strokeColor('#f37021').stroke();
+                doc.moveTo(leftStripeX, stripeY + 1.2).lineTo(leftStripeX + stripeW, stripeY + 1.2).lineWidth(0.8).strokeColor('#0e8742').stroke();
+                doc.moveTo(rightStripeX, stripeY + 1.2).lineTo(rightStripeX + stripeW, stripeY + 1.2).lineWidth(0.8).strokeColor('#0e8742').stroke();
+              }
+
               doc.fillColor(mainTextColor).text(phoneText, textLeft, safePhoneY, { width: textWidth, align: 'center', lineBreak: false });
             }
           } else {
@@ -1381,6 +1420,33 @@ exports.printMembers = async (req, res, next) => {
           }
         }
 
+        // IF DELETED VOTER: Draw Rotated Red Rubber Stamp on Photo Box!
+        if (isDeletedVoter) {
+          doc.save();
+          const stampW = col2W * 0.92;
+          const stampH = isCompactCard ? 19.0 : 21.0;
+          const stampCX = col2X + col2W / 2;
+          const stampCY = contentY + photoBoxH * 0.68;
+
+          // Rotate around center
+          doc.translate(stampCX, stampCY);
+          doc.rotate(-18);
+
+          // Translucent white stamp backdrop
+          doc.roundedRect(-stampW / 2, -stampH / 2, stampW, stampH, 2.5).fillColor('#ffffff', 0.92).fill();
+
+          // Outer thick red border
+          doc.roundedRect(-stampW / 2, -stampH / 2, stampW, stampH, 2.5).lineWidth(1.4).strokeColor('#dc2626').stroke();
+          // Inner thin red border
+          doc.roundedRect(-stampW / 2 + 1.8, -stampH / 2 + 1.8, stampW - 3.6, stampH - 3.6, 1.8).lineWidth(0.6).strokeColor('#dc2626').stroke();
+
+          // Stamp text: विलोपित / (DELETED) - strictly no मृतक per user instruction
+          doc.font('HindiBold').fontSize(isCompactCard ? 6.8 : 7.6).fillColor('#dc2626').text('विलोपित', -stampW / 2, -stampH / 2 + 2.0, { width: stampW, align: 'center', lineBreak: false });
+          doc.font('HindiBold').fontSize(isCompactCard ? 4.8 : 5.4).fillColor('#dc2626').text('(DELETED)', -stampW / 2, -stampH / 2 + (isCompactCard ? 9.8 : 11.2), { width: stampW, align: 'center', lineBreak: false });
+
+          doc.restore();
+        }
+
         // Col 3: Booth, Ward & Polling Station Box (Proportional distribution)
         const wardBoxH = footerY - contentY - 2.5;
         doc.roundedRect(col3X, contentY, col3W, wardBoxH, 3.5).fillColor(theme.wardBoxBg).fill();
@@ -1444,13 +1510,51 @@ exports.printMembers = async (req, res, next) => {
         doc.fillColor(theme.wardBoxText).text(boothDesc, col3X + 1, contentY + wardBoxH * 0.62, { width: col3W - 2, align: 'center', height: maxBoothH });
 
         // 4. BOTTOM FOOTER STRIP
-        doc.rect(x + 1.8, footerY, cardWidth - 3.6, footerH).fillColor(theme.footerBg).fill();
-        if (theme.footerBorder) {
-          doc.moveTo(x + 1.8, footerY).lineTo(x + cardWidth - 1.8, footerY).lineWidth(0.8).strokeColor(theme.footerBorder).stroke();
+        if (isDeletedVoter) {
+          // DELETED VOTER FOOTER (Dark bar with red pill badge [✕ विलोपित] and deletion notice)
+          doc.rect(x + 1.8, footerY, cardWidth - 3.6, footerH).fillColor('#091b36').fill();
+
+          const badgeW = isCompactCard ? 44 : 48;
+          const badgeH = footerH - 3.2;
+          const badgeX = x + 4;
+          const badgeY = footerY + 1.6;
+
+          // Red Pill Badge
+          doc.roundedRect(badgeX, badgeY, badgeW, badgeH, 2.5).fillColor('#dc2626').fill();
+
+          // Draw crisp vector white 'X' in circle
+          const iconR = badgeH * 0.32;
+          const iconCX = badgeX + 7;
+          const iconCY = badgeY + badgeH / 2;
+          doc.circle(iconCX, iconCY, iconR).fillColor('#ffffff').fill();
+          doc.save();
+          doc.lineWidth(1.2).strokeColor('#dc2626');
+          const d = iconR * 0.55;
+          doc.moveTo(iconCX - d, iconCY - d).lineTo(iconCX + d, iconCY + d).stroke();
+          doc.moveTo(iconCX - d, iconCY + d).lineTo(iconCX + d, iconCY - d).stroke();
+          doc.restore();
+
+          doc.font('HindiBold').fontSize(isCompactCard ? 5.8 : 6.8).fillColor('#ffffff').text('विलोपित', badgeX + 13, badgeY + (isCompactCard ? 1.6 : 2.2), { width: badgeW - 14, align: 'center', lineBreak: false });
+
+          // White divider
+          doc.moveTo(badgeX + badgeW + 4, footerY + 2.5).lineTo(badgeX + badgeW + 4, footerY + footerH - 2.5).lineWidth(0.7).strokeColor('#94a3b8').stroke();
+
+          // Deletion notice in Hindi
+          const noticeText = 'मतदाता का नाम अब सूची से विलोपित (Deleted) कर दिया गया है';
+          doc.font('HindiBold').fontSize(isCompactCard ? 5.4 : 6.2).fillColor('#ffffff').text(noticeText, badgeX + badgeW + 8, footerY + (isCompactCard ? 2.4 : 3.0), { width: cardWidth - badgeW - 26, align: 'left', lineBreak: false });
+
+          // Serial index
+          doc.font('Hindi').fontSize(isCompactCard ? 6.5 : 7.5).fillColor('#ffffff').text(String(i + 1), x, footerY + (isCompactCard ? 2.4 : 3.0), { width: cardWidth - 6, align: 'right' });
+        } else {
+          // Standard Polling Hours Footer
+          doc.rect(x + 1.8, footerY, cardWidth - 3.6, footerH).fillColor(theme.footerBg).fill();
+          if (theme.footerBorder) {
+            doc.moveTo(x + 1.8, footerY).lineTo(x + cardWidth - 1.8, footerY).lineWidth(0.8).strokeColor(theme.footerBorder).stroke();
+          }
+          const votingTime = params.pollingTime || 'मतदान समय : प्रातः 7:00 से सायं 6:00 बजे तक';
+          doc.font('HindiBold').fontSize(Math.max(6.2, (isCompactCard ? 7.0 : 8.2) * textScale)).fillColor(theme.footerText).text(votingTime, x, footerY + (isCompactCard ? 2.2 : 2.8), { width: cardWidth, align: 'center' });
+          doc.font('Hindi').fontSize(Math.max(5.5, (isCompactCard ? 6.5 : 7.5) * textScale)).fillColor(theme.footerText).text(String(i + 1), x, footerY + (isCompactCard ? 2.4 : 3.0), { width: cardWidth - 6, align: 'right' });
         }
-        const votingTime = params.pollingTime || 'मतदान समय : प्रातः 7:00 से सायं 6:00 बजे तक';
-        doc.font('HindiBold').fontSize(Math.max(6.2, (isCompactCard ? 7.0 : 8.2) * textScale)).fillColor(theme.footerText).text(votingTime, x, footerY + (isCompactCard ? 2.2 : 2.8), { width: cardWidth, align: 'center' });
-        doc.font('Hindi').fontSize(Math.max(5.5, (isCompactCard ? 6.5 : 7.5) * textScale)).fillColor(theme.footerText).text(String(i + 1), x, footerY + (isCompactCard ? 2.4 : 3.0), { width: cardWidth - 6, align: 'right' });
       } else {
         // =========================================================================
         // STANDARD VOTER LIST CARD GRID
