@@ -118,19 +118,44 @@ async function processCampaign(campaign) {
   }
   campaign.status = 'running';
   console.log(`[WhatsApp Queue] Sending batch of ${batch.length} messages for campaign "${campaign.title}"...`);
+
+  const mediaObj = (campaign.mediaData && campaign.mediaData.length > 50) ? {
+    data: campaign.mediaData,
+    mimeType: campaign.mediaMimeType || 'image/jpeg',
+    filename: campaign.mediaFilename || 'poster.jpg',
+  } : null;
+
+  // Track already sent mobiles in this campaign so no mobile gets duplicate messages
+  const alreadySentMobiles = new Set(
+    campaign.recipients
+      .filter((r) => r.status === 'sent')
+      .map((r) => normalizeMobile(r.mobile))
+  );
+
   for (let index = 0; index < batch.length; index += 1) {
     const recipient = batch[index];
+    const norm = normalizeMobile(recipient.mobile);
+
+    // Skip if this mobile number already received a message in this campaign
+    if (alreadySentMobiles.has(norm)) {
+      recipient.status = 'sent';
+      recipient.sentAt = new Date();
+      recipient.error = 'Duplicate mobile in campaign skipped';
+      continue;
+    }
+
     recipient.status = 'processing';
     recipient.attempts += 1;
     try {
       recipient.providerMessageId = sender.provider === 'whatsapp_web'
-        ? await sendWebMessage(sender, recipient.mobile, recipient.text)
+        ? await sendWebMessage(sender, recipient.mobile, recipient.text, mediaObj)
         : await sendCloudMessage(sender, recipient, campaign);
       recipient.status = 'sent';
       recipient.sentAt = new Date();
       recipient.error = '';
       campaign.sentCount += 1;
-      console.log(`[WhatsApp Queue] ✅ Message sent to ${recipient.mobile} (${recipient.name})`);
+      alreadySentMobiles.add(norm);
+      console.log(`[WhatsApp Queue] ✅ Message ${mediaObj ? 'with photo ' : ''}sent to ${recipient.mobile} (${recipient.name})`);
     } catch (error) {
       console.error(`[WhatsApp Queue] ❌ Error sending to ${recipient.mobile}:`, error.message);
       recipient.error = error.message;
@@ -143,11 +168,13 @@ async function processCampaign(campaign) {
       }
     }
     if (index < batch.length - 1) {
-      const baseSeconds = Math.max(3, campaign.messageDelaySeconds || 5);
-      // Anti-Ban: Dynamic random jitter between messages (e.g., 5s, 8s, 10s)
-      const randomJitter = Math.floor(Math.random() * 6);
-      const totalDelayMs = (baseSeconds + randomJitter) * 1000;
-      await wait(totalDelayMs);
+      const userDelay = Math.max(2, campaign.messageDelaySeconds || 5);
+      // Dynamic anti-ban jitter: e.g. for 6s configured, varies between ~3s and 8s
+      const minDelay = Math.max(2, Math.round(userDelay * 0.55));
+      const maxDelay = Math.max(minDelay + 1, Math.round(userDelay * 1.25));
+      const actualDelaySeconds = Math.floor(Math.random() * (maxDelay - minDelay + 1)) + minDelay;
+      console.log(`[WhatsApp Queue] ⏳ Dynamic anti-ban delay before next: ${actualDelaySeconds}s (configured: ${userDelay}s)`);
+      await wait(actualDelaySeconds * 1000);
     }
   }
   campaign.nextBatchAt = new Date(Date.now() + campaign.intervalSeconds * 1000);

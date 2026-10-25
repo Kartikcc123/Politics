@@ -115,6 +115,18 @@ class _BulkMessagePageState extends State<BulkMessagePage> {
     if (onlyWithMobile) {
       body['hasMobile'] = 'true';
     }
+    if (attachPhoto && pickedImagePath != null && File(pickedImagePath!).existsSync()) {
+      try {
+        final bytes = File(pickedImagePath!).readAsBytesSync();
+        final ext = pickedImagePath!.toLowerCase();
+        final mime = ext.endsWith('.png') ? 'image/png' : 'image/jpeg';
+        body['mediaData'] = base64Encode(bytes);
+        body['mediaMimeType'] = mime;
+        body['mediaFilename'] = pickedImageName ?? 'poster.jpg';
+      } catch (e) {
+        debugPrint('Error reading campaign image: $e');
+      }
+    }
     if (recipientMode == 'custom') {
       final nums = customPhones.text
           .split(RegExp(r'[\n,;]'))

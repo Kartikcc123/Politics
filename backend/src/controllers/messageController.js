@@ -168,6 +168,19 @@ function campaignFilter(req) {
     filter.organizationPost = new RegExp(escapeRegex(String(body.organizationPost).trim()), 'i');
   }
 
+  // Gender filter: male, female, other
+  const genderParam = (body.gender || '').trim().toLowerCase();
+  if (genderParam && genderParam !== 'all') {
+    filter.gender = genderParam;
+  }
+
+  // Age range filter: minAge, maxAge
+  if (body.minAge || body.maxAge) {
+    filter.age = {};
+    if (body.minAge) filter.age.$gte = Number(body.minAge);
+    if (body.maxAge) filter.age.$lte = Number(body.maxAge);
+  }
+
   // Events: birthday / anniversary
   if (body.eventType === 'birthday') Object.assign(filter, monthDayExpr('dob', body.occasionDate));
   if (body.eventType === 'anniversary') Object.assign(filter, monthDayExpr('anniversary', body.occasionDate));
@@ -333,12 +346,18 @@ exports.removeSender = async (req, res, next) => {
     res.json({ id: sender._id, deleted: true });
   } catch (error) { next(error); }
 };
+function normalizeMobile(value) {
+  let digits = String(value || '').replace(/\D/g, '').replace(/^0+/, '');
+  if (digits.length === 10) digits = `91${digits}`;
+  return digits;
+}
+
 exports.preview = async (req, res, next) => {
   try {
     const isCustom = req.body.recipientMode === 'custom' || (Array.isArray(req.body.customRecipients) && req.body.customRecipients.length > 0);
     if (isCustom) {
       const rawNums = Array.isArray(req.body.customRecipients) ? req.body.customRecipients : [];
-      const cleanNums = [...new Set(rawNums.map((n) => String(n).replace(/\D/g, '').replace(/^0+/, '').trim()).filter((n) => n.length >= 10))];
+      const cleanNums = [...new Set(rawNums.map((n) => normalizeMobile(n)).filter((n) => n.length >= 10))];
       return res.json({
         matched: cleanNums.length,
         eligible: cleanNums.length,
@@ -350,13 +369,38 @@ exports.preview = async (req, res, next) => {
 
     const members = await Member.find(campaignFilter(req))
       .select('name surname mobile whatsappOptIn village dob anniversary')
-      .limit(5000).lean();
-    const eligible = members.filter((member) => member.mobile && member.whatsappOptIn !== false);
+      .limit(10000).lean();
+
+    const seenMobiles = new Set();
+    const eligible = [];
+    let missingMobile = 0;
+    let optedOut = 0;
+
+    for (const member of members) {
+      if (!member.mobile) {
+        missingMobile++;
+        continue;
+      }
+      if (member.whatsappOptIn === false) {
+        optedOut++;
+        continue;
+      }
+      const norm = normalizeMobile(member.mobile);
+      if (norm.length >= 10) {
+        if (!seenMobiles.has(norm)) {
+          seenMobiles.add(norm);
+          eligible.push(member);
+        }
+      } else {
+        missingMobile++;
+      }
+    }
+
     res.json({
       matched: members.length,
       eligible: eligible.length,
-      missingMobile: members.filter((member) => !member.mobile).length,
-      optedOut: members.filter((member) => member.mobile && member.whatsappOptIn === false).length,
+      missingMobile,
+      optedOut,
       samples: eligible.slice(0, 5),
     });
   } catch (error) { next(error); }
@@ -379,7 +423,7 @@ exports.broadcast = async (req, res, next) => {
 
     if (isCustom) {
       const rawNums = Array.isArray(req.body.customRecipients) ? req.body.customRecipients : [];
-      const cleanNums = [...new Set(rawNums.map((n) => String(n).replace(/\D/g, '').replace(/^0+/, '').trim()).filter((n) => n.length >= 10))];
+      const cleanNums = [...new Set(rawNums.map((n) => normalizeMobile(n)).filter((n) => n.length >= 10))];
       if (!cleanNums.length) {
         return res.status(400).json({ message: 'कम से कम एक मान्य 10-अंकों का मोबाइल नंबर दर्ज करें।' });
       }
@@ -394,11 +438,26 @@ exports.broadcast = async (req, res, next) => {
       const members = await Member.find(campaignFilter(req))
         .populate('party ward booth')
         .select('name surname mobile party ward booth partNumber dob anniversary whatsappOptIn assemblyName tehsil gramPanchayat village caste subCaste organizationPost guardianName')
-        .limit(5000);
-      const eligible = members.filter((member) => member.mobile && member.whatsappOptIn !== false);
+        .limit(10000);
       totalMatched = members.length;
-      optedOut = members.filter((member) => member.mobile && member.whatsappOptIn === false).length;
-      messages = eligible.map((member) => ({
+
+      // Deduplicate by normalized mobile so family members with the same phone number receive only 1 message per campaign
+      const seenMobiles = new Set();
+      const uniqueEligible = [];
+      for (const member of members) {
+        if (!member.mobile) continue;
+        if (member.whatsappOptIn === false) {
+          optedOut++;
+          continue;
+        }
+        const norm = normalizeMobile(member.mobile);
+        if (norm.length >= 10 && !seenMobiles.has(norm)) {
+          seenMobiles.add(norm);
+          uniqueEligible.push(member);
+        }
+      }
+
+      messages = uniqueEligible.map((member) => ({
         member: member._id,
         name: member.name,
         mobile: member.mobile,
@@ -424,6 +483,9 @@ exports.broadcast = async (req, res, next) => {
       message: template,
       templateName: String(req.body.templateName || '').trim(),
       templateLanguage: String(req.body.templateLanguage || 'hi').trim(),
+      mediaData: req.body.mediaData || '',
+      mediaMimeType: req.body.mediaMimeType || '',
+      mediaFilename: req.body.mediaFilename || 'poster.jpg',
       filters: req.body,
       totalMatched,
       totalEligible: messages.length,

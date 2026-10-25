@@ -1,4 +1,4 @@
-﻿const mongoose = require('mongoose');
+const mongoose = require('mongoose');
 
 const RecipientSchema = new mongoose.Schema({
   member: { type: mongoose.Schema.Types.ObjectId, ref: 'Member' },
@@ -29,6 +29,9 @@ const MessageCampaignSchema = new mongoose.Schema({
   message: { type: String, required: true },
   templateName: { type: String, trim: true, default: '' },
   templateLanguage: { type: String, trim: true, default: 'hi' },
+  mediaData: { type: String, default: '' },
+  mediaMimeType: { type: String, default: '' },
+  mediaFilename: { type: String, default: 'poster.jpg' },
   filters: mongoose.Schema.Types.Mixed,
   totalMatched: Number,
   totalEligible: Number,

@@ -1,7 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const QRCode = require('qrcode');
-const { Client, LocalAuth } = require('whatsapp-web.js');
+const { Client, LocalAuth, MessageMedia } = require('whatsapp-web.js');
 const MessageSender = require('../models/MessageSender');
 
 const clients = new Map();
@@ -105,7 +105,7 @@ async function disconnectSender(id, logout = false) {
   });
 }
 
-async function sendWebMessage(sender, mobile, text) {
+async function sendWebMessage(sender, mobile, text, mediaObj = null) {
   const id = String(sender._id);
   let client = clients.get(id);
   if (!client) client = await connectSender(sender);
@@ -124,7 +124,27 @@ async function sendWebMessage(sender, mobile, text) {
     numberId = await client.getNumberId(digits);
   } catch (_) {}
   const targetSerialized = numberId?._serialized || `${digits}@c.us`;
-  const message = await client.sendMessage(targetSerialized, text);
+
+  let message;
+  if (mediaObj && mediaObj.data && mediaObj.data.length > 50) {
+    try {
+      let base64Clean = mediaObj.data;
+      if (base64Clean.includes('base64,')) {
+        base64Clean = base64Clean.split('base64,')[1];
+      }
+      const media = new MessageMedia(
+        mediaObj.mimeType || 'image/jpeg',
+        base64Clean,
+        mediaObj.filename || 'poster.jpg'
+      );
+      message = await client.sendMessage(targetSerialized, media, { caption: text || '' });
+    } catch (mediaError) {
+      console.warn(`[WhatsApp Web] Media send failed to ${digits}, sending text only fallback:`, mediaError.message);
+      message = await client.sendMessage(targetSerialized, text);
+    }
+  } else {
+    message = await client.sendMessage(targetSerialized, text);
+  }
   return message.id?._serialized || '';
 }
 
