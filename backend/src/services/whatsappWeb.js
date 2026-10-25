@@ -4,6 +4,12 @@ const QRCode = require('qrcode');
 const { Client, LocalAuth, MessageMedia } = require('whatsapp-web.js');
 const MessageSender = require('../models/MessageSender');
 
+// Apply disk patch if needed on startup
+try {
+  const { patchUtilsFile } = require('../../scripts/patchWhatsappWeb');
+  patchUtilsFile();
+} catch (_) {}
+
 const clients = new Map();
 const ready = new Set();
 const dataPath = path.resolve(process.env.WHATSAPP_SESSION_PATH || path.join(__dirname, '../../whatsapp-sessions'));
@@ -14,6 +20,30 @@ function sessionKey(sender) {
 
 async function updateSender(id, data) {
   await MessageSender.findByIdAndUpdate(id, { $set: data });
+}
+
+async function ensurePatchedPupPage(client) {
+  if (!client || !client.pupPage) return;
+  try {
+    await client.pupPage.evaluate(() => {
+      try {
+        const sendAction = window.require && window.require('WAWebSendMsgChatAction');
+        if (sendAction && !sendAction._memoizePatched) {
+          const orig = sendAction.addAndSendMsgToChat;
+          sendAction.addAndSendMsgToChat = function (chat, message) {
+            if (message) {
+              delete message.__x_id;
+              if (message._id && (!message.id || !message.id._serialized)) {
+                message.id = message._id;
+              }
+            }
+            return orig.apply(this, arguments);
+          };
+          sendAction._memoizePatched = true;
+        }
+      } catch (_) {}
+    });
+  } catch (_) {}
 }
 
 async function connectSender(senderOrId) {
@@ -70,6 +100,7 @@ async function connectSender(senderOrId) {
   }).catch(() => {}));
   client.on('ready', async () => {
     ready.add(id);
+    await ensurePatchedPupPage(client);
     await updateSender(id, {
       connectionStatus: 'connected', qrCode: '',
       connectedNumber: client.info?.wid?.user || sender.displayNumber,
@@ -153,6 +184,7 @@ async function sendWebMessage(sender, mobile, text, mediaObj = null) {
         filename
       );
       console.log(`[WhatsApp Web] 📤 Sending media (${mimeType}, ${filename}, ${base64Clean.length} b64 chars) with caption to ${targetSerialized}...`);
+      await ensurePatchedPupPage(client);
       message = await client.sendMessage(targetSerialized, media, { caption: text || '' });
       console.log(`[WhatsApp Web] ✅ Media successfully sent to ${targetSerialized}`);
     } catch (mediaError) {

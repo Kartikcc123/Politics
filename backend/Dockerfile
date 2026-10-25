@@ -25,6 +25,7 @@ COPY backend/python/requirements.txt ./python/requirements.txt
 RUN pip3 install --break-system-packages --no-cache-dir -r python/requirements.txt
 
 COPY backend/ .
+RUN node scripts/patchWhatsappWeb.js
 
 RUN pdftoppm -v \
   && pdfimages -v \
