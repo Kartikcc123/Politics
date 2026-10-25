@@ -128,14 +128,17 @@ async function sendWebMessage(sender, mobile, text, mediaObj = null) {
   let message;
   if (mediaObj && mediaObj.data && mediaObj.data.length > 50) {
     try {
-      let base64Clean = mediaObj.data;
+      let base64Clean = String(mediaObj.data || '').trim();
       if (base64Clean.includes('base64,')) {
         base64Clean = base64Clean.split('base64,')[1];
       }
+      base64Clean = base64Clean.replace(/[\r\n\s]/g, '');
+      const mimeType = mediaObj.mimeType || (mediaObj.filename?.endsWith('.png') ? 'image/png' : 'image/jpeg');
+      const filename = mediaObj.filename || 'poster.jpg';
       const media = new MessageMedia(
-        mediaObj.mimeType || 'image/jpeg',
+        mimeType,
         base64Clean,
-        mediaObj.filename || 'poster.jpg'
+        filename
       );
       message = await client.sendMessage(targetSerialized, media, { caption: text || '' });
     } catch (mediaError) {

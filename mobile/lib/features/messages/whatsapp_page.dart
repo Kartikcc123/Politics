@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
@@ -28,7 +29,12 @@ class _WhatsAppPageState extends State<WhatsAppPage> with SingleTickerProviderSt
 
   // Media
   String? _pickedImagePath;
+  Uint8List? _pickedImageBytes;
   String? _pickedImageName;
+
+  bool get _hasPickedImage =>
+      _pickedImageBytes != null ||
+      (_pickedImagePath != null && !kIsWeb && File(_pickedImagePath!).existsSync());
 
   // UI state
   bool _isComposerExpanded = false;
@@ -298,32 +304,44 @@ class _WhatsAppPageState extends State<WhatsAppPage> with SingleTickerProviderSt
       final result = await FilePicker.platform.pickFiles(
         type: FileType.image,
         allowMultiple: false,
+        withData: true,
       );
       if (result != null && result.files.isNotEmpty) {
-        final originalPath = result.files.first.path;
-        if (originalPath != null) {
-          final originalFile = File(originalPath);
+        final picked = result.files.first;
+        final name = picked.name;
+        final bytes = picked.bytes;
+        final path = picked.path;
+
+        if (bytes != null) {
+          setState(() {
+            _pickedImageBytes = bytes;
+            _pickedImageName = name;
+            _pickedImagePath = path;
+          });
+        } else if (path != null && !kIsWeb) {
+          final originalFile = File(path);
           if (await originalFile.exists()) {
             final tempDir = await getTemporaryDirectory();
-            final ext = originalPath.contains('.') ? originalPath.split('.').last : 'jpg';
+            final ext = path.contains('.') ? path.split('.').last : 'jpg';
             final localCopy = File('${tempDir.path}/whatsapp_poster_${DateTime.now().millisecondsSinceEpoch}.$ext');
             await originalFile.copy(localCopy.path);
-
+            final diskBytes = await localCopy.readAsBytes();
             setState(() {
               _pickedImagePath = localCopy.path;
-              _pickedImageName = result.files.first.name;
+              _pickedImageBytes = diskBytes;
+              _pickedImageName = name;
             });
-
-            if (mounted) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('📷 फोटो/पोस्टर सफलतापूर्वक जुड़ गया है!'),
-                  backgroundColor: Color(0xff16a34a),
-                  duration: Duration(seconds: 2),
-                ),
-              );
-            }
           }
+        }
+
+        if (_hasPickedImage && mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('📷 फोटो/पोस्टर सफलतापूर्वक जुड़ गया है!'),
+              backgroundColor: Color(0xff16a34a),
+              duration: Duration(seconds: 2),
+            ),
+          );
         }
       }
     } catch (e) {
@@ -338,6 +356,7 @@ class _WhatsAppPageState extends State<WhatsAppPage> with SingleTickerProviderSt
   void _removeImage() {
     setState(() {
       _pickedImagePath = null;
+      _pickedImageBytes = null;
       _pickedImageName = null;
     });
   }
@@ -372,7 +391,7 @@ class _WhatsAppPageState extends State<WhatsAppPage> with SingleTickerProviderSt
     _isSending = true;
 
     // Direct WhatsApp Chat mode
-    if (forceDirectChat || _pickedImagePath == null || !File(_pickedImagePath!).existsSync()) {
+    if (forceDirectChat || !_hasPickedImage) {
       try {
         if (mounted) {
           await openWhatsApp(context, mobile, message: rendered);
@@ -404,9 +423,11 @@ class _WhatsAppPageState extends State<WhatsAppPage> with SingleTickerProviderSt
         );
       }
 
-      final ext = _pickedImagePath!.toLowerCase();
+      final ext = (_pickedImageName ?? _pickedImagePath ?? '').toLowerCase();
       final mime = ext.endsWith('.png') ? 'image/png' : 'image/jpeg';
-      final xFile = XFile(_pickedImagePath!, mimeType: mime, name: _pickedImageName ?? 'poster.jpg');
+      final xFile = _pickedImageBytes != null
+          ? XFile.fromData(_pickedImageBytes!, mimeType: mime, name: _pickedImageName ?? 'poster.jpg')
+          : XFile(_pickedImagePath!, mimeType: mime, name: _pickedImageName ?? 'poster.jpg');
       final textToSend = rendered.trim().isNotEmpty ? rendered : null;
 
       await SharePlus.instance.share(
@@ -433,11 +454,13 @@ class _WhatsAppPageState extends State<WhatsAppPage> with SingleTickerProviderSt
   Future<void> _shareDirectToWhatsApp() async {
     final rendered = _renderMessage(null);
     final textToSend = rendered.trim().isNotEmpty ? rendered : null;
-    if (_pickedImagePath != null && File(_pickedImagePath!).existsSync()) {
+    if (_hasPickedImage) {
       try {
-        final ext = _pickedImagePath!.toLowerCase();
+        final ext = (_pickedImageName ?? _pickedImagePath ?? '').toLowerCase();
         final mime = ext.endsWith('.png') ? 'image/png' : 'image/jpeg';
-        final xFile = XFile(_pickedImagePath!, mimeType: mime, name: _pickedImageName ?? 'poster.jpg');
+        final xFile = _pickedImageBytes != null
+            ? XFile.fromData(_pickedImageBytes!, mimeType: mime, name: _pickedImageName ?? 'poster.jpg')
+            : XFile(_pickedImagePath!, mimeType: mime, name: _pickedImageName ?? 'poster.jpg');
 
         await SharePlus.instance.share(
           ShareParams(
@@ -481,6 +504,7 @@ class _WhatsAppPageState extends State<WhatsAppPage> with SingleTickerProviderSt
       builder: (ctx) => _AssistedDispatchSheet(
         voters: targetVoters,
         imagePath: _pickedImagePath,
+        imageBytes: _pickedImageBytes,
         imageName: _pickedImageName,
         renderMessage: _renderMessage,
       ),
@@ -575,7 +599,7 @@ class _WhatsAppPageState extends State<WhatsAppPage> with SingleTickerProviderSt
                           children: [
                             const Text('संदेश व पोस्टर', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: Color(0xff0f172a))),
                             const SizedBox(width: 8),
-                            if (_pickedImagePath != null)
+                            if (_hasPickedImage)
                               Container(
                                 padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                                 decoration: BoxDecoration(
@@ -619,7 +643,7 @@ class _WhatsAppPageState extends State<WhatsAppPage> with SingleTickerProviderSt
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   // Photo selection bar
-                  if (_pickedImagePath == null)
+                  if (!_hasPickedImage)
                     InkWell(
                       onTap: _pickImage,
                       borderRadius: BorderRadius.circular(10),
@@ -652,12 +676,19 @@ class _WhatsAppPageState extends State<WhatsAppPage> with SingleTickerProviderSt
                         children: [
                           ClipRRect(
                             borderRadius: BorderRadius.circular(6),
-                            child: Image.file(
-                              File(_pickedImagePath!),
-                              width: 44,
-                              height: 44,
-                              fit: BoxFit.cover,
-                            ),
+                            child: _pickedImageBytes != null
+                                ? Image.memory(
+                                    _pickedImageBytes!,
+                                    width: 44,
+                                    height: 44,
+                                    fit: BoxFit.cover,
+                                  )
+                                : Image.file(
+                                    File(_pickedImagePath!),
+                                    width: 44,
+                                    height: 44,
+                                    fit: BoxFit.cover,
+                                  ),
                           ),
                           const SizedBox(width: 10),
                           Expanded(
@@ -1485,9 +1516,9 @@ class _WhatsAppPageState extends State<WhatsAppPage> with SingleTickerProviderSt
                 if (hasMobile) ...[
                   // Primary Send Button
                   FilledButton.icon(
-                    onPressed: () => _sendToSingleVoter(voter, forceDirectChat: _pickedImagePath == null),
-                    icon: Icon(_pickedImagePath != null ? Icons.photo_size_select_actual_rounded : Icons.chat_bubble_outline_rounded, size: 13),
-                    label: Text(_pickedImagePath != null ? 'पोस्टर भेजें' : 'WhatsApp', style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+                    onPressed: () => _sendToSingleVoter(voter, forceDirectChat: !_hasPickedImage),
+                    icon: Icon(_hasPickedImage ? Icons.photo_size_select_actual_rounded : Icons.chat_bubble_outline_rounded, size: 13),
+                    label: Text(_hasPickedImage ? 'पोस्टर भेजें' : 'WhatsApp', style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
                     style: FilledButton.styleFrom(
                       backgroundColor: const Color(0xff16a34a),
                       foregroundColor: Colors.white,
@@ -1496,7 +1527,7 @@ class _WhatsAppPageState extends State<WhatsAppPage> with SingleTickerProviderSt
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                     ),
                   ),
-                  if (_pickedImagePath != null) ...[
+                  if (_hasPickedImage) ...[
                     const SizedBox(height: 3),
                     InkWell(
                       onTap: () => _sendToSingleVoter(voter, forceDirectChat: true),
@@ -1772,7 +1803,7 @@ class _WhatsAppPageState extends State<WhatsAppPage> with SingleTickerProviderSt
                   ],
                 ),
                 const SizedBox(height: 12),
-                if (_pickedImagePath != null) ...[
+                if (_hasPickedImage) ...[
                   Row(
                     children: [
                       Expanded(
@@ -1866,12 +1897,14 @@ class _AssistedDispatchSheet extends StatefulWidget {
   const _AssistedDispatchSheet({
     required this.voters,
     required this.imagePath,
+    this.imageBytes,
     required this.imageName,
     required this.renderMessage,
   });
 
   final List<Map<String, dynamic>> voters;
   final String? imagePath;
+  final Uint8List? imageBytes;
   final String? imageName;
   final String Function(Map<String, dynamic> voter) renderMessage;
 
@@ -1892,13 +1925,18 @@ class _AssistedDispatchSheetState extends State<_AssistedDispatchSheet> {
 
     _sentIndices.add(_currentIndex);
 
-    if (widget.imagePath != null && File(widget.imagePath!).existsSync()) {
+    final bool hasImage = widget.imageBytes != null ||
+        (widget.imagePath != null && !kIsWeb && File(widget.imagePath!).existsSync());
+
+    if (hasImage) {
       if (mobile.isNotEmpty) {
         await Clipboard.setData(ClipboardData(text: mobile));
       }
-      final ext = widget.imagePath!.toLowerCase();
+      final ext = (widget.imageName ?? widget.imagePath ?? '').toLowerCase();
       final mime = ext.endsWith('.png') ? 'image/png' : 'image/jpeg';
-      final xFile = XFile(widget.imagePath!, mimeType: mime, name: widget.imageName ?? 'poster.jpg');
+      final xFile = widget.imageBytes != null
+          ? XFile.fromData(widget.imageBytes!, mimeType: mime, name: widget.imageName ?? 'poster.jpg')
+          : XFile(widget.imagePath!, mimeType: mime, name: widget.imageName ?? 'poster.jpg');
       final textToSend = msg.trim().isNotEmpty ? msg : null;
 
       try {
