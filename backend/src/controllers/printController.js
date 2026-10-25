@@ -1017,8 +1017,8 @@ exports.printMembers = async (req, res, next) => {
         if (candPhone) bannerLineCount += 1;
 
         // Intelligent Auto-Balance Banner Height:
-        // Allocates 42% of card height when 5-6 lines are present to comfortably fit candidate details & phone number with zero cut-off.
-        const bannerFraction = bannerLineCount >= 5 ? 0.42 : (bannerLineCount >= 4 ? 0.38 : 0.34);
+        // Allocates 44% of card height when 5-6 lines are present to comfortably fit candidate details & phone number with zero cut-off.
+        const bannerFraction = bannerLineCount >= 5 ? 0.44 : (bannerLineCount >= 4 ? 0.39 : 0.34);
         const bannerH = Math.max(54, Math.min(80, Math.round(cardHeight * bannerFraction)));
         const scaleX = (cardWidth - 4) / 1024;
         const scaleY = (bannerH - 2) / 280;
@@ -1165,23 +1165,23 @@ exports.printMembers = async (req, res, next) => {
               }
             }
 
-            const h1Size = isCompactCard ? 5.8 : 6.8;
-            const h2Size = isCompactCard ? 5.4 : 6.4;
-            const nameSize = isCompactCard ? 8.2 : 9.8;
-            const appealSize = isCompactCard ? 5.2 : 6.2;
-            const slogSize = isCompactCard ? 5.4 : 6.4;
-            const phoneSize = isCompactCard ? 5.6 : 6.8;
+            const h1Size = isCompactCard ? 5.6 : 6.6;
+            const h2Size = isCompactCard ? 5.2 : 6.2;
+            const nameSize = isCompactCard ? 7.8 : 9.4;
+            const appealSize = isCompactCard ? 5.0 : 6.0;
+            const slogSize = isCompactCard ? 5.2 : 6.2;
+            const phoneSize = isCompactCard ? 5.8 : 6.8;
 
-            const h1H = h1Size * 1.08;
-            const h2H = h2Size * 1.08;
-            const nameBoxH = isCompactCard ? 10.5 : 12.5;
-            const appealH = appealSize * 1.08;
-            const slogH = slogSize * 1.08;
-            const phoneH = phoneSize * 1.08;
+            const h1H = h1Size * 1.25;
+            const h2H = h2Size * 1.25;
+            const nameBoxH = isCompactCard ? 11.5 : 13.5;
+            const appealH = appealSize * 1.30;
+            const slogH = slogSize * 1.30;
+            const phoneH = phoneSize * 1.25;
 
-            // Start text safely below top center circular emblem
+            // Start text safely below top center circular emblem - strictly no overlap on party icon
             const emblemBottomY = y + 2 + 71 * scaleY;
-            const startTextY = Math.max(y + (isCompactCard ? 15.5 : 18.0), emblemBottomY + (isCompactCard ? 1.0 : 2.0));
+            const startTextY = Math.max(y + (isCompactCard ? 17.5 : 20.0), emblemBottomY + (isCompactCard ? 2.5 : 3.5));
 
             let totalContentH = 0;
             if (gpName) totalContentH += h1H;
@@ -1223,12 +1223,14 @@ exports.printMembers = async (req, res, next) => {
             // Line 3: Candidate Name inside Trapezoid Ribbon Box (Dynamically styled to match theme/ward box settings)
             if (candName) {
               const slant = isCompactCard ? 4.5 : 6.0;
-              const boxW = Math.min(textWidth, 118);
+              const boxW = Math.min(textWidth, 120);
               const boxX = textLeft + (textWidth - boxW) / 2;
               const actualBoxH = nameBoxH * autoFitScale;
-              const nameRibbonBg = theme.wardBoxBg || '#091f42';
-              const isNameBgLight = isColorLight(nameRibbonBg);
-              const nameRibbonTextColor = isNameBgLight ? '#091431' : '#ffffff';
+              const rawBoxBg = theme.wardBoxBg || '#091f42';
+              const isRawBgLight = isColorLight(rawBoxBg);
+              // When theme is light/white, provide an elegant solid soft gray (#e2e8f0) ribbon background with a crisp border
+              const nameRibbonBg = isRawBgLight ? '#e2e8f0' : rawBoxBg;
+              const nameRibbonTextColor = isRawBgLight ? '#091431' : '#ffffff';
 
               doc.save();
               doc.polygon(
@@ -1238,7 +1240,7 @@ exports.printMembers = async (req, res, next) => {
                 [boxX, curY + actualBoxH]
               ).fillColor(nameRibbonBg).fill();
 
-              if (isNameBgLight) {
+              if (isRawBgLight) {
                 doc.polygon(
                   [boxX + slant, curY],
                   [boxX + boxW - slant, curY],
@@ -1250,16 +1252,16 @@ exports.printMembers = async (req, res, next) => {
 
               let sN = nameSize * textScale * autoFitScale;
               doc.font('HindiBold').fontSize(sN);
-              while (sN > 6.0 && doc.widthOfString(candName) > (boxW - slant * 2 - 4)) { sN -= 0.4; doc.fontSize(sN); }
+              while (sN > 5.5 && doc.widthOfString(candName) > (boxW - slant * 2 - 4)) { sN -= 0.4; doc.fontSize(sN); }
               doc.fillColor(nameRibbonTextColor).text(candName, boxX, curY + (actualBoxH - sN) / 2 - 0.5, { width: boxW, align: 'center', lineBreak: false });
-              curY += actualBoxH + extraGap + 0.1;
+              curY += actualBoxH + extraGap + 0.8;
             }
 
             // Line 4: Appeal ("को अपना बहुमूल्य मत देकर भारी मतों से विजयी बनाएं")
             if (appealText) {
               let sA = appealSize * textScale * autoFitScale;
               doc.font('HindiBold').fontSize(sA);
-              while (sA > 3.8 && doc.widthOfString(appealText) > textWidth) { sA -= 0.3; doc.fontSize(sA); }
+              while (sA > 3.6 && doc.widthOfString(appealText) > textWidth) { sA -= 0.3; doc.fontSize(sA); }
               doc.fillColor(mainTextColor).text(appealText, textLeft, curY, { width: textWidth, align: 'center', lineBreak: false });
               curY += (appealH * autoFitScale) + extraGap;
             }
@@ -1268,9 +1270,9 @@ exports.printMembers = async (req, res, next) => {
             if (sloganText) {
               let sS = slogSize * textScale * autoFitScale;
               doc.font('HindiBold').fontSize(sS);
-              while (sS > 4.0 && doc.widthOfString(sloganText) > textWidth) { sS -= 0.3; doc.fontSize(sS); }
+              while (sS > 3.8 && doc.widthOfString(sloganText) > textWidth) { sS -= 0.3; doc.fontSize(sS); }
               doc.fillColor(mainTextColor).text(sloganText, textLeft, curY, { width: textWidth, align: 'center', lineBreak: false });
-              curY += (slogH * autoFitScale) + extraGap;
+              curY += (slogH * autoFitScale) + extraGap + 1.2;
             }
 
             // Line 6: Phone Number flanked by tricolor accent lines
@@ -1283,16 +1285,16 @@ exports.printMembers = async (req, res, next) => {
               const safePhoneY = curY;
               const phoneX = textLeft + (textWidth - phoneW) / 2;
 
-              const stripeW = 20;
-              const leftStripeX = phoneX - stripeW - 5;
-              const rightStripeX = phoneX + phoneW + 5;
-              const stripeY = safePhoneY + (phoneH * autoFitScale) * 0.45;
-
-              if (stripeW > 10) {
-                doc.moveTo(leftStripeX, stripeY - 1.2).lineTo(leftStripeX + stripeW, stripeY - 1.2).lineWidth(0.8).strokeColor('#f37021').stroke();
-                doc.moveTo(rightStripeX, stripeY - 1.2).lineTo(rightStripeX + stripeW, stripeY - 1.2).lineWidth(0.8).strokeColor('#f37021').stroke();
-                doc.moveTo(leftStripeX, stripeY + 1.2).lineTo(leftStripeX + stripeW, stripeY + 1.2).lineWidth(0.8).strokeColor('#0e8742').stroke();
-                doc.moveTo(rightStripeX, stripeY + 1.2).lineTo(rightStripeX + stripeW, stripeY + 1.2).lineWidth(0.8).strokeColor('#0e8742').stroke();
+              // Small subtle tricolor lines strictly on sides of phone number with safe margin
+              const stripeW = Math.min(14, Math.max(0, phoneX - textLeft - 8));
+              if (stripeW >= 6) {
+                const leftStripeX = phoneX - stripeW - 4;
+                const rightStripeX = phoneX + phoneW + 4;
+                const stripeY = safePhoneY + (phoneH * autoFitScale) * 0.45;
+                doc.moveTo(leftStripeX, stripeY - 1.0).lineTo(leftStripeX + stripeW, stripeY - 1.0).lineWidth(0.8).strokeColor('#f37021').stroke();
+                doc.moveTo(rightStripeX, stripeY - 1.0).lineTo(rightStripeX + stripeW, stripeY - 1.0).lineWidth(0.8).strokeColor('#f37021').stroke();
+                doc.moveTo(leftStripeX, stripeY + 1.0).lineTo(leftStripeX + stripeW, stripeY + 1.0).lineWidth(0.8).strokeColor('#0e8742').stroke();
+                doc.moveTo(rightStripeX, stripeY + 1.0).lineTo(rightStripeX + stripeW, stripeY + 1.0).lineWidth(0.8).strokeColor('#0e8742').stroke();
               }
 
               doc.fillColor(mainTextColor).text(phoneText, textLeft, safePhoneY, { width: textWidth, align: 'center', lineBreak: false });
