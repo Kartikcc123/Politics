@@ -1091,11 +1091,11 @@ exports.printMembers = async (req, res, next) => {
             }
             doc.circle(rightCX, photoCY, photoR).lineWidth(1.2).strokeColor('#d4af37').stroke();
 
-            // Custom Party Symbol (if user passed specific custom symbol, overlay it on top center)
+            // Custom Party Symbol (if user passed specific custom symbol, overlay it cleanly inside top circle)
             if (symbolImageObj) {
               const centerCX = x + cardWidth / 2;
-              const centerCY = y + 2 + 52 * scaleY;
-              const centerR = 34 * scaleY;
+              const centerCY = y + 2 + 38 * scaleY;
+              const centerR = 31 * scaleY;
               try {
                 doc.save();
                 doc.circle(centerCX, centerCY, centerR).fillColor('#ffffff').fill();
@@ -1117,31 +1117,79 @@ exports.printMembers = async (req, res, next) => {
             const textRight = rightCX - photoR - 4;
             const textWidth = Math.max(70, textRight - textLeft);
 
-            const h1Size = isCompactCard ? 6.2 : 7.6;
-            const h2Size = isCompactCard ? 5.8 : 7.2;
-            const nameSize = isCompactCard ? 10.5 : 12.5;
-            const tagSize = isCompactCard ? 5.0 : 6.4;
-            const slogSize = isCompactCard ? 5.0 : 6.4;
-            const phoneSize = isCompactCard ? 5.6 : 7.0;
+            // Separate Appeal (Line 4) and Slogan (Line 5 directly above mobile)
+            const isAppealStr = (str) => /मत|विजयी|बनावें|बनाएं|अमूल्य|बहुमूल्य|समर्थन/i.test(str || '');
+            let appealText = '';
+            let sloganText = '';
+
+            const rawTagline = (params.candidateTagline || params.tagline || '').trim();
+            const rawSlogan = (params.candidateSlogan || '').trim();
+
+            if (rawTagline && rawSlogan) {
+              if (isAppealStr(rawSlogan) && !isAppealStr(rawTagline)) {
+                appealText = rawSlogan;
+                sloganText = rawTagline;
+              } else if (isAppealStr(rawTagline) && !isAppealStr(rawSlogan)) {
+                appealText = rawTagline;
+                sloganText = rawSlogan;
+              } else {
+                appealText = rawSlogan;
+                sloganText = rawTagline;
+              }
+            } else if (rawTagline && !rawSlogan) {
+              if (isAppealStr(rawTagline)) {
+                appealText = rawTagline;
+              } else {
+                sloganText = rawTagline;
+                appealText = 'को अपना बहुमूल्य मत देकर भारी मतों से विजयी बनाएं।';
+              }
+            } else if (rawSlogan && !rawTagline) {
+              if (isAppealStr(rawSlogan)) {
+                appealText = rawSlogan;
+              } else {
+                sloganText = rawSlogan;
+                appealText = 'को अपना बहुमूल्य मत देकर भारी मतों से विजयी बनाएं।';
+              }
+            } else if (hasCampaignDetails) {
+              appealText = 'को अपना बहुमूल्य मत देकर भारी मतों से विजयी बनाएं।';
+            }
+
+            if (sloganText) {
+              if (!sloganText.startsWith('"') && !sloganText.startsWith('“') && !sloganText.startsWith('\'')) {
+                sloganText = `"${sloganText}"`;
+              }
+            }
+
+            const h1Size = isCompactCard ? 5.8 : 7.0;
+            const h2Size = isCompactCard ? 5.4 : 6.5;
+            const nameSize = isCompactCard ? 9.5 : 11.5;
+            const appealSize = isCompactCard ? 4.8 : 5.8;
+            const slogSize = isCompactCard ? 4.8 : 5.8;
+            const phoneSize = isCompactCard ? 5.2 : 6.4;
 
             const h1H = h1Size * 1.15;
             const h2H = h2Size * 1.15;
-            const nameBoxH = isCompactCard ? 13.5 : 15.5;
-            const tagH = tagSize * 1.15;
+            const nameBoxH = isCompactCard ? 12.5 : 14.5;
+            const appealH = appealSize * 1.15;
             const slogH = slogSize * 1.15;
             const phoneH = phoneSize * 1.15;
 
-            const startTextY = y + (isCompactCard ? 16.5 : 18.0);
+            // Start text safely below top center circular emblem
+            const emblemBottomY = y + 2 + 71 * scaleY;
+            const startTextY = Math.max(y + (isCompactCard ? 17.5 : 19.5), emblemBottomY + (isCompactCard ? 2.0 : 3.0));
+
             let totalContentH = 0;
             if (gpName) totalContentH += h1H;
             if (postName) totalContentH += h2H;
             if (candName) totalContentH += nameBoxH;
-            if (candTagline) totalContentH += tagH;
-            if (candSlogan || hasCampaignDetails) totalContentH += slogH;
+            if (appealText) totalContentH += appealH;
+            if (sloganText) totalContentH += slogH;
             if (candPhone) totalContentH += phoneH;
 
-            const availBannerH = bannerH - (startTextY - y) - 2.0;
-            const extraGap = Math.max(0.4, Math.min(2.5, (availBannerH - totalContentH) / Math.max(1, bannerLineCount - 1)));
+            const availBannerH = Math.max(10, bannerH - (startTextY - y) - 2.0);
+            const autoFitScale = totalContentH > availBannerH ? (availBannerH / totalContentH) : 1.0;
+            const activeLineCount = [gpName, postName, candName, appealText, sloganText, candPhone].filter(Boolean).length;
+            const extraGap = Math.max(0.2, Math.min(2.5, (availBannerH - totalContentH * autoFitScale) / Math.max(1, activeLineCount - 1)));
 
             let curY = startTextY;
             const mainTextColor = '#091431';
@@ -1149,79 +1197,78 @@ exports.printMembers = async (req, res, next) => {
             // Line 1: Gram Panchayat
             if (gpName) {
               const line1 = `ग्राम पंचायत ${gpName}`;
-              let s1 = h1Size * textScale;
+              let s1 = h1Size * textScale * autoFitScale;
               doc.font('HindiBold').fontSize(s1);
-              while (s1 > 4.6 && doc.widthOfString(line1) > textWidth) { s1 -= 0.3; doc.fontSize(s1); }
+              while (s1 > 4.2 && doc.widthOfString(line1) > textWidth) { s1 -= 0.3; doc.fontSize(s1); }
               doc.fillColor(mainTextColor).text(line1, textLeft, curY, { width: textWidth, align: 'center', lineBreak: false });
-              curY += h1H + extraGap;
+              curY += (h1H * autoFitScale) + extraGap;
             }
 
             // Line 2: Post Name
             if (postName) {
               const line2 = `${postName}`;
-              let s2 = h2Size * textScale;
+              let s2 = h2Size * textScale * autoFitScale;
               doc.font('HindiBold').fontSize(s2);
-              while (s2 > 4.6 && doc.widthOfString(line2) > textWidth) { s2 -= 0.3; doc.fontSize(s2); }
+              while (s2 > 4.2 && doc.widthOfString(line2) > textWidth) { s2 -= 0.3; doc.fontSize(s2); }
               doc.fillColor(mainTextColor).text(line2, textLeft, curY, { width: textWidth, align: 'center', lineBreak: false });
-              curY += h2H + extraGap;
+              curY += (h2H * autoFitScale) + extraGap;
             }
 
             // Line 3: Candidate Name inside Trapezoid Ribbon Box
             if (candName) {
-              const slant = isCompactCard ? 6.0 : 7.5;
-              const boxW = Math.min(textWidth, 128);
+              const slant = isCompactCard ? 5.5 : 7.0;
+              const boxW = Math.min(textWidth, 126);
               const boxX = textLeft + (textWidth - boxW) / 2;
+              const actualBoxH = nameBoxH * autoFitScale;
 
               doc.save();
               doc.polygon(
                 [boxX + slant, curY],
                 [boxX + boxW - slant, curY],
-                [boxX + boxW, curY + nameBoxH],
-                [boxX, curY + nameBoxH]
+                [boxX + boxW, curY + actualBoxH],
+                [boxX, curY + actualBoxH]
               ).fillColor('#091f42').fill();
               doc.restore();
 
-              let sN = nameSize * textScale;
+              let sN = nameSize * textScale * autoFitScale;
               doc.font('HindiBold').fontSize(sN);
-              while (sN > 7.0 && doc.widthOfString(candName) > (boxW - slant * 2 - 4)) { sN -= 0.4; doc.fontSize(sN); }
-              doc.fillColor('#ffffff').text(candName, boxX, curY + (nameBoxH - sN) / 2 - 0.5, { width: boxW, align: 'center', lineBreak: false });
-              curY += nameBoxH + extraGap + 0.4;
+              while (sN > 6.5 && doc.widthOfString(candName) > (boxW - slant * 2 - 4)) { sN -= 0.4; doc.fontSize(sN); }
+              doc.fillColor('#ffffff').text(candName, boxX, curY + (actualBoxH - sN) / 2 - 0.5, { width: boxW, align: 'center', lineBreak: false });
+              curY += actualBoxH + extraGap + 0.3;
             }
 
-            // Line 4: Tagline
-            if (candTagline) {
-              const tagFull = `"${candTagline}"`;
-              let sT = tagSize * textScale;
-              doc.font('HindiBold').fontSize(sT);
-              while (sT > 4.2 && doc.widthOfString(tagFull) > textWidth) { sT -= 0.3; doc.fontSize(sT); }
-              doc.fillColor(mainTextColor).text(tagFull, textLeft, curY, { width: textWidth, align: 'center', lineBreak: false });
-              curY += tagH + extraGap;
+            // Line 4: Appeal ("को अपना बहुमूल्य मत देकर भारी मतों से विजयी बनाएं")
+            if (appealText) {
+              let sA = appealSize * textScale * autoFitScale;
+              doc.font('HindiBold').fontSize(sA);
+              while (sA > 3.8 && doc.widthOfString(appealText) > textWidth) { sA -= 0.3; doc.fontSize(sA); }
+              doc.fillColor(mainTextColor).text(appealText, textLeft, curY, { width: textWidth, align: 'center', lineBreak: false });
+              curY += (appealH * autoFitScale) + extraGap;
             }
 
-            // Line 5: Slogan (Right above mobile number)
-            if (candSlogan || hasCampaignDetails) {
-              const sloganText = candSlogan || 'को अपना अमूल्य मत देकर भारी मतों से विजयी बनावें।';
-              let sS = slogSize * textScale;
+            // Line 5: Slogan ("मु आपको आप मारा वोट दिजो हाथ पे सारा" - Directly Above Mobile Number)
+            if (sloganText) {
+              let sS = slogSize * textScale * autoFitScale;
               doc.font('HindiBold').fontSize(sS);
-              while (sS > 4.2 && doc.widthOfString(sloganText) > textWidth) { sS -= 0.3; doc.fontSize(sS); }
+              while (sS > 3.8 && doc.widthOfString(sloganText) > textWidth) { sS -= 0.3; doc.fontSize(sS); }
               doc.fillColor(mainTextColor).text(sloganText, textLeft, curY, { width: textWidth, align: 'center', lineBreak: false });
-              curY += slogH + extraGap;
+              curY += (slogH * autoFitScale) + extraGap;
             }
 
             // Line 6: Phone Number flanked by tricolor accent lines
             if (candPhone) {
               const phoneText = `मो. ${candPhone}`;
-              let sP = phoneSize * textScale;
+              let sP = phoneSize * textScale * autoFitScale;
               doc.font('HindiBold').fontSize(sP);
-              while (sP > 4.5 && doc.widthOfString(phoneText) > textWidth) { sP -= 0.3; doc.fontSize(sP); }
+              while (sP > 4.2 && doc.widthOfString(phoneText) > textWidth) { sP -= 0.3; doc.fontSize(sP); }
               const phoneW = doc.widthOfString(phoneText);
-              const safePhoneY = Math.min(curY, y + bannerH - phoneH - 1.8);
+              const safePhoneY = Math.min(curY, y + bannerH - phoneH * autoFitScale - 1.5);
               const phoneX = textLeft + (textWidth - phoneW) / 2;
 
               const stripeW = 20;
               const leftStripeX = phoneX - stripeW - 5;
               const rightStripeX = phoneX + phoneW + 5;
-              const stripeY = safePhoneY + phoneH * 0.45;
+              const stripeY = safePhoneY + (phoneH * autoFitScale) * 0.45;
 
               if (stripeW > 10) {
                 doc.moveTo(leftStripeX, stripeY - 1.2).lineTo(leftStripeX + stripeW, stripeY - 1.2).lineWidth(0.8).strokeColor('#f37021').stroke();
