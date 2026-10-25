@@ -310,7 +310,12 @@ class _WhatsAppPageState extends State<WhatsAppPage> with SingleTickerProviderSt
         final picked = result.files.first;
         final name = picked.name;
         final bytes = picked.bytes;
-        final path = picked.path;
+        String? path;
+        if (!kIsWeb) {
+          try {
+            path = picked.path;
+          } catch (_) {}
+        }
 
         if (bytes != null) {
           setState(() {

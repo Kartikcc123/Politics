@@ -170,7 +170,9 @@ class _BulkMessagePageState extends State<BulkMessagePage> {
         final file = result.files.first;
         Uint8List? bytes = file.bytes;
         String? p;
-        if (!kIsWeb) {
+        if (kIsWeb) {
+          p = null;
+        } else {
           try {
             p = file.path;
             if (bytes == null && p != null && File(p).existsSync()) {
