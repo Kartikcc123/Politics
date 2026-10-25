@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
@@ -55,6 +56,7 @@ class _BulkMessagePageState extends State<BulkMessagePage> {
   // Photo / Media Attachment
   String? pickedImagePath;
   String? pickedImageName;
+  Uint8List? pickedImageBytes;
   bool attachPhoto = true;
 
   // Live Voters preview
@@ -115,10 +117,10 @@ class _BulkMessagePageState extends State<BulkMessagePage> {
     if (onlyWithMobile) {
       body['hasMobile'] = 'true';
     }
-    if (attachPhoto && pickedImagePath != null && File(pickedImagePath!).existsSync()) {
+    if (attachPhoto && (pickedImageBytes != null || (pickedImagePath != null && !kIsWeb && File(pickedImagePath!).existsSync()))) {
       try {
-        final bytes = File(pickedImagePath!).readAsBytesSync();
-        final ext = pickedImagePath!.toLowerCase();
+        final bytes = pickedImageBytes ?? File(pickedImagePath!).readAsBytesSync();
+        final ext = (pickedImageName ?? '').toLowerCase();
         final mime = ext.endsWith('.png') ? 'image/png' : 'image/jpeg';
         body['mediaData'] = base64Encode(bytes);
         body['mediaMimeType'] = mime;
@@ -162,16 +164,26 @@ class _BulkMessagePageState extends State<BulkMessagePage> {
       final result = await FilePicker.platform.pickFiles(
         type: FileType.image,
         allowMultiple: false,
+        withData: true,
       );
       if (result != null && result.files.isNotEmpty) {
-        final path = result.files.first.path;
-        if (path != null) {
-          setState(() {
-            pickedImagePath = path;
-            pickedImageName = result.files.first.name;
-            attachPhoto = true;
-          });
+        final file = result.files.first;
+        Uint8List? bytes = file.bytes;
+        String? p;
+        if (!kIsWeb) {
+          try {
+            p = file.path;
+            if (bytes == null && p != null && File(p).existsSync()) {
+              bytes = File(p).readAsBytesSync();
+            }
+          } catch (_) {}
         }
+        setState(() {
+          pickedImageBytes = bytes;
+          pickedImagePath = p;
+          pickedImageName = file.name;
+          attachPhoto = true;
+        });
       }
     } catch (e) {
       if (mounted) {
@@ -184,6 +196,7 @@ class _BulkMessagePageState extends State<BulkMessagePage> {
 
   void removeImage() {
     setState(() {
+      pickedImageBytes = null;
       pickedImagePath = null;
       pickedImageName = null;
     });
@@ -359,6 +372,8 @@ class _BulkMessagePageState extends State<BulkMessagePage> {
       builder: (ctx) => _FastSendSheet(
         voters: targets,
         imagePath: attachPhoto ? pickedImagePath : null,
+        imageBytes: attachPhoto ? pickedImageBytes : null,
+        imageName: attachPhoto ? pickedImageName : null,
         renderMessage: renderVoterMessage,
       ),
     );
@@ -367,14 +382,17 @@ class _BulkMessagePageState extends State<BulkMessagePage> {
   Future<void> directShareToWhatsApp() async {
     final rendered = renderVoterMessage(null);
     final textToSend = rendered.trim().isNotEmpty ? rendered : null;
-    if (attachPhoto && pickedImagePath != null && File(pickedImagePath!).existsSync()) {
+    if (attachPhoto && (pickedImageBytes != null || (pickedImagePath != null && !kIsWeb && File(pickedImagePath!).existsSync()))) {
       try {
-        final ext = pickedImagePath!.toLowerCase();
+        final ext = (pickedImageName ?? '').toLowerCase();
         final mime = ext.endsWith('.png') ? 'image/png' : 'image/jpeg';
+        final xFile = pickedImageBytes != null
+            ? XFile.fromData(pickedImageBytes!, mimeType: mime, name: pickedImageName ?? 'poster.jpg')
+            : XFile(pickedImagePath!, mimeType: mime, name: pickedImageName ?? 'poster.jpg');
         await SharePlus.instance.share(
           ShareParams(
             text: textToSend,
-            files: [XFile(pickedImagePath!, mimeType: mime, name: pickedImageName ?? 'poster.jpg')],
+            files: [xFile],
             subject: 'मतदाता संदेश',
           ),
         );
@@ -890,7 +908,7 @@ class _BulkMessagePageState extends State<BulkMessagePage> {
                                         return;
                                       }
                                       final msg = renderVoterMessage(v);
-                                      if (attachPhoto && pickedImagePath != null && File(pickedImagePath!).existsSync()) {
+                                      if (attachPhoto && (pickedImageBytes != null || (pickedImagePath != null && !kIsWeb && File(pickedImagePath!).existsSync()))) {
                                         await Clipboard.setData(ClipboardData(text: mob));
                                         if (context.mounted) {
                                           ScaffoldMessenger.of(context).showSnackBar(
@@ -901,12 +919,15 @@ class _BulkMessagePageState extends State<BulkMessagePage> {
                                             ),
                                           );
                                         }
-                                        final ext = pickedImagePath!.toLowerCase();
+                                        final ext = (pickedImageName ?? '').toLowerCase();
                                         final mime = ext.endsWith('.png') ? 'image/png' : 'image/jpeg';
+                                        final xFile = pickedImageBytes != null
+                                            ? XFile.fromData(pickedImageBytes!, mimeType: mime, name: pickedImageName ?? 'poster.jpg')
+                                            : XFile(pickedImagePath!, mimeType: mime, name: pickedImageName ?? 'poster.jpg');
                                         await SharePlus.instance.share(
                                           ShareParams(
                                             text: msg.trim().isNotEmpty ? msg : null,
-                                            files: [XFile(pickedImagePath!, mimeType: mime, name: pickedImageName ?? 'poster.jpg')],
+                                            files: [xFile],
                                             subject: 'मतदाता संदेश - $name',
                                           ),
                                         );
@@ -1017,7 +1038,7 @@ class _BulkMessagePageState extends State<BulkMessagePage> {
                 children: [
                   Row(
                     children: [
-                      if (pickedImagePath == null)
+                      if (pickedImageBytes == null && pickedImagePath == null)
                         FilledButton.tonalIcon(
                           onPressed: pickImage,
                           icon: const Icon(Icons.add_photo_alternate_rounded, size: 18),
@@ -1026,7 +1047,11 @@ class _BulkMessagePageState extends State<BulkMessagePage> {
                       else ...[
                         ClipRRect(
                           borderRadius: BorderRadius.circular(8),
-                          child: Image.file(File(pickedImagePath!), width: 44, height: 44, fit: BoxFit.cover),
+                          child: pickedImageBytes != null
+                              ? Image.memory(pickedImageBytes!, width: 44, height: 44, fit: BoxFit.cover)
+                              : (!kIsWeb && pickedImagePath != null
+                                  ? Image.file(File(pickedImagePath!), width: 44, height: 44, fit: BoxFit.cover)
+                                  : const Icon(Icons.image_rounded, size: 40, color: blue)),
                         ),
                         const SizedBox(width: 8),
                         Expanded(
@@ -1217,11 +1242,15 @@ class _FastSendSheet extends StatefulWidget {
   const _FastSendSheet({
     required this.voters,
     required this.imagePath,
+    this.imageBytes,
+    this.imageName,
     required this.renderMessage,
   });
 
   final List<Map<String, dynamic>> voters;
   final String? imagePath;
+  final Uint8List? imageBytes;
+  final String? imageName;
   final String Function(Map<String, dynamic> voter) renderMessage;
 
   @override
@@ -1242,17 +1271,20 @@ class _FastSendSheetState extends State<_FastSendSheet> {
 
     final textToSend = msg.trim().isNotEmpty ? msg : null;
 
-    if (widget.imagePath != null && File(widget.imagePath!).existsSync()) {
+    if (widget.imageBytes != null || (widget.imagePath != null && !kIsWeb && File(widget.imagePath!).existsSync())) {
       if (mobile.isNotEmpty) {
         await Clipboard.setData(ClipboardData(text: mobile));
       }
       try {
-        final ext = widget.imagePath!.toLowerCase();
+        final ext = (widget.imageName ?? widget.imagePath ?? '').toLowerCase();
         final mime = ext.endsWith('.png') ? 'image/png' : 'image/jpeg';
+        final xFile = widget.imageBytes != null
+            ? XFile.fromData(widget.imageBytes!, mimeType: mime, name: widget.imageName ?? 'poster.jpg')
+            : XFile(widget.imagePath!, mimeType: mime, name: widget.imageName ?? 'poster.jpg');
         await SharePlus.instance.share(
           ShareParams(
             text: textToSend,
-            files: [XFile(widget.imagePath!, mimeType: mime, name: 'poster.jpg')],
+            files: [xFile],
             subject: 'मतदाता संदेश',
           ),
         );
