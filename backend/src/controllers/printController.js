@@ -943,10 +943,41 @@ exports.printMembers = async (req, res, next) => {
         doc.roundedRect(x, y, cardWidth, cardHeight, 3.5).lineWidth(0.9).strokeColor(theme.cardBorder || '#166534').stroke();
         doc.roundedRect(x + 1.8, y + 1.8, cardWidth - 3.6, cardHeight - 3.6, 2.5).lineWidth(0.5).strokeColor(theme.cardInnerBorder || '#ca8a04').stroke();
 
-        // 1. TOP SECTION: Campaign Banner (Dynamically scaled based on cardHeight: ~50pt for 10-slip, ~65pt for 8-slip)
-        const bannerH = Math.max(46, Math.min(68, Math.round(cardHeight * 0.33)));
+        // 1. TOP SECTION: Campaign Banner (Dynamically scaled & Auto-Balanced)
+        const gpName = m.gramPanchayat || params.gramPanchayat || sampleMember.gramPanchayat || '';
+        const postName = params.candidatePost || '';
+        let candName = (params.candidateName || '').trim();
+        const candTagline = (params.candidateTagline || params.tagline || '').trim();
+        const candPhone = (params.candidatePhone || '').trim();
+        const candSlogan = (params.candidateSlogan || '').trim();
+
+        const hasCampaignDetails = Boolean(
+          candName ||
+          candidatePhotoImageObj ||
+          leaderPhotoImageObj ||
+          symbolImageObj ||
+          postName ||
+          candSlogan ||
+          bannerImageObj ||
+          params.campaignSlip === 'true' ||
+          params.layout === 'campaign' ||
+          params.densityPreset === 'campaign_8'
+        );
+
+        let bannerLineCount = 0;
+        if (gpName && postName) bannerLineCount += 2;
+        else if (gpName || postName) bannerLineCount += 1;
+        if (candName || hasCampaignDetails) bannerLineCount += 1;
+        if (candTagline) bannerLineCount += 1;
+        if (candSlogan) bannerLineCount += 1;
+        if (candPhone) bannerLineCount += 1;
+
+        // Intelligent Auto-Balance Banner Height:
+        // Allocates 40% of card height when 5-6 lines are present, leaving 60% for voter details (zero overlap!).
+        const bannerFraction = bannerLineCount >= 5 ? 0.40 : (bannerLineCount >= 4 ? 0.36 : 0.33);
+        const bannerH = Math.max(48, Math.min(74, Math.round(cardHeight * bannerFraction)));
         const isCompactCard = cardHeight < 170;
-        const photoR = Math.max(16, Math.min(23, Math.round((bannerH - 10) / 2)));
+        const photoR = Math.max(16, Math.min(23, Math.round((bannerH - 12) / 2)));
         const photoCY = y + 2 + (bannerH - 2) / 2;
 
         if (bannerImageObj) {
@@ -961,26 +992,6 @@ exports.printMembers = async (req, res, next) => {
         }
 
         function drawDefaultBanner() {
-          const gpName = m.gramPanchayat || params.gramPanchayat || sampleMember.gramPanchayat || '';
-          const postName = params.candidatePost || '';
-          let candName = (params.candidateName || '').trim();
-          const candTagline = (params.candidateTagline || params.tagline || '').trim();
-          const candPhone = (params.candidatePhone || '').trim();
-          const candSlogan = (params.candidateSlogan || '').trim();
-
-          const hasCampaignDetails = Boolean(
-            candName ||
-            candidatePhotoImageObj ||
-            leaderPhotoImageObj ||
-            symbolImageObj ||
-            postName ||
-            candSlogan ||
-            bannerImageObj ||
-            params.campaignSlip === 'true' ||
-            params.layout === 'campaign' ||
-            params.densityPreset === 'campaign_8'
-          );
-
           if (hasCampaignDetails) {
             if (!candName) {
               candName = postName ? '' : 'कर्मठ प्रत्याशी';
@@ -1049,92 +1060,96 @@ exports.printMembers = async (req, res, next) => {
               } catch (_) {}
             }
 
-            // Center Text Typography with zero-overlap dynamic measurement
+            // Center Text Typography with intelligent Auto-Balancing
             const textLeft = candidatePhotoImageObj ? (leftCX + photoR + 3) : (x + 8);
             const textRight = (leaderPhotoImageObj || symbolImageObj) ? (rightCX - photoR - 3) : (x + cardWidth - 8);
             const textWidth = Math.max(70, textRight - textLeft);
 
-            let curY = y + (isCompactCard ? 2.5 : 3.8);
-            if (postName || gpName) {
-              if (gpName && postName) {
-                const line1 = `ग्राम पंचायत ${gpName}`;
-                const line2 = `${postName}`;
-                let h1Size = Math.max(5.5, (isCompactCard ? 7.0 : 8.2) * textScale);
-                doc.font('HindiBold').fontSize(h1Size);
-                while (h1Size > 5.0 && doc.widthOfString(line1) > textWidth) {
-                  h1Size -= 0.3;
-                  doc.fontSize(h1Size);
-                }
-                doc.fillColor(theme.headerL1).text(line1, textLeft, curY, { width: textWidth, align: 'center', lineBreak: false });
-                curY += isCompactCard ? 8.0 : 9.5;
+            // Dynamic element heights and font sizes:
+            const h1Size = isCompactCard ? 6.5 : 8.0;
+            const h2Size = isCompactCard ? 6.2 : 7.6;
+            const nameSize = isCompactCard ? 10.8 : 13.5;
+            const tagSize = isCompactCard ? 5.2 : 6.8;
+            const slogSize = isCompactCard ? 5.2 : 7.0;
+            const phoneSize = isCompactCard ? 5.8 : 7.2;
 
-                let h2Size = Math.max(5.5, (isCompactCard ? 6.6 : 7.8) * textScale);
-                doc.font('HindiBold').fontSize(h2Size);
-                while (h2Size > 5.0 && doc.widthOfString(line2) > textWidth) {
-                  h2Size -= 0.3;
-                  doc.fontSize(h2Size);
-                }
-                doc.fillColor(theme.headerL2).text(line2, textLeft, curY, { width: textWidth, align: 'center', lineBreak: false });
-                curY += isCompactCard ? 8.0 : 9.5;
-              } else {
-                const headerText = postName || `ग्राम पंचायत ${gpName}`;
-                let hSize = Math.max(5.5, (isCompactCard ? 7.0 : 8.0) * textScale);
-                doc.font('HindiBold').fontSize(hSize);
-                while (hSize > 5.0 && doc.widthOfString(headerText) > textWidth) {
-                  hSize -= 0.3;
-                  doc.fontSize(hSize);
-                }
-                doc.fillColor(theme.headerL1).text(headerText, textLeft, curY, { width: textWidth, align: 'center', lineBreak: false });
-                curY += isCompactCard ? 8.5 : 10.0;
-              }
+            const h1H = h1Size * 1.15;
+            const h2H = h2Size * 1.15;
+            const nameH = nameSize * 1.25;
+            const tagH = tagSize * 1.15;
+            const slogH = slogSize * 1.15;
+            const phoneH = phoneSize * 1.15;
+
+            let totalContentH = 0;
+            if (gpName) totalContentH += h1H;
+            if (postName) totalContentH += h2H;
+            if (candName) totalContentH += nameH;
+            if (candTagline) totalContentH += tagH;
+            if (candSlogan) totalContentH += slogH;
+            if (candPhone) totalContentH += phoneH;
+
+            const availBannerH = bannerH - 4.5;
+            const extraGap = Math.max(1.0, Math.min(3.5, (availBannerH - totalContentH) / Math.max(1, bannerLineCount - 1)));
+
+            let curY = y + 2.2;
+
+            // Line 1: Gram Panchayat
+            if (gpName) {
+              const line1 = `ग्राम पंचायत ${gpName}`;
+              let s1 = h1Size * textScale;
+              doc.font('HindiBold').fontSize(s1);
+              while (s1 > 4.6 && doc.widthOfString(line1) > textWidth) { s1 -= 0.3; doc.fontSize(s1); }
+              doc.fillColor(theme.headerL1).text(line1, textLeft, curY, { width: textWidth, align: 'center', lineBreak: false });
+              curY += h1H + extraGap;
             }
 
-            // Candidate Name: Heroic Bold
+            // Line 2: Post Name
+            if (postName) {
+              const line2 = `${postName}`;
+              let s2 = h2Size * textScale;
+              doc.font('HindiBold').fontSize(s2);
+              while (s2 > 4.6 && doc.widthOfString(line2) > textWidth) { s2 -= 0.3; doc.fontSize(s2); }
+              doc.fillColor(theme.headerL2).text(line2, textLeft, curY, { width: textWidth, align: 'center', lineBreak: false });
+              curY += h2H + extraGap;
+            }
+
+            // Line 3: Candidate Name (Clean Hero spacing)
             if (candName) {
-              let nameSize = Math.max(8.0, (isCompactCard ? 11.5 : 14.0) * textScale);
-              doc.font('HindiBold').fontSize(nameSize);
-              while (nameSize > 7.5 && doc.widthOfString(candName) > textWidth) {
-                nameSize -= 0.4;
-                doc.fontSize(nameSize);
-              }
+              let sN = nameSize * textScale;
+              doc.font('HindiBold').fontSize(sN);
+              while (sN > 7.0 && doc.widthOfString(candName) > textWidth) { sN -= 0.4; doc.fontSize(sN); }
               doc.fillColor(theme.candName).text(candName, textLeft, curY, { width: textWidth, align: 'center', lineBreak: false });
-              curY += nameSize + (isCompactCard ? 2.5 : 4.5);
+              curY += nameH + extraGap + 0.5;
             }
 
-            // Optional Tagline or Slogan
+            // Line 4: Tagline
             if (candTagline) {
               const tagFull = `"${candTagline}"`;
-              let tagSize = Math.max(4.8, (isCompactCard ? 6.0 : 7.0) * textScale);
-              doc.font('HindiBold').fontSize(tagSize);
-              while (tagSize > 4.5 && doc.widthOfString(tagFull) > textWidth) {
-                tagSize -= 0.3;
-                doc.fontSize(tagSize);
-              }
+              let sT = tagSize * textScale;
+              doc.font('HindiBold').fontSize(sT);
+              while (sT > 4.2 && doc.widthOfString(tagFull) > textWidth) { sT -= 0.3; doc.fontSize(sT); }
               doc.fillColor(theme.tagline).text(tagFull, textLeft, curY, { width: textWidth, align: 'center', lineBreak: false });
-              curY += isCompactCard ? 7.0 : 8.5;
+              curY += tagH + extraGap;
             }
 
-            // Slogan
-            const sloganText = candSlogan || 'को अपना अमूल्य मत देकर भारी मतों से विजयी बनावें।';
-            let slogSize = Math.max(4.8, (isCompactCard ? 6.0 : 7.2) * textScale);
-            doc.font('HindiBold').fontSize(slogSize);
-            while (slogSize > 4.5 && doc.widthOfString(sloganText) > textWidth) {
-              slogSize -= 0.3;
-              doc.fontSize(slogSize);
+            // Line 5: Slogan
+            if (candSlogan) {
+              const sloganText = candSlogan || 'को अपना अमूल्य मत देकर भारी मतों से विजयी बनावें।';
+              let sS = slogSize * textScale;
+              doc.font('HindiBold').fontSize(sS);
+              while (sS > 4.2 && doc.widthOfString(sloganText) > textWidth) { sS -= 0.3; doc.fontSize(sS); }
+              doc.fillColor(theme.slogan).text(sloganText, textLeft, curY, { width: textWidth, align: 'center', lineBreak: false });
+              curY += slogH + extraGap;
             }
-            doc.fillColor(theme.slogan).text(sloganText, textLeft, curY, { width: textWidth, align: 'center', lineBreak: false });
-            curY += isCompactCard ? 7.2 : 9.0;
 
-            // Mobile Number
+            // Line 6: Phone Number (Strictly auto-anchored with safe buffer)
             if (candPhone) {
               const phoneText = `मो. ${candPhone}`;
-              let phoneSize = Math.max(5.0, (isCompactCard ? 6.4 : 7.5) * textScale);
-              doc.font('HindiBold').fontSize(phoneSize);
-              while (phoneSize > 4.8 && doc.widthOfString(phoneText) > textWidth) {
-                phoneSize -= 0.3;
-                doc.fontSize(phoneSize);
-              }
-              doc.fillColor(theme.phone).text(phoneText, textLeft, curY, { width: textWidth, align: 'center', lineBreak: false });
+              let sP = phoneSize * textScale;
+              doc.font('HindiBold').fontSize(sP);
+              while (sP > 4.5 && doc.widthOfString(phoneText) > textWidth) { sP -= 0.3; doc.fontSize(sP); }
+              const safePhoneY = Math.min(curY, y + bannerH - phoneH - 1.8);
+              doc.fillColor(theme.phone).text(phoneText, textLeft, safePhoneY, { width: textWidth, align: 'center', lineBreak: false });
             }
           } else {
             // Elegant Official Voter Information Header (Fallback when no campaign details)
