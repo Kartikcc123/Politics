@@ -574,8 +574,13 @@ exports.printMembers = async (req, res, next) => {
       return null;
     }
 
-    const margin = isCampaignSlip ? 15 : 20;
-    const doc = new PDFDocument({ size: paperSize, layout: orientation, margin, bufferPages: true });
+    const margin = isCampaignSlip ? 12 : 20;
+    const doc = new PDFDocument({
+      size: paperSize,
+      layout: orientation,
+      margins: { top: margin, left: margin, right: margin, bottom: 4 },
+      bufferPages: true,
+    });
     doc.registerFont('Hindi', regularFont).registerFont('HindiBold', boldFont).font('Hindi');
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', 'inline; filename="voter-list.pdf"');
@@ -626,10 +631,10 @@ exports.printMembers = async (req, res, next) => {
     const effectiveSymbolImageObj = symbolImageObj || defaultPartySymbolImageObj;
 
     const isCompact = rowsPerPage >= 8 || columns >= 3;
-    const gapX = isCampaignSlip ? 9 : (columns >= 3 ? 5 : 8);
-    const gapY = isCampaignSlip ? 8 : (rowsPerPage >= 8 ? 4 : 8);
+    const gapX = isCampaignSlip ? 8 : (columns >= 3 ? 5 : 8);
+    const gapY = isCampaignSlip ? 6 : (rowsPerPage >= 8 ? 4 : 8);
     const topY = isCampaignSlip ? margin : (isCompact ? 38 : 50);
-    const bottomY = isCampaignSlip ? (doc.page.height - margin) : (doc.page.height - 22);
+    const bottomY = isCampaignSlip ? (doc.page.height - margin - 8) : (doc.page.height - 22);
     const usableWidth = doc.page.width - margin * 2;
     const usableHeight = bottomY - topY;
     const cardWidth = (usableWidth - gapX * (columns - 1)) / columns;
@@ -1605,7 +1610,7 @@ exports.printMembers = async (req, res, next) => {
           doc.font('HindiBold').fontSize(isCompactCard ? 5.4 : 6.2).fillColor('#ffffff').text(noticeText, badgeX + badgeW + 8, footerY + (isCompactCard ? 2.4 : 3.0), { width: cardWidth - badgeW - 26, align: 'left', lineBreak: false });
 
           // Serial index
-          doc.font('Hindi').fontSize(isCompactCard ? 6.5 : 7.5).fillColor('#ffffff').text(String(i + 1), x, footerY + (isCompactCard ? 2.4 : 3.0), { width: cardWidth - 6, align: 'right' });
+          doc.font('Hindi').fontSize(isCompactCard ? 6.5 : 7.5).fillColor('#ffffff').text(String(i + 1), x, footerY + (isCompactCard ? 2.4 : 3.0), { width: cardWidth - 6, align: 'right', lineBreak: false });
         } else {
           // Standard Polling Hours Footer
           doc.rect(x + 1.8, footerY, cardWidth - 3.6, footerH).fillColor(theme.footerBg).fill();
@@ -1613,8 +1618,8 @@ exports.printMembers = async (req, res, next) => {
             doc.moveTo(x + 1.8, footerY).lineTo(x + cardWidth - 1.8, footerY).lineWidth(0.8).strokeColor(theme.footerBorder).stroke();
           }
           const votingTime = params.pollingTime || 'मतदान समय : प्रातः 7:00 से सायं 6:00 बजे तक';
-          doc.font('HindiBold').fontSize(Math.max(6.2, (isCompactCard ? 7.0 : 8.2) * textScale)).fillColor(theme.footerText).text(votingTime, x, footerY + (isCompactCard ? 2.2 : 2.8), { width: cardWidth, align: 'center' });
-          doc.font('Hindi').fontSize(Math.max(5.5, (isCompactCard ? 6.5 : 7.5) * textScale)).fillColor(theme.footerText).text(String(i + 1), x, footerY + (isCompactCard ? 2.4 : 3.0), { width: cardWidth - 6, align: 'right' });
+          doc.font('HindiBold').fontSize(Math.max(6.2, (isCompactCard ? 7.0 : 8.2) * textScale)).fillColor(theme.footerText).text(votingTime, x, footerY + (isCompactCard ? 2.2 : 2.8), { width: cardWidth, align: 'center', lineBreak: false });
+          doc.font('Hindi').fontSize(Math.max(5.5, (isCompactCard ? 6.5 : 7.5) * textScale)).fillColor(theme.footerText).text(String(i + 1), x, footerY + (isCompactCard ? 2.4 : 3.0), { width: cardWidth - 6, align: 'right', lineBreak: false });
         }
       } else {
         // =========================================================================
