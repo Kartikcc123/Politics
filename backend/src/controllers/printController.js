@@ -1160,23 +1160,23 @@ exports.printMembers = async (req, res, next) => {
               }
             }
 
-            const h1Size = isCompactCard ? 6.2 : 7.2;
-            const h2Size = isCompactCard ? 5.8 : 6.8;
-            const nameSize = isCompactCard ? 8.8 : 10.2;
-            const appealSize = isCompactCard ? 5.4 : 6.4;
-            const slogSize = isCompactCard ? 5.6 : 6.6;
-            const phoneSize = isCompactCard ? 6.0 : 7.2;
+            const h1Size = isCompactCard ? 5.8 : 6.8;
+            const h2Size = isCompactCard ? 5.4 : 6.4;
+            const nameSize = isCompactCard ? 8.2 : 9.8;
+            const appealSize = isCompactCard ? 5.2 : 6.2;
+            const slogSize = isCompactCard ? 5.4 : 6.4;
+            const phoneSize = isCompactCard ? 5.6 : 6.8;
 
-            const h1H = h1Size * 1.12;
-            const h2H = h2Size * 1.12;
-            const nameBoxH = isCompactCard ? 11.5 : 13.5;
-            const appealH = appealSize * 1.12;
-            const slogH = slogSize * 1.12;
-            const phoneH = phoneSize * 1.12;
+            const h1H = h1Size * 1.08;
+            const h2H = h2Size * 1.08;
+            const nameBoxH = isCompactCard ? 10.5 : 12.5;
+            const appealH = appealSize * 1.08;
+            const slogH = slogSize * 1.08;
+            const phoneH = phoneSize * 1.08;
 
             // Start text safely below top center circular emblem
             const emblemBottomY = y + 2 + 71 * scaleY;
-            const startTextY = Math.max(y + (isCompactCard ? 16.5 : 18.5), emblemBottomY + (isCompactCard ? 1.5 : 2.5));
+            const startTextY = Math.max(y + (isCompactCard ? 15.5 : 18.0), emblemBottomY + (isCompactCard ? 1.0 : 2.0));
 
             let totalContentH = 0;
             if (gpName) totalContentH += h1H;
@@ -1186,10 +1186,11 @@ exports.printMembers = async (req, res, next) => {
             if (sloganText) totalContentH += slogH;
             if (candPhone) totalContentH += phoneH;
 
-            const availBannerH = Math.max(10, bannerH - (startTextY - y) - 1.0);
-            const autoFitScale = totalContentH > availBannerH ? Math.max(0.75, availBannerH / totalContentH) : 1.0;
+            // Reserve 3.5pt cushion before banner bottom so phone never touches scissor line!
+            const availBannerH = Math.max(10, bannerH - (startTextY - y) - 3.5);
+            const autoFitScale = totalContentH > availBannerH ? (availBannerH / totalContentH) : 1.0;
             const activeLineCount = [gpName, postName, candName, appealText, sloganText, candPhone].filter(Boolean).length;
-            const extraGap = Math.max(0.1, Math.min(2.0, (availBannerH - totalContentH * autoFitScale) / Math.max(1, activeLineCount - 1)));
+            const extraGap = Math.max(0.1, Math.min(1.8, (availBannerH - totalContentH * autoFitScale) / Math.max(1, activeLineCount - 1)));
 
             let curY = startTextY;
             const mainTextColor = '#091431';
@@ -1199,7 +1200,7 @@ exports.printMembers = async (req, res, next) => {
               const line1 = `ग्राम पंचायत ${gpName}`;
               let s1 = h1Size * textScale * autoFitScale;
               doc.font('HindiBold').fontSize(s1);
-              while (s1 > 4.2 && doc.widthOfString(line1) > textWidth) { s1 -= 0.3; doc.fontSize(s1); }
+              while (s1 > 4.0 && doc.widthOfString(line1) > textWidth) { s1 -= 0.3; doc.fontSize(s1); }
               doc.fillColor(mainTextColor).text(line1, textLeft, curY, { width: textWidth, align: 'center', lineBreak: false });
               curY += (h1H * autoFitScale) + extraGap;
             }
@@ -1209,15 +1210,15 @@ exports.printMembers = async (req, res, next) => {
               const line2 = `${postName}`;
               let s2 = h2Size * textScale * autoFitScale;
               doc.font('HindiBold').fontSize(s2);
-              while (s2 > 4.2 && doc.widthOfString(line2) > textWidth) { s2 -= 0.3; doc.fontSize(s2); }
+              while (s2 > 4.0 && doc.widthOfString(line2) > textWidth) { s2 -= 0.3; doc.fontSize(s2); }
               doc.fillColor(mainTextColor).text(line2, textLeft, curY, { width: textWidth, align: 'center', lineBreak: false });
               curY += (h2H * autoFitScale) + extraGap;
             }
 
             // Line 3: Candidate Name inside Trapezoid Ribbon Box (Dynamically styled to match theme/ward box settings)
             if (candName) {
-              const slant = isCompactCard ? 5.0 : 6.5;
-              const boxW = Math.min(textWidth, 122);
+              const slant = isCompactCard ? 4.5 : 6.0;
+              const boxW = Math.min(textWidth, 118);
               const boxX = textLeft + (textWidth - boxW) / 2;
               const actualBoxH = nameBoxH * autoFitScale;
               const nameRibbonBg = theme.wardBoxBg || '#091f42';
@@ -1244,16 +1245,16 @@ exports.printMembers = async (req, res, next) => {
 
               let sN = nameSize * textScale * autoFitScale;
               doc.font('HindiBold').fontSize(sN);
-              while (sN > 6.5 && doc.widthOfString(candName) > (boxW - slant * 2 - 4)) { sN -= 0.4; doc.fontSize(sN); }
+              while (sN > 6.0 && doc.widthOfString(candName) > (boxW - slant * 2 - 4)) { sN -= 0.4; doc.fontSize(sN); }
               doc.fillColor(nameRibbonTextColor).text(candName, boxX, curY + (actualBoxH - sN) / 2 - 0.5, { width: boxW, align: 'center', lineBreak: false });
-              curY += actualBoxH + extraGap + 0.2;
+              curY += actualBoxH + extraGap + 0.1;
             }
 
             // Line 4: Appeal ("को अपना बहुमूल्य मत देकर भारी मतों से विजयी बनाएं")
             if (appealText) {
               let sA = appealSize * textScale * autoFitScale;
               doc.font('HindiBold').fontSize(sA);
-              while (sA > 4.0 && doc.widthOfString(appealText) > textWidth) { sA -= 0.3; doc.fontSize(sA); }
+              while (sA > 3.8 && doc.widthOfString(appealText) > textWidth) { sA -= 0.3; doc.fontSize(sA); }
               doc.fillColor(mainTextColor).text(appealText, textLeft, curY, { width: textWidth, align: 'center', lineBreak: false });
               curY += (appealH * autoFitScale) + extraGap;
             }
@@ -1262,7 +1263,7 @@ exports.printMembers = async (req, res, next) => {
             if (sloganText) {
               let sS = slogSize * textScale * autoFitScale;
               doc.font('HindiBold').fontSize(sS);
-              while (sS > 4.2 && doc.widthOfString(sloganText) > textWidth) { sS -= 0.3; doc.fontSize(sS); }
+              while (sS > 4.0 && doc.widthOfString(sloganText) > textWidth) { sS -= 0.3; doc.fontSize(sS); }
               doc.fillColor(mainTextColor).text(sloganText, textLeft, curY, { width: textWidth, align: 'center', lineBreak: false });
               curY += (slogH * autoFitScale) + extraGap;
             }
@@ -1272,12 +1273,12 @@ exports.printMembers = async (req, res, next) => {
               const phoneText = `मो. ${candPhone}`;
               let sP = phoneSize * textScale * autoFitScale;
               doc.font('HindiBold').fontSize(sP);
-              while (sP > 4.5 && doc.widthOfString(phoneText) > textWidth) { sP -= 0.3; doc.fontSize(sP); }
+              while (sP > 4.2 && doc.widthOfString(phoneText) > textWidth) { sP -= 0.3; doc.fontSize(sP); }
               const phoneW = doc.widthOfString(phoneText);
               const safePhoneY = curY;
               const phoneX = textLeft + (textWidth - phoneW) / 2;
 
-              const stripeW = 22;
+              const stripeW = 20;
               const leftStripeX = phoneX - stripeW - 5;
               const rightStripeX = phoneX + phoneW + 5;
               const stripeY = safePhoneY + (phoneH * autoFitScale) * 0.45;
@@ -1312,24 +1313,24 @@ exports.printMembers = async (req, res, next) => {
           }
         }
 
-        // 2. TEAR-OFF SCISSOR LINE (Clean integration with vector scissors)
-        const dividerY = y + bannerH + 1.2;
+        // 2. TEAR-OFF SCISSOR LINE (Safely placed with clean margin below phone number)
+        const dividerY = y + bannerH + 2.5;
         doc.save();
         doc.dash(2.5, { space: 2.0 }).moveTo(x + 4, dividerY).lineTo(x + cardWidth - 4, dividerY).lineWidth(0.5).strokeColor('#64748b').stroke();
         doc.restore();
 
         const tearOffText = 'मतदान तिथि से पूर्व बांटी गयी पर्ची, ऊपर का हिस्सा फाड़ दें';
-        const tearSize = isCompactCard ? 4.2 : 4.8;
+        const tearSize = isCompactCard ? 3.8 : 4.4;
         doc.font('HindiBold').fontSize(tearSize);
         const textW = doc.widthOfString(tearOffText);
-        const scissorIconW = 10;
+        const scissorIconW = 9;
         const totalPillW = textW + scissorIconW + 8;
         const pillX = x + (cardWidth - totalPillW) / 2;
 
         // White backdrop clears dashes under the scissor & text
-        doc.rect(pillX, dividerY - 2.5, totalPillW, 5.0).fillColor('#ffffff').fill();
-        drawVectorScissors(doc, pillX + 4, dividerY, isCompactCard ? 2.2 : 2.5);
-        doc.fillColor('#475569').text(tearOffText, pillX + scissorIconW + 2, dividerY - (isCompactCard ? 2.2 : 2.5), { width: textW + 4, align: 'left', lineBreak: false });
+        doc.rect(pillX, dividerY - 2.2, totalPillW, 4.4).fillColor('#ffffff').fill();
+        drawVectorScissors(doc, pillX + 3.5, dividerY, isCompactCard ? 1.8 : 2.2);
+        doc.fillColor('#475569').text(tearOffText, pillX + scissorIconW + 2, dividerY - (isCompactCard ? 1.8 : 2.2), { width: textW + 4, align: 'left', lineBreak: false });
 
         // 3. VOTER DATA AREA (Dynamically fills available height with zero bottom dead space)
         const footerH = Math.max(12, Math.min(16, Math.round(cardHeight * 0.08)));
