@@ -309,6 +309,18 @@ class OfflineVoterCache {
         }
         if (!queryTokens.every(matchesToken)) return false;
       }
+      if (query['hasMobile'] == 'true') {
+        final m = (item['mobile'] ?? '').toString().trim();
+        if (m.isEmpty) return false;
+      }
+      if (query['missingMobile'] == 'true') {
+        final m = (item['mobile'] ?? '').toString().trim();
+        if (m.isNotEmpty) return false;
+      }
+      if (query['ids'] != null && query['ids'].toString().isNotEmpty) {
+        final idSet = query['ids'].toString().split(',').map((e) => e.trim()).toSet();
+        if (!idSet.contains(_itemId(item))) return false;
+      }
       if (query['favorite'] == 'true' && item['isFavorite'] != true) {
         return false;
       }

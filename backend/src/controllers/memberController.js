@@ -510,6 +510,12 @@ exports.list = async (req, res, next) => {
       const escapedLetter = escapeRegex(String(letter).trim());
       filter.name = new RegExp(`^${escapedLetter}`, 'i');
     }
+    if (req.query.ids) {
+      const idsList = String(req.query.ids).split(',').map((id) => id.trim()).filter((id) => mongoose.Types.ObjectId.isValid(id));
+      if (idsList.length) {
+        filter._id = { $in: idsList.map((id) => new mongoose.Types.ObjectId(id)) };
+      }
+    }
     if (req.query.hasMobile === 'true') filter.mobile = { $nin: ['', null], $exists: true };
     if (req.query.missingMobile === 'true') filter.$and = [...(filter.$and || []), { $or: [{ mobile: '' }, { mobile: null }, { mobile: { $exists: false } }] }];
     if (req.query.missingHouse === 'true') filter.$and = [...(filter.$and || []), { $or: [{ houseNumber: '' }, { houseNumber: null }, { houseNumber: { $exists: false } }] }];

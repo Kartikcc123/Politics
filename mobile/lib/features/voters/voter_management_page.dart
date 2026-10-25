@@ -110,6 +110,7 @@ class _VoterManagementPageState extends State<VoterManagementPage>
   String supplementTypeFilter = '';
   String supplementDateFilter = '';
   String isDeletedFilter = '';
+  String mobileFilter = ''; // '' = all, 'has_mobile' = with mobile, 'no_mobile' = without mobile
   String? samitiWardFilter;
   String? samitiFilter;
   int currentPage = 1;
@@ -350,6 +351,8 @@ class _VoterManagementPageState extends State<VoterManagementPage>
       if (supplementTypeFilter.isNotEmpty) 'supplementType': supplementTypeFilter,
       if (supplementDateFilter.isNotEmpty) 'supplementDate': supplementDateFilter,
       if (isDeletedFilter.isNotEmpty) 'isDeleted': isDeletedFilter,
+      if (mobileFilter == 'has_mobile') 'hasMobile': 'true',
+      if (mobileFilter == 'no_mobile') 'missingMobile': 'true',
       if (queryMode.isNotEmpty) 'qMode': queryMode,
       if (queryMode.isEmpty && nameLetter.isNotEmpty) 'qMode': 'name',
     };
@@ -438,6 +441,7 @@ class _VoterManagementPageState extends State<VoterManagementPage>
       supplementTypeFilter = '';
       supplementDateFilter = '';
       isDeletedFilter = '';
+      mobileFilter = '';
       currentPage = 1;
       selectedIds.clear();
       selectedOptionFilters.clear();
@@ -575,6 +579,17 @@ class _VoterManagementPageState extends State<VoterManagementPage>
                 updatedByFilter = '';
                 updatedByNameFilter = '';
                 currentPage = 1;
+                refreshVoters();
+              }));
+    }
+    if (mobileFilter.isNotEmpty) {
+      add(
+          'मोबाइल',
+          mobileFilter == 'has_mobile' ? '📱 केवल मोबाइल वाले' : '🚫 बिना मोबाइल वाले',
+          () => setState(() {
+                mobileFilter = '';
+                currentPage = 1;
+                selectedIds.clear();
                 refreshVoters();
               }));
     }
@@ -903,6 +918,10 @@ class _VoterManagementPageState extends State<VoterManagementPage>
     if (boothNumber.text.trim().isNotEmpty) list.add('भाग: ${boothNumber.text.trim()}');
     if (village.text.trim().isNotEmpty) list.add('गाँव: ${village.text.trim()}');
     if (caste.text.trim().isNotEmpty) list.add('जाति: ${caste.text.trim()}');
+    if (partyPreferenceFilter.isNotEmpty) list.add('पार्टी: ${_partyPreferenceLabel(partyPreferenceFilter)}');
+    if (mobileFilter == 'has_mobile') list.add('📱 केवल मोबाइल वाले');
+    if (mobileFilter == 'no_mobile') list.add('🚫 बिना मोबाइल वाले');
+    if (favoriteOnly) list.add('⭐ पसंदीदा');
     if (search.text.trim().isNotEmpty) list.add('खोज: "${search.text.trim()}"');
     if (list.isEmpty) return 'संपूर्ण सूची';
     return list.join(' • ');
@@ -924,7 +943,7 @@ class _VoterManagementPageState extends State<VoterManagementPage>
 
     final titlePrefix = selectedIds.isNotEmpty
         ? 'Selected_Voters_${selectedIds.length}'
-        : 'Voters_${gramPanchayat.text.isNotEmpty ? gramPanchayat.text.trim() : "List"}';
+        : 'Voters_${gramPanchayat.text.isNotEmpty ? gramPanchayat.text.trim() : (municipalWardNumber.text.isNotEmpty ? "Ward_${municipalWardNumber.text.trim()}" : "List")}';
     final fallbackFilename = '$titlePrefix.xlsx';
 
     if (mounted) {
@@ -942,6 +961,9 @@ class _VoterManagementPageState extends State<VoterManagementPage>
         'limit': '3000',
         'paged': 'true',
       };
+      if (selectedIds.isNotEmpty) {
+        baseQuery['ids'] = selectedIds.join(',');
+      }
 
       final allMembers = <Map<String, dynamic>>[];
       int page = 1;
@@ -1386,6 +1408,7 @@ class _VoterManagementPageState extends State<VoterManagementPage>
     var nextGender = gender;
     var nextVerification = verificationStatus;
     var nextProfileCompletion = profileCompletionStatus;
+    var nextMobileFilter = mobileFilter;
     var nextSupplementType = supplementTypeFilter.isNotEmpty
         ? supplementTypeFilter
         : (isDeletedFilter == 'true' ? 'deleted' : '');
@@ -1408,6 +1431,7 @@ class _VoterManagementPageState extends State<VoterManagementPage>
           gender = nextGender;
           verificationStatus = nextVerification;
           profileCompletionStatus = nextProfileCompletion;
+          mobileFilter = nextMobileFilter;
           if (nextSupplementType == 'addition') {
             supplementTypeFilter = 'addition';
             isDeletedFilter = 'false';
@@ -1541,6 +1565,20 @@ class _VoterManagementPageState extends State<VoterManagementPage>
                 ],
                 onChanged: (value) =>
                     setSheetState(() => nextGender = value ?? ''),
+              ),
+              const SizedBox(height: 12),
+              DropdownButtonFormField<String>(
+                value: nextMobileFilter,
+                decoration: const InputDecoration(
+                    labelText: 'मोबाइल नंबर स्थिति (Mobile Filter)',
+                    prefixIcon: Icon(Icons.phone_android_rounded)),
+                items: const [
+                  DropdownMenuItem(value: '', child: Text('सभी मतदाता (All)')),
+                  DropdownMenuItem(value: 'has_mobile', child: Text('📱 केवल मोबाइल नंबर वाले (With Mobile)')),
+                  DropdownMenuItem(value: 'no_mobile', child: Text('🚫 बिना मोबाइल नंबर वाले (Without Mobile)')),
+                ],
+                onChanged: (value) =>
+                    setSheetState(() => nextMobileFilter = value ?? ''),
               ),
               const SizedBox(height: 12),
               TextField(
@@ -2592,6 +2630,13 @@ class _VoterManagementPageState extends State<VoterManagementPage>
                 },
                 onMic: toggleVoiceSearch,
                 onQuickPick: useQuickSearch,
+                mobileFilter: mobileFilter,
+                onMobilePick: (val) => setState(() {
+                  mobileFilter = val;
+                  currentPage = 1;
+                  selectedIds.clear();
+                  refreshVoters();
+                }),
                 expandedFilters: _RollFilterStrip(
                   rollType: rollType,
                   matchStatus: matchStatus,
@@ -2614,6 +2659,13 @@ class _VoterManagementPageState extends State<VoterManagementPage>
               partyPreference: partyPreferenceFilter,
               reviewSelected: verificationStatus == 'needs_review',
               incompleteSelected: profileCompletionStatus == 'pending',
+              mobileFilter: mobileFilter,
+              onMobileFilter: (val) => setState(() {
+                mobileFilter = val;
+                currentPage = 1;
+                selectedIds.clear();
+                refreshVoters();
+              }),
               onAll: () => setState(() {
                 contactTypeFilter = '';
                 rollType = _defaultRollType;
@@ -2623,6 +2675,7 @@ class _VoterManagementPageState extends State<VoterManagementPage>
                 verificationStatus = '';
                 profileCompletionStatus = '';
                 favoriteOnly = false;
+                mobileFilter = '';
                 currentPage = 1;
                 refreshVoters();
               }),
@@ -3739,6 +3792,8 @@ class _EasyVoterSearchCard extends StatelessWidget {
       required this.onClear,
       required this.onMic,
       required this.onQuickPick,
+      this.mobileFilter = '',
+      this.onMobilePick,
       this.expandedFilters});
   final TextEditingController controller;
   final FocusNode focusNode;
@@ -3751,6 +3806,8 @@ class _EasyVoterSearchCard extends StatelessWidget {
   final VoidCallback onClear;
   final VoidCallback onMic;
   final ValueChanged<String> onQuickPick;
+  final String mobileFilter;
+  final ValueChanged<String>? onMobilePick;
   final Widget? expandedFilters;
   @override
   Widget build(BuildContext context) => TextFieldTapRegion(
@@ -3777,7 +3834,11 @@ class _EasyVoterSearchCard extends StatelessWidget {
           if (showOptions) ...[
             const SizedBox(height: 10),
             _SearchHelpStrip(
-                compact: true, selectedMode: selectedMode, onPick: onQuickPick),
+                compact: true,
+                selectedMode: selectedMode,
+                onPick: onQuickPick,
+                mobileFilter: mobileFilter,
+                onMobilePick: onMobilePick),
             if (expandedFilters != null) ...[
               const SizedBox(height: 8),
               expandedFilters!
@@ -3874,10 +3935,14 @@ class _SearchHelpStrip extends StatelessWidget {
     this.compact = false,
     this.selectedMode = '',
     this.onPick,
+    this.mobileFilter = '',
+    this.onMobilePick,
   });
   final bool compact;
   final String selectedMode;
   final ValueChanged<String>? onPick;
+  final String mobileFilter;
+  final ValueChanged<String>? onMobilePick;
 
   List<Widget> get chips => [
         _SearchHintChip(Icons.person_search_rounded, 'नाम',
@@ -3894,6 +3959,20 @@ class _SearchHelpStrip extends StatelessWidget {
             selected: selectedMode == 'village', onTap: onPick),
         _SearchHintChip(Icons.pin_drop_outlined, 'PIN',
             selected: selectedMode == 'pin', onTap: onPick),
+        if (onMobilePick != null) ...[
+          _SearchHintChip(
+            Icons.phone_android_rounded,
+            '📱 मोबाइल वाले',
+            selected: mobileFilter == 'has_mobile',
+            onTap: (_) => onMobilePick!(mobileFilter == 'has_mobile' ? '' : 'has_mobile'),
+          ),
+          _SearchHintChip(
+            Icons.phone_disabled_rounded,
+            '🚫 बिना मोबाइल',
+            selected: mobileFilter == 'no_mobile',
+            onTap: (_) => onMobilePick!(mobileFilter == 'no_mobile' ? '' : 'no_mobile'),
+          ),
+        ],
       ];
 
   @override
@@ -4055,6 +4134,8 @@ class _PhoneCombinedFilterStrip extends StatelessWidget {
     required this.partyPreference,
     required this.reviewSelected,
     this.incompleteSelected = false,
+    this.mobileFilter = '',
+    this.onMobileFilter,
     required this.onAll,
     required this.onAllDoubleTap,
     required this.onParty,
@@ -4067,6 +4148,8 @@ class _PhoneCombinedFilterStrip extends StatelessWidget {
   final String partyPreference;
   final bool reviewSelected;
   final bool incompleteSelected;
+  final String mobileFilter;
+  final ValueChanged<String>? onMobileFilter;
   final VoidCallback onAll;
   final VoidCallback onAllDoubleTap;
   final ValueChanged<String> onParty;
@@ -4113,7 +4196,7 @@ class _PhoneCombinedFilterStrip extends StatelessWidget {
         );
 
     final allSelected =
-        contactType.isEmpty && partyPreference.isEmpty && !reviewSelected && !incompleteSelected;
+        contactType.isEmpty && partyPreference.isEmpty && !reviewSelected && !incompleteSelected && mobileFilter.isEmpty;
     return SingleChildScrollView(
       scrollDirection: Axis.horizontal,
       child: Row(children: [
@@ -4130,6 +4213,24 @@ class _PhoneCombinedFilterStrip extends StatelessWidget {
         partyChip('bjp', 'BJP', orange),
         partyChip('nota', 'NOTA', muted),
         partyChip('other', 'Any Party', purple),
+        if (onMobileFilter != null) ...[
+          chip(
+            label: '📱 मोबाइल वाले',
+            avatar: Icon(Icons.phone_android_rounded,
+                size: 17, color: mobileFilter == 'has_mobile' ? Colors.white : const Color(0xff0284c7)),
+            color: const Color(0xff0284c7),
+            selected: mobileFilter == 'has_mobile',
+            onTap: () => onMobileFilter!(mobileFilter == 'has_mobile' ? '' : 'has_mobile'),
+          ),
+          chip(
+            label: '🚫 बिना मोबाइल',
+            avatar: Icon(Icons.phone_disabled_rounded,
+                size: 17, color: mobileFilter == 'no_mobile' ? Colors.white : const Color(0xffe11d48)),
+            color: const Color(0xffe11d48),
+            selected: mobileFilter == 'no_mobile',
+            onTap: () => onMobileFilter!(mobileFilter == 'no_mobile' ? '' : 'no_mobile'),
+          ),
+        ],
         chip(
           label: 'Review',
           avatar: Icon(Icons.fact_check_rounded,
