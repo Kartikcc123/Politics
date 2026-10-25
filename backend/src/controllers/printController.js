@@ -1018,10 +1018,10 @@ exports.printMembers = async (req, res, next) => {
         const scaleX = (cardWidth - 4) / 1024;
         const scaleY = (bannerH - 2) / 280;
 
-        const leftCX = x + 2 + 96 * scaleX;
-        const rightCX = x + 2 + 928 * scaleX;
-        const photoCY = y + 2 + 130 * scaleY;
-        const photoR = 86 * scaleY;
+        const leftCX = x + 2 + 105 * scaleX;
+        const rightCX = x + 2 + 919 * scaleX;
+        const photoCY = y + 2 + 140 * scaleY;
+        const photoR = 101 * scaleY;
 
         if (bannerImageObj) {
           try {
