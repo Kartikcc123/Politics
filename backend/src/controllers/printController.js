@@ -953,19 +953,13 @@ exports.printMembers = async (req, res, next) => {
         // With Banner Image, Scissor Tear-off Divider, Voter Info, Photo, Ward Box, & Voting Hours
         // =========================================================================
 
+        const isCompactCard = cardHeight < 170;
+
         // 0. Double Tiranga Luxury Border (Outer Green + Inner Saffron with Top Center Voting Emblem)
         doc.roundedRect(x, y, cardWidth, cardHeight, 4.5).lineWidth(1.2).strokeColor('#0e8742').stroke();
         doc.roundedRect(x + 1.8, y + 1.8, cardWidth - 3.6, cardHeight - 3.6, 3.0).lineWidth(0.9).strokeColor('#f37021').stroke();
 
-        if (votingFingerImageObj) {
-          const iconW = isCompactCard ? 34 : 40;
-          const iconH = isCompactCard ? 17 : 20;
-          const iconX = x + cardWidth / 2 - iconW / 2;
-          const iconY = y - (isCompactCard ? 4.5 : 5.0);
-          // Clean white break clears border lines right under the finger
-          doc.rect(x + cardWidth / 2 - 5, y - 1.5, 10, 4.0).fillColor('#ffffff').fill();
-          doc.image(votingFingerImageObj, iconX, iconY, { width: iconW, height: iconH });
-        }
+
 
         // 1. TOP SECTION: Campaign Banner (Dynamically scaled & Auto-Balanced)
         const gpName = m.gramPanchayat || params.gramPanchayat || sampleMember.gramPanchayat || '';
@@ -1000,7 +994,6 @@ exports.printMembers = async (req, res, next) => {
         // Allocates 40% of card height when 5-6 lines are present, leaving 60% for voter details (zero overlap!).
         const bannerFraction = bannerLineCount >= 5 ? 0.40 : (bannerLineCount >= 4 ? 0.36 : 0.33);
         const bannerH = Math.max(50, Math.min(76, Math.round(cardHeight * bannerFraction)));
-        const isCompactCard = cardHeight < 170;
         const photoR = Math.max(16, Math.min(23, Math.round((bannerH - 12) / 2)));
         const photoCY = y + 2 + (bannerH - 2) / 2;
 
@@ -1013,6 +1006,17 @@ exports.printMembers = async (req, res, next) => {
           }
         } else {
           drawDefaultBanner();
+        }
+
+        // Top Center Break & Voting Finger Emblem (Drawn on top so it never gets covered)
+        if (votingFingerImageObj) {
+          const iconW = isCompactCard ? 34 : 40;
+          const iconH = isCompactCard ? 17 : 20;
+          const iconX = x + cardWidth / 2 - iconW / 2;
+          const iconY = y - (isCompactCard ? 4.5 : 5.0);
+          // Clean white break clears border lines right under the finger
+          doc.rect(x + cardWidth / 2 - 5, y - 1.5, 10, 4.0).fillColor('#ffffff').fill();
+          doc.image(votingFingerImageObj, iconX, iconY, { width: iconW, height: iconH });
         }
 
         function drawDefaultBanner() {
@@ -1067,9 +1071,11 @@ exports.printMembers = async (req, res, next) => {
               } catch (_) {}
             }
 
-            // Party Symbol / Election Sign (Placed in upper right, adjacent to leader photo)
+            // Party Symbol / Election Sign
             if (effectiveSymbolImageObj) {
-              const symbolR = Math.max(9.5, Math.min(13.5, Math.round(photoR * 0.60)));
+              const symbolR = leaderPhotoImageObj
+                ? Math.max(9.5, Math.min(13.5, Math.round(photoR * 0.60)))
+                : photoR;
               const symbolCX = leaderPhotoImageObj ? (rightCX - photoR - symbolR - 3.5) : rightCX;
               const symbolCY = leaderPhotoImageObj ? (y + 4.0 + symbolR) : photoCY;
               try {
@@ -1084,7 +1090,13 @@ exports.printMembers = async (req, res, next) => {
                   valign: 'center',
                 });
                 doc.restore();
-                doc.circle(symbolCX, symbolCY, symbolR).lineWidth(0.6).strokeColor('#0e8742').stroke();
+                if (leaderPhotoImageObj) {
+                  doc.circle(symbolCX, symbolCY, symbolR).lineWidth(0.6).strokeColor('#0e8742').stroke();
+                } else {
+                  doc.circle(symbolCX, symbolCY, symbolR + 1.6).lineWidth(1.8).strokeColor(theme.photoRing || '#d4af37').stroke();
+                  doc.circle(symbolCX, symbolCY, symbolR + 2.6).lineWidth(0.7).strokeColor(theme.photoRing2 || '#f59e0b').stroke();
+                  doc.circle(symbolCX, symbolCY, symbolR).lineWidth(0.5).strokeColor(theme.photoRing3 || '#b45309').stroke();
+                }
               } catch (_) {}
             }
 
