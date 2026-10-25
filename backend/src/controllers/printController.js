@@ -583,6 +583,8 @@ exports.printMembers = async (req, res, next) => {
     let candidatePhotoImageObj = null;
     let leaderPhotoImageObj = null;
     let symbolImageObj = null;
+    let votingFingerImageObj = null;
+    let defaultPartySymbolImageObj = null;
 
     if (bannerBuffer) {
       try { bannerImageObj = doc.openImage(bannerBuffer); } catch (e) { console.error('Banner image parse error:', e.message); }
@@ -596,6 +598,18 @@ exports.printMembers = async (req, res, next) => {
     if (symbolBuffer) {
       try { symbolImageObj = doc.openImage(symbolBuffer); } catch (e) { console.error('Symbol image parse error:', e.message); }
     }
+
+    try {
+      const vPath = path.join(__dirname, '../assets/voting_finger_emblem.png');
+      if (fs.existsSync(vPath)) votingFingerImageObj = doc.openImage(fs.readFileSync(vPath));
+    } catch (e) { console.error('Voting finger load error:', e.message); }
+
+    try {
+      const pPath = path.join(__dirname, '../assets/default_party_symbol.png');
+      if (fs.existsSync(pPath)) defaultPartySymbolImageObj = doc.openImage(fs.readFileSync(pPath));
+    } catch (e) { console.error('Default party symbol load error:', e.message); }
+
+    const effectiveSymbolImageObj = symbolImageObj || defaultPartySymbolImageObj;
 
     const isCompact = rowsPerPage >= 8 || columns >= 3;
     const gapX = isCampaignSlip ? 9 : (columns >= 3 ? 5 : 8);
@@ -939,9 +953,19 @@ exports.printMembers = async (req, res, next) => {
         // With Banner Image, Scissor Tear-off Divider, Voter Info, Photo, Ward Box, & Voting Hours
         // =========================================================================
 
-        // 0. Double Luxury Card Border (Matches approved ideal reference)
-        doc.roundedRect(x, y, cardWidth, cardHeight, 3.5).lineWidth(0.9).strokeColor(theme.cardBorder || '#166534').stroke();
-        doc.roundedRect(x + 1.8, y + 1.8, cardWidth - 3.6, cardHeight - 3.6, 2.5).lineWidth(0.5).strokeColor(theme.cardInnerBorder || '#ca8a04').stroke();
+        // 0. Double Tiranga Luxury Border (Outer Green + Inner Saffron with Top Center Voting Emblem)
+        doc.roundedRect(x, y, cardWidth, cardHeight, 4.5).lineWidth(1.2).strokeColor('#0e8742').stroke();
+        doc.roundedRect(x + 1.8, y + 1.8, cardWidth - 3.6, cardHeight - 3.6, 3.0).lineWidth(0.9).strokeColor('#f37021').stroke();
+
+        if (votingFingerImageObj) {
+          const iconW = isCompactCard ? 34 : 40;
+          const iconH = isCompactCard ? 17 : 20;
+          const iconX = x + cardWidth / 2 - iconW / 2;
+          const iconY = y - (isCompactCard ? 4.5 : 5.0);
+          // Clean white break clears border lines right under the finger
+          doc.rect(x + cardWidth / 2 - 5, y - 1.5, 10, 4.0).fillColor('#ffffff').fill();
+          doc.image(votingFingerImageObj, iconX, iconY, { width: iconW, height: iconH });
+        }
 
         // 1. TOP SECTION: Campaign Banner (Dynamically scaled & Auto-Balanced)
         const gpName = m.gramPanchayat || params.gramPanchayat || sampleMember.gramPanchayat || '';
@@ -955,7 +979,7 @@ exports.printMembers = async (req, res, next) => {
           candName ||
           candidatePhotoImageObj ||
           leaderPhotoImageObj ||
-          symbolImageObj ||
+          effectiveSymbolImageObj ||
           postName ||
           candSlogan ||
           bannerImageObj ||
@@ -975,7 +999,7 @@ exports.printMembers = async (req, res, next) => {
         // Intelligent Auto-Balance Banner Height:
         // Allocates 40% of card height when 5-6 lines are present, leaving 60% for voter details (zero overlap!).
         const bannerFraction = bannerLineCount >= 5 ? 0.40 : (bannerLineCount >= 4 ? 0.36 : 0.33);
-        const bannerH = Math.max(48, Math.min(74, Math.round(cardHeight * bannerFraction)));
+        const bannerH = Math.max(50, Math.min(76, Math.round(cardHeight * bannerFraction)));
         const isCompactCard = cardHeight < 170;
         const photoR = Math.max(16, Math.min(23, Math.round((bannerH - 12) / 2)));
         const photoCY = y + 2 + (bannerH - 2) / 2;
@@ -1022,7 +1046,7 @@ exports.printMembers = async (req, res, next) => {
               } catch (_) {}
             }
 
-            // Right Side: Leader Photo or Election Symbol in Golden Ring
+            // Right Side: Leader Photo in Golden Ring
             const rightCX = x + cardWidth - 8 - photoR;
             if (leaderPhotoImageObj) {
               try {
@@ -1041,37 +1065,41 @@ exports.printMembers = async (req, res, next) => {
                 doc.circle(rightCX, photoCY, photoR + 2.6).lineWidth(0.7).strokeColor(theme.photoRing2 || '#f59e0b').stroke();
                 doc.circle(rightCX, photoCY, photoR).lineWidth(0.5).strokeColor(theme.photoRing3 || '#b45309').stroke();
               } catch (_) {}
-            } else if (symbolImageObj) {
+            }
+
+            // Party Symbol / Election Sign (Placed in upper right, adjacent to leader photo)
+            if (effectiveSymbolImageObj) {
+              const symbolR = Math.max(9.5, Math.min(13.5, Math.round(photoR * 0.60)));
+              const symbolCX = leaderPhotoImageObj ? (rightCX - photoR - symbolR - 3.5) : rightCX;
+              const symbolCY = leaderPhotoImageObj ? (y + 4.0 + symbolR) : photoCY;
               try {
                 doc.save();
-                doc.circle(rightCX, photoCY, photoR).fillColor('#ffffff').fill();
-                doc.circle(rightCX, photoCY, photoR).clip();
-                doc.image(symbolImageObj, rightCX - photoR + 2, photoCY - photoR + 2, {
-                  width: (photoR - 2) * 2,
-                  height: (photoR - 2) * 2,
-                  fit: [(photoR - 2) * 2, (photoR - 2) * 2],
+                doc.circle(symbolCX, symbolCY, symbolR).fillColor('#ffffff').fill();
+                doc.circle(symbolCX, symbolCY, symbolR).clip();
+                doc.image(effectiveSymbolImageObj, symbolCX - symbolR, symbolCY - symbolR, {
+                  width: symbolR * 2,
+                  height: symbolR * 2,
+                  fit: [symbolR * 2, symbolR * 2],
                   align: 'center',
                   valign: 'center',
                 });
                 doc.restore();
-
-                doc.circle(rightCX, photoCY, photoR + 1.6).lineWidth(1.8).strokeColor(theme.photoRing || '#d4af37').stroke();
-                doc.circle(rightCX, photoCY, photoR + 2.6).lineWidth(0.7).strokeColor(theme.photoRing2 || '#f59e0b').stroke();
+                doc.circle(symbolCX, symbolCY, symbolR).lineWidth(0.6).strokeColor('#0e8742').stroke();
               } catch (_) {}
             }
 
             // Center Text Typography with intelligent Auto-Balancing
             const textLeft = candidatePhotoImageObj ? (leftCX + photoR + 3) : (x + 8);
-            const textRight = (leaderPhotoImageObj || symbolImageObj) ? (rightCX - photoR - 3) : (x + cardWidth - 8);
+            const textRight = leaderPhotoImageObj ? (rightCX - photoR - 3) : (effectiveSymbolImageObj ? (rightCX - photoR - 3) : (x + cardWidth - 8));
             const textWidth = Math.max(70, textRight - textLeft);
 
             // Dynamic element heights and font sizes:
-            const h1Size = isCompactCard ? 6.5 : 8.0;
-            const h2Size = isCompactCard ? 6.2 : 7.6;
-            const nameSize = isCompactCard ? 10.8 : 13.5;
-            const tagSize = isCompactCard ? 5.2 : 6.8;
-            const slogSize = isCompactCard ? 5.2 : 7.0;
-            const phoneSize = isCompactCard ? 5.8 : 7.2;
+            const h1Size = isCompactCard ? 6.2 : 7.6;
+            const h2Size = isCompactCard ? 5.8 : 7.2;
+            const nameSize = isCompactCard ? 10.5 : 13.0;
+            const tagSize = isCompactCard ? 5.0 : 6.5;
+            const slogSize = isCompactCard ? 5.0 : 6.8;
+            const phoneSize = isCompactCard ? 5.6 : 7.0;
 
             const h1H = h1Size * 1.15;
             const h2H = h2Size * 1.15;
@@ -1088,10 +1116,12 @@ exports.printMembers = async (req, res, next) => {
             if (candSlogan) totalContentH += slogH;
             if (candPhone) totalContentH += phoneH;
 
-            const availBannerH = bannerH - 4.5;
-            const extraGap = Math.max(1.0, Math.min(3.5, (availBannerH - totalContentH) / Math.max(1, bannerLineCount - 1)));
+            const startTextY = votingFingerImageObj ? (y + (isCompactCard ? 13.2 : 14.5)) : (y + 2.2);
+            const availBannerH = bannerH - (startTextY - y) - 2.2;
+            const extraGap = Math.max(0.6, Math.min(3.2, (availBannerH - totalContentH) / Math.max(1, bannerLineCount - 1)));
 
-            let curY = y + 2.2;
+            let curY = startTextY;
+            const mainTextColor = '#091431';
 
             // Line 1: Gram Panchayat
             if (gpName) {
@@ -1099,7 +1129,7 @@ exports.printMembers = async (req, res, next) => {
               let s1 = h1Size * textScale;
               doc.font('HindiBold').fontSize(s1);
               while (s1 > 4.6 && doc.widthOfString(line1) > textWidth) { s1 -= 0.3; doc.fontSize(s1); }
-              doc.fillColor(theme.headerL1).text(line1, textLeft, curY, { width: textWidth, align: 'center', lineBreak: false });
+              doc.fillColor(mainTextColor).text(line1, textLeft, curY, { width: textWidth, align: 'center', lineBreak: false });
               curY += h1H + extraGap;
             }
 
@@ -1109,7 +1139,7 @@ exports.printMembers = async (req, res, next) => {
               let s2 = h2Size * textScale;
               doc.font('HindiBold').fontSize(s2);
               while (s2 > 4.6 && doc.widthOfString(line2) > textWidth) { s2 -= 0.3; doc.fontSize(s2); }
-              doc.fillColor(theme.headerL2).text(line2, textLeft, curY, { width: textWidth, align: 'center', lineBreak: false });
+              doc.fillColor(mainTextColor).text(line2, textLeft, curY, { width: textWidth, align: 'center', lineBreak: false });
               curY += h2H + extraGap;
             }
 
@@ -1118,8 +1148,8 @@ exports.printMembers = async (req, res, next) => {
               let sN = nameSize * textScale;
               doc.font('HindiBold').fontSize(sN);
               while (sN > 7.0 && doc.widthOfString(candName) > textWidth) { sN -= 0.4; doc.fontSize(sN); }
-              doc.fillColor(theme.candName).text(candName, textLeft, curY, { width: textWidth, align: 'center', lineBreak: false });
-              curY += nameH + extraGap + 0.5;
+              doc.fillColor(mainTextColor).text(candName, textLeft, curY, { width: textWidth, align: 'center', lineBreak: false });
+              curY += nameH + extraGap + 0.4;
             }
 
             // Line 4: Tagline
@@ -1128,7 +1158,7 @@ exports.printMembers = async (req, res, next) => {
               let sT = tagSize * textScale;
               doc.font('HindiBold').fontSize(sT);
               while (sT > 4.2 && doc.widthOfString(tagFull) > textWidth) { sT -= 0.3; doc.fontSize(sT); }
-              doc.fillColor(theme.tagline).text(tagFull, textLeft, curY, { width: textWidth, align: 'center', lineBreak: false });
+              doc.fillColor(mainTextColor).text(tagFull, textLeft, curY, { width: textWidth, align: 'center', lineBreak: false });
               curY += tagH + extraGap;
             }
 
@@ -1138,7 +1168,7 @@ exports.printMembers = async (req, res, next) => {
               let sS = slogSize * textScale;
               doc.font('HindiBold').fontSize(sS);
               while (sS > 4.2 && doc.widthOfString(sloganText) > textWidth) { sS -= 0.3; doc.fontSize(sS); }
-              doc.fillColor(theme.slogan).text(sloganText, textLeft, curY, { width: textWidth, align: 'center', lineBreak: false });
+              doc.fillColor(mainTextColor).text(sloganText, textLeft, curY, { width: textWidth, align: 'center', lineBreak: false });
               curY += slogH + extraGap;
             }
 
@@ -1149,7 +1179,7 @@ exports.printMembers = async (req, res, next) => {
               doc.font('HindiBold').fontSize(sP);
               while (sP > 4.5 && doc.widthOfString(phoneText) > textWidth) { sP -= 0.3; doc.fontSize(sP); }
               const safePhoneY = Math.min(curY, y + bannerH - phoneH - 1.8);
-              doc.fillColor(theme.phone).text(phoneText, textLeft, safePhoneY, { width: textWidth, align: 'center', lineBreak: false });
+              doc.fillColor(mainTextColor).text(phoneText, textLeft, safePhoneY, { width: textWidth, align: 'center', lineBreak: false });
             }
           } else {
             // Elegant Official Voter Information Header (Fallback when no campaign details)
