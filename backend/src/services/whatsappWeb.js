@@ -44,6 +44,11 @@ async function connectSender(senderOrId) {
     qrMaxRetries: 8,
     deviceName: 'Political CRM',
     browserName: 'Chrome',
+    webVersionCache: {
+      type: 'remote',
+      remotePath: 'https://raw.githubusercontent.com/wppconnect-team/wa-version/main/html/{version}.html',
+      strict: false,
+    },
   });
   clients.set(id, client);
 
@@ -119,11 +124,17 @@ async function sendWebMessage(sender, mobile, text, mediaObj = null) {
   if (!ready.has(id)) throw new Error('WhatsApp QR session connected नहीं है या load हो रहा है। कृपया WhatsApp पेज पर QR स्थिति जांचें।');
   let digits = String(mobile || '').replace(/\D/g, '').replace(/^0+/, '');
   if (digits.length === 10) digits = `91${digits}`;
-  let numberId = null;
+
+  // CRITICAL: Always use standard phone user JID (e.g. 919521066616@c.us).
+  // NEVER send media to @lid (Linked Identity) as WhatsApp Web throws:
+  // "Data passed to getter must include an id property (it's how we memoize)"
+  let targetSerialized = `${digits}@c.us`;
   try {
-    numberId = await client.getNumberId(digits);
+    const numberId = await client.getNumberId(digits);
+    if (numberId?._serialized && !numberId._serialized.includes('@lid')) {
+      targetSerialized = numberId._serialized;
+    }
   } catch (_) {}
-  const targetSerialized = numberId?._serialized || `${digits}@c.us`;
 
   let message;
   if (mediaObj && mediaObj.data && mediaObj.data.length > 50) {
@@ -152,7 +163,7 @@ async function sendWebMessage(sender, mobile, text, mediaObj = null) {
   } else {
     message = await client.sendMessage(targetSerialized, text);
   }
-  return message.id?._serialized || '';
+  return message?.id?._serialized || message?._data?.id?._serialized || 'sent';
 }
 
 async function restoreWebSessions() {
