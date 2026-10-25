@@ -133,16 +133,20 @@ async function sendWebMessage(sender, mobile, text, mediaObj = null) {
         base64Clean = base64Clean.split('base64,')[1];
       }
       base64Clean = base64Clean.replace(/[\r\n\s]/g, '');
-      const mimeType = mediaObj.mimeType || (mediaObj.filename?.endsWith('.png') ? 'image/png' : 'image/jpeg');
+      let mimeType = mediaObj.mimeType || (mediaObj.filename?.endsWith('.png') ? 'image/png' : 'image/jpeg');
+      if (mimeType === 'image/jpg') mimeType = 'image/jpeg';
       const filename = mediaObj.filename || 'poster.jpg';
       const media = new MessageMedia(
         mimeType,
         base64Clean,
         filename
       );
+      console.log(`[WhatsApp Web] 📤 Sending media (${mimeType}, ${filename}, ${base64Clean.length} b64 chars) with caption to ${targetSerialized}...`);
       message = await client.sendMessage(targetSerialized, media, { caption: text || '' });
+      console.log(`[WhatsApp Web] ✅ Media successfully sent to ${targetSerialized}`);
     } catch (mediaError) {
-      console.warn(`[WhatsApp Web] Media send failed to ${digits}, sending text only fallback:`, mediaError.message);
+      console.error(`[WhatsApp Web] ❌ Media send FAILED to ${digits}:`, mediaError.stack || mediaError.message);
+      console.warn(`[WhatsApp Web] ⚠️ Falling back to text-only send for ${digits}`);
       message = await client.sendMessage(targetSerialized, text);
     }
   } else {

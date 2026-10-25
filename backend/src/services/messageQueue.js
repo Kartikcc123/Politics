@@ -113,11 +113,15 @@ async function processCampaign(campaign) {
   if (!batch.length) {
     const pending = campaign.recipients.some((item) => ['queued', 'processing'].includes(item.status));
     campaign.status = pending ? 'running' : 'completed';
+    if (!pending && campaign.mediaData) {
+      campaign.mediaData = '';
+      console.log(`[WhatsApp Queue] 🧹 Campaign "${campaign.title}" complete: mediaData deleted from MongoDB.`);
+    }
     await campaign.save();
     return;
   }
   campaign.status = 'running';
-  console.log(`[WhatsApp Queue] Sending batch of ${batch.length} messages for campaign "${campaign.title}"...`);
+  console.log(`[WhatsApp Queue] Sending batch of ${batch.length} messages for campaign "${campaign.title}"... (hasMedia: ${Boolean(campaign.mediaData && campaign.mediaData.length > 50)}, mediaBytes: ${campaign.mediaData?.length || 0})`);
 
   const mediaObj = (campaign.mediaData && campaign.mediaData.length > 50) ? {
     data: campaign.mediaData,
@@ -177,7 +181,17 @@ async function processCampaign(campaign) {
       await wait(actualDelaySeconds * 1000);
     }
   }
-  campaign.nextBatchAt = new Date(Date.now() + campaign.intervalSeconds * 1000);
+
+  const stillPending = campaign.recipients.some((r) => ['queued', 'processing'].includes(r.status));
+  if (!stillPending) {
+    campaign.status = 'completed';
+    if (campaign.mediaData) {
+      campaign.mediaData = '';
+      console.log(`[WhatsApp Queue] 🧹 Campaign "${campaign.title}" all messages delivered: mediaData deleted from MongoDB.`);
+    }
+  } else {
+    campaign.nextBatchAt = new Date(Date.now() + campaign.intervalSeconds * 1000);
+  }
   await campaign.save();
 }
 
