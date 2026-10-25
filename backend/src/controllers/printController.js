@@ -1214,12 +1214,15 @@ exports.printMembers = async (req, res, next) => {
               curY += (h2H * autoFitScale) + extraGap;
             }
 
-            // Line 3: Candidate Name inside Trapezoid Ribbon Box
+            // Line 3: Candidate Name inside Trapezoid Ribbon Box (Dynamically styled to match theme/ward box settings)
             if (candName) {
               const slant = isCompactCard ? 5.5 : 7.0;
               const boxW = Math.min(textWidth, 126);
               const boxX = textLeft + (textWidth - boxW) / 2;
               const actualBoxH = nameBoxH * autoFitScale;
+              const nameRibbonBg = theme.wardBoxBg || '#091f42';
+              const isNameBgLight = isColorLight(nameRibbonBg);
+              const nameRibbonTextColor = isNameBgLight ? '#091431' : '#ffffff';
 
               doc.save();
               doc.polygon(
@@ -1227,13 +1230,22 @@ exports.printMembers = async (req, res, next) => {
                 [boxX + boxW - slant, curY],
                 [boxX + boxW, curY + actualBoxH],
                 [boxX, curY + actualBoxH]
-              ).fillColor('#091f42').fill();
+              ).fillColor(nameRibbonBg).fill();
+
+              if (isNameBgLight) {
+                doc.polygon(
+                  [boxX + slant, curY],
+                  [boxX + boxW - slant, curY],
+                  [boxX + boxW, curY + actualBoxH],
+                  [boxX, curY + actualBoxH]
+                ).lineWidth(0.8).strokeColor('#64748b').stroke();
+              }
               doc.restore();
 
               let sN = nameSize * textScale * autoFitScale;
               doc.font('HindiBold').fontSize(sN);
               while (sN > 6.5 && doc.widthOfString(candName) > (boxW - slant * 2 - 4)) { sN -= 0.4; doc.fontSize(sN); }
-              doc.fillColor('#ffffff').text(candName, boxX, curY + (actualBoxH - sN) / 2 - 0.5, { width: boxW, align: 'center', lineBreak: false });
+              doc.fillColor(nameRibbonTextColor).text(candName, boxX, curY + (actualBoxH - sN) / 2 - 0.5, { width: boxW, align: 'center', lineBreak: false });
               curY += actualBoxH + extraGap + 0.3;
             }
 
@@ -1511,8 +1523,9 @@ exports.printMembers = async (req, res, next) => {
         // SEPARATOR LINE
         doc.moveTo(col3X + 5, contentY + wardBoxH * 0.44).lineTo(col3X + col3W - 5, contentY + wardBoxH * 0.44).lineWidth(0.8).strokeColor(theme.wardDivider).stroke();
 
-        // POLLING STATION LABEL
-        doc.font('HindiBold').fontSize(Math.max(5.2, (isCompactCard ? 6.2 : 7.5) * textScale)).fillColor(theme.wardDivider).text('मतदान केंद्र', col3X, contentY + wardBoxH * 0.48, { width: col3W, align: 'center', lineBreak: false });
+        // POLLING STATION LABEL (Dark if ward box background is light)
+        const pollingLabelColor = isWardLight ? theme.wardBoxText : theme.wardDivider;
+        doc.font('HindiBold').fontSize(Math.max(5.2, (isCompactCard ? 6.2 : 7.5) * textScale)).fillColor(pollingLabelColor).text('मतदान केंद्र', col3X, contentY + wardBoxH * 0.48, { width: col3W, align: 'center', lineBreak: false });
 
         // Polling Station Building Name
         let boothDesc = '';
