@@ -1057,11 +1057,26 @@ exports.printMembers = async (req, res, next) => {
           (params.isDeleted === 'true' || params.vilopan === 'true')
         );
 
-        const primaryColor = params.customPrimaryColor || params.primaryColor || (selectedThemeKey === 'custom' ? (params.primaryColor || '#0e8742') : (theme.wardBoxBg || baseTheme.wardBoxBg)) || '#0e8742';
+        const isLightColor = (hex) => {
+          if (!hex) return false;
+          let c = String(hex).replace('#', '').trim();
+          if (c.length === 3) c = c[0] + c[0] + c[1] + c[1] + c[2] + c[2];
+          if (c.length !== 6) return false;
+          const r = parseInt(c.substr(0, 2), 16) || 0;
+          const g = parseInt(c.substr(2, 2), 16) || 0;
+          const b = parseInt(c.substr(4, 2), 16) || 0;
+          const yiq = (r * 299 + g * 587 + b * 114) / 1000;
+          return yiq >= 165;
+        };
 
-        // 0. Double Luxury Border matching chosen color theme
-        doc.roundedRect(x, y, cardWidth, cardHeight, 4.5).lineWidth(1.2).strokeColor(primaryColor).stroke();
-        doc.roundedRect(x + 1.8, y + 1.8, cardWidth - 3.6, cardHeight - 3.6, 3.0).lineWidth(0.8).strokeColor(primaryColor).stroke();
+        const primaryColor = params.customPrimaryColor || params.primaryColor || (selectedThemeKey === 'custom' ? (params.primaryColor || '#0e8742') : (theme.wardBoxBg || baseTheme.wardBoxBg)) || '#0e8742';
+        const isPrimaryLight = isLightColor(primaryColor);
+        const boxTextColor = isPrimaryLight ? '#0f172a' : '#ffffff';
+        const cardBorderColor = isPrimaryLight ? '#1e293b' : primaryColor;
+
+        // 0. Double Luxury Border (never invisible white: uses elegant slate if light color chosen)
+        doc.roundedRect(x, y, cardWidth, cardHeight, 4.5).lineWidth(1.2).strokeColor(cardBorderColor).stroke();
+        doc.roundedRect(x + 1.8, y + 1.8, cardWidth - 3.6, cardHeight - 3.6, 3.0).lineWidth(0.8).strokeColor(cardBorderColor).stroke();
 
 
 
@@ -1311,22 +1326,28 @@ exports.printMembers = async (req, res, next) => {
               const boxX = textLeft + (textWidth - boxW) / 2;
               const actualBoxH = nameBoxH * autoFitScale;
               const ribbonBg = primaryColor;
-
-              doc.save();
-              doc.polygon(
+              const polyPoints = [
                 [boxX, curY],
                 [boxX + boxW, curY],
                 [boxX + boxW + 5, curY + actualBoxH / 2],
                 [boxX + boxW, curY + actualBoxH],
                 [boxX, curY + actualBoxH],
                 [boxX - 5, curY + actualBoxH / 2]
-              ).fillColor(ribbonBg).fill();
+              ];
+
+              doc.save();
+              if (isPrimaryLight) {
+                doc.polygon(...polyPoints).fillColor(ribbonBg).fill();
+                doc.polygon(...polyPoints).lineWidth(0.8).strokeColor('#1e293b').stroke();
+              } else {
+                doc.polygon(...polyPoints).fillColor(ribbonBg).fill();
+              }
               doc.restore();
 
               let sN = nameSize * textScale * autoFitScale;
               doc.font('HindiBold').fontSize(sN);
               while (sN > 6.0 && doc.widthOfString(candName) > (boxW - 4)) { sN -= 0.3; doc.fontSize(sN); }
-              doc.fillColor('#ffffff').text(candName, boxX - 5, curY + (actualBoxH - sN) / 2 - 0.4, { width: boxW + 10, align: 'center', lineBreak: false });
+              doc.fillColor(boxTextColor).text(candName, boxX - 5, curY + (actualBoxH - sN) / 2 - 0.4, { width: boxW + 10, align: 'center', lineBreak: false });
               curY += actualBoxH + (nameBoxGap * autoFitScale) + extraGap;
             }
 
@@ -1417,7 +1438,7 @@ exports.printMembers = async (req, res, next) => {
         const footerY = y + cardHeight - footerH;
         const contentY = dividerY + (isCompactCard ? 3.5 : 4.5);
 
-        const col2W = isCompactCard ? 46 : 50;
+        const col2W = 46;
         const centerCardX = x + cardWidth / 2;
         const col2X = Math.round(centerCardX - col2W / 2);
         const col1X = x + 4;
@@ -1433,30 +1454,37 @@ exports.printMembers = async (req, res, next) => {
           : (m.voterSerial ? String(m.voterSerial) : (m.wardVoterSerial ? String(m.wardVoterSerial) : String(i + 1)));
 
         // Solid Royal Blue rounded badge with crisp white bold number perfectly centered
-        doc.roundedRect(col1X, contentY, 24, pillH, 2.5).fillColor('#1d4ed8').fill();
-        const sSize = Math.max(7.5, (isCompactCard ? 8.2 : 9.2) * textScale);
-        doc.font('HindiBold').fontSize(sSize).fillColor('#ffffff').text(serialNum, col1X, contentY + (pillH - sSize) / 2 - 0.2, { width: 24, align: 'center', lineBreak: false });
+        const sPillW = isCompactCard ? 21 : 23;
+        doc.roundedRect(col1X, contentY, sPillW, pillH, 2.5).fillColor('#1d4ed8').fill();
+        const sSize = Math.max(7.5, (isCompactCard ? 8.2 : 9.0) * textScale);
+        doc.font('HindiBold').fontSize(sSize).fillColor('#ffffff').text(serialNum, col1X, contentY + (pillH - sSize) / 2 - 0.2, { width: sPillW, align: 'center', lineBreak: false });
 
-        // EPIC Box with dedicated solid green "EPIC" badge and number
+        // EPIC Box with dedicated solid badge and number
         const rawEpic = String(m.voterId || m.epic || '').trim();
         const displayEpic = (rawEpic.startsWith('WARD_') || !rawEpic)
           ? (m.assemblyVoterId && !m.assemblyVoterId.startsWith('WARD_') ? m.assemblyVoterId : (m.epic || '-'))
           : rawEpic;
 
-        const epicBadgeX = col1X + 27;
-        const epicBadgeW = 24;
-        doc.roundedRect(epicBadgeX, contentY, epicBadgeW, pillH, 2.5).fillColor(primaryColor).fill();
-        doc.font('HindiBold').fontSize(isCompactCard ? 6.8 : 7.6).fillColor('#ffffff').text('EPIC', epicBadgeX, contentY + (isCompactCard ? 1.8 : 2.2), { width: epicBadgeW, align: 'center', lineBreak: false });
+        const epicBadgeX = col1X + sPillW + 2.5;
+        const epicBadgeW = isCompactCard ? 20 : 22;
+        if (isPrimaryLight) {
+          doc.roundedRect(epicBadgeX, contentY, epicBadgeW, pillH, 2.5).fillColor(primaryColor).fill();
+          doc.roundedRect(epicBadgeX, contentY, epicBadgeW, pillH, 2.5).lineWidth(0.7).strokeColor('#1e293b').stroke();
+        } else {
+          doc.roundedRect(epicBadgeX, contentY, epicBadgeW, pillH, 2.5).fillColor(primaryColor).fill();
+        }
+        doc.font('HindiBold').fontSize(isCompactCard ? 6.5 : 7.2).fillColor(boxTextColor).text('EPIC', epicBadgeX, contentY + (isCompactCard ? 1.8 : 2.2), { width: epicBadgeW, align: 'center', lineBreak: false });
 
-        const epicTextX = epicBadgeX + epicBadgeW + 3;
-        const epicTextW = (col1X + col1W) - epicTextX;
-        let epicFontSize = Math.max(7.2, (isCompactCard ? 8.5 : 9.5) * textScale);
+        // EPIC text with uniform standard font size across ALL cards (no card looks smaller or larger!)
+        const epicTextX = epicBadgeX + epicBadgeW + 2.5;
+        const epicTextW = (col2X - 2) - epicTextX; // Maximum available width up to photo box (~69pt)
+        let epicFontSize = 7.4;
         doc.font('HindiBold').fontSize(epicFontSize);
-        while (epicFontSize > 5.2 && doc.widthOfString(displayEpic) > epicTextW) {
-          epicFontSize -= 0.3;
+        while (epicFontSize > 5.5 && doc.widthOfString(displayEpic) > epicTextW) {
+          epicFontSize -= 0.2;
           doc.fontSize(epicFontSize);
         }
-        doc.fillColor('#000000').text(displayEpic, epicTextX, contentY + (pillH - epicFontSize) / 2 + 0.3, { width: epicTextW, align: 'left', lineBreak: false });
+        doc.fillColor('#000000').text(displayEpic, epicTextX, contentY + (pillH - epicFontSize) / 2 + 0.2, { width: epicTextW, align: 'left', lineBreak: false });
 
         // Selected Fields Check
         const hasExplicitFields = Boolean(params.fields);
@@ -1593,20 +1621,29 @@ exports.printMembers = async (req, res, next) => {
         const wardBoxX = col3X + (col3W - wardBoxW) / 2;
         const wardBoxH = photoBoxH; // Same height as photo box!
 
-        doc.roundedRect(wardBoxX, contentY, wardBoxW, wardBoxH, 3.5).fillColor(primaryColor).fill();
+        if (isPrimaryLight) {
+          doc.roundedRect(wardBoxX, contentY, wardBoxW, wardBoxH, 3.5).fillColor(primaryColor).fill();
+          doc.roundedRect(wardBoxX, contentY, wardBoxW, wardBoxH, 3.5).lineWidth(0.8).strokeColor('#1e293b').stroke();
+        } else {
+          doc.roundedRect(wardBoxX, contentY, wardBoxW, wardBoxH, 3.5).fillColor(primaryColor).fill();
+        }
 
-        // WARD HEADER (White text)
-        const wardHeaderSize = Math.max(6.5, (isCompactCard ? 7.2 : 8.0) * textScale);
-        doc.font('HindiBold').fontSize(wardHeaderSize).fillColor('#ffffff').text('वार्ड नंबर', wardBoxX, contentY + (isCompactCard ? 2.2 : 2.8), { width: wardBoxW, align: 'center', lineBreak: false });
+        // WARD HEADER (High contrast text)
+        const wardHeaderSize = Math.max(6.5, (isCompactCard ? 7.0 : 7.6) * textScale);
+        const wardHeaderY = contentY + (isCompactCard ? 2.0 : 3.2);
+        doc.font('HindiBold').fontSize(wardHeaderSize).fillColor(boxTextColor).text('वार्ड नंबर', wardBoxX, wardHeaderY, { width: wardBoxW, align: 'center', lineBreak: false });
 
-        // Divider Line position
-        const midDivY = contentY + wardBoxH * 0.45;
+        // Divider Line position: 44% of ward box height
+        const midDivY = contentY + wardBoxH * 0.44;
 
-        // WARD NUMBER (White Bold, cleanly centered between header and divider line with safe margin)
+        // WARD NUMBER (Bold, centered between header and divider line with safe margin)
         const wardNum = m.wardNumber || (Array.isArray(m.municipalWardNumbers) && m.municipalWardNumbers[0]) || params.wardNumber || '-';
-        const wardNumSize = Math.max(12.5, (isCompactCard ? 13.5 : 15.0) * textScale);
-        const wardNumY = contentY + (isCompactCard ? 9.2 : 10.2);
-        doc.font('HindiBold').fontSize(wardNumSize).fillColor('#ffffff').text(String(wardNum), wardBoxX, wardNumY, { width: wardBoxW, align: 'center', lineBreak: false });
+        const wardNumSize = Math.max(12.0, (isCompactCard ? 12.5 : 17.5) * textScale);
+        const wardNumY = contentY + (isCompactCard ? 8.6 : 12.5);
+        doc.font('HindiBold').fontSize(wardNumSize).fillColor(boxTextColor).text(String(wardNum), wardBoxX, wardNumY, { width: wardBoxW, align: 'center', lineBreak: false });
+
+        // Horizontal Divider Line inside Ward Box: subtle clean space below ward number (halka space, jyada naa ho)
+        doc.moveTo(wardBoxX + 4, midDivY).lineTo(wardBoxX + wardBoxW - 4, midDivY).lineWidth(0.6).strokeColor(isPrimaryLight ? '#334155' : '#ffffff', 0.65).stroke();
 
         // Polling Station Building Name
         let boothDesc = '';
@@ -1641,9 +1678,6 @@ exports.printMembers = async (req, res, next) => {
           }
         }
 
-        // Horizontal Divider Line inside Ward Box (matching Mockup)
-        doc.moveTo(wardBoxX + 4, midDivY).lineTo(wardBoxX + wardBoxW - 4, midDivY).lineWidth(0.6).strokeColor('#ffffff', 0.65).stroke();
-
         // Bottom Section: Polling Station (मतदान केंद्र & School/Building Name)
         let cleanBooth = boothDesc.replace(/^मतदान\s*केंद्र\s*[-:]?\s*/i, '').replace(/\n+/g, ' ').replace(/\s+/g, ' ').trim();
         let boothLines = cleanBooth.split(/,\s*/).filter(Boolean);
@@ -1655,30 +1689,27 @@ exports.printMembers = async (req, res, next) => {
           }
         }
 
-        const boothLblSize = Math.max(5.4, (isCompactCard ? 6.0 : 6.8) * textScale);
-        let bSize = Math.max(4.6, (isCompactCard ? 5.2 : 6.0) * textScale);
+        const boothLblSize = Math.max(5.2, (isCompactCard ? 5.8 : 6.8) * textScale);
+        let bSize = Math.max(4.6, (isCompactCard ? 5.0 : 6.0) * textScale);
         doc.font('HindiBold').fontSize(bSize);
         for (const bl of boothLines) {
-          while (bSize > 3.8 && doc.widthOfString(bl) > (wardBoxW - 4)) {
+          while (bSize > 3.6 && doc.widthOfString(bl) > (wardBoxW - 4)) {
             bSize -= 0.25;
             doc.fontSize(bSize);
           }
         }
 
-        const bLineH = bSize + 1.4;
-        const totalBoothH = boothLblSize + 2.5 + (boothLines.length * bLineH);
-        const bottomHalfAvailH = (contentY + wardBoxH) - midDivY - 1.5;
-        const bottomPad = Math.max(1.8, (bottomHalfAvailH - totalBoothH) / 2);
+        const bLineH = bSize + (isCompactCard ? 1.2 : 1.8);
 
-        // "मतदान केंद्र" label
-        const lblY = midDivY + bottomPad;
-        doc.font('HindiBold').fontSize(boothLblSize).fillColor('#ffffff').text('मतदान केंद्र', wardBoxX, lblY, { width: wardBoxW, align: 'center', lineBreak: false });
+        // "मतदान केंद्र" label: subtle clean space below divider line (halka space, jyada naa ho)
+        const lblY = midDivY + (isCompactCard ? 2.2 : 3.5);
+        doc.font('HindiBold').fontSize(boothLblSize).fillColor(boxTextColor).text('मतदान केंद्र', wardBoxX, lblY, { width: wardBoxW, align: 'center', lineBreak: false });
 
-        // School/Building lines immediately following label with clean 2.0pt gap
-        let curBoothY = lblY + boothLblSize + 2.0;
+        // School/Building lines immediately following label with clean gap
+        let curBoothY = lblY + boothLblSize + (isCompactCard ? 1.8 : 2.5);
         doc.font('HindiBold').fontSize(bSize);
         for (const bl of boothLines.slice(0, 2)) {
-          doc.fillColor('#ffffff').text(bl, wardBoxX + 2, curBoothY, { width: wardBoxW - 4, align: 'center', lineBreak: false });
+          doc.fillColor(boxTextColor).text(bl, wardBoxX + 2, curBoothY, { width: wardBoxW - 4, align: 'center', lineBreak: false });
           curBoothY += bLineH;
         }
 
@@ -1720,9 +1751,14 @@ exports.printMembers = async (req, res, next) => {
           doc.font('Hindi').fontSize(isCompactCard ? 6.5 : 7.5).fillColor('#ffffff').text(String(i + 1), x, footerY + (isCompactCard ? 2.4 : 3.0), { width: cardWidth - 6, align: 'right', lineBreak: false });
         } else {
           // Standard Polling Hours Footer (Solid Bar matching chosen theme)
-          doc.roundedRect(x + 2, footerY, cardWidth - 4, footerH - 1, 3.0).fillColor(primaryColor).fill();
+          if (isPrimaryLight) {
+            doc.roundedRect(x + 2, footerY, cardWidth - 4, footerH - 1, 3.0).fillColor(primaryColor).fill();
+            doc.roundedRect(x + 2, footerY, cardWidth - 4, footerH - 1, 3.0).lineWidth(0.8).strokeColor('#1e293b').stroke();
+          } else {
+            doc.roundedRect(x + 2, footerY, cardWidth - 4, footerH - 1, 3.0).fillColor(primaryColor).fill();
+          }
           const votingTime = params.pollingTime || 'मतदान समय : प्रातः 7 से सायं 6 बजे तक';
-          doc.font('HindiBold').fontSize(Math.max(6.5, (isCompactCard ? 7.2 : 8.2) * textScale)).fillColor('#ffffff').text(votingTime, x, footerY + (isCompactCard ? 1.8 : 2.4), { width: cardWidth, align: 'center', lineBreak: false });
+          doc.font('HindiBold').fontSize(Math.max(6.5, (isCompactCard ? 7.2 : 8.2) * textScale)).fillColor(boxTextColor).text(votingTime, x, footerY + (isCompactCard ? 1.8 : 2.4), { width: cardWidth, align: 'center', lineBreak: false });
         }
       } else {
         // =========================================================================
