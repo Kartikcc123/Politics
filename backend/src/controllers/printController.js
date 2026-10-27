@@ -451,94 +451,116 @@ exports.printMembers = async (req, res, next) => {
       params.groupByHouse === 'true' ||
       params.sortByHouse === 'true';
 
-    const compareHouseNumbers = (h1, h2) => {
-      const clean1 = String(h1 || '').trim();
-      const clean2 = String(h2 || '').trim();
-      if (!clean1 && !clean2) return 0;
-      if (!clean1) return 1;
-      if (!clean2) return -1;
-      const num1 = parseInt(clean1.replace(/[^\d]/g, ''), 10);
-      const num2 = parseInt(clean2.replace(/[^\d]/g, ''), 10);
-      const hasNum1 = !isNaN(num1);
-      const hasNum2 = !isNaN(num2);
-      if (hasNum1 && hasNum2) {
-        if (num1 !== num2) return num1 - num2;
-        return clean1.localeCompare(clean2, undefined, { numeric: true });
-      }
-      if (hasNum1) return -1;
-      if (hasNum2) return 1;
-      return clean1.localeCompare(clean2, 'hi');
-    };
-
-    if (sortByHouse) {
-      // Group strictly by Ward/Part boundary, and inside each Ward/Part group by House Number
-      // This places all family members with the same house number consecutive together!
-      members.sort((a, b) => {
+    // Helper to sort a list strictly by serial number (starting from 1)
+    const sortListBySerial = (list) => {
+      list.sort((a, b) => {
         if (isWardPrint) {
           const wA = parseNum(a.wardNumber || (Array.isArray(a.municipalWardNumbers) && a.municipalWardNumbers[0]));
           const wB = parseNum(b.wardNumber || (Array.isArray(b.municipalWardNumbers) && b.municipalWardNumbers[0]));
           if (wA !== wB) return wA - wB;
+
+          const sA = parseNum(a.wardVoterSerial);
+          const sB = parseNum(b.wardVoterSerial);
+          if (sA !== sB) return sA - sB;
+
+          const vA = parseNum(a.voterSerial);
+          const vB = parseNum(b.voterSerial);
+          if (vA !== vB) return vA - vB;
         } else {
           const pA = parseNum(a.partNumber);
           const pB = parseNum(b.partNumber);
           if (pA !== pB) return pA - pB;
+
+          const sA = parseNum(a.voterSerial);
+          const sB = parseNum(b.voterSerial);
+          if (sA !== sB) return sA - sB;
+
+          const wA = parseNum(a.wardVoterSerial);
+          const wB = parseNum(b.wardVoterSerial);
+          if (wA !== wB) return wA - wB;
         }
 
-        // Primary: House Number grouping
-        const hComp = compareHouseNumbers(a.houseNumber, b.houseNumber);
-        if (hComp !== 0) return hComp;
-
-        // Secondary: Within same house number, sort by original serial number
-        const sA = parseNum(isWardPrint ? (a.wardVoterSerial || a.voterSerial) : (a.voterSerial || a.wardVoterSerial));
-        const sB = parseNum(isWardPrint ? (b.wardVoterSerial || b.voterSerial) : (b.voterSerial || b.wardVoterSerial));
-        if (sA !== sB) return sA - sB;
-
-        return (a.name || '').localeCompare(b.name || '', 'hi');
-      });
-    } else if (isWardPrint) {
-      // Sort strictly by Ward Number (1, 2, 3...) then numeric Ward Voter Serial (1, 2, 3...)
-      members.sort((a, b) => {
-        // Ward Number (1, 2, 3, ...)
-        const wA = parseNum(a.wardNumber || (Array.isArray(a.municipalWardNumbers) && a.municipalWardNumbers[0]));
-        const wB = parseNum(b.wardNumber || (Array.isArray(b.municipalWardNumbers) && b.municipalWardNumbers[0]));
-        if (wA !== wB) return wA - wB;
-
-        // Ward Voter Serial Number 1, 2, 3...
-        const sA = parseNum(a.wardVoterSerial);
-        const sB = parseNum(b.wardVoterSerial);
-        if (sA !== sB) return sA - sB;
-
-        // Assembly Serial fallback
-        const vA = parseNum(a.voterSerial);
-        const vB = parseNum(b.voterSerial);
-        if (vA !== vB) return vA - vB;
-
         const hA = parseNum(a.houseNumber);
         const hB = parseNum(b.houseNumber);
         if (hA !== hB) return hA - hB;
         return (a.name || '').localeCompare(b.name || '', 'hi');
       });
+    };
+
+    // Helper: clusters voters by house number based on natural serial order.
+    // Starts at Serial 1, pulls in any subsequent voters with the same house number together with their family,
+    // and continues sequentially without jumping out of order.
+    const clusterListByHouse = (list) => {
+      sortListBySerial(list);
+
+      // Separate into groups by Ward (or Part)
+      const groups = new Map();
+      for (const m of list) {
+        const groupKey = isWardPrint
+          ? String(m.wardNumber || (Array.isArray(m.municipalWardNumbers) && m.municipalWardNumbers[0]) || '')
+          : String(m.partNumber || '');
+        if (!groups.has(groupKey)) groups.set(groupKey, []);
+        groups.get(groupKey).push(m);
+      }
+
+      const clusteredResult = [];
+
+      for (const [, wardMembers] of groups) {
+        const visited = new Set();
+        const houseMap = new Map();
+
+        // Build map of members per house number within this ward/part
+        for (const m of wardMembers) {
+          const h = String(m.houseNumber || '').trim();
+          if (h && h !== '-' && h !== '0') {
+            if (!houseMap.has(h)) houseMap.set(h, []);
+            houseMap.get(h).push(m);
+          }
+        }
+
+        for (const m of wardMembers) {
+          const id = String(m._id || `${m.voterSerial}_${m.wardVoterSerial}`);
+          if (visited.has(id)) continue;
+
+          const h = String(m.houseNumber || '').trim();
+          if (h && h !== '-' && h !== '0' && houseMap.has(h)) {
+            const family = houseMap.get(h);
+            for (const member of family) {
+              const memId = String(member._id || `${member.voterSerial}_${member.wardVoterSerial}`);
+              if (!visited.has(memId)) {
+                visited.add(memId);
+                clusteredResult.push(member);
+              }
+            }
+          } else {
+            visited.add(id);
+            clusteredResult.push(m);
+          }
+        }
+      }
+
+      return clusteredResult;
+    };
+
+    // Partition into Active and Deleted voters: Active voters ALWAYS come first!
+    const activeMembers = members.filter(m => !m.isDeleted);
+    const deletedMembers = members.filter(m => m.isDeleted);
+
+    let sortedFinalMembers = [];
+    if (sortByHouse) {
+      sortedFinalMembers = [
+        ...clusterListByHouse(activeMembers),
+        ...clusterListByHouse(deletedMembers)
+      ];
     } else {
-      // Sort strictly by Part/Booth Number then Vidhan Sabha Serial Number 1, 2, 3, 4, 5...
-      members.sort((a, b) => {
-        const pA = parseNum(a.partNumber);
-        const pB = parseNum(b.partNumber);
-        if (pA !== pB) return pA - pB;
-
-        const sA = parseNum(a.voterSerial);
-        const sB = parseNum(b.voterSerial);
-        if (sA !== sB) return sA - sB;
-
-        const wA = parseNum(a.wardVoterSerial);
-        const wB = parseNum(b.wardVoterSerial);
-        if (wA !== wB) return wA - wB;
-
-        const hA = parseNum(a.houseNumber);
-        const hB = parseNum(b.houseNumber);
-        if (hA !== hB) return hA - hB;
-        return (a.name || '').localeCompare(b.name || '', 'hi');
-      });
+      sortListBySerial(activeMembers);
+      sortListBySerial(deletedMembers);
+      sortedFinalMembers = [...activeMembers, ...deletedMembers];
     }
+
+    // Replace members array content in-place with sortedFinalMembers
+    members.length = 0;
+    members.push(...sortedFinalMembers);
 
     const getPhotoSource = await loadPhotoSources(members, params.photo !== 'false');
 
