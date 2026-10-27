@@ -23,7 +23,7 @@ const MessageCampaignSchema = new mongoose.Schema({
   sender: { type: mongoose.Schema.Types.ObjectId, ref: 'MessageSender' },
   eventType: {
     type: String,
-    enum: ['general', 'birthday', 'anniversary', 'event', 'meeting'],
+    enum: ['general', 'birthday', 'anniversary', 'event', 'meeting', 'vote', 'appeal'],
     default: 'general',
   },
   message: { type: String, required: true },

@@ -10,6 +10,11 @@ try {
   patchUtilsFile();
 } catch (_) {}
 
+let LoadUtils = null;
+try {
+  LoadUtils = require('whatsapp-web.js/src/util/Injected/Utils').LoadUtils;
+} catch (_) {}
+
 const clients = new Map();
 const ready = new Set();
 const dataPath = path.resolve(process.env.WHATSAPP_SESSION_PATH || path.join(__dirname, '../../whatsapp-sessions'));
@@ -24,6 +29,21 @@ async function updateSender(id, data) {
 
 async function ensurePatchedPupPage(client) {
   if (!client || !client.pupPage) return;
+  try {
+    const isWWebJSReady = await client.pupPage.evaluate(() => {
+      return typeof window.WWebJS !== 'undefined' && typeof window.WWebJS.getChat === 'function';
+    }).catch(() => false);
+    if (!isWWebJSReady) {
+      console.log('[WhatsApp Web] Re-injecting LoadUtils (WWebJS) into pupPage...');
+      if (LoadUtils) {
+        await client.pupPage.evaluate(LoadUtils);
+      } else if (typeof client.inject === 'function') {
+        await client.inject();
+      }
+    }
+  } catch (err) {
+    console.warn('[WhatsApp Web] inject check warning:', err.message);
+  }
   try {
     await client.pupPage.evaluate(() => {
       try {
@@ -167,6 +187,9 @@ async function sendWebMessage(sender, mobile, text, mediaObj = null) {
     }
   } catch (_) {}
 
+  // Guarantee that WWebJS and memoize patches are present before any sendMessage attempt
+  await ensurePatchedPupPage(client);
+
   let message;
   if (mediaObj && mediaObj.data && mediaObj.data.length > 50) {
     try {
@@ -184,12 +207,12 @@ async function sendWebMessage(sender, mobile, text, mediaObj = null) {
         filename
       );
       console.log(`[WhatsApp Web] 📤 Sending media (${mimeType}, ${filename}, ${base64Clean.length} b64 chars) with caption to ${targetSerialized}...`);
-      await ensurePatchedPupPage(client);
       message = await client.sendMessage(targetSerialized, media, { caption: text || '' });
       console.log(`[WhatsApp Web] ✅ Media successfully sent to ${targetSerialized}`);
     } catch (mediaError) {
       console.error(`[WhatsApp Web] ❌ Media send FAILED to ${digits}:`, mediaError.stack || mediaError.message);
       console.warn(`[WhatsApp Web] ⚠️ Falling back to text-only send for ${digits}`);
+      await ensurePatchedPupPage(client);
       message = await client.sendMessage(targetSerialized, text);
     }
   } else {
