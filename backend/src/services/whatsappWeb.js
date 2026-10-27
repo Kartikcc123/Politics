@@ -79,7 +79,18 @@ async function connectSender(senderOrId) {
 
   const puppeteer = {
     headless: true,
-    args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage'],
+    args: [
+      '--no-sandbox',
+      '--disable-setuid-sandbox',
+      '--disable-dev-shm-usage',
+      '--disable-accelerated-2d-canvas',
+      '--no-first-run',
+      '--no-zygote',
+      '--disable-gpu',
+      '--disable-background-timer-throttling',
+      '--disable-backgrounding-occluded-windows',
+      '--disable-renderer-backgrounding',
+    ],
   };
   const browserCandidates = [
     process.env.CHROME_PATH,
@@ -91,7 +102,9 @@ async function connectSender(senderOrId) {
   const client = new Client({
     authStrategy: new LocalAuth({ clientId: key, dataPath }),
     puppeteer,
-    qrMaxRetries: 8,
+    qrMaxRetries: 10,
+    takeoverOnConflict: true,
+    takeoverTimeoutMs: 10000,
     deviceName: 'Political CRM',
     browserName: 'Chrome',
     webVersionCache: {
@@ -120,6 +133,7 @@ async function connectSender(senderOrId) {
   }).catch(() => {}));
   client.on('ready', async () => {
     ready.add(id);
+    console.log(`[WhatsApp Web] 🎉 Sender ${id} ready & connected!`);
     await ensurePatchedPupPage(client);
     await updateSender(id, {
       connectionStatus: 'connected', qrCode: '',
@@ -133,17 +147,48 @@ async function connectSender(senderOrId) {
     await updateSender(id, { connectionStatus: 'failed', lastError: String(message), qrCode: '' });
   });
   client.on('disconnected', async (reason) => {
+    console.warn(`[WhatsApp Web] ⚠️ Sender ${id} disconnected. Reason: ${reason}`);
     ready.delete(id);
     clients.delete(id);
     await updateSender(id, {
       connectionStatus: 'disconnected', lastError: String(reason || ''), qrCode: '',
     });
+    // Auto-reconnect if sender is marked active and not manually logged out
+    if (reason !== 'LOGOUT') {
+      setTimeout(async () => {
+        try {
+          const fresh = await MessageSender.findById(id);
+          if (fresh && fresh.active && fresh.provider === 'whatsapp_web') {
+            console.log(`[WhatsApp Web] 🔄 Auto-reconnecting sender ${id} after temporary disconnect...`);
+            await connectSender(fresh);
+          }
+        } catch (err) {
+          console.error(`[WhatsApp Web] Auto-reconnect failed for ${id}:`, err.message);
+        }
+      }, 6000);
+    }
   });
   client.initialize().catch(async (error) => {
     ready.delete(id);
     clients.delete(id);
     await updateSender(id, { connectionStatus: 'failed', lastError: error.message, qrCode: '' });
   });
+
+  // Heartbeat keep-alive every 25 seconds to prevent Docker/OS idle throttling
+  const keepAliveTimer = setInterval(async () => {
+    if (!clients.has(id)) {
+      clearInterval(keepAliveTimer);
+      return;
+    }
+    const current = clients.get(id);
+    if (ready.has(id) && current?.pupPage) {
+      try {
+        await current.pupPage.evaluate(() => window.WWebJS ? true : false).catch(() => {});
+      } catch (_) {}
+    }
+  }, 25000);
+  keepAliveTimer.unref();
+
   return client;
 }
 
@@ -190,6 +235,22 @@ async function sendWebMessage(sender, mobile, text, mediaObj = null) {
   // Guarantee that WWebJS and memoize patches are present before any sendMessage attempt
   await ensurePatchedPupPage(client);
 
+  // Anti-Ban Protection 1: Mark presence online and simulate realistic human typing
+  try {
+    await client.sendPresenceAvailable().catch(() => {});
+    const chat = await client.getChatById(targetSerialized).catch(() => null);
+    if (chat && typeof chat.sendStateTyping === 'function') {
+      await chat.sendStateTyping().catch(() => {});
+      const typingMs = Math.floor(Math.random() * 1500) + 1200; // 1.2s - 2.7s typing simulation
+      await new Promise((r) => setTimeout(r, typingMs));
+      await chat.clearState().catch(() => {});
+    }
+  } catch (_) {}
+
+  // Anti-Ban Protection 2: Append invisible zero-width spaces so each message has a unique checksum
+  const zwsCount = (Math.floor(Math.random() * 4) + 1);
+  const safeText = text ? (text + '\u200B'.repeat(zwsCount)) : '';
+
   let message;
   if (mediaObj && mediaObj.data && mediaObj.data.length > 50) {
     try {
@@ -207,16 +268,16 @@ async function sendWebMessage(sender, mobile, text, mediaObj = null) {
         filename
       );
       console.log(`[WhatsApp Web] 📤 Sending media (${mimeType}, ${filename}, ${base64Clean.length} b64 chars) with caption to ${targetSerialized}...`);
-      message = await client.sendMessage(targetSerialized, media, { caption: text || '' });
+      message = await client.sendMessage(targetSerialized, media, { caption: safeText });
       console.log(`[WhatsApp Web] ✅ Media successfully sent to ${targetSerialized}`);
     } catch (mediaError) {
       console.error(`[WhatsApp Web] ❌ Media send FAILED to ${digits}:`, mediaError.stack || mediaError.message);
       console.warn(`[WhatsApp Web] ⚠️ Falling back to text-only send for ${digits}`);
       await ensurePatchedPupPage(client);
-      message = await client.sendMessage(targetSerialized, text);
+      message = await client.sendMessage(targetSerialized, safeText);
     }
   } else {
-    message = await client.sendMessage(targetSerialized, text);
+    message = await client.sendMessage(targetSerialized, safeText);
   }
   return message?.id?._serialized || message?._data?.id?._serialized || 'sent';
 }

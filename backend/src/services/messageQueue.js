@@ -172,12 +172,12 @@ async function processCampaign(campaign) {
       }
     }
     if (index < batch.length - 1) {
-      const userDelay = Math.max(2, campaign.messageDelaySeconds || 5);
-      // Dynamic anti-ban jitter: e.g. for 6s configured, varies between ~3s and 8s
-      const minDelay = Math.max(2, Math.round(userDelay * 0.55));
-      const maxDelay = Math.max(minDelay + 1, Math.round(userDelay * 1.25));
+      const userDelay = Math.max(3, campaign.messageDelaySeconds || 5);
+      // Dynamic anti-ban jitter: e.g. for 5s configured, random between 4s and 8s
+      const minDelay = Math.max(3, Math.round(userDelay * 0.75));
+      const maxDelay = Math.max(minDelay + 2, Math.round(userDelay * 1.35));
       const actualDelaySeconds = Math.floor(Math.random() * (maxDelay - minDelay + 1)) + minDelay;
-      console.log(`[WhatsApp Queue] ⏳ Dynamic anti-ban delay before next: ${actualDelaySeconds}s (configured: ${userDelay}s)`);
+      console.log(`[WhatsApp Queue] ⏳ [Anti-Ban Protection Active] Waiting ${actualDelaySeconds}s before next message (Configured: ${userDelay}s, Safe Jitter: ${minDelay}s-${maxDelay}s) to prevent number block...`);
       await wait(actualDelaySeconds * 1000);
     }
   }
@@ -190,7 +190,9 @@ async function processCampaign(campaign) {
       console.log(`[WhatsApp Queue] 🧹 Campaign "${campaign.title}" all messages delivered: mediaData deleted from MongoDB.`);
     }
   } else {
-    campaign.nextBatchAt = new Date(Date.now() + campaign.intervalSeconds * 1000);
+    const batchInterval = Math.max(20, campaign.intervalSeconds || 60);
+    console.log(`[WhatsApp Queue] ⏸️ [Batch Complete] Cooling interval: Pausing ${batchInterval}s before next batch to protect sender WhatsApp number...`);
+    campaign.nextBatchAt = new Date(Date.now() + batchInterval * 1000);
   }
   await campaign.save();
 }
