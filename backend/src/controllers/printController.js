@@ -1344,8 +1344,8 @@ exports.printMembers = async (req, res, next) => {
                 const stripeY = safePhoneY + (phoneH * autoFitScale) * 0.45;
                 doc.moveTo(leftStripeX, stripeY - 1.0).lineTo(leftStripeX + stripeW, stripeY - 1.0).lineWidth(0.8).strokeColor('#f37021').stroke();
                 doc.moveTo(rightStripeX, stripeY - 1.0).lineTo(rightStripeX + stripeW, stripeY - 1.0).lineWidth(0.8).strokeColor('#f37021').stroke();
-                doc.moveTo(leftStripeX, stripeY + 1.0).lineTo(leftStripeX + stripeW, stripeY + 1.0).lineWidth(0.8).strokeColor(primaryColor).stroke();
-                doc.moveTo(rightStripeX, stripeY + 1.0).lineTo(rightStripeX + stripeW, stripeY + 1.0).lineWidth(0.8).strokeColor(primaryColor).stroke();
+                doc.moveTo(leftStripeX, stripeY + 1.0).lineTo(leftStripeX + stripeW, stripeY + 1.0).lineWidth(0.8).strokeColor('#0e8742').stroke();
+                doc.moveTo(rightStripeX, stripeY + 1.0).lineTo(rightStripeX + stripeW, stripeY + 1.0).lineWidth(0.8).strokeColor('#0e8742').stroke();
               }
 
               doc.fillColor(mainTextColor).text(phoneText, textLeft, safePhoneY, { width: textWidth, align: 'center', lineBreak: false });
