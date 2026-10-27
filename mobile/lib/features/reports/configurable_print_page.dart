@@ -51,6 +51,7 @@ class _ConfigurablePrintPageState extends State<ConfigurablePrintPage> {
   bool withMobileOnly = false;
   bool favoritesOnly = false;
   bool verifiedOnly = false;
+  bool groupByHouse = false;
   String selectedParty = 'all'; // 'all', 'congress', 'bjp', 'undecided', 'nota', 'other'
 
   // Candidate Campaign Banner & Slip Customization State
@@ -525,6 +526,11 @@ class _ConfigurablePrintPageState extends State<ConfigurablePrintPage> {
     if (verifiedOnly) {
       params['verifiedOnly'] = 'true';
       params['title'] = '${params['title']} (केवल वेरिफाइड)';
+    }
+    if (groupByHouse) {
+      params['groupByHouse'] = 'true';
+      params['sortBy'] = 'houseNumber';
+      params['title'] = '${params['title']} (परिवार / मकान अनुसार)';
     }
 
     if (selectedParty.isNotEmpty && selectedParty != 'all') {
@@ -1781,6 +1787,18 @@ class _ConfigurablePrintPageState extends State<ConfigurablePrintPage> {
                   fontWeight: verifiedOnly ? FontWeight.bold : FontWeight.normal,
                 ),
                 onSelected: (val) => setState(() => verifiedOnly = val),
+              ),
+              FilterChip(
+                avatar: const Icon(Icons.people_alt_rounded, size: 16),
+                label: const Text('👨‍👩‍👧‍👦 परिवार / मकान अनुसार (एक साथ)'),
+                selected: groupByHouse,
+                selectedColor: const Color(0xfff3e8ff),
+                checkmarkColor: const Color(0xff9333ea),
+                labelStyle: TextStyle(
+                  color: groupByHouse ? const Color(0xff7e22ce) : navy,
+                  fontWeight: groupByHouse ? FontWeight.bold : FontWeight.normal,
+                ),
+                onSelected: (val) => setState(() => groupByHouse = val),
               ),
             ],
           ),

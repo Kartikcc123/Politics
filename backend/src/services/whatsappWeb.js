@@ -72,7 +72,13 @@ async function connectSender(senderOrId) {
     : senderOrId;
   if (!sender || sender.provider !== 'whatsapp_web') throw new Error('QR sender नहीं मिला');
   const id = String(sender._id);
-  if (clients.has(id)) return clients.get(id);
+  if (clients.has(id)) {
+    const existing = clients.get(id);
+    if (ready.has(id)) return existing;
+    try { await existing.destroy(); } catch (_) {}
+    clients.delete(id);
+    ready.delete(id);
+  }
   const key = sessionKey(sender);
   if (!sender.sessionId) await updateSender(id, { sessionId: key });
   await updateSender(id, { connectionStatus: 'starting', lastError: '', qrCode: '' });
@@ -102,7 +108,7 @@ async function connectSender(senderOrId) {
   const client = new Client({
     authStrategy: new LocalAuth({ clientId: key, dataPath }),
     puppeteer,
-    qrMaxRetries: 10,
+    qrMaxRetries: 6,
     takeoverOnConflict: true,
     takeoverTimeoutMs: 10000,
     deviceName: 'Political CRM',
@@ -114,6 +120,8 @@ async function connectSender(senderOrId) {
     },
   });
   clients.set(id, client);
+
+  let wasEverConnected = false;
 
   client.on('qr', async (qr) => {
     try {
@@ -132,6 +140,7 @@ async function connectSender(senderOrId) {
     connectionStatus: 'authenticated', qrCode: '', lastSeenAt: new Date(),
   }).catch(() => {}));
   client.on('ready', async () => {
+    wasEverConnected = true;
     ready.add(id);
     console.log(`[WhatsApp Web] 🎉 Sender ${id} ready & connected!`);
     await ensurePatchedPupPage(client);
@@ -144,33 +153,44 @@ async function connectSender(senderOrId) {
   client.on('auth_failure', async (message) => {
     ready.delete(id);
     clients.delete(id);
+    try { await client.destroy(); } catch (_) {}
     await updateSender(id, { connectionStatus: 'failed', lastError: String(message), qrCode: '' });
   });
   client.on('disconnected', async (reason) => {
     console.warn(`[WhatsApp Web] ⚠️ Sender ${id} disconnected. Reason: ${reason}`);
     ready.delete(id);
     clients.delete(id);
+    try { await client.destroy(); } catch (_) {}
+
+    const reasonStr = String(reason || '');
+    const isQrTimeout = reasonStr.toLowerCase().includes('max qrcode retries') || !wasEverConnected;
+
     await updateSender(id, {
-      connectionStatus: 'disconnected', lastError: String(reason || ''), qrCode: '',
+      connectionStatus: 'disconnected',
+      lastError: isQrTimeout ? 'QR स्कैन का समय समाप्त हो गया। दोबारा QR बनाने के लिए "कनेक्ट" दबाएं।' : reasonStr,
+      qrCode: '',
     });
-    // Auto-reconnect if sender is marked active and not manually logged out
-    if (reason !== 'LOGOUT') {
+
+    // Auto-reconnect ONLY if session was previously active and dropped unexpectedly.
+    // NEVER auto-reconnect if it's an unscanned QR timeout to prevent infinite Chromium memory leak!
+    if (wasEverConnected && reason !== 'LOGOUT' && !isQrTimeout) {
       setTimeout(async () => {
         try {
           const fresh = await MessageSender.findById(id);
           if (fresh && fresh.active && fresh.provider === 'whatsapp_web') {
-            console.log(`[WhatsApp Web] 🔄 Auto-reconnecting sender ${id} after temporary disconnect...`);
+            console.log(`[WhatsApp Web] 🔄 Auto-reconnecting active sender ${id} after network drop...`);
             await connectSender(fresh);
           }
         } catch (err) {
           console.error(`[WhatsApp Web] Auto-reconnect failed for ${id}:`, err.message);
         }
-      }, 6000);
+      }, 8000);
     }
   });
   client.initialize().catch(async (error) => {
     ready.delete(id);
     clients.delete(id);
+    try { await client.destroy(); } catch (_) {}
     await updateSender(id, { connectionStatus: 'failed', lastError: error.message, qrCode: '' });
   });
 
