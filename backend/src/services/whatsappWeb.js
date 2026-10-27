@@ -235,21 +235,26 @@ async function sendWebMessage(sender, mobile, text, mediaObj = null) {
   // Guarantee that WWebJS and memoize patches are present before any sendMessage attempt
   await ensurePatchedPupPage(client);
 
-  // Anti-Ban Protection 1: Mark presence online and simulate realistic human typing
+  // Anti-Ban Protection 1: Mark presence online and simulate realistic human interaction
   try {
     await client.sendPresenceAvailable().catch(() => {});
+    // Natural human pause upon opening conversation (0.8s - 1.6s)
+    await new Promise((r) => setTimeout(r, Math.floor(Math.random() * 800) + 800));
     const chat = await client.getChatById(targetSerialized).catch(() => null);
     if (chat && typeof chat.sendStateTyping === 'function') {
       await chat.sendStateTyping().catch(() => {});
-      const typingMs = Math.floor(Math.random() * 1500) + 1200; // 1.2s - 2.7s typing simulation
+      const typingMs = Math.floor(Math.random() * 1800) + 2000; // 2.0s - 3.8s human typing simulation
       await new Promise((r) => setTimeout(r, typingMs));
       await chat.clearState().catch(() => {});
     }
   } catch (_) {}
 
-  // Anti-Ban Protection 2: Append invisible zero-width spaces so each message has a unique checksum
-  const zwsCount = (Math.floor(Math.random() * 4) + 1);
-  const safeText = text ? (text + '\u200B'.repeat(zwsCount)) : '';
+  // Anti-Ban Protection 2: Cryptographic Zero-Width Hash Salting
+  // Injects randomized zero-width non-printing characters so each outgoing message has a unique SHA256 checksum
+  const invisibleSalts = ['\u200B', '\u200C', '\u200D'];
+  const saltLength = Math.floor(Math.random() * 5) + 2;
+  const saltStr = Array.from({ length: saltLength }, () => invisibleSalts[Math.floor(Math.random() * invisibleSalts.length)]).join('');
+  const safeText = text ? (text + saltStr) : '';
 
   let message;
   if (mediaObj && mediaObj.data && mediaObj.data.length > 50) {

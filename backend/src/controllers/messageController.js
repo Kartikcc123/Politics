@@ -473,7 +473,7 @@ exports.broadcast = async (req, res, next) => {
     const batchSize = Math.min(Math.max(Number(req.body.batchSize) || 10, 1), 20);
     const intervalSeconds = Math.min(Math.max(Number(req.body.intervalSeconds) || 60, 30), 3600);
     const dailyLimit = Math.min(Math.max(Number(req.body.dailyLimit) || 200, 1), 1000);
-    const messageDelaySeconds = Math.min(Math.max(Number(req.body.messageDelaySeconds) || 3, 2), 30);
+    const messageDelaySeconds = Math.min(Math.max(Number(req.body.messageDelaySeconds) || 25, 10), 120);
     const scheduledAt = req.body.scheduledAt ? new Date(req.body.scheduledAt) : new Date();
     console.log(`[WhatsApp Broadcast] Campaign create request received: "${req.body.title || 'Campaign'}", hasMedia: ${Boolean(req.body.mediaData && req.body.mediaData.length > 50)}, mediaBytes: ${req.body.mediaData?.length || 0}`);
     const campaign = await MessageCampaign.create({

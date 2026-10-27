@@ -172,13 +172,20 @@ async function processCampaign(campaign) {
       }
     }
     if (index < batch.length - 1) {
-      const userDelay = Math.max(3, campaign.messageDelaySeconds || 5);
-      // Dynamic anti-ban jitter: e.g. for 5s configured, random between 4s and 8s
-      const minDelay = Math.max(3, Math.round(userDelay * 0.75));
-      const maxDelay = Math.max(minDelay + 2, Math.round(userDelay * 1.35));
+      const userDelay = Math.max(10, campaign.messageDelaySeconds || 25);
+      // Dynamic anti-ban jitter: e.g. for 30s configured, random between 26s and 38s
+      const minDelay = Math.max(8, Math.round(userDelay * 0.85));
+      const maxDelay = Math.max(minDelay + 3, Math.round(userDelay * 1.25));
       const actualDelaySeconds = Math.floor(Math.random() * (maxDelay - minDelay + 1)) + minDelay;
-      console.log(`[WhatsApp Queue] ⏳ [Anti-Ban Protection Active] Waiting ${actualDelaySeconds}s before next message (Configured: ${userDelay}s, Safe Jitter: ${minDelay}s-${maxDelay}s) to prevent number block...`);
+      console.log(`[WhatsApp Queue] ⏳ [Anti-Ban Protection Active] Waiting ${actualDelaySeconds}s before next message (User Configured: ${userDelay}s, Safe Jitter: ${minDelay}s-${maxDelay}s) to prevent number restriction...`);
       await wait(actualDelaySeconds * 1000);
+
+      // Extra Anti-Ban Safeguard: Rest for 45s - 70s every 5 messages to simulate natural human breaks
+      if ((index + 1) % 5 === 0) {
+        const coolOffSec = Math.floor(Math.random() * 25) + 45;
+        console.log(`[WhatsApp Queue] ☕ [Anti-Ban Cool-Off] Natural break: Resting for ${coolOffSec}s after 5 messages to reset WhatsApp burst detector...`);
+        await wait(coolOffSec * 1000);
+      }
     }
   }
 
@@ -190,7 +197,7 @@ async function processCampaign(campaign) {
       console.log(`[WhatsApp Queue] 🧹 Campaign "${campaign.title}" all messages delivered: mediaData deleted from MongoDB.`);
     }
   } else {
-    const batchInterval = Math.max(20, campaign.intervalSeconds || 60);
+    const batchInterval = Math.max(45, campaign.intervalSeconds || 90);
     console.log(`[WhatsApp Queue] ⏸️ [Batch Complete] Cooling interval: Pausing ${batchInterval}s before next batch to protect sender WhatsApp number...`);
     campaign.nextBatchAt = new Date(Date.now() + batchInterval * 1000);
   }

@@ -44,7 +44,7 @@ class _BulkMessagePageState extends State<BulkMessagePage> {
   DateTime scheduledAt = DateTime.now();
   int batchSize = 10;
   int intervalSeconds = 60;
-  int messageDelaySeconds = 5;
+  int messageDelaySeconds = 30;
   int dailyLimit = 200;
   int refreshKey = 0;
   bool sending = false;
@@ -667,15 +667,15 @@ class _BulkMessagePageState extends State<BulkMessagePage> {
                   ),
                   Slider(
                     value: messageDelaySeconds.toDouble(),
-                    min: 3,
-                    max: 20,
-                    divisions: 17,
+                    min: 10,
+                    max: 60,
+                    divisions: 50,
                     activeColor: green,
-                    label: '$messageDelaySeconds-${messageDelaySeconds + 5} सेकंड रैंडम',
+                    label: '$messageDelaySeconds-${messageDelaySeconds + 8} सेकंड रैंडम (Anti-Ban Safe)',
                     onChanged: (v) => setState(() => messageDelaySeconds = v.round()),
                   ),
                   const Text(
-                    'व्हाट्सएप ब्लॉक/बैन से बचने के लिए हर मैसेज के बीच 5, 8, 10 सेकंड का अलग-अलग रैंडम गैप रहेगा।',
+                    'व्हाट्सएप बैन से सुरक्षा के लिए 25-35 सेकंड का रैंडम गैप सबसे सुरक्षित है। हर 5 मैसेज पर 1 मिनट का ब्रेक रहेगा।',
                     style: TextStyle(fontSize: 11, color: muted),
                   ),
                 ],
