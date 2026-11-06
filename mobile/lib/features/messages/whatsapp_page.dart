@@ -604,7 +604,7 @@ class _WhatsAppPageState extends State<WhatsAppPage> with SingleTickerProviderSt
     }
   }
 
-  void _startAssistedDispatch() {
+  void _startAssistedDispatch({bool autoMode = false}) {
     final targetVoters = _voters.where((v) {
       final id = (v['_id'] ?? '').toString();
       final mob = (v['mobile'] ?? '').toString().trim();
@@ -629,6 +629,7 @@ class _WhatsAppPageState extends State<WhatsAppPage> with SingleTickerProviderSt
         imageName: _pickedImageName,
         renderMessage: _renderMessage,
         antiBanGreetingsEnabled: _antiBanRotatingGreetings,
+        startInAutoMode: autoMode,
       ),
     );
   }
@@ -1929,7 +1930,6 @@ class _WhatsAppPageState extends State<WhatsAppPage> with SingleTickerProviderSt
   Widget _buildBottomActionBar() {
     final count = _selectedVoterIds.length;
     final partyLabel = _selectedParty != 'all' ? ' ${_selectedParty.toUpperCase()}' : '';
-    final partyColor = _getPartyColor(_selectedParty);
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
@@ -1944,17 +1944,37 @@ class _WhatsAppPageState extends State<WhatsAppPage> with SingleTickerProviderSt
         child: Row(
           children: [
             Expanded(
+              flex: 6,
               child: FilledButton.icon(
-                onPressed: _startAssistedDispatch,
-                icon: const Icon(Icons.send_rounded, color: Colors.white, size: 18),
+                onPressed: () => _startAssistedDispatch(autoMode: true),
+                icon: const Icon(Icons.rocket_launch_rounded, color: Colors.white, size: 18),
                 label: Text(
-                  'चुने हुए $count$partyLabel मतदाताओं को बल्क भेजें (Fast Send)',
-                  style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.bold),
+                  '🚀 बल्क ऑटो-सेंड ($count$partyLabel)',
+                  style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w900),
                   overflow: TextOverflow.ellipsis,
                 ),
                 style: FilledButton.styleFrom(
-                  backgroundColor: partyColor == const Color(0xff1e3a8a) ? const Color(0xff16a34a) : partyColor,
+                  backgroundColor: const Color(0xff16a34a),
                   foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              flex: 4,
+              child: OutlinedButton.icon(
+                onPressed: () => _startAssistedDispatch(autoMode: false),
+                icon: const Icon(Icons.touch_app_rounded, size: 16),
+                label: const Text(
+                  'स्टेप-बाय-स्टेप',
+                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800),
+                  overflow: TextOverflow.ellipsis,
+                ),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: const Color(0xff1e3a8a),
+                  side: const BorderSide(color: Color(0xff1e3a8a), width: 1.5),
                   padding: const EdgeInsets.symmetric(vertical: 14),
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                 ),
@@ -2185,6 +2205,7 @@ class _AssistedDispatchSheet extends StatefulWidget {
     required this.imageName,
     required this.renderMessage,
     this.antiBanGreetingsEnabled = true,
+    this.startInAutoMode = false,
   });
 
   final List<Map<String, dynamic>> voters;
@@ -2193,67 +2214,163 @@ class _AssistedDispatchSheet extends StatefulWidget {
   final String? imageName;
   final String Function(Map<String, dynamic> voter, {int? sequenceIndex}) renderMessage;
   final bool antiBanGreetingsEnabled;
+  final bool startInAutoMode;
 
   @override
   State<_AssistedDispatchSheet> createState() => _AssistedDispatchSheetState();
 }
 
-class _AssistedDispatchSheetState extends State<_AssistedDispatchSheet> {
+class _AssistedDispatchSheetState extends State<_AssistedDispatchSheet>
+    with WidgetsBindingObserver {
   int _currentIndex = 0;
   final Set<int> _sentIndices = {};
   final Set<int> _skippedIndices = {};
   final Map<int, DateTime> _sentTimestamps = {};
 
-  // View Mode: 'dispatch' (Active Queue Card), 'tracker' (Live Sent vs Pending List)
+  // View Mode: 'dispatch' (Active Queue & Live Stream), 'tracker' (Live Sent vs Pending List), 'rules' (Anti-ban Rules)
   String _activeTab = 'dispatch';
+  final TextEditingController _trackerSearch = TextEditingController();
 
-  // Anti-ban cooldown delay
+  // Auto-send engine state
+  bool _isAutoRunning = false;
+  bool _isPaused = false;
+  bool _waitingForResume = false;
+
+  // Anti-ban timers
   int _cooldownRemaining = 0;
   Timer? _cooldownTimer;
+  int _batchBreakRemaining = 0;
+  Timer? _batchBreakTimer;
+  Timer? _fallbackAdvanceTimer;
+
+  // Anti-ban safety profiles:
+  // 'super_safe': 5-8s jitter delay + 20s cooling pause after every 15 messages (100% recommended)
+  // 'standard': 3-5s jitter delay + 15s cooling pause after every 25 messages
+  // 'fast': 2-3s jitter delay
+  String _safetyMode = 'super_safe';
+  final int _batchBreakThreshold = 15;
+  final int _batchBreakDuration = 20;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    if (widget.startInAutoMode) {
+      _isAutoRunning = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _startAutoDispatch();
+      });
+    }
+  }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _cooldownTimer?.cancel();
+    _batchBreakTimer?.cancel();
+    _fallbackAdvanceTimer?.cancel();
+    _trackerSearch.dispose();
     super.dispose();
   }
 
-  void _startCooldown([int seconds = 3]) {
+  int _getCooldownSeconds() {
+    final rand = DateTime.now().millisecond % 3; // 0, 1, 2 random variance
+    switch (_safetyMode) {
+      case 'fast':
+        return 2 + (rand % 2);
+      case 'standard':
+        return 3 + rand;
+      case 'super_safe':
+      default:
+        return 5 + rand; // 5, 6, 7 seconds
+    }
+  }
+
+  void _startAutoDispatch() {
+    if (!mounted || widget.voters.isEmpty) return;
+    setState(() {
+      _isAutoRunning = true;
+      _isPaused = false;
+      _cooldownRemaining = 0;
+      _batchBreakRemaining = 0;
+    });
+    _dispatchForCurrent(isManualClick: false);
+  }
+
+  void _pauseAutoDispatch() {
     _cooldownTimer?.cancel();
-    setState(() => _cooldownRemaining = seconds);
-    _cooldownTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
-      if (!mounted) {
-        timer.cancel();
-        return;
-      }
-      if (_cooldownRemaining > 1) {
-        setState(() => _cooldownRemaining--);
-      } else {
-        timer.cancel();
-        setState(() => _cooldownRemaining = 0);
-      }
+    _batchBreakTimer?.cancel();
+    _fallbackAdvanceTimer?.cancel();
+    setState(() {
+      _isPaused = true;
+      _waitingForResume = false;
+      _cooldownRemaining = 0;
+      _batchBreakRemaining = 0;
     });
   }
 
-  Future<void> _sendCurrentAndNext() async {
-    if (_currentIndex >= widget.voters.length) return;
-    if (_cooldownRemaining > 0) return;
+  void _resumeAutoDispatch() {
+    setState(() {
+      _isPaused = false;
+    });
+    _dispatchForCurrent(isManualClick: false);
+  }
+
+  void _stopAutoDispatch() {
+    _cooldownTimer?.cancel();
+    _batchBreakTimer?.cancel();
+    _fallbackAdvanceTimer?.cancel();
+    setState(() {
+      _isAutoRunning = false;
+      _isPaused = false;
+      _waitingForResume = false;
+      _cooldownRemaining = 0;
+      _batchBreakRemaining = 0;
+    });
+  }
+
+  Future<void> _dispatchForCurrent({bool isManualClick = false}) async {
+    if (!mounted || _currentIndex >= widget.voters.length) {
+      _stopAutoDispatch();
+      return;
+    }
+    if (_cooldownRemaining > 0 || _batchBreakRemaining > 0) return;
 
     final voter = widget.voters[_currentIndex];
-    final mobile = (voter['mobile'] ?? '').toString().replaceAll(RegExp(r'\D'), '');
+    final rawMobile = (voter['mobile'] ?? '').toString();
+    final mobile = rawMobile.replaceAll(RegExp(r'\D'), '');
     final name = (voter['name'] ?? voter['fullName'] ?? 'साथी').toString().trim();
     final resolvedName = PhoneContactsBridge.resolveNameForNumber(mobile, name);
     final msg = widget.renderMessage(voter, sequenceIndex: _currentIndex);
 
+    if (mobile.length < 10) {
+      // Auto-skip invalid number
+      _skippedIndices.add(_currentIndex);
+      if (_currentIndex + 1 < widget.voters.length) {
+        setState(() => _currentIndex++);
+        if (_isAutoRunning && !_isPaused) {
+          _dispatchForCurrent(isManualClick: false);
+        }
+      } else {
+        _stopAutoDispatch();
+      }
+      return;
+    }
+
     _sentIndices.add(_currentIndex);
     _sentTimestamps[_currentIndex] = DateTime.now();
+
+    if (_isAutoRunning && !_isPaused) {
+      _waitingForResume = true;
+    }
+
+    if (mounted) setState(() {});
 
     final bool hasImage = widget.imageBytes != null ||
         (widget.imagePath != null && !kIsWeb && File(widget.imagePath!).existsSync());
 
     if (hasImage) {
-      if (mobile.isNotEmpty) {
-        await Clipboard.setData(ClipboardData(text: mobile));
-      }
+      await Clipboard.setData(ClipboardData(text: mobile));
       final ext = (widget.imageName ?? widget.imagePath ?? '').toLowerCase();
       final mime = ext.endsWith('.png') ? 'image/png' : 'image/jpeg';
       final xFile = widget.imageBytes != null
@@ -2270,21 +2387,26 @@ class _AssistedDispatchSheetState extends State<_AssistedDispatchSheet> {
           ),
         );
       } catch (e) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('शेयर नहीं हो सका: $e')),
-          );
-        }
+        debugPrint('Share error: $e');
       }
     } else {
-      if (mounted && mobile.isNotEmpty) {
+      if (mounted) {
         await openWhatsApp(context, mobile, message: msg, recipientName: resolvedName);
       }
     }
 
-    _startCooldown(3); // 3-second safe delay for WhatsApp anti-spam compliance
-
-    if (mounted) {
+    if (_isAutoRunning && !_isPaused) {
+      // Fallback timer in case user doesn't exit app or switches back instantly
+      _fallbackAdvanceTimer?.cancel();
+      _fallbackAdvanceTimer = Timer(const Duration(seconds: 8), () {
+        if (!mounted || !_isAutoRunning || _isPaused) return;
+        if (_waitingForResume) {
+          _handleAutoAdvance();
+        }
+      });
+    } else if (isManualClick) {
+      // In manual mode, start short cooldown and proceed
+      _startManualCooldown(3);
       if (_currentIndex + 1 < widget.voters.length) {
         setState(() => _currentIndex++);
       } else {
@@ -2298,11 +2420,112 @@ class _AssistedDispatchSheetState extends State<_AssistedDispatchSheet> {
     }
   }
 
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      if (_isAutoRunning && !_isPaused && _waitingForResume) {
+        _fallbackAdvanceTimer?.cancel();
+        _handleAutoAdvance();
+      }
+    }
+  }
+
+  void _handleAutoAdvance() {
+    if (!mounted || !_isAutoRunning || _isPaused) return;
+    _waitingForResume = false;
+
+    // Check completion
+    if (_currentIndex + 1 >= widget.voters.length) {
+      _stopAutoDispatch();
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          backgroundColor: Color(0xff16a34a),
+          content: Text('🎉 बधाई! सभी चुने हुए संपर्कों को संदेश सफलतापूर्वक भेजा जा चुका है! ✅'),
+        ),
+      );
+      return;
+    }
+
+    // Move to next contact
+    setState(() {
+      _currentIndex++;
+    });
+
+    // Check Anti-Ban batch break rule (e.g. every 15 messages)
+    if (_sentIndices.isNotEmpty && (_sentIndices.length % _batchBreakThreshold == 0)) {
+      _startBatchCoolingBreak();
+    } else {
+      _startAutoCooldown(_getCooldownSeconds());
+    }
+  }
+
+  void _startBatchCoolingBreak() {
+    _batchBreakTimer?.cancel();
+    setState(() => _batchBreakRemaining = _batchBreakDuration);
+    _batchBreakTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
+      if (_batchBreakRemaining > 1) {
+        setState(() => _batchBreakRemaining--);
+      } else {
+        timer.cancel();
+        setState(() => _batchBreakRemaining = 0);
+        if (_isAutoRunning && !_isPaused) {
+          _dispatchForCurrent(isManualClick: false);
+        }
+      }
+    });
+  }
+
+  void _startAutoCooldown(int seconds) {
+    _cooldownTimer?.cancel();
+    setState(() => _cooldownRemaining = seconds);
+    _cooldownTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
+      if (_cooldownRemaining > 1) {
+        setState(() => _cooldownRemaining--);
+      } else {
+        timer.cancel();
+        setState(() => _cooldownRemaining = 0);
+        if (_isAutoRunning && !_isPaused) {
+          _dispatchForCurrent(isManualClick: false);
+        }
+      }
+    });
+  }
+
+  void _startManualCooldown(int seconds) {
+    _cooldownTimer?.cancel();
+    setState(() => _cooldownRemaining = seconds);
+    _cooldownTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
+      if (_cooldownRemaining > 1) {
+        setState(() => _cooldownRemaining--);
+      } else {
+        timer.cancel();
+        setState(() => _cooldownRemaining = 0);
+      }
+    });
+  }
+
   void _skipCurrent() {
     if (_currentIndex < widget.voters.length) {
       _skippedIndices.add(_currentIndex);
       if (_currentIndex + 1 < widget.voters.length) {
         setState(() => _currentIndex++);
+        if (_isAutoRunning && !_isPaused) {
+          _dispatchForCurrent(isManualClick: false);
+        }
+      } else {
+        _stopAutoDispatch();
       }
     }
   }
@@ -2353,7 +2576,7 @@ class _AssistedDispatchSheetState extends State<_AssistedDispatchSheet> {
       );
       final timestamp = DateTime.now().millisecondsSinceEpoch;
       final savedPath = await saveBytes(
-        'whatsapp_delivery_report_$timestamp.xlsx',
+        'whatsapp_bulk_delivery_report_$timestamp.xlsx',
         Uint8List.fromList(xlsxBytes),
       );
       if (mounted && savedPath != null) {
@@ -2378,24 +2601,41 @@ class _AssistedDispatchSheetState extends State<_AssistedDispatchSheet> {
     final total = widget.voters.length;
     final sentCount = _sentIndices.length;
     final skippedCount = _skippedIndices.length;
-    final pendingCount = total - sentCount - skippedCount;
-
+    final pendingCount = (total - sentCount - skippedCount).clamp(0, total);
     final voter = _currentIndex < total ? widget.voters[_currentIndex] : null;
-    final name = (voter?['name'] ?? voter?['fullName'] ?? '').toString().trim();
-    final mobile = (voter?['mobile'] ?? '').toString().trim();
-    final resolvedName = PhoneContactsBridge.resolveNameForNumber(mobile, name);
-    final guardian = (voter?['guardianName'] ?? '').toString().trim();
-    final village = (voter?['village'] ?? '').toString().trim();
-    final ward = (voter?['wardNumber'] ?? voter?['partNumber'] ?? '').toString().trim();
-    final party = (voter?['partyPreference'] ?? '').toString().trim();
-    final isPhoneSource = voter?['source'] == 'phone' || voter?['isPhoneContact'] == true;
-    final msg = voter != null ? widget.renderMessage(voter, sequenceIndex: _currentIndex) : '';
+
+    final mobile = voter != null
+        ? (voter['mobile'] ?? '').toString().replaceAll(RegExp(r'\D'), '')
+        : '';
+    final name = voter != null
+        ? (voter['name'] ?? voter['fullName'] ?? 'साथी').toString().trim()
+        : '';
+    final resolvedName = voter != null
+        ? PhoneContactsBridge.resolveNameForNumber(mobile, name)
+        : '';
+    final guardian = voter != null
+        ? (voter['guardianName'] ?? voter['relativeName'] ?? '').toString().trim()
+        : '';
+    final village = voter != null
+        ? (voter['village'] ?? voter['gramPanchayat'] ?? '').toString().trim()
+        : '';
+    final ward = voter != null
+        ? (voter['wardNumber'] ?? voter['partNumber'] ?? '').toString().trim()
+        : '';
+    final party = voter != null
+        ? (voter['party'] ?? voter['support'] ?? voter['partyPreference'] ?? '').toString().toLowerCase().trim()
+        : '';
+    final isPhoneSource = voter != null && (voter['source'] == 'phone' || voter['isPhoneContact'] == true);
+
+    final msg = voter != null
+        ? widget.renderMessage(voter, sequenceIndex: _currentIndex)
+        : '';
 
     return Container(
       constraints: BoxConstraints(
-        maxHeight: MediaQuery.of(context).size.height * 0.92,
+        maxHeight: MediaQuery.sizeOf(context).height * 0.94,
       ),
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 18),
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
       decoration: const BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
@@ -2421,19 +2661,26 @@ class _AssistedDispatchSheetState extends State<_AssistedDispatchSheet> {
             // Header Row
             Row(
               children: [
-                const Icon(Icons.shield_rounded, color: Color(0xff16a34a), size: 24),
+                Container(
+                  padding: const EdgeInsets.all(6),
+                  decoration: BoxDecoration(
+                    color: const Color(0xff16a34a).withValues(alpha: 0.12),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(Icons.rocket_launch_rounded, color: Color(0xff16a34a), size: 22),
+                ),
                 const SizedBox(width: 8),
                 const Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        'सुरक्षित WhatsApp असिस्टेंट (Anti-Ban Dispatch)',
+                        'WhatsApp बल्क ऑटो-डिस्पैच (Anti-Ban)',
                         style: TextStyle(fontSize: 15.5, fontWeight: FontWeight.w900, color: navy),
                         overflow: TextOverflow.ellipsis,
                       ),
                       Text(
-                        'व्यक्तिगत नाम {{name}} • रोटेटिंग अभिवादन • 3s एंटी-बैन ब्रेक',
+                        'हाथों-हाथ स्वतः सेंड • मानवीय रैंडम गैप • 0% नंबर ब्लॉक रिस्क',
                         style: TextStyle(fontSize: 11, color: muted, fontWeight: FontWeight.w600),
                       ),
                     ],
@@ -2452,7 +2699,7 @@ class _AssistedDispatchSheetState extends State<_AssistedDispatchSheet> {
             ),
             const SizedBox(height: 8),
 
-            // Tab Toggle: 'dispatch' vs 'tracker'
+            // 3-Tab Toggle: 'dispatch' vs 'tracker' vs 'rules'
             Row(
               children: [
                 Expanded(
@@ -2469,9 +2716,9 @@ class _AssistedDispatchSheetState extends State<_AssistedDispatchSheet> {
                         ),
                       ),
                       child: Text(
-                        '🎯 संदेश कतार (${_currentIndex + 1}/$total)',
+                        '🎯 ऑटो कतार (${_currentIndex + 1}/$total)',
                         style: TextStyle(
-                          fontSize: 12,
+                          fontSize: 11.5,
                           fontWeight: FontWeight.w800,
                           color: _activeTab == 'dispatch' ? const Color(0xff1d4ed8) : muted,
                         ),
@@ -2479,7 +2726,7 @@ class _AssistedDispatchSheetState extends State<_AssistedDispatchSheet> {
                     ),
                   ),
                 ),
-                const SizedBox(width: 8),
+                const SizedBox(width: 6),
                 Expanded(
                   child: InkWell(
                     onTap: () => setState(() => _activeTab = 'tracker'),
@@ -2494,9 +2741,9 @@ class _AssistedDispatchSheetState extends State<_AssistedDispatchSheet> {
                         ),
                       ),
                       child: Text(
-                        '📊 किसे-किसे गया (Sent: $sentCount)',
+                        '📊 किसे गया ($sentCount)',
                         style: TextStyle(
-                          fontSize: 12,
+                          fontSize: 11.5,
                           fontWeight: FontWeight.w800,
                           color: _activeTab == 'tracker' ? const Color(0xff059669) : muted,
                         ),
@@ -2504,220 +2751,575 @@ class _AssistedDispatchSheetState extends State<_AssistedDispatchSheet> {
                     ),
                   ),
                 ),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: InkWell(
+                    onTap: () => setState(() => _activeTab = 'rules'),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(vertical: 8),
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                        color: _activeTab == 'rules' ? const Color(0xfffef3c7) : Colors.transparent,
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(
+                          color: _activeTab == 'rules' ? const Color(0xffd97706) : border,
+                        ),
+                      ),
+                      child: Text(
+                        '🛡️ सुरक्षा नियम',
+                        style: TextStyle(
+                          fontSize: 11.5,
+                          fontWeight: FontWeight.w800,
+                          color: _activeTab == 'rules' ? const Color(0xffb45309) : muted,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
               ],
             ),
-            const SizedBox(height: 10),
+            const SizedBox(height: 8),
 
             // Overall Progress
             LinearProgressIndicator(
-              value: (_currentIndex + 1) / total,
+              value: total > 0 ? (_currentIndex + 1) / total : 0,
               backgroundColor: Colors.grey.shade200,
               color: const Color(0xff16a34a),
               minHeight: 5,
               borderRadius: BorderRadius.circular(3),
             ),
-            const SizedBox(height: 6),
+            const SizedBox(height: 5),
             Row(
               children: [
                 Text(
-                  '✅ भेजे गए: $sentCount  |  ⏳ कतार: $pendingCount  |  ⏭️ छोड़े गए: $skippedCount',
-                  style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold, color: muted),
+                  '✅ भेजे गए: $sentCount  |  ⏳ कतार: $pendingCount  |  ⏭️ छोड़े: $skippedCount',
+                  style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: muted),
                 ),
                 const Spacer(),
-                if (widget.imagePath != null)
-                  const Text('📷 पोस्टर संलग्न', style: TextStyle(fontSize: 11, color: Colors.green, fontWeight: FontWeight.bold)),
+                if (widget.imagePath != null || widget.imageBytes != null)
+                  const Text('📷 पोस्टर संलग्न', style: TextStyle(fontSize: 10.5, color: Colors.green, fontWeight: FontWeight.bold)),
               ],
             ),
-            const Divider(height: 14),
+            const Divider(height: 12),
 
-            // Tab 1: Dispatch View
+            // TAB 1: Dispatch & Live Stream View
             if (_activeTab == 'dispatch') ...[
-              if (voter != null) ...[
-                Container(
-                  padding: const EdgeInsets.all(14),
-                  decoration: BoxDecoration(
-                    color: const Color(0xfff8fafc),
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(color: border),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
+              Expanded(
+                child: ListView(
+                  children: [
+                    // Master Auto Control Center
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: _isAutoRunning
+                            ? (_isPaused ? const Color(0xfffffbeb) : const Color(0xfff0fdf4))
+                            : const Color(0xfff8fafc),
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(
+                          color: _isAutoRunning
+                              ? (_isPaused ? const Color(0xfffef08a) : const Color(0xffbbf7d0))
+                              : border,
+                          width: 1.5,
+                        ),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          CircleAvatar(
-                            radius: 20,
-                            backgroundColor: const Color(0xff1e3a8a).withValues(alpha: 0.1),
-                            child: Text(
-                              '${_currentIndex + 1}',
-                              style: const TextStyle(fontWeight: FontWeight.w900, color: Color(0xff1e3a8a)),
-                            ),
-                          ),
-                          const SizedBox(width: 10),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Row(
-                                  children: [
-                                    Flexible(
-                                      child: Text(
-                                        resolvedName,
-                                        style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w900, color: navy),
-                                        overflow: TextOverflow.ellipsis,
-                                      ),
-                                    ),
-                                    const SizedBox(width: 6),
-                                    Container(
-                                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                      decoration: BoxDecoration(
-                                        color: isPhoneSource ? softGreen : softOrange,
-                                        borderRadius: BorderRadius.circular(6),
-                                      ),
-                                      child: Text(
-                                        isPhoneSource ? '📱 फ़ोनबुक' : '🏛️ ऐप',
-                                        style: TextStyle(
-                                          fontSize: 9.5,
-                                          fontWeight: FontWeight.w800,
-                                          color: isPhoneSource ? green : orange,
-                                        ),
-                                      ),
-                                    ),
-                                  ],
+                          Row(
+                            children: [
+                              Container(
+                                width: 10,
+                                height: 10,
+                                decoration: BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  color: _isAutoRunning
+                                      ? (_isPaused ? Colors.amber : const Color(0xff16a34a))
+                                      : Colors.grey,
                                 ),
-                                if (guardian.isNotEmpty)
-                                  Text('पिता/पति: $guardian', style: const TextStyle(fontSize: 11.5, color: muted)),
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  _isAutoRunning
+                                      ? (_isPaused
+                                          ? '⏸️ ऑटो-सेंड रुका हुआ है (Paused)'
+                                          : '🚀 ऑटोमैटिक बल्क सेंड सक्रिय है (Sending...)')
+                                      : '🚀 हाथों-हाथ बल्क ऑटो-सेंड (Hands-Free)',
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.w900,
+                                    fontSize: 13,
+                                    color: _isAutoRunning
+                                        ? (_isPaused ? const Color(0xffb45309) : const Color(0xff15803d))
+                                        : navy,
+                                  ),
+                                ),
+                              ),
+                              // Speed Mode selector pill
+                              PopupMenuButton<String>(
+                                initialValue: _safetyMode,
+                                onSelected: (val) => setState(() => _safetyMode = val),
+                                tooltip: 'एंटी-बैन स्पीड व सुरक्षा स्तर',
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                  decoration: BoxDecoration(
+                                    color: Colors.white,
+                                    borderRadius: BorderRadius.circular(8),
+                                    border: Border.all(color: border),
+                                  ),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(
+                                        Icons.speed_rounded,
+                                        size: 14,
+                                        color: _safetyMode == 'super_safe'
+                                            ? Colors.green
+                                            : (_safetyMode == 'standard' ? Colors.blue : Colors.orange),
+                                      ),
+                                      const SizedBox(width: 4),
+                                      Text(
+                                        _safetyMode == 'super_safe'
+                                            ? 'अल्ट्रा-सेफ (5-8s)'
+                                            : (_safetyMode == 'standard' ? 'मानक (3-5s)' : 'फास्ट (2-3s)'),
+                                        style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold),
+                                      ),
+                                      const Icon(Icons.arrow_drop_down, size: 16),
+                                    ],
+                                  ),
+                                ),
+                                itemBuilder: (_) => const [
+                                  PopupMenuItem(
+                                    value: 'super_safe',
+                                    child: Text('🟢 अल्ट्रा-सेफ (5-8s रैंडम गैप + 15 पर ब्रेक) - अनुशंसित'),
+                                  ),
+                                  PopupMenuItem(
+                                    value: 'standard',
+                                    child: Text('🟡 मानक मोड (3-5s रैंडम गैप + 25 पर ब्रेक)'),
+                                  ),
+                                  PopupMenuItem(
+                                    value: 'fast',
+                                    child: Text('⚡ फास्ट मोड (2-3s गैप)'),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 6),
+                          Text(
+                            _isAutoRunning
+                                ? 'WhatsApp में Send दबाकर Back दबाएं, अगला संपर्क अपने-आप स्वतः खुलेगा।'
+                                : 'स्टार्ट दबाने पर हर संपर्क को रैंडम एंटी-बैन गैप के साथ स्वतः मैसेज भेजा जाएगा।',
+                            style: const TextStyle(fontSize: 11, color: muted, height: 1.2),
+                          ),
+                          const SizedBox(height: 10),
+
+                          // Action Control Buttons
+                          if (_isAutoRunning)
+                            Row(
+                              children: [
+                                if (!_isPaused)
+                                  Expanded(
+                                    child: FilledButton.icon(
+                                      onPressed: _pauseAutoDispatch,
+                                      icon: const Icon(Icons.pause_rounded, size: 18),
+                                      label: const Text('पॉज़ करें', style: TextStyle(fontWeight: FontWeight.w800)),
+                                      style: FilledButton.styleFrom(
+                                        backgroundColor: const Color(0xfff59e0b),
+                                        foregroundColor: Colors.white,
+                                        padding: const EdgeInsets.symmetric(vertical: 10),
+                                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                      ),
+                                    ),
+                                  )
+                                else
+                                  Expanded(
+                                    child: FilledButton.icon(
+                                      onPressed: _resumeAutoDispatch,
+                                      icon: const Icon(Icons.play_arrow_rounded, size: 18),
+                                      label: const Text('पुनः चालू करें', style: TextStyle(fontWeight: FontWeight.w800)),
+                                      style: FilledButton.styleFrom(
+                                        backgroundColor: const Color(0xff16a34a),
+                                        foregroundColor: Colors.white,
+                                        padding: const EdgeInsets.symmetric(vertical: 10),
+                                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                      ),
+                                    ),
+                                  ),
+                                const SizedBox(width: 8),
+                                OutlinedButton.icon(
+                                  onPressed: _stopAutoDispatch,
+                                  icon: const Icon(Icons.stop_rounded, size: 18, color: Colors.red),
+                                  label: const Text('स्टॉप', style: TextStyle(fontWeight: FontWeight.w800, color: Colors.red)),
+                                  style: OutlinedButton.styleFrom(
+                                    side: const BorderSide(color: Colors.red),
+                                    padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 12),
+                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                OutlinedButton(
+                                  onPressed: _skipCurrent,
+                                  style: OutlinedButton.styleFrom(
+                                    padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 12),
+                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                  ),
+                                  child: const Text('छोड़ें'),
+                                ),
+                              ],
+                            )
+                          else
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: FilledButton.icon(
+                                    onPressed: _startAutoDispatch,
+                                    icon: const Icon(Icons.rocket_launch_rounded, size: 18),
+                                    label: const Text('🚀 ऑटो बल्क सेंड शुरू करें', style: TextStyle(fontWeight: FontWeight.w900)),
+                                    style: FilledButton.styleFrom(
+                                      backgroundColor: const Color(0xff16a34a),
+                                      foregroundColor: Colors.white,
+                                      padding: const EdgeInsets.symmetric(vertical: 11),
+                                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                OutlinedButton(
+                                  onPressed: () => _dispatchForCurrent(isManualClick: true),
+                                  style: OutlinedButton.styleFrom(
+                                    padding: const EdgeInsets.symmetric(vertical: 11, horizontal: 12),
+                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                  ),
+                                  child: const Text('1-भेजें'),
+                                ),
+                                const SizedBox(width: 6),
+                                OutlinedButton(
+                                  onPressed: _skipCurrent,
+                                  style: OutlinedButton.styleFrom(
+                                    padding: const EdgeInsets.symmetric(vertical: 11, horizontal: 10),
+                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                  ),
+                                  child: const Text('छोड़ें'),
+                                ),
                               ],
                             ),
-                          ),
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
-                            decoration: BoxDecoration(
-                              color: const Color(0xffecfdf5),
-                              borderRadius: BorderRadius.circular(8),
-                              border: Border.all(color: const Color(0xffa7f3d0)),
-                            ),
-                            child: Text(
-                              mobile,
-                              style: const TextStyle(fontWeight: FontWeight.w900, color: Color(0xff16a34a), fontSize: 13),
-                            ),
-                          ),
                         ],
                       ),
-                      if (party.isNotEmpty && party != 'undecided') ...[
-                        const SizedBox(height: 6),
-                        Text('पार्टी रुझान: ${party.toUpperCase()}',
-                            style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: Color(0xff1e3a8a))),
-                      ],
-                      if (village.isNotEmpty || ward.isNotEmpty) ...[
-                        const SizedBox(height: 3),
-                        Text('स्थान: ${[village, if (ward.isNotEmpty) "वार्ड $ward"].join(" • ")}',
-                            style: const TextStyle(fontSize: 11.5, color: muted)),
-                      ],
-                      const Divider(height: 16),
-                      Row(
-                        children: [
-                          const Icon(Icons.chat_bubble_outline_rounded, size: 13, color: muted),
-                          const SizedBox(width: 4),
-                          const Text('संदेश प्रीव्यू (नाम के साथ):',
-                              style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w800, color: navy)),
-                          const Spacer(),
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                            decoration: BoxDecoration(
-                              color: const Color(0xfffef3c7),
-                              borderRadius: BorderRadius.circular(6),
-                            ),
-                            child: const Text(
-                              'एंटी-बैन सुरक्षित',
-                              style: TextStyle(fontSize: 9.5, fontWeight: FontWeight.w800, color: Color(0xffb45309)),
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        msg,
-                        style: const TextStyle(fontSize: 12.5, color: Color(0xff334155), height: 1.3),
-                        maxLines: 4,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 14),
+                    ),
+                    const SizedBox(height: 10),
 
-                // Cooldown countdown banner
-                if (_cooldownRemaining > 0)
-                  Container(
-                    margin: const EdgeInsets.only(bottom: 10),
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                    decoration: BoxDecoration(
-                      color: const Color(0xfffffbeb),
-                      borderRadius: BorderRadius.circular(10),
-                      border: Border.all(color: const Color(0xfffef3c7)),
-                    ),
-                    child: Row(
-                      children: [
-                        const SizedBox(
-                          width: 14,
-                          height: 14,
-                          child: CircularProgressIndicator(strokeWidth: 2, color: Colors.orange),
+                    // Anti-ban Batch Break Banner
+                    if (_batchBreakRemaining > 0)
+                      Container(
+                        margin: const EdgeInsets.only(bottom: 10),
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                        decoration: BoxDecoration(
+                          color: const Color(0xfffff7ed),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: const Color(0xfffdba74)),
                         ),
-                        const SizedBox(width: 8),
-                        Text(
-                          'एंटी-बैन सुरक्षा ब्रेक: $_cooldownRemaining सेकंड प्रतीक्षा करें...',
-                          style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: Color(0xff92400e)),
+                        child: Row(
+                          children: [
+                            const Icon(Icons.shield_rounded, color: Color(0xffea580c), size: 22),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    '🛡️ एंटी-बैन कूलिंग ब्रेक: $_batchBreakRemaining सेकंड शेष',
+                                    style: const TextStyle(fontWeight: FontWeight.w900, color: Color(0xffc2410c), fontSize: 13),
+                                  ),
+                                  const Text(
+                                    'WhatsApp द्वारा नंबर ब्लॉक होने से बचाने के लिए हर 15 संदेश पर 20s का ब्रेक स्वतः लागू होता है।',
+                                    style: TextStyle(fontSize: 10.5, color: Color(0xff9a3412)),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
                         ),
-                      ],
-                    ),
-                  ),
+                      )
+                    // Normal Cooldown Banner
+                    else if (_cooldownRemaining > 0)
+                      Container(
+                        margin: const EdgeInsets.only(bottom: 10),
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                        decoration: BoxDecoration(
+                          color: const Color(0xffeff6ff),
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(color: const Color(0xffbfdbfe)),
+                        ),
+                        child: Row(
+                          children: [
+                            const SizedBox(
+                              width: 14,
+                              height: 14,
+                              child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xff2563eb)),
+                            ),
+                            const SizedBox(width: 10),
+                            Text(
+                              '⏳ अगला संदेश $_cooldownRemaining सेकंड में स्वतः भेजा जाएगा...',
+                              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: Color(0xff1d4ed8)),
+                            ),
+                          ],
+                        ),
+                      ),
 
-                // Action Buttons
-                Row(
-                  children: [
-                    if (_currentIndex > 0)
-                      OutlinedButton(
-                        onPressed: () => setState(() => _currentIndex--),
-                        child: const Text('पिछला'),
-                      ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: FilledButton.icon(
-                        onPressed: _cooldownRemaining > 0 ? null : _sendCurrentAndNext,
-                        icon: const Icon(Icons.send_rounded, size: 18),
-                        label: Text(
-                          _cooldownRemaining > 0
-                              ? 'कृपया प्रतीक्षा करें (${_cooldownRemaining}s)'
-                              : (_currentIndex + 1 < total ? 'WhatsApp पर भेजें और अगला' : 'भेजें और संपन्न करें'),
-                          style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 13.5),
+                    // Current Voter Detailed Card
+                    if (voter != null) ...[
+                      Container(
+                        padding: const EdgeInsets.all(14),
+                        decoration: BoxDecoration(
+                          color: const Color(0xfff8fafc),
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(color: border),
                         ),
-                        style: FilledButton.styleFrom(
-                          backgroundColor: const Color(0xff16a34a),
-                          foregroundColor: Colors.white,
-                          padding: const EdgeInsets.symmetric(vertical: 13),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                CircleAvatar(
+                                  radius: 20,
+                                  backgroundColor: const Color(0xff1e3a8a).withValues(alpha: 0.1),
+                                  child: Text(
+                                    '${_currentIndex + 1}',
+                                    style: const TextStyle(fontWeight: FontWeight.w900, color: Color(0xff1e3a8a)),
+                                  ),
+                                ),
+                                const SizedBox(width: 10),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Row(
+                                        children: [
+                                          Flexible(
+                                            child: Text(
+                                              resolvedName,
+                                              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w900, color: navy),
+                                              overflow: TextOverflow.ellipsis,
+                                            ),
+                                          ),
+                                          const SizedBox(width: 6),
+                                          Container(
+                                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                            decoration: BoxDecoration(
+                                              color: isPhoneSource ? softGreen : softOrange,
+                                              borderRadius: BorderRadius.circular(6),
+                                            ),
+                                            child: Text(
+                                              isPhoneSource ? '📱 फ़ोनबुक' : '🏛️ ऐप',
+                                              style: TextStyle(
+                                                fontSize: 9.5,
+                                                fontWeight: FontWeight.w800,
+                                                color: isPhoneSource ? green : orange,
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                      if (guardian.isNotEmpty)
+                                        Text('पिता/पति: $guardian', style: const TextStyle(fontSize: 11.5, color: muted)),
+                                    ],
+                                  ),
+                                ),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xffecfdf5),
+                                    borderRadius: BorderRadius.circular(8),
+                                    border: Border.all(color: const Color(0xffa7f3d0)),
+                                  ),
+                                  child: Text(
+                                    mobile,
+                                    style: const TextStyle(fontWeight: FontWeight.w900, color: Color(0xff16a34a), fontSize: 13),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            if (party.isNotEmpty && party != 'undecided') ...[
+                              const SizedBox(height: 6),
+                              Text('पार्टी रुझान: ${party.toUpperCase()}',
+                                  style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: Color(0xff1e3a8a))),
+                            ],
+                            if (village.isNotEmpty || ward.isNotEmpty) ...[
+                              const SizedBox(height: 3),
+                              Text('स्थान: ${[village, if (ward.isNotEmpty) "वार्ड $ward"].join(" • ")}',
+                                  style: const TextStyle(fontSize: 11.5, color: muted)),
+                            ],
+                            const Divider(height: 16),
+                            Row(
+                              children: [
+                                const Icon(Icons.chat_bubble_outline_rounded, size: 13, color: muted),
+                                const SizedBox(width: 4),
+                                const Text('संदेश प्रीव्यू (नाम के साथ):',
+                                    style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w800, color: navy)),
+                                const Spacer(),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xfffef3c7),
+                                    borderRadius: BorderRadius.circular(6),
+                                  ),
+                                  child: const Text(
+                                    'एंटी-बैन सुरक्षित',
+                                    style: TextStyle(fontSize: 9.5, fontWeight: FontWeight.w800, color: Color(0xffb45309)),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              msg,
+                              style: const TextStyle(fontSize: 12.5, color: Color(0xff334155), height: 1.3),
+                              maxLines: 4,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ],
                         ),
                       ),
-                    ),
-                    const SizedBox(width: 8),
-                    if (_currentIndex + 1 < total)
-                      OutlinedButton(
-                        onPressed: _skipCurrent,
-                        style: OutlinedButton.styleFrom(foregroundColor: muted),
-                        child: const Text('छोड़ें'),
+                      const SizedBox(height: 14),
+
+                      // Live Progress Stream (किसे-किसे गया लाइव स्थिति)
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(color: border),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                const Icon(Icons.stream_rounded, size: 16, color: Color(0xff0284c7)),
+                                const SizedBox(width: 6),
+                                const Text(
+                                  '📡 लाइव एक्टिविटी स्ट्रीम (Live Stream)',
+                                  style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w900, color: navy),
+                                ),
+                                const Spacer(),
+                                InkWell(
+                                  onTap: () => setState(() => _activeTab = 'tracker'),
+                                  child: const Text(
+                                    'पूरी सूची देखें >',
+                                    style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: blue),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 8),
+                            // Compact list of recent 2 sent + current + next 2 pending
+                            ...List.generate(
+                              5,
+                              (offset) {
+                                final targetIndex = (_currentIndex - 2) + offset;
+                                if (targetIndex < 0 || targetIndex >= total) return const SizedBox.shrink();
+                                final item = widget.voters[targetIndex];
+                                final iName = (item['name'] ?? item['fullName'] ?? '').toString().trim();
+                                final iMobile = (item['mobile'] ?? '').toString().trim();
+                                final rName = PhoneContactsBridge.resolveNameForNumber(iMobile, iName);
+                                final isSent = _sentIndices.contains(targetIndex);
+                                final isSkipped = _skippedIndices.contains(targetIndex);
+                                final isCurrent = targetIndex == _currentIndex;
+
+                                final timeStr = _sentTimestamps[targetIndex] != null
+                                    ? '${_sentTimestamps[targetIndex]!.hour.toString().padLeft(2, '0')}:${_sentTimestamps[targetIndex]!.minute.toString().padLeft(2, '0')}:${_sentTimestamps[targetIndex]!.second.toString().padLeft(2, '0')}'
+                                    : '';
+
+                                return Padding(
+                                  padding: const EdgeInsets.symmetric(vertical: 4),
+                                  child: Row(
+                                    children: [
+                                      Icon(
+                                        isSent
+                                            ? Icons.check_circle_rounded
+                                            : (isSkipped
+                                                ? Icons.skip_next_rounded
+                                                : (isCurrent ? Icons.play_circle_fill_rounded : Icons.schedule_rounded)),
+                                        size: 15,
+                                        color: isSent
+                                            ? const Color(0xff16a34a)
+                                            : (isSkipped ? Colors.grey : (isCurrent ? const Color(0xff2563eb) : muted)),
+                                      ),
+                                      const SizedBox(width: 8),
+                                      Expanded(
+                                        child: Text(
+                                          rName,
+                                          style: TextStyle(
+                                            fontSize: 12,
+                                            fontWeight: isCurrent ? FontWeight.w900 : FontWeight.w600,
+                                            color: isCurrent ? const Color(0xff1e3a8a) : (isSent ? Colors.black87 : muted),
+                                          ),
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ),
+                                      Text(
+                                        iMobile,
+                                        style: const TextStyle(fontSize: 11, color: muted),
+                                      ),
+                                      const SizedBox(width: 8),
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
+                                        decoration: BoxDecoration(
+                                          color: isSent
+                                              ? const Color(0xffdcfce7)
+                                              : (isCurrent ? const Color(0xffdbeafe) : Colors.grey.shade100),
+                                          borderRadius: BorderRadius.circular(6),
+                                        ),
+                                        child: Text(
+                                          isSent
+                                              ? '✅ $timeStr'
+                                              : (isSkipped ? '⏭️ छोड़ दिया' : (isCurrent ? '🚀 सक्रिय' : '⏳ कतार')),
+                                          style: TextStyle(
+                                            fontSize: 9.5,
+                                            fontWeight: FontWeight.bold,
+                                            color: isSent
+                                                ? const Color(0xff15803d)
+                                                : (isCurrent ? const Color(0xff1d4ed8) : muted),
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                );
+                              },
+                            ),
+                          ],
+                        ),
+                      ),
+                    ] else
+                      const Center(
+                        child: Padding(
+                          padding: EdgeInsets.all(24),
+                          child: Text('सभी संदेश भेजे जा चुके हैं!', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                        ),
                       ),
                   ],
                 ),
-              ] else
-                const Center(
-                  child: Padding(
-                    padding: EdgeInsets.all(24),
-                    child: Text('सभी संदेश भेजे जा चुके हैं!', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+              ),
+            ]
+            // TAB 2: Tracker View (Full List with Search & Excel Export)
+            else if (_activeTab == 'tracker') ...[
+              Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: TextField(
+                  controller: _trackerSearch,
+                  onChanged: (_) => setState(() {}),
+                  decoration: InputDecoration(
+                    hintText: 'नाम या नंबर से खोजें...',
+                    prefixIcon: const Icon(Icons.search_rounded, size: 18),
+                    contentPadding: const EdgeInsets.symmetric(vertical: 0, horizontal: 12),
+                    filled: true,
+                    fillColor: const Color(0xfff8fafc),
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: border)),
+                    enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: border)),
                   ),
                 ),
-            ] else ...[
-              // Tab 2: Tracker View (Kin-Kin Ko Jaa Rha Hai)
+              ),
               Expanded(
                 child: ListView.separated(
                   itemCount: total,
@@ -2727,9 +3329,21 @@ class _AssistedDispatchSheetState extends State<_AssistedDispatchSheet> {
                     final iName = (item['name'] ?? item['fullName'] ?? '').toString().trim();
                     final iMobile = (item['mobile'] ?? '').toString().trim();
                     final resolvedIName = PhoneContactsBridge.resolveNameForNumber(iMobile, iName);
+
+                    final query = _trackerSearch.text.trim().toLowerCase();
+                    if (query.isNotEmpty &&
+                        !resolvedIName.toLowerCase().contains(query) &&
+                        !iMobile.contains(query)) {
+                      return const SizedBox.shrink();
+                    }
+
                     final isSent = _sentIndices.contains(idx);
                     final isSkipped = _skippedIndices.contains(idx);
                     final isCurrent = idx == _currentIndex;
+
+                    final timeStr = _sentTimestamps[idx] != null
+                        ? '${_sentTimestamps[idx]!.hour.toString().padLeft(2, '0')}:${_sentTimestamps[idx]!.minute.toString().padLeft(2, '0')}:${_sentTimestamps[idx]!.second.toString().padLeft(2, '0')}'
+                        : '';
 
                     return ListTile(
                       dense: true,
@@ -2773,7 +3387,7 @@ class _AssistedDispatchSheetState extends State<_AssistedDispatchSheet> {
                         children: [
                           Text(
                             isSent
-                                ? '✅ संदेश भेजा गया'
+                                ? '✅ भेजा गया $timeStr'
                                 : (isSkipped ? '⏭️ स्किप किया गया' : (isCurrent ? '👉 वर्तमान कतार' : '⏳ कतार में बाकी')),
                             style: TextStyle(
                               fontSize: 11,
@@ -2790,7 +3404,7 @@ class _AssistedDispatchSheetState extends State<_AssistedDispatchSheet> {
                                   _activeTab = 'dispatch';
                                 });
                               },
-                              child: const Text('यहाँ से भेजें >', style: TextStyle(fontSize: 11, color: blue, fontWeight: FontWeight.bold)),
+                              child: const Text('यहाँ से शुरू करें >', style: TextStyle(fontSize: 11, color: blue, fontWeight: FontWeight.bold)),
                             ),
                         ],
                       ),
@@ -2812,9 +3426,84 @@ class _AssistedDispatchSheetState extends State<_AssistedDispatchSheet> {
                   ),
                 ),
               ),
+            ]
+            // TAB 3: Anti-Ban Rules Guide
+            else if (_activeTab == 'rules') ...[
+              Expanded(
+                child: ListView(
+                  children: [
+                    _buildRuleCard(
+                      '1. रोटेटिंग अभिवादन (Dynamic Greetings)',
+                      'हर संदेश में अभिवादन अपने आप बदलता है (उदा. नमस्कार, सादर प्रणाम, राम-राम, नमस्ते, जय श्री राम, वंदे मातरम)। WhatsApp का स्पैम डिटेक्टर एक जैसे संदेशों को ब्लॉक करता है, लेकिन यहाँ हर संदेश का टेक्स्ट अलग होता है।',
+                      Icons.shuffle_rounded,
+                      Colors.blue,
+                    ),
+                    _buildRuleCard(
+                      '2. मानवीय रैंडम गैप (Human-like Jitter Delay)',
+                      'बॉट की तरह फिक्स 3 सेकंड पर नहीं, बल्कि 4 से 7 सेकंड का रैंडम गैप रहता है। इससे WhatsApp के सर्वर को यह सामान्य मानवीय उपयोग प्रतीत होता है।',
+                      Icons.timer_rounded,
+                      Colors.green,
+                    ),
+                    _buildRuleCard(
+                      '3. 15 संदेशों पर 20s कूलिंग ब्रेक (Batch Break)',
+                      'WhatsApp के एल्गोरिदम में प्रति-मिनट की लिमिट होती है। हर 15 संदेश पूरे होने पर ऐप 20 सेकंड का कूलिंग विश्राम लेता है जिससे नंबर पूरी तरह सुरक्षित रहता है।',
+                      Icons.pause_circle_outline_rounded,
+                      Colors.orange,
+                    ),
+                    _buildRuleCard(
+                      '4. फ़ोनबुक नाम व पहचान (Personalization)',
+                      'हर संदेश में व्यक्ति का वास्तविक नाम या फ़ोन में सेव नाम जाता है। जब प्राप्तकर्ता अपना नाम देखता है तो वह इसे स्पैम रिपोर्ट नहीं करता।',
+                      Icons.person_pin_rounded,
+                      Colors.purple,
+                    ),
+                    _buildRuleCard(
+                      '5. नियंत्रण व सुरक्षा (Pause/Skip/Stop Anytime)',
+                      'किसी भी समय आप अभियान को रोक सकते हैं (पॉज़), संदिग्ध नंबर छोड़ सकते हैं (स्किप) और रियल-टाइम देख सकते हैं कि किस-किस को संदेश गया।',
+                      Icons.security_rounded,
+                      const Color(0xff16a34a),
+                    ),
+                  ],
+                ),
+              ),
             ],
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildRuleCard(String title, String desc, IconData icon, Color color) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xfff8fafc),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: border),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: color.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Icon(icon, color: color, size: 20),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(title, style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 13, color: navy)),
+                const SizedBox(height: 4),
+                Text(desc, style: const TextStyle(fontSize: 11.5, color: muted, height: 1.3)),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }
