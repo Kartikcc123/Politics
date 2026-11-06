@@ -5,8 +5,6 @@ import android.content.ContentProviderOperation
 import android.content.ContentUris
 import android.content.Intent
 import android.content.pm.PackageManager
-import android.net.Uri
-import android.os.Build
 import android.provider.ContactsContract
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
@@ -65,13 +63,37 @@ class MainActivity : FlutterActivity() {
                     val address = call.argument<String>("address") ?: ""
                     val note = call.argument<String>("note") ?: ""
                     val organization = call.argument<String>("organization") ?: ""
+                    val email = call.argument<String>("email") ?: ""
 
                     Thread {
                         try {
-                            val ok = updateDeviceContact(contactId, name, phone, address, note, organization)
+                            val ok = upsertDeviceContact(contactId, name, phone, address, note, organization, email)
                             runOnUiThread { result.success(ok) }
                         } catch (e: Exception) {
                             runOnUiThread { result.error("UPDATE_ERROR", e.message, null) }
+                        }
+                    }.start()
+                }
+                "upsertContact" -> {
+                    val writeGranted = ContextCompat.checkSelfPermission(this, Manifest.permission.WRITE_CONTACTS) == PackageManager.PERMISSION_GRANTED
+                    if (!writeGranted) {
+                        result.success(false)
+                        return@setMethodCallHandler
+                    }
+                    val contactId = call.argument<String>("id") ?: ""
+                    val name = call.argument<String>("name") ?: ""
+                    val phone = call.argument<String>("phone") ?: ""
+                    val address = call.argument<String>("address") ?: ""
+                    val note = call.argument<String>("note") ?: ""
+                    val organization = call.argument<String>("organization") ?: ""
+                    val email = call.argument<String>("email") ?: ""
+
+                    Thread {
+                        try {
+                            val ok = upsertDeviceContact(contactId, name, phone, address, note, organization, email)
+                            runOnUiThread { result.success(ok) }
+                        } catch (e: Exception) {
+                            runOnUiThread { result.success(false) }
                         }
                     }.start()
                 }
@@ -141,6 +163,8 @@ class MainActivity : FlutterActivity() {
             ContactsContract.Data.DATA2,
             ContactsContract.Data.DATA3,
             ContactsContract.Data.DATA4,
+            ContactsContract.Data.DATA5,
+            ContactsContract.Data.DATA6,
             ContactsContract.Data.DATA7,
             ContactsContract.Data.DATA8,
             ContactsContract.Data.DATA9,
@@ -163,6 +187,7 @@ class MainActivity : FlutterActivity() {
             val idxData2 = c.getColumnIndex(ContactsContract.Data.DATA2)
             val idxData3 = c.getColumnIndex(ContactsContract.Data.DATA3)
             val idxData4 = c.getColumnIndex(ContactsContract.Data.DATA4)
+            val idxData6 = c.getColumnIndex(ContactsContract.Data.DATA6)
             val idxData7 = c.getColumnIndex(ContactsContract.Data.DATA7)
             val idxData8 = c.getColumnIndex(ContactsContract.Data.DATA8)
             val idxData9 = c.getColumnIndex(ContactsContract.Data.DATA9)
@@ -207,17 +232,18 @@ class MainActivity : FlutterActivity() {
                     ContactsContract.CommonDataKinds.StructuredPostal.CONTENT_ITEM_TYPE -> {
                         val formatted = (if (idxData1 >= 0) c.getString(idxData1) else null)?.trim() ?: ""
                         val street = (if (idxData4 >= 0) c.getString(idxData4) else null)?.trim() ?: ""
+                        val neighborhood = (if (idxData6 >= 0) c.getString(idxData6) else null)?.trim() ?: ""
                         val city = (if (idxData7 >= 0) c.getString(idxData7) else null)?.trim() ?: ""
                         val state = (if (idxData8 >= 0) c.getString(idxData8) else null)?.trim() ?: ""
                         val postcode = (if (idxData9 >= 0) c.getString(idxData9) else null)?.trim() ?: ""
                         val country = (if (idxData10 >= 0) c.getString(idxData10) else null)?.trim() ?: ""
-                        if (formatted.isNotEmpty() || street.isNotEmpty() || city.isNotEmpty() || state.isNotEmpty()) {
+                        if (formatted.isNotEmpty() || street.isNotEmpty() || neighborhood.isNotEmpty() || city.isNotEmpty() || state.isNotEmpty()) {
                             @Suppress("UNCHECKED_CAST")
                             val addresses = entry["addresses"] as MutableList<Map<String, String>>
                             addresses.add(
                                 mapOf(
                                     "address" to formatted,
-                                    "street" to street,
+                                    "street" to listOf(street, neighborhood).filter { it.isNotEmpty() }.joinToString(", "),
                                     "city" to city,
                                     "state" to state,
                                     "postalCode" to postcode,
@@ -263,16 +289,40 @@ class MainActivity : FlutterActivity() {
     }
 
     private fun findRawContactId(contactId: String): Long? {
+        if (contactId.isEmpty()) return null
         val cursor = contentResolver.query(
             ContactsContract.RawContacts.CONTENT_URI,
             arrayOf(ContactsContract.RawContacts._ID),
-            "${ContactsContract.RawContacts.CONTACT_ID} = ?",
+            "${ContactsContract.RawContacts.CONTACT_ID} = ? AND ${ContactsContract.RawContacts.DELETED} = 0",
             arrayOf(contactId),
             null
         )
         cursor?.use {
             if (it.moveToFirst()) {
                 return it.getLong(0)
+            }
+        }
+        return null
+    }
+
+    private fun findContactIdByPhone(phone: String): String? {
+        val digits = phone.replace(Regex("[^0-9]"), "")
+        if (digits.length < 10) return null
+        val last10 = digits.substring(digits.length - 10)
+        val cursor = contentResolver.query(
+            ContactsContract.CommonDataKinds.Phone.CONTENT_URI,
+            arrayOf(ContactsContract.CommonDataKinds.Phone.CONTACT_ID, ContactsContract.CommonDataKinds.Phone.NUMBER),
+            "${ContactsContract.CommonDataKinds.Phone.NUMBER} LIKE ?",
+            arrayOf("%$last10%"),
+            null
+        )
+        cursor?.use {
+            while (it.moveToNext()) {
+                val cId = it.getString(0) ?: continue
+                val num = (it.getString(1) ?: "").replace(Regex("[^0-9]"), "")
+                if (num.endsWith(last10)) {
+                    return cId
+                }
             }
         }
         return null
@@ -292,15 +342,109 @@ class MainActivity : FlutterActivity() {
         return false
     }
 
-    private fun updateDeviceContact(
+    private fun insertNewDeviceContact(
+        name: String,
+        phone: String,
+        address: String,
+        note: String,
+        organization: String,
+        email: String
+    ): Boolean {
+        if (name.isEmpty() && phone.isEmpty()) return false
+        val ops = ArrayList<ContentProviderOperation>()
+
+        ops.add(
+            ContentProviderOperation.newInsert(ContactsContract.RawContacts.CONTENT_URI)
+                .withValue(ContactsContract.RawContacts.ACCOUNT_TYPE, null)
+                .withValue(ContactsContract.RawContacts.ACCOUNT_NAME, null)
+                .build()
+        )
+
+        if (name.isNotEmpty()) {
+            ops.add(
+                ContentProviderOperation.newInsert(ContactsContract.Data.CONTENT_URI)
+                    .withValueBackReference(ContactsContract.Data.RAW_CONTACT_ID, 0)
+                    .withValue(ContactsContract.Data.MIMETYPE, ContactsContract.CommonDataKinds.StructuredName.CONTENT_ITEM_TYPE)
+                    .withValue(ContactsContract.CommonDataKinds.StructuredName.DISPLAY_NAME, name)
+                    .withValue(ContactsContract.CommonDataKinds.StructuredName.GIVEN_NAME, name)
+                    .build()
+            )
+        }
+
+        if (phone.isNotEmpty()) {
+            ops.add(
+                ContentProviderOperation.newInsert(ContactsContract.Data.CONTENT_URI)
+                    .withValueBackReference(ContactsContract.Data.RAW_CONTACT_ID, 0)
+                    .withValue(ContactsContract.Data.MIMETYPE, ContactsContract.CommonDataKinds.Phone.CONTENT_ITEM_TYPE)
+                    .withValue(ContactsContract.CommonDataKinds.Phone.NUMBER, phone)
+                    .withValue(ContactsContract.CommonDataKinds.Phone.TYPE, ContactsContract.CommonDataKinds.Phone.TYPE_MOBILE)
+                    .build()
+            )
+        }
+
+        if (address.isNotEmpty()) {
+            ops.add(
+                ContentProviderOperation.newInsert(ContactsContract.Data.CONTENT_URI)
+                    .withValueBackReference(ContactsContract.Data.RAW_CONTACT_ID, 0)
+                    .withValue(ContactsContract.Data.MIMETYPE, ContactsContract.CommonDataKinds.StructuredPostal.CONTENT_ITEM_TYPE)
+                    .withValue(ContactsContract.CommonDataKinds.StructuredPostal.FORMATTED_ADDRESS, address)
+                    .withValue(ContactsContract.CommonDataKinds.StructuredPostal.STREET, address)
+                    .withValue(ContactsContract.CommonDataKinds.StructuredPostal.TYPE, ContactsContract.CommonDataKinds.StructuredPostal.TYPE_HOME)
+                    .build()
+            )
+        }
+
+        if (note.isNotEmpty()) {
+            ops.add(
+                ContentProviderOperation.newInsert(ContactsContract.Data.CONTENT_URI)
+                    .withValueBackReference(ContactsContract.Data.RAW_CONTACT_ID, 0)
+                    .withValue(ContactsContract.Data.MIMETYPE, ContactsContract.CommonDataKinds.Note.CONTENT_ITEM_TYPE)
+                    .withValue(ContactsContract.CommonDataKinds.Note.NOTE, note)
+                    .build()
+            )
+        }
+
+        if (organization.isNotEmpty()) {
+            ops.add(
+                ContentProviderOperation.newInsert(ContactsContract.Data.CONTENT_URI)
+                    .withValueBackReference(ContactsContract.Data.RAW_CONTACT_ID, 0)
+                    .withValue(ContactsContract.Data.MIMETYPE, ContactsContract.CommonDataKinds.Organization.CONTENT_ITEM_TYPE)
+                    .withValue(ContactsContract.CommonDataKinds.Organization.COMPANY, organization)
+                    .withValue(ContactsContract.CommonDataKinds.Organization.TYPE, ContactsContract.CommonDataKinds.Organization.TYPE_WORK)
+                    .build()
+            )
+        }
+
+        if (email.isNotEmpty()) {
+            ops.add(
+                ContentProviderOperation.newInsert(ContactsContract.Data.CONTENT_URI)
+                    .withValueBackReference(ContactsContract.Data.RAW_CONTACT_ID, 0)
+                    .withValue(ContactsContract.Data.MIMETYPE, ContactsContract.CommonDataKinds.Email.CONTENT_ITEM_TYPE)
+                    .withValue(ContactsContract.CommonDataKinds.Email.ADDRESS, email)
+                    .withValue(ContactsContract.CommonDataKinds.Email.TYPE, ContactsContract.CommonDataKinds.Email.TYPE_HOME)
+                    .build()
+            )
+        }
+
+        contentResolver.applyBatch(ContactsContract.AUTHORITY, ops)
+        return true
+    }
+
+    private fun upsertDeviceContact(
         contactId: String,
         name: String,
         phone: String,
         address: String,
         note: String,
-        organization: String
+        organization: String,
+        email: String
     ): Boolean {
-        val rawContactId = findRawContactId(contactId) ?: return false
+        val resolvedContactId = if (contactId.isNotEmpty()) contactId else (findContactIdByPhone(phone) ?: "")
+        val rawContactId = findRawContactId(resolvedContactId)
+        if (rawContactId == null) {
+            return insertNewDeviceContact(name, phone, address, note, organization, email)
+        }
+
         val ops = ArrayList<ContentProviderOperation>()
 
         // 1. Name
@@ -421,6 +565,31 @@ class MainActivity : FlutterActivity() {
                     .withValue(ContactsContract.Data.MIMETYPE, orgMime)
                     .withValue(ContactsContract.CommonDataKinds.Organization.COMPANY, organization)
                     .withValue(ContactsContract.CommonDataKinds.Organization.TYPE, ContactsContract.CommonDataKinds.Organization.TYPE_WORK)
+                    .build()
+            )
+        }
+
+        // 6. Email
+        val emailMime = ContactsContract.CommonDataKinds.Email.CONTENT_ITEM_TYPE
+        if (hasMimeRow(rawContactId, emailMime)) {
+            if (email.isNotEmpty()) {
+                ops.add(
+                    ContentProviderOperation.newUpdate(ContactsContract.Data.CONTENT_URI)
+                        .withSelection(
+                            "${ContactsContract.Data.RAW_CONTACT_ID} = ? AND ${ContactsContract.Data.MIMETYPE} = ?",
+                            arrayOf(rawContactId.toString(), emailMime)
+                        )
+                        .withValue(ContactsContract.CommonDataKinds.Email.ADDRESS, email)
+                        .build()
+                )
+            }
+        } else if (email.isNotEmpty()) {
+            ops.add(
+                ContentProviderOperation.newInsert(ContactsContract.Data.CONTENT_URI)
+                    .withValue(ContactsContract.Data.RAW_CONTACT_ID, rawContactId)
+                    .withValue(ContactsContract.Data.MIMETYPE, emailMime)
+                    .withValue(ContactsContract.CommonDataKinds.Email.ADDRESS, email)
+                    .withValue(ContactsContract.CommonDataKinds.Email.TYPE, ContactsContract.CommonDataKinds.Email.TYPE_HOME)
                     .build()
             )
         }

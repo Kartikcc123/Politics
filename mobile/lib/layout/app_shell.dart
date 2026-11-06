@@ -9,6 +9,7 @@ import '../features/areas/master_data_import_page.dart';
 import '../features/areas/samiti_hierarchy_page.dart';
 import '../features/auth/login_page.dart';
 import '../features/booths/booth_page.dart';
+import '../features/contacts/device_phonebook_page.dart';
 import '../features/members/bulk_location_edit_page.dart';
 import '../features/messages/bulk_message_page.dart';
 import '../features/messages/whatsapp_page.dart';
@@ -87,18 +88,17 @@ class _AppShellState extends State<AppShell> {
 
     if (isAdmin) {
       return [
-        NavItem(
-          'डैशबोर्ड',
-          Icons.home_rounded,
-          DashboardPage(
-            key: ValueKey('admin-dash-$refreshVersion'),
-            onNavigate: select,
+        const NavItem(
+          'संपर्क',
+          Icons.contacts_rounded,
+          DevicePhonebookPage(
+            key: ValueKey('admin-contacts-hub'),
           ),
         ),
-        NavItem(
+        const NavItem(
           'सभी मतदाता',
           Icons.groups_rounded,
-          VoterManagementPage(key: ValueKey('admin-voters-$refreshVersion')),
+          VoterManagementPage(key: ValueKey('admin-voters')),
         ),
         NavItem(
           'क्षेत्र व गाँव',
@@ -120,24 +120,23 @@ class _AppShellState extends State<AppShell> {
 
     // Booth, Ward, and Normal Users
     return [
-      NavItem(
-        'होम',
-        Icons.home_rounded,
-        DashboardPage(
-          key: ValueKey('user-dash-$refreshVersion'),
-          onNavigate: select,
+      const NavItem(
+        'संपर्क',
+        Icons.contacts_rounded,
+        DevicePhonebookPage(
+          key: ValueKey('user-contacts-hub'),
         ),
       ),
-      NavItem(
+      const NavItem(
         'मतदाता सूची',
         Icons.groups_rounded,
-        VoterManagementPage(key: ValueKey('user-voters-$refreshVersion')),
+        VoterManagementPage(key: ValueKey('user-voters')),
       ),
-      NavItem(
+      const NavItem(
         'फ़ेवरेट',
         Icons.star_rounded,
         VoterManagementPage(
-          key: ValueKey('user-fav-$refreshVersion'),
+          key: ValueKey('user-fav'),
           initialFavoriteFilter: true,
         ),
       ),
@@ -167,13 +166,10 @@ class _AppShellState extends State<AppShell> {
 
     // 1. मुख्य कार्यक्षेत्र (Core)
     final coreItems = <NavItem>[
-      NavItem(
-        isAdmin ? 'डैशबोर्ड' : 'होम / डैशबोर्ड',
-        Icons.home_rounded,
-        DashboardPage(
-          key: ValueKey('desktop-dash-$refreshVersion'),
-          onNavigate: (idx) => selectDesktop(idx <= 1 ? 2 : idx),
-        ),
+      const NavItem(
+        'संपर्क (Phone + App)',
+        Icons.contacts_rounded,
+        DevicePhonebookPage(key: ValueKey('desktop-contacts-hub')),
       ),
       NavItem(
         'क्षेत्र व गाँव',
@@ -183,12 +179,20 @@ class _AppShellState extends State<AppShell> {
       NavItem(
         isAdmin ? 'सभी मतदाता' : 'मतदाता सूची',
         Icons.groups_rounded,
-        VoterManagementPage(key: ValueKey('desktop-voters-$refreshVersion')),
+        const VoterManagementPage(key: ValueKey('desktop-voters')),
       ),
       NavItem(
         'पार्टी गणना',
         Icons.analytics_rounded,
         PartyAnalyticsPage(key: ValueKey('desktop-party-$refreshVersion')),
+      ),
+      NavItem(
+        isAdmin ? 'डैशबोर्ड सारांश' : 'होम सारांश',
+        Icons.dashboard_rounded,
+        DashboardPage(
+          key: ValueKey('desktop-dash-$refreshVersion'),
+          onNavigate: (idx) => selectDesktop(idx <= 1 ? 2 : idx),
+        ),
       ),
       if (canReport)
         NavItem(

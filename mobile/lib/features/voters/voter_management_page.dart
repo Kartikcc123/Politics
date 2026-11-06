@@ -13,6 +13,7 @@ import '../../core/api_client.dart';
 import '../../core/contact_actions.dart';
 import '../../core/file_saver.dart';
 import '../../core/offline_voter_cache.dart';
+import '../../core/phone_contacts_bridge.dart';
 import '../../core/picked_file_source.dart';
 import '../../core/print_helper.dart';
 import '../../core/theme.dart';
@@ -131,6 +132,7 @@ class _VoterManagementPageState extends State<VoterManagementPage>
 
   void _onDataChanged() {
     _checkPendingEdits();
+    _refreshInPlace();
   }
 
   Future<void> _checkPendingEdits() async {
@@ -185,6 +187,23 @@ class _VoterManagementPageState extends State<VoterManagementPage>
       page: currentPage,
       limit: pageSize,
     );
+  }
+
+  void _refreshInPlace() {
+    _checkPendingEdits();
+    if (mounted) setState(() {});
+    OfflineVoterCache.loadPage(
+      query: filterQuery,
+      page: currentPage,
+      limit: pageSize,
+    ).then((res) {
+      if (mounted) {
+        setState(() {
+          _lastVoterPageResult = res;
+          votersFuture = Future.value(res);
+        });
+      }
+    }).catchError((_) {});
   }
 
   void filtersChanged() => setState(() {
@@ -932,6 +951,7 @@ class _VoterManagementPageState extends State<VoterManagementPage>
       context: context,
       builder: (_) => _ExcelExportDialog(
         selectedCount: selectedIds.length,
+        totalMatching: _lastVoterPageResult?.total ?? 0,
         filterSummary: _activeFiltersSummary(),
       ),
     );
@@ -940,16 +960,20 @@ class _VoterManagementPageState extends State<VoterManagementPage>
     final selectedColumns = (result['columns'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? [];
     if (selectedColumns.isEmpty) return;
     final action = result['action'] as String? ?? 'download';
+    final scope = result['scope'] as String? ?? 'all_filtered';
+    final useSelectedOnly = scope == 'selected_only' && selectedIds.isNotEmpty;
 
-    final titlePrefix = selectedIds.isNotEmpty
+    final titlePrefix = useSelectedOnly
         ? 'Selected_Voters_${selectedIds.length}'
-        : 'Voters_${gramPanchayat.text.isNotEmpty ? gramPanchayat.text.trim() : (municipalWardNumber.text.isNotEmpty ? "Ward_${municipalWardNumber.text.trim()}" : "List")}';
+        : (favoriteOnly
+            ? 'Favorite_Voters_All'
+            : 'Voters_${gramPanchayat.text.isNotEmpty ? gramPanchayat.text.trim() : (municipalWardNumber.text.isNotEmpty ? "Ward_${municipalWardNumber.text.trim()}" : "All_List")}');
     final fallbackFilename = '$titlePrefix.xlsx';
 
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('एक्सेल तैयार किया जा रहा है...'),
+          content: Text('पूरी सूची का एक्सेल तैयार किया जा रहा है...'),
           duration: Duration(seconds: 2),
         ),
       );
@@ -961,35 +985,58 @@ class _VoterManagementPageState extends State<VoterManagementPage>
         'limit': '3000',
         'paged': 'true',
       };
-      if (selectedIds.isNotEmpty) {
+      if (useSelectedOnly) {
         baseQuery['ids'] = selectedIds.join(',');
       }
 
       final allMembers = <Map<String, dynamic>>[];
+      final seenIds = <String>{};
       int page = 1;
-      final selectedSet = selectedIds.toSet();
+      final selectedSet = useSelectedOnly ? selectedIds.toSet() : <String>{};
 
-      while (true) {
-        final q = Map<String, String?>.from(baseQuery);
-        q['page'] = '$page';
-        final res = await api.getQuery('/api/members', q);
-        final dynamic rawItems = res['items'] ?? res['data'];
-        final List<dynamic> rawList = rawItems is List ? rawItems : (res is List ? (res as List) : const []);
-        var chunk = rawList.whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList();
-        if (chunk.isEmpty) break;
+      try {
+        while (true) {
+          final q = Map<String, String?>.from(baseQuery);
+          q['page'] = '$page';
+          final res = await api.getQuery('/api/members', q);
+          final dynamic rawItems = res['items'] ?? res['data'];
+          final List<dynamic> rawList = rawItems is List ? rawItems : (res is List ? (res as List) : const []);
+          var chunk = rawList.whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList();
+          if (chunk.isEmpty) break;
 
-        if (selectedSet.isNotEmpty) {
-          chunk = chunk.where((m) => selectedSet.contains(m['_id']?.toString())).toList();
+          if (useSelectedOnly) {
+            chunk = chunk.where((m) => selectedSet.contains(m['_id']?.toString())).toList();
+          }
+          for (final m in chunk) {
+            final mId = '${m['_id'] ?? m['id'] ?? ''}';
+            if (mId.isEmpty || seenIds.add(mId)) {
+              allMembers.add(m);
+            }
+          }
+
+          if (useSelectedOnly && allMembers.length >= selectedSet.length) {
+            break;
+          }
+
+          final totalPages = res['pages'] is num ? (res['pages'] as num).toInt() : 1;
+          final totalCount = res['total'] is num ? (res['total'] as num).toInt() : 0;
+          if (page >= totalPages || (totalCount > 0 && allMembers.length >= totalCount)) {
+            break;
+          }
+          if (chunk.length < 3000 && totalPages <= 1) break;
+          page++;
         }
-        allMembers.addAll(chunk);
-
-        if (selectedSet.isNotEmpty && allMembers.length >= selectedSet.length) {
-          break;
+      } catch (_) {
+        // Fallback to OfflineVoterCache if offline
+        final cached = await OfflineVoterCache.load(query: filterQuery);
+        for (final item in cached) {
+          if (item is Map) {
+            final map = Map<String, dynamic>.from(item);
+            if (!useSelectedOnly || selectedSet.contains('${map['_id']}')) {
+              allMembers.add(map);
+            }
+          }
         }
-
-        final totalPages = res['pages'] is num ? (res['pages'] as num).toInt() : 1;
-        if (page >= totalPages) break;
-        page++;
       }
 
       if (allMembers.isEmpty) {
@@ -2957,7 +3004,7 @@ class _VoterManagementPageState extends State<VoterManagementPage>
                       onBulkGroup: _bulkGroup,
                       onBulkAnubhag: _bulkAnubhag,
                       onClearSelection: () => setState(selectedIds.clear),
-                      onChanged: () => setState(refreshVoters),
+                      onChanged: _refreshInPlace,
                       onPageChanged: (page) => setState(() {
                         currentPage = page;
                         selectedIds.clear();
@@ -6929,10 +6976,12 @@ class _PrintOptionsDialogState extends State<_PrintOptionsDialog> {
 class _ExcelExportDialog extends StatefulWidget {
   const _ExcelExportDialog({
     required this.selectedCount,
+    this.totalMatching = 0,
     required this.filterSummary,
   });
 
   final int selectedCount;
+  final int totalMatching;
   final String filterSummary;
 
   @override
@@ -6993,11 +7042,16 @@ class _ExcelExportDialogState extends State<_ExcelExportDialog> {
 
   late final Set<String> selectedFields;
   String currentCat = 'सभी';
+  late String exportScope;
 
   @override
   void initState() {
     super.initState();
     selectedFields = Set<String>.from(defaultSelected);
+    // Default to exporting ALL matching records when 0 or full page (50) is selected
+    exportScope = (widget.selectedCount > 0 && widget.selectedCount < 50)
+        ? 'selected_only'
+        : 'all_filtered';
   }
 
   @override
@@ -7048,6 +7102,47 @@ class _ExcelExportDialogState extends State<_ExcelExportDialog> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              if (widget.selectedCount > 0) ...[
+                Container(
+                  padding: const EdgeInsets.all(10),
+                  margin: const EdgeInsets.only(bottom: 10),
+                  decoration: BoxDecoration(
+                    color: const Color(0xfff0fdf4),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: const Color(0xffbbf7d0)),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'निर्यात का दायरा (Export Scope):',
+                        style: TextStyle(fontWeight: FontWeight.w800, fontSize: 12, color: navy),
+                      ),
+                      const SizedBox(height: 6),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 6,
+                        children: [
+                          ChoiceChip(
+                            label: Text(
+                              '📊 संपूर्ण फ़िल्टर सूची (${widget.totalMatching > 0 ? "${widget.totalMatching} " : "सभी "}मतदाता)',
+                            ),
+                            selected: exportScope == 'all_filtered',
+                            selectedColor: const Color(0xffdcfce7),
+                            onSelected: (_) => setState(() => exportScope = 'all_filtered'),
+                          ),
+                          ChoiceChip(
+                            label: Text('☑️ केवल चयनित (${widget.selectedCount} मतदाता)'),
+                            selected: exportScope == 'selected_only',
+                            selectedColor: softBlue,
+                            onSelected: (_) => setState(() => exportScope = 'selected_only'),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ],
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
@@ -7164,7 +7259,11 @@ class _ExcelExportDialogState extends State<_ExcelExportDialog> {
           ),
           onPressed: selectedFields.isEmpty
               ? null
-              : () => Navigator.pop(context, {'columns': selectedFields.toList(), 'action': 'share'}),
+              : () => Navigator.pop(context, {
+                    'columns': selectedFields.toList(),
+                    'action': 'share',
+                    'scope': exportScope,
+                  }),
           icon: const Icon(Icons.share_rounded, size: 18),
           label: const Text('शेयर करें'),
         ),
@@ -7172,7 +7271,11 @@ class _ExcelExportDialogState extends State<_ExcelExportDialog> {
           style: FilledButton.styleFrom(backgroundColor: const Color(0xff16a34a)),
           onPressed: selectedFields.isEmpty
               ? null
-              : () => Navigator.pop(context, {'columns': selectedFields.toList(), 'action': 'download'}),
+              : () => Navigator.pop(context, {
+                    'columns': selectedFields.toList(),
+                    'action': 'download',
+                    'scope': exportScope,
+                  }),
           icon: const Icon(Icons.file_download_rounded),
           label: const Text('Excel डाउनलोड करें'),
         ),
@@ -8749,7 +8852,9 @@ class _VoterDetailPageState extends State<VoterDetailPage> {
             _ProfileInfoRow(
                 icon: Icons.phone_rounded,
                 title: mobile.isEmpty ? 'मोबाइल उपलब्ध नहीं' : mobile,
-                subtitle: 'मोबाइल नंबर'),
+                subtitle: PhoneContactsBridge.lookupPhonebookName(mobile) != null
+                    ? 'मोबाइल नंबर (📱 फ़ोनबुक नाम: ${PhoneContactsBridge.lookupPhonebookName(mobile)})'
+                    : 'मोबाइल नंबर'),
             _ProfileInfoRow(
                 icon: Icons.badge_outlined,
                 title: displayVoterId,
@@ -9218,6 +9323,7 @@ class _VoterFormState extends State<VoterForm> {
       } else {
         await api.put('/api/members/${widget.voter!['_id']}', body);
       }
+      PhoneContactsBridge.autoSaveVoterToPhone(body);
       widget.onSaved();
       if (!mounted) return;
       Navigator.pop(context);

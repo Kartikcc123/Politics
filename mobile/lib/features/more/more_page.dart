@@ -10,6 +10,7 @@ import '../areas/master_data_import_page.dart';
 import '../areas/samiti_hierarchy_page.dart';
 import '../booths/booth_page.dart';
 import '../contacts/device_phonebook_page.dart';
+import '../dashboard/dashboard_page.dart';
 import '../messages/bulk_message_page.dart';
 import '../messages/whatsapp_page.dart';
 import '../reminders/reminder_dashboard_page.dart';
@@ -101,6 +102,8 @@ class MorePage extends StatelessWidget {
             const ReminderDashboardPage()),
     ];
     final reportOptions = <_Option>[
+      _Option('डैशबोर्ड सारांश', 'बूथ, मतदाता, सर्वे और संपर्क का संक्षिप्त सारांश देखें',
+          Icons.dashboard_rounded, const Color(0xff2563eb), DashboardPage(onNavigate: (_) {})),
       if (canReport)
         _Option('राजनीतिक विश्लेषण', 'मजबूत, कमजोर बूथ और अनिर्णीत मतदाता देखें',
             Icons.insights_rounded, blue, const PoliticalDashboardPage()),

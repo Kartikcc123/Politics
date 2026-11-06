@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
@@ -9,7 +10,11 @@ import 'package:share_plus/share_plus.dart';
 
 import '../../core/api_client.dart';
 import '../../core/contact_actions.dart';
+import '../../core/file_saver.dart';
+import '../../core/offline_voter_cache.dart';
+import '../../core/phone_contacts_bridge.dart';
 import '../../core/theme.dart';
+import '../../utils/excel_generator.dart';
 import '../contacts/device_phonebook_page.dart';
 import 'bulk_message_page.dart';
 
@@ -44,6 +49,8 @@ class _WhatsAppPageState extends State<WhatsAppPage> with SingleTickerProviderSt
   bool _isSending = false;
 
   // Filter selections
+  String _sourceFilter = 'all'; // 'all', 'phone', 'app', 'fav'
+  bool _antiBanRotatingGreetings = true;
   String _selectedSamiti = 'all';
   String _selectedGramPanchayat = 'all';
   String _selectedVillage = 'all';
@@ -52,6 +59,18 @@ class _WhatsAppPageState extends State<WhatsAppPage> with SingleTickerProviderSt
   String _selectedCaste = 'all';
   String _selectedParty = 'all'; // 'all', 'congress', 'bjp', 'nota', 'other'
   bool _onlyWithMobile = true;
+
+  int _phoneCount = 0;
+  int _appCount = 0;
+  int _favCount = 0;
+
+  static const List<String> _antiBanGreetings = [
+    'नमस्कार',
+    'सादर प्रणाम',
+    'राम-राम',
+    'नमस्ते',
+    'जय श्री राम',
+  ];
 
   // Options from DB
   List<Map<String, dynamic>> _samitiOptions = [];
@@ -221,38 +240,67 @@ class _WhatsAppPageState extends State<WhatsAppPage> with SingleTickerProviderSt
   Future<void> _fetchVoters() async {
     setState(() => _loadingVoters = true);
     try {
-      final queryParams = <String, String>{
-        'limit': '1000',
-        'paged': 'false',
-      };
-      if (_onlyWithMobile) queryParams['hasMobile'] = 'true';
-      if (_selectedSamiti != 'all') queryParams['tehsil'] = _selectedSamiti;
-      if (_selectedGramPanchayat != 'all') queryParams['gramPanchayat'] = _selectedGramPanchayat;
-      if (_selectedVillage != 'all') queryParams['village'] = _selectedVillage;
-      if (_selectedWard != 'all') queryParams['wardNumber'] = _selectedWard;
-      if (_selectedPart != 'all') queryParams['partNumber'] = _selectedPart;
-      if (_selectedCaste != 'all') queryParams['caste'] = _selectedCaste;
-      if (_selectedParty != 'all') queryParams['partyPreference'] = _selectedParty;
-      final q = _searchController.text.trim();
-      if (q.isNotEmpty) queryParams['q'] = q;
+      // 1. Fetch Phonebook Contacts from Device Bridge
+      List<Map<String, dynamic>> phoneItems = [];
+      try {
+        final rawPhoneList = await PhoneContactsBridge.fetchDeviceContacts();
+        for (final c in rawPhoneList) {
+          final phones = (c['phones'] as List?) ?? [];
+          final primaryPhone = phones.isNotEmpty ? '${phones[0]['number'] ?? ''}'.trim() : '';
+          final addrs = (c['addresses'] as List?) ?? [];
+          final location = addrs.isNotEmpty ? '${addrs[0]['city'] ?? addrs[0]['address'] ?? ''}'.trim() : '';
+          final cId = '${c['id'] ?? ''}';
+          final displayName = '${c['displayName'] ?? ''}'.trim();
+          if (primaryPhone.isNotEmpty) {
+            phoneItems.add({
+              '_id': 'phone_$cId',
+              'source': 'phone',
+              'name': displayName.isNotEmpty ? displayName : primaryPhone,
+              'mobile': primaryPhone,
+              'village': location,
+              'isPhoneContact': true,
+              'rawContact': c,
+            });
+          }
+        }
+      } catch (e) {
+        debugPrint('Phone contacts fetch error: $e');
+      }
 
-      final dynamic res = await api.get('/api/members?${Uri(queryParameters: queryParams).query}');
-      List<Map<String, dynamic>> items = [];
-      if (res is List) {
-        items = res
-            .whereType<Map>()
-            .map((e) => Map<String, dynamic>.from(e))
-            .toList();
-      } else if (res is Map && res['items'] is List) {
-        items = (res['items'] as List)
-            .whereType<Map>()
-            .map((e) => Map<String, dynamic>.from(e))
-            .toList();
+      // 2. Fetch App Voters from API or Offline Cache
+      List<Map<String, dynamic>> appItems = [];
+      try {
+        final queryParams = <String, String>{
+          'limit': '1500',
+          'paged': 'false',
+        };
+        if (_onlyWithMobile) queryParams['hasMobile'] = 'true';
+        if (_selectedSamiti != 'all') queryParams['tehsil'] = _selectedSamiti;
+        if (_selectedGramPanchayat != 'all') queryParams['gramPanchayat'] = _selectedGramPanchayat;
+        if (_selectedVillage != 'all') queryParams['village'] = _selectedVillage;
+        if (_selectedWard != 'all') queryParams['wardNumber'] = _selectedWard;
+        if (_selectedPart != 'all') queryParams['partNumber'] = _selectedPart;
+        if (_selectedCaste != 'all') queryParams['caste'] = _selectedCaste;
+        if (_selectedParty != 'all') queryParams['partyPreference'] = _selectedParty;
+        final q = _searchController.text.trim();
+        if (q.isNotEmpty) queryParams['q'] = q;
+
+        final dynamic res = await api.get('/api/members?${Uri(queryParameters: queryParams).query}');
+        if (res is List) {
+          appItems = res.whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList();
+        } else if (res is Map && res['items'] is List) {
+          appItems = (res['items'] as List).whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList();
+        }
+      } catch (_) {
+        try {
+          final cached = await OfflineVoterCache.read();
+          appItems = cached.whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList();
+        } catch (_) {}
       }
 
       // Additional Client-side party filter guarantee
       if (_selectedParty != 'all') {
-        items = items.where((v) {
+        appItems = appItems.where((v) {
           final p = (v['partyPreference'] ?? '').toString().toLowerCase().trim();
           if (_selectedParty == 'other') {
             return p == 'other' || p == 'अन्य';
@@ -261,9 +309,61 @@ class _WhatsAppPageState extends State<WhatsAppPage> with SingleTickerProviderSt
         }).toList();
       }
 
+      for (final v in appItems) {
+        v['source'] ??= 'app';
+      }
+
+      // 3. Count categories
+      final phoneTotal = phoneItems.length;
+      final appTotal = appItems.length;
+      final favTotal = appItems.where((v) => v['isFavorite'] == true).length;
+
+      // 4. Filter and Combine based on _sourceFilter
+      List<Map<String, dynamic>> combined = [];
+      final q = _searchController.text.trim().toLowerCase();
+
+      if (_sourceFilter == 'phone') {
+        combined = phoneItems;
+      } else if (_sourceFilter == 'app') {
+        combined = appItems;
+      } else if (_sourceFilter == 'fav') {
+        combined = appItems.where((v) => v['isFavorite'] == true).toList();
+      } else {
+        // 'all' -> Phone + App (merged with phonebook precedence for names)
+        final seenNumbers = <String>{};
+        for (final v in appItems) {
+          final mob = PhoneContactsBridge.normalize10Digit('${v['mobile'] ?? ''}');
+          if (mob.isNotEmpty) seenNumbers.add(mob);
+          combined.add(v);
+        }
+        for (final p in phoneItems) {
+          final mob = PhoneContactsBridge.normalize10Digit('${p['mobile'] ?? ''}');
+          if (mob.isNotEmpty && !seenNumbers.contains(mob)) {
+            combined.add(p);
+          }
+        }
+      }
+
+      // Search query filter for phone contacts too
+      if (q.isNotEmpty) {
+        combined = combined.where((v) {
+          final n = '${v['name'] ?? ''}'.toLowerCase();
+          final m = '${v['mobile'] ?? ''}'.toLowerCase();
+          final l = '${v['village'] ?? ''}'.toLowerCase();
+          return n.contains(q) || m.contains(q) || l.contains(q);
+        }).toList();
+      }
+
+      if (_onlyWithMobile) {
+        combined = combined.where((v) => '${v['mobile'] ?? ''}'.trim().isNotEmpty).toList();
+      }
+
       if (mounted) {
         setState(() {
-          _voters = items;
+          _voters = combined;
+          _phoneCount = phoneTotal;
+          _appCount = appTotal;
+          _favCount = favTotal;
           _loadingVoters = false;
           _selectedVoterIds.clear();
           for (final v in _voters) {
@@ -368,24 +468,38 @@ class _WhatsAppPageState extends State<WhatsAppPage> with SingleTickerProviderSt
     });
   }
 
-  String _renderMessage(Map<String, dynamic>? voter) {
+  String _renderMessage(Map<String, dynamic>? voter, {int? sequenceIndex}) {
     String msg = _messageController.text;
-    final name = (voter?['name'] ?? voter?['fullName'] ?? 'मतदाता').toString().trim();
+    final name = (voter?['name'] ?? voter?['fullName'] ?? 'साथी').toString().trim();
+    final mobile = (voter?['mobile'] ?? '').toString().trim();
+    final resolvedName = PhoneContactsBridge.resolveNameForNumber(mobile, name);
     final village = (voter?['village'] ?? voter?['gramPanchayat'] ?? '').toString().trim();
     final ward = (voter?['wardNumber'] ?? voter?['partNumber'] ?? '').toString().trim();
     final guardian = (voter?['guardianName'] ?? '').toString().trim();
 
-    msg = msg.replaceAll('{{name}}', name.isNotEmpty ? name : 'साथी');
+    msg = msg.replaceAll('{{name}}', resolvedName.isNotEmpty ? resolvedName : 'साथी');
     msg = msg.replaceAll('{{village}}', village);
     msg = msg.replaceAll('{{ward}}', ward);
     msg = msg.replaceAll('{{guardian}}', guardian);
+
+    // Anti-ban greeting variation:
+    if (_antiBanRotatingGreetings && sequenceIndex != null) {
+      final greeting = _antiBanGreetings[sequenceIndex % _antiBanGreetings.length];
+      for (final g in _antiBanGreetings) {
+        if (msg.startsWith(g)) {
+          msg = msg.replaceFirst(g, greeting);
+          break;
+        }
+      }
+    }
     return msg;
   }
 
   Future<void> _sendToSingleVoter(Map<String, dynamic> voter, {bool forceDirectChat = false}) async {
     if (_isSending) return;
     final mobile = (voter['mobile'] ?? '').toString().replaceAll(RegExp(r'\D'), '');
-    final name = (voter['name'] ?? voter['fullName'] ?? 'मतदाता').toString().trim();
+    final name = (voter['name'] ?? voter['fullName'] ?? 'साथी').toString().trim();
+    final resolvedName = PhoneContactsBridge.resolveNameForNumber(mobile, name);
     final rendered = _renderMessage(voter);
 
     if (mobile.isEmpty) {
@@ -401,7 +515,7 @@ class _WhatsAppPageState extends State<WhatsAppPage> with SingleTickerProviderSt
     if (forceDirectChat || !_hasPickedImage) {
       try {
         if (mounted) {
-          await openWhatsApp(context, mobile, message: rendered);
+          await openWhatsApp(context, mobile, message: rendered, recipientName: resolvedName);
         }
       } finally {
         _isSending = false;
@@ -420,7 +534,7 @@ class _WhatsAppPageState extends State<WhatsAppPage> with SingleTickerProviderSt
                 const Icon(Icons.check_circle_outline, color: Colors.white, size: 18),
                 const SizedBox(width: 8),
                 Expanded(
-                  child: Text('फोटो तैयार है! $name का नंबर ($mobile) कॉपी हो गया। WhatsApp में सर्च/पेस्ट करें।'),
+                  child: Text('फोटो तैयार है! $resolvedName का नंबर ($mobile) कॉपी हो गया। WhatsApp में सर्च/पेस्ट करें।'),
                 ),
               ],
             ),
@@ -441,7 +555,7 @@ class _WhatsAppPageState extends State<WhatsAppPage> with SingleTickerProviderSt
         ShareParams(
           text: textToSend,
           files: [xFile],
-          subject: 'मतदाता संदेश - $name',
+          subject: 'मतदाता संदेश - $resolvedName',
         ),
       );
     } catch (e) {
@@ -514,6 +628,7 @@ class _WhatsAppPageState extends State<WhatsAppPage> with SingleTickerProviderSt
         imageBytes: _pickedImageBytes,
         imageName: _pickedImageName,
         renderMessage: _renderMessage,
+        antiBanGreetingsEnabled: _antiBanRotatingGreetings,
       ),
     );
   }
@@ -893,9 +1008,16 @@ class _WhatsAppPageState extends State<WhatsAppPage> with SingleTickerProviderSt
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // Source Filter Strip Always visible
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 10, 12, 6),
+            child: _buildSourceFilterStrip(),
+          ),
+          const Divider(height: 1, color: Color(0xfff1f5f9)),
+
           // Party Filter Strip Always visible
           Padding(
-            padding: const EdgeInsets.fromLTRB(12, 10, 12, 8),
+            padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
             child: _buildPartyFilterStrip(),
           ),
 
@@ -1182,6 +1304,97 @@ class _WhatsAppPageState extends State<WhatsAppPage> with SingleTickerProviderSt
     );
   }
 
+  Widget _buildSourceFilterStrip() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            const Icon(Icons.contacts_rounded, size: 16, color: Color(0xff1d4ed8)),
+            const SizedBox(width: 6),
+            const Text(
+              'संपर्क स्रोत (Data Source):',
+              style: TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: Color(0xff0f172a)),
+            ),
+            const Spacer(),
+            InkWell(
+              onTap: () {
+                setState(() => _antiBanRotatingGreetings = !_antiBanRotatingGreetings);
+              },
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                decoration: BoxDecoration(
+                  color: _antiBanRotatingGreetings ? const Color(0xffecfdf5) : Colors.grey.shade100,
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: _antiBanRotatingGreetings ? const Color(0xff10b981) : Colors.grey.shade300),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      _antiBanRotatingGreetings ? Icons.verified_user_rounded : Icons.shield_outlined,
+                      size: 13,
+                      color: _antiBanRotatingGreetings ? const Color(0xff059669) : Colors.grey.shade600,
+                    ),
+                    const SizedBox(width: 4),
+                    Text(
+                      _antiBanRotatingGreetings ? 'एंटी-बैन रोटेशन ऑन ✅' : 'एंटी-बैन ऑफ',
+                      style: TextStyle(
+                        fontSize: 10,
+                        fontWeight: FontWeight.w800,
+                        color: _antiBanRotatingGreetings ? const Color(0xff059669) : Colors.grey.shade700,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 6),
+        SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: Row(
+            children: [
+              _buildSourceChip('all', '🔄 सभी (Phone + App)', '${_phoneCount + _appCount}'),
+              const SizedBox(width: 6),
+              _buildSourceChip('phone', '📱 फ़ोनबुक संपर्क', '$_phoneCount'),
+              const SizedBox(width: 6),
+              _buildSourceChip('app', '🏛️ ऐप मतदाता', '$_appCount'),
+              const SizedBox(width: 6),
+              _buildSourceChip('fav', '⭐ पसंदीदा', '$_favCount'),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildSourceChip(String value, String label, String count) {
+    final isSelected = _sourceFilter == value;
+    return ChoiceChip(
+      selected: isSelected,
+      selectedColor: const Color(0xff1e3a8a),
+      backgroundColor: Colors.white,
+      side: BorderSide(
+        color: isSelected ? const Color(0xff1e3a8a) : Colors.grey.shade300,
+        width: isSelected ? 1.5 : 1,
+      ),
+      label: Text('$label ($count)'),
+      labelStyle: TextStyle(
+        fontSize: 11.5,
+        fontWeight: FontWeight.w800,
+        color: isSelected ? Colors.white : const Color(0xff0f172a),
+      ),
+      showCheckmark: false,
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      onSelected: (_) {
+        setState(() => _sourceFilter = value);
+        _fetchVoters();
+      },
+    );
+  }
+
   Widget _buildPartyFilterStrip() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1449,11 +1662,38 @@ class _WhatsAppPageState extends State<WhatsAppPage> with SingleTickerProviderSt
                 children: [
                   Row(
                     children: [
+                      if (voter['isFavorite'] == true)
+                        const Padding(
+                          padding: EdgeInsets.only(right: 4),
+                          child: Icon(Icons.star_rounded, color: orange, size: 16),
+                        ),
                       Flexible(
                         child: Text(
                           name,
                           style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 14.5, color: Color(0xff0f172a)),
                           overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                        margin: const EdgeInsets.only(left: 6),
+                        decoration: BoxDecoration(
+                          color: (voter['source'] == 'phone' || voter['isPhoneContact'] == true)
+                              ? softGreen
+                              : softOrange,
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: Text(
+                          (voter['source'] == 'phone' || voter['isPhoneContact'] == true)
+                              ? '📱 फ़ोनबुक'
+                              : '🏛️ ऐप',
+                          style: TextStyle(
+                            fontSize: 9.5,
+                            fontWeight: FontWeight.w800,
+                            color: (voter['source'] == 'phone' || voter['isPhoneContact'] == true)
+                                ? green
+                                : orange,
+                          ),
                         ),
                       ),
                       if (caste.isNotEmpty) ...[
@@ -1944,13 +2184,15 @@ class _AssistedDispatchSheet extends StatefulWidget {
     this.imageBytes,
     required this.imageName,
     required this.renderMessage,
+    this.antiBanGreetingsEnabled = true,
   });
 
   final List<Map<String, dynamic>> voters;
   final String? imagePath;
   final Uint8List? imageBytes;
   final String? imageName;
-  final String Function(Map<String, dynamic> voter) renderMessage;
+  final String Function(Map<String, dynamic> voter, {int? sequenceIndex}) renderMessage;
+  final bool antiBanGreetingsEnabled;
 
   @override
   State<_AssistedDispatchSheet> createState() => _AssistedDispatchSheetState();
@@ -1959,15 +2201,51 @@ class _AssistedDispatchSheet extends StatefulWidget {
 class _AssistedDispatchSheetState extends State<_AssistedDispatchSheet> {
   int _currentIndex = 0;
   final Set<int> _sentIndices = {};
+  final Set<int> _skippedIndices = {};
+  final Map<int, DateTime> _sentTimestamps = {};
+
+  // View Mode: 'dispatch' (Active Queue Card), 'tracker' (Live Sent vs Pending List)
+  String _activeTab = 'dispatch';
+
+  // Anti-ban cooldown delay
+  int _cooldownRemaining = 0;
+  Timer? _cooldownTimer;
+
+  @override
+  void dispose() {
+    _cooldownTimer?.cancel();
+    super.dispose();
+  }
+
+  void _startCooldown([int seconds = 3]) {
+    _cooldownTimer?.cancel();
+    setState(() => _cooldownRemaining = seconds);
+    _cooldownTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
+      if (_cooldownRemaining > 1) {
+        setState(() => _cooldownRemaining--);
+      } else {
+        timer.cancel();
+        setState(() => _cooldownRemaining = 0);
+      }
+    });
+  }
 
   Future<void> _sendCurrentAndNext() async {
     if (_currentIndex >= widget.voters.length) return;
+    if (_cooldownRemaining > 0) return;
+
     final voter = widget.voters[_currentIndex];
     final mobile = (voter['mobile'] ?? '').toString().replaceAll(RegExp(r'\D'), '');
-    final name = (voter['name'] ?? voter['fullName'] ?? 'मतदाता').toString().trim();
-    final msg = widget.renderMessage(voter);
+    final name = (voter['name'] ?? voter['fullName'] ?? 'साथी').toString().trim();
+    final resolvedName = PhoneContactsBridge.resolveNameForNumber(mobile, name);
+    final msg = widget.renderMessage(voter, sequenceIndex: _currentIndex);
 
     _sentIndices.add(_currentIndex);
+    _sentTimestamps[_currentIndex] = DateTime.now();
 
     final bool hasImage = widget.imageBytes != null ||
         (widget.imagePath != null && !kIsWeb && File(widget.imagePath!).existsSync());
@@ -1988,7 +2266,7 @@ class _AssistedDispatchSheetState extends State<_AssistedDispatchSheet> {
           ShareParams(
             text: textToSend,
             files: [xFile],
-            subject: 'मतदाता संदेश - $name',
+            subject: 'मतदाता संदेश - $resolvedName',
           ),
         );
       } catch (e) {
@@ -2000,35 +2278,124 @@ class _AssistedDispatchSheetState extends State<_AssistedDispatchSheet> {
       }
     } else {
       if (mounted && mobile.isNotEmpty) {
-        await openWhatsApp(context, mobile, message: msg);
+        await openWhatsApp(context, mobile, message: msg, recipientName: resolvedName);
       }
     }
+
+    _startCooldown(3); // 3-second safe delay for WhatsApp anti-spam compliance
 
     if (mounted) {
       if (_currentIndex + 1 < widget.voters.length) {
         setState(() => _currentIndex++);
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('🎉 सभी चुने हुए मतदाताओं को संदेश भेजा जा चुका है!')),
+          const SnackBar(
+            backgroundColor: Color(0xff16a34a),
+            content: Text('🎉 सभी चुने हुए संपर्कों को संदेश भेजा जा चुका है! ✅'),
+          ),
         );
-        Navigator.pop(context);
+      }
+    }
+  }
+
+  void _skipCurrent() {
+    if (_currentIndex < widget.voters.length) {
+      _skippedIndices.add(_currentIndex);
+      if (_currentIndex + 1 < widget.voters.length) {
+        setState(() => _currentIndex++);
+      }
+    }
+  }
+
+  // Export Sent & Delivery Report to Excel
+  Future<void> _exportDeliveryReport() async {
+    final headers = [
+      'क्र.सं.',
+      'नाम (Name)',
+      'मोबाइल (Mobile)',
+      'स्थान / गाँव (Location)',
+      'स्थिति (Delivery Status)',
+      'भेजा गया समय (Timestamp)',
+      'संदेश विवरण (Message)',
+    ];
+
+    final rows = <List<dynamic>>[];
+    for (int i = 0; i < widget.voters.length; i++) {
+      final v = widget.voters[i];
+      final name = (v['name'] ?? v['fullName'] ?? '').toString().trim();
+      final mobile = (v['mobile'] ?? '').toString().trim();
+      final resolvedName = PhoneContactsBridge.resolveNameForNumber(mobile, name);
+      final village = (v['village'] ?? v['gramPanchayat'] ?? '').toString().trim();
+      final status = _sentIndices.contains(i)
+          ? 'सफलतापूर्वक भेजा गया (Sent ✅)'
+          : (_skippedIndices.contains(i) ? 'स्किप किया गया (Skipped ⏭️)' : 'कतार में बाकी (Pending ⏳)');
+      final timeStr = _sentTimestamps[i] != null
+          ? '${_sentTimestamps[i]!.hour.toString().padLeft(2, '0')}:${_sentTimestamps[i]!.minute.toString().padLeft(2, '0')}:${_sentTimestamps[i]!.second.toString().padLeft(2, '0')}'
+          : '-';
+      final msg = widget.renderMessage(v, sequenceIndex: i);
+
+      rows.add([
+        i + 1,
+        resolvedName,
+        mobile,
+        village,
+        status,
+        timeStr,
+        msg,
+      ]);
+    }
+
+    try {
+      final xlsxBytes = ExcelGenerator.buildCustomXlsx(
+        headers,
+        rows,
+        sheetName: 'WhatsApp रिपोर्ट',
+      );
+      final timestamp = DateTime.now().millisecondsSinceEpoch;
+      final savedPath = await saveBytes(
+        'whatsapp_delivery_report_$timestamp.xlsx',
+        Uint8List.fromList(xlsxBytes),
+      );
+      if (mounted && savedPath != null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            backgroundColor: Color(0xff16a34a),
+            content: Text('WhatsApp डिलीवरी रिपोर्ट Excel डाउनलोड हो गई! ✅'),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('रिपोर्ट डाउनलोड में समस्या: $e')),
+        );
       }
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final voter = widget.voters[_currentIndex];
-    final name = (voter['name'] ?? voter['fullName'] ?? '').toString().trim();
-    final guardian = (voter['guardianName'] ?? '').toString().trim();
-    final mobile = (voter['mobile'] ?? '').toString().trim();
-    final village = (voter['village'] ?? '').toString().trim();
-    final ward = (voter['wardNumber'] ?? voter['partNumber'] ?? '').toString().trim();
-    final party = (voter['partyPreference'] ?? '').toString().trim();
-    final msg = widget.renderMessage(voter);
+    final total = widget.voters.length;
+    final sentCount = _sentIndices.length;
+    final skippedCount = _skippedIndices.length;
+    final pendingCount = total - sentCount - skippedCount;
+
+    final voter = _currentIndex < total ? widget.voters[_currentIndex] : null;
+    final name = (voter?['name'] ?? voter?['fullName'] ?? '').toString().trim();
+    final mobile = (voter?['mobile'] ?? '').toString().trim();
+    final resolvedName = PhoneContactsBridge.resolveNameForNumber(mobile, name);
+    final guardian = (voter?['guardianName'] ?? '').toString().trim();
+    final village = (voter?['village'] ?? '').toString().trim();
+    final ward = (voter?['wardNumber'] ?? voter?['partNumber'] ?? '').toString().trim();
+    final party = (voter?['partyPreference'] ?? '').toString().trim();
+    final isPhoneSource = voter?['source'] == 'phone' || voter?['isPhoneContact'] == true;
+    final msg = voter != null ? widget.renderMessage(voter, sequenceIndex: _currentIndex) : '';
 
     return Container(
-      padding: const EdgeInsets.all(20),
+      constraints: BoxConstraints(
+        maxHeight: MediaQuery.of(context).size.height * 0.92,
+      ),
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 18),
       decoration: const BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
@@ -2038,127 +2405,414 @@ class _AssistedDispatchSheetState extends State<_AssistedDispatchSheet> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            // Drag handle
+            Center(
+              child: Container(
+                width: 44,
+                height: 4,
+                margin: const EdgeInsets.only(bottom: 10),
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade300,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+              ),
+            ),
+
+            // Header Row
             Row(
               children: [
-                const Icon(Icons.bolt_rounded, color: Color(0xff16a34a), size: 28),
+                const Icon(Icons.shield_rounded, color: Color(0xff16a34a), size: 24),
                 const SizedBox(width: 8),
-                const Text('फास्ट WhatsApp असिस्टेंट', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-                const Spacer(),
+                const Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'सुरक्षित WhatsApp असिस्टेंट (Anti-Ban Dispatch)',
+                        style: TextStyle(fontSize: 15.5, fontWeight: FontWeight.w900, color: navy),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      Text(
+                        'व्यक्तिगत नाम {{name}} • रोटेटिंग अभिवादन • 3s एंटी-बैन ब्रेक',
+                        style: TextStyle(fontSize: 11, color: muted, fontWeight: FontWeight.w600),
+                      ),
+                    ],
+                  ),
+                ),
                 IconButton(
-                  icon: const Icon(Icons.close),
+                  tooltip: 'Excel रिपोर्ट डाउनलोड करें',
+                  icon: const Icon(Icons.download_rounded, color: Color(0xff16a34a)),
+                  onPressed: _exportDeliveryReport,
+                ),
+                IconButton(
+                  icon: const Icon(Icons.close_rounded),
                   onPressed: () => Navigator.pop(context),
                 ),
               ],
             ),
             const SizedBox(height: 8),
+
+            // Tab Toggle: 'dispatch' vs 'tracker'
+            Row(
+              children: [
+                Expanded(
+                  child: InkWell(
+                    onTap: () => setState(() => _activeTab = 'dispatch'),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(vertical: 8),
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                        color: _activeTab == 'dispatch' ? const Color(0xffeff6ff) : Colors.transparent,
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(
+                          color: _activeTab == 'dispatch' ? const Color(0xff3b82f6) : border,
+                        ),
+                      ),
+                      child: Text(
+                        '🎯 संदेश कतार (${_currentIndex + 1}/$total)',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w800,
+                          color: _activeTab == 'dispatch' ? const Color(0xff1d4ed8) : muted,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: InkWell(
+                    onTap: () => setState(() => _activeTab = 'tracker'),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(vertical: 8),
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                        color: _activeTab == 'tracker' ? const Color(0xffecfdf5) : Colors.transparent,
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(
+                          color: _activeTab == 'tracker' ? const Color(0xff10b981) : border,
+                        ),
+                      ),
+                      child: Text(
+                        '📊 किसे-किसे गया (Sent: $sentCount)',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w800,
+                          color: _activeTab == 'tracker' ? const Color(0xff059669) : muted,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+
+            // Overall Progress
             LinearProgressIndicator(
-              value: (_currentIndex + 1) / widget.voters.length,
+              value: (_currentIndex + 1) / total,
               backgroundColor: Colors.grey.shade200,
               color: const Color(0xff16a34a),
-              minHeight: 6,
+              minHeight: 5,
               borderRadius: BorderRadius.circular(3),
             ),
             const SizedBox(height: 6),
             Row(
               children: [
                 Text(
-                  'प्रगति: ${_currentIndex + 1} / ${widget.voters.length} (भेजे गए: ${_sentIndices.length})',
-                  style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: muted),
+                  '✅ भेजे गए: $sentCount  |  ⏳ कतार: $pendingCount  |  ⏭️ छोड़े गए: $skippedCount',
+                  style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold, color: muted),
                 ),
-                if (widget.imagePath != null) ...[
-                  const Spacer(),
-                  const Text('📷 पोस्टर जुड़ा हुआ है', style: TextStyle(fontSize: 11, color: Colors.green, fontWeight: FontWeight.bold)),
-                ],
+                const Spacer(),
+                if (widget.imagePath != null)
+                  const Text('📷 पोस्टर संलग्न', style: TextStyle(fontSize: 11, color: Colors.green, fontWeight: FontWeight.bold)),
               ],
             ),
-            const SizedBox(height: 14),
-            Container(
-              padding: const EdgeInsets.all(14),
-              decoration: BoxDecoration(
-                color: Colors.grey.shade50,
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: Colors.grey.shade300),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
+            const Divider(height: 14),
+
+            // Tab 1: Dispatch View
+            if (_activeTab == 'dispatch') ...[
+              if (voter != null) ...[
+                Container(
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: const Color(0xfff8fafc),
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: border),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      CircleAvatar(
-                        backgroundColor: const Color(0xff1e3a8a).withValues(alpha: 0.1),
-                        child: Text('${_currentIndex + 1}', style: const TextStyle(fontWeight: FontWeight.bold, color: Color(0xff1e3a8a))),
+                      Row(
+                        children: [
+                          CircleAvatar(
+                            radius: 20,
+                            backgroundColor: const Color(0xff1e3a8a).withValues(alpha: 0.1),
+                            child: Text(
+                              '${_currentIndex + 1}',
+                              style: const TextStyle(fontWeight: FontWeight.w900, color: Color(0xff1e3a8a)),
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  children: [
+                                    Flexible(
+                                      child: Text(
+                                        resolvedName,
+                                        style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w900, color: navy),
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 6),
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                      decoration: BoxDecoration(
+                                        color: isPhoneSource ? softGreen : softOrange,
+                                        borderRadius: BorderRadius.circular(6),
+                                      ),
+                                      child: Text(
+                                        isPhoneSource ? '📱 फ़ोनबुक' : '🏛️ ऐप',
+                                        style: TextStyle(
+                                          fontSize: 9.5,
+                                          fontWeight: FontWeight.w800,
+                                          color: isPhoneSource ? green : orange,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                if (guardian.isNotEmpty)
+                                  Text('पिता/पति: $guardian', style: const TextStyle(fontSize: 11.5, color: muted)),
+                              ],
+                            ),
+                          ),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: const Color(0xffecfdf5),
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(color: const Color(0xffa7f3d0)),
+                            ),
+                            child: Text(
+                              mobile,
+                              style: const TextStyle(fontWeight: FontWeight.w900, color: Color(0xff16a34a), fontSize: 13),
+                            ),
+                          ),
+                        ],
                       ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(name, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-                            if (guardian.isNotEmpty)
-                              Text('पिता/पति: $guardian', style: const TextStyle(fontSize: 12, color: muted)),
-                          ],
-                        ),
+                      if (party.isNotEmpty && party != 'undecided') ...[
+                        const SizedBox(height: 6),
+                        Text('पार्टी रुझान: ${party.toUpperCase()}',
+                            style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: Color(0xff1e3a8a))),
+                      ],
+                      if (village.isNotEmpty || ward.isNotEmpty) ...[
+                        const SizedBox(height: 3),
+                        Text('स्थान: ${[village, if (ward.isNotEmpty) "वार्ड $ward"].join(" • ")}',
+                            style: const TextStyle(fontSize: 11.5, color: muted)),
+                      ],
+                      const Divider(height: 16),
+                      Row(
+                        children: [
+                          const Icon(Icons.chat_bubble_outline_rounded, size: 13, color: muted),
+                          const SizedBox(width: 4),
+                          const Text('संदेश प्रीव्यू (नाम के साथ):',
+                              style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w800, color: navy)),
+                          const Spacer(),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: const Color(0xfffef3c7),
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            child: const Text(
+                              'एंटी-बैन सुरक्षित',
+                              style: TextStyle(fontSize: 9.5, fontWeight: FontWeight.w800, color: Color(0xffb45309)),
+                            ),
+                          ),
+                        ],
                       ),
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                        decoration: BoxDecoration(
-                          color: Colors.green.shade50,
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Text(mobile, style: const TextStyle(fontWeight: FontWeight.bold, color: Color(0xff16a34a))),
+                      const SizedBox(height: 4),
+                      Text(
+                        msg,
+                        style: const TextStyle(fontSize: 12.5, color: Color(0xff334155), height: 1.3),
+                        maxLines: 4,
+                        overflow: TextOverflow.ellipsis,
                       ),
                     ],
                   ),
-                  if (party.isNotEmpty && party != 'undecided') ...[
-                    const SizedBox(height: 6),
-                    Text('पार्टी: ${party.toUpperCase()}', style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold, color: Color(0xff1e3a8a))),
-                  ],
-                  if (village.isNotEmpty || ward.isNotEmpty) ...[
-                    const SizedBox(height: 4),
-                    Text('स्थान: $village | भाग/वार्ड: $ward', style: const TextStyle(fontSize: 12, color: muted)),
-                  ],
-                  const Divider(height: 18),
-                  const Text('संदेश प्रीव्यू:', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: muted)),
-                  const SizedBox(height: 4),
-                  Text(
-                    msg,
-                    style: const TextStyle(fontSize: 13),
-                    maxLines: 3,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 16),
-            Row(
-              children: [
-                if (_currentIndex > 0)
-                  OutlinedButton(
-                    onPressed: () => setState(() => _currentIndex--),
-                    child: const Text('पिछला'),
-                  ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: FilledButton.icon(
-                    onPressed: _sendCurrentAndNext,
-                    icon: const Icon(Icons.send_rounded),
-                    label: const Text('WhatsApp पर भेजें और अगला', style: TextStyle(fontWeight: FontWeight.bold)),
-                    style: FilledButton.styleFrom(
-                      backgroundColor: const Color(0xff16a34a),
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(vertical: 14),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                ),
+                const SizedBox(height: 14),
+
+                // Cooldown countdown banner
+                if (_cooldownRemaining > 0)
+                  Container(
+                    margin: const EdgeInsets.only(bottom: 10),
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: const Color(0xfffffbeb),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: const Color(0xfffef3c7)),
+                    ),
+                    child: Row(
+                      children: [
+                        const SizedBox(
+                          width: 14,
+                          height: 14,
+                          child: CircularProgressIndicator(strokeWidth: 2, color: Colors.orange),
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          'एंटी-बैन सुरक्षा ब्रेक: $_cooldownRemaining सेकंड प्रतीक्षा करें...',
+                          style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: Color(0xff92400e)),
+                        ),
+                      ],
                     ),
                   ),
+
+                // Action Buttons
+                Row(
+                  children: [
+                    if (_currentIndex > 0)
+                      OutlinedButton(
+                        onPressed: () => setState(() => _currentIndex--),
+                        child: const Text('पिछला'),
+                      ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: FilledButton.icon(
+                        onPressed: _cooldownRemaining > 0 ? null : _sendCurrentAndNext,
+                        icon: const Icon(Icons.send_rounded, size: 18),
+                        label: Text(
+                          _cooldownRemaining > 0
+                              ? 'कृपया प्रतीक्षा करें (${_cooldownRemaining}s)'
+                              : (_currentIndex + 1 < total ? 'WhatsApp पर भेजें और अगला' : 'भेजें और संपन्न करें'),
+                          style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 13.5),
+                        ),
+                        style: FilledButton.styleFrom(
+                          backgroundColor: const Color(0xff16a34a),
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(vertical: 13),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    if (_currentIndex + 1 < total)
+                      OutlinedButton(
+                        onPressed: _skipCurrent,
+                        style: OutlinedButton.styleFrom(foregroundColor: muted),
+                        child: const Text('छोड़ें'),
+                      ),
+                  ],
                 ),
-                const SizedBox(width: 8),
-                if (_currentIndex + 1 < widget.voters.length)
-                  TextButton(
-                    onPressed: () => setState(() => _currentIndex++),
-                    child: const Text('छोड़ें'),
+              ] else
+                const Center(
+                  child: Padding(
+                    padding: EdgeInsets.all(24),
+                    child: Text('सभी संदेश भेजे जा चुके हैं!', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
                   ),
-              ],
-            ),
+                ),
+            ] else ...[
+              // Tab 2: Tracker View (Kin-Kin Ko Jaa Rha Hai)
+              Expanded(
+                child: ListView.separated(
+                  itemCount: total,
+                  separatorBuilder: (_, __) => const Divider(height: 1),
+                  itemBuilder: (ctx, idx) {
+                    final item = widget.voters[idx];
+                    final iName = (item['name'] ?? item['fullName'] ?? '').toString().trim();
+                    final iMobile = (item['mobile'] ?? '').toString().trim();
+                    final resolvedIName = PhoneContactsBridge.resolveNameForNumber(iMobile, iName);
+                    final isSent = _sentIndices.contains(idx);
+                    final isSkipped = _skippedIndices.contains(idx);
+                    final isCurrent = idx == _currentIndex;
+
+                    return ListTile(
+                      dense: true,
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 6),
+                      leading: CircleAvatar(
+                        radius: 14,
+                        backgroundColor: isSent
+                            ? const Color(0xffdcfce7)
+                            : (isSkipped
+                                ? Colors.grey.shade200
+                                : (isCurrent ? softBlue : Colors.grey.shade100)),
+                        child: Icon(
+                          isSent
+                              ? Icons.check_circle_rounded
+                              : (isSkipped ? Icons.skip_next_rounded : Icons.pending_rounded),
+                          size: 16,
+                          color: isSent
+                              ? const Color(0xff16a34a)
+                              : (isSkipped ? Colors.grey : (isCurrent ? blue : muted)),
+                        ),
+                      ),
+                      title: Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              resolvedIName,
+                              style: TextStyle(
+                                fontWeight: isCurrent ? FontWeight.w900 : FontWeight.w700,
+                                fontSize: 13,
+                                color: isCurrent ? blue : navy,
+                              ),
+                            ),
+                          ),
+                          Text(
+                            iMobile,
+                            style: const TextStyle(fontSize: 11.5, color: muted, fontWeight: FontWeight.w600),
+                          ),
+                        ],
+                      ),
+                      subtitle: Row(
+                        children: [
+                          Text(
+                            isSent
+                                ? '✅ संदेश भेजा गया'
+                                : (isSkipped ? '⏭️ स्किप किया गया' : (isCurrent ? '👉 वर्तमान कतार' : '⏳ कतार में बाकी')),
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.bold,
+                              color: isSent ? const Color(0xff16a34a) : (isCurrent ? blue : muted),
+                            ),
+                          ),
+                          const Spacer(),
+                          if (!isSent)
+                            InkWell(
+                              onTap: () {
+                                setState(() {
+                                  _currentIndex = idx;
+                                  _activeTab = 'dispatch';
+                                });
+                              },
+                              child: const Text('यहाँ से भेजें >', style: TextStyle(fontSize: 11, color: blue, fontWeight: FontWeight.bold)),
+                            ),
+                        ],
+                      ),
+                    );
+                  },
+                ),
+              ),
+              const SizedBox(height: 8),
+              SizedBox(
+                width: double.infinity,
+                child: FilledButton.icon(
+                  onPressed: _exportDeliveryReport,
+                  icon: const Icon(Icons.table_view_rounded, size: 18),
+                  label: const Text('Excel में संपूर्ण रिपोर्ट डाउनलोड करें (.xlsx)'),
+                  style: FilledButton.styleFrom(
+                    backgroundColor: const Color(0xff16a34a),
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                  ),
+                ),
+              ),
+            ],
           ],
         ),
       ),

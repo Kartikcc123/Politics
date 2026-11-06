@@ -6,6 +6,8 @@ import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import 'phone_contacts_bridge.dart';
+
 Future<void> callNumber(BuildContext context, String? number) async {
   final mobile = (number ?? '').replaceAll(RegExp(r'\D'), '');
   if (mobile.isEmpty) return _error(context, 'मोबाइल नंबर उपलब्ध नहीं है।');
@@ -18,15 +20,44 @@ Future<void> openWhatsApp(
   BuildContext context,
   String? number, {
   String message = '',
+  String? fallbackName,
+  String? recipientName,
 }) async {
   var mobile = (number ?? '').replaceAll(RegExp(r'\D'), '');
   if (mobile.isEmpty) return _error(context, 'WhatsApp नंबर उपलब्ध नहीं है।');
   if (mobile.length == 10) mobile = '91$mobile';
+
+  final resolvedName = (recipientName != null && recipientName.trim().isNotEmpty)
+      ? recipientName.trim()
+      : PhoneContactsBridge.resolveNameForNumber(number, fallbackName);
+  var finalMsg = message.trim();
+  if (finalMsg.isEmpty) {
+    finalMsg = 'नमस्ते $resolvedName जी,\n\nआशा है आप सपरिवार सकुशल होंगे।';
+  } else if (finalMsg.contains('{{name}}')) {
+    finalMsg = finalMsg.replaceAll('{{name}}', resolvedName);
+  } else if (finalMsg == 'नमस्ते' || finalMsg == 'नमस्ते -') {
+    finalMsg = 'नमस्ते $resolvedName जी,\n\nआशा है आप सपरिवार सकुशल होंगे।';
+  }
+
   final uri =
-      Uri.parse('https://wa.me/$mobile?text=${Uri.encodeComponent(message)}');
+      Uri.parse('https://wa.me/$mobile?text=${Uri.encodeComponent(finalMsg)}');
   if (!await launchUrl(uri, mode: LaunchMode.externalApplication) &&
       context.mounted) {
     _error(context, 'WhatsApp नहीं खुल सका।');
+  }
+}
+
+Future<void> sendSmsMessage(
+  BuildContext context,
+  String? number, {
+  String message = '',
+}) async {
+  final mobile = (number ?? '').replaceAll(RegExp(r'\D'), '');
+  if (mobile.isEmpty) return _error(context, 'मोबाइल नंबर उपलब्ध नहीं है।');
+  final uri = Uri.parse('sms:$mobile?body=${Uri.encodeComponent(message)}');
+  if (!await launchUrl(uri, mode: LaunchMode.externalApplication) &&
+      context.mounted) {
+    _error(context, 'SMS app नहीं खुल सकी।');
   }
 }
 

@@ -9,6 +9,7 @@ import '../../core/api_client.dart';
 import '../../core/contact_actions.dart';
 import '../../core/india_locations.dart';
 import '../../core/offline_voter_cache.dart';
+import '../../core/phone_contacts_bridge.dart';
 import '../../core/picked_file_source.dart';
 import '../../core/print_helper.dart';
 import '../../core/theme.dart';
@@ -357,6 +358,7 @@ class _VoterEditPageState extends State<VoterEditPage> {
           list[currentIndex] = savedVoter;
         }
         await OfflineVoterCache.merge([savedVoter]);
+        PhoneContactsBridge.autoSaveVoterToPhone(savedVoter);
       }
       api.notifyDataChanged();
       widget.onSaved();
@@ -400,6 +402,7 @@ class _VoterEditPageState extends State<VoterEditPage> {
 
         await OfflineVoterCache.enqueuePendingEdit(voterId, draftBody);
         await OfflineVoterCache.merge([draftVoter]);
+        PhoneContactsBridge.autoSaveVoterToPhone(draftVoter);
         currentVoter = draftVoter;
 
         final list = widget.voterList;
