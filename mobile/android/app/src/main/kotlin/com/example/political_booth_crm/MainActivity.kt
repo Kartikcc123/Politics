@@ -168,7 +168,8 @@ class MainActivity : FlutterActivity() {
             ContactsContract.Data.DATA7,
             ContactsContract.Data.DATA8,
             ContactsContract.Data.DATA9,
-            ContactsContract.Data.DATA10
+            ContactsContract.Data.DATA10,
+            ContactsContract.Data.DATA15
         )
 
         val cursor = contentResolver.query(
@@ -192,6 +193,7 @@ class MainActivity : FlutterActivity() {
             val idxData8 = c.getColumnIndex(ContactsContract.Data.DATA8)
             val idxData9 = c.getColumnIndex(ContactsContract.Data.DATA9)
             val idxData10 = c.getColumnIndex(ContactsContract.Data.DATA10)
+            val idxData15 = c.getColumnIndex(ContactsContract.Data.DATA15)
 
             while (c.moveToNext()) {
                 val contactId = if (idxId >= 0) c.getString(idxId) ?: continue else continue
@@ -281,6 +283,30 @@ class MainActivity : FlutterActivity() {
                             }
                         }
                     }
+                    ContactsContract.CommonDataKinds.Photo.CONTENT_ITEM_TYPE -> {
+                        val photoBytes = if (idxData15 >= 0) c.getBlob(idxData15) else null
+                        if (photoBytes != null && photoBytes.isNotEmpty()) {
+                            entry["photoBytes"] = photoBytes
+                        }
+                    }
+                }
+            }
+        }
+
+        // Fast fallback for any contacts whose thumbnail wasn't directly in DATA15
+        for ((cId, entry) in contactsMap) {
+            if (entry["photoBytes"] == null) {
+                val idLong = cId.toLongOrNull()
+                if (idLong != null) {
+                    try {
+                        val contactUri = ContentUris.withAppendedId(ContactsContract.Contacts.CONTENT_URI, idLong)
+                        ContactsContract.Contacts.openContactPhotoInputStream(contentResolver, contactUri, false)?.use { stream ->
+                            val bytes = stream.readBytes()
+                            if (bytes.isNotEmpty()) {
+                                entry["photoBytes"] = bytes
+                            }
+                        }
+                    } catch (_: Exception) {}
                 }
             }
         }

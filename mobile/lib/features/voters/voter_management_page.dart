@@ -8014,15 +8014,15 @@ class _VoterPhoto extends StatelessWidget {
   }
 }
 
-class _VoterCardImageSection extends StatefulWidget {
-  const _VoterCardImageSection({required this.voter});
+class VoterCardImageSection extends StatefulWidget {
+  const VoterCardImageSection({super.key, required this.voter});
   final Map<String, dynamic> voter;
 
   @override
-  State<_VoterCardImageSection> createState() => _VoterCardImageSectionState();
+  State<VoterCardImageSection> createState() => _VoterCardImageSectionState();
 }
 
-class _VoterCardImageSectionState extends State<_VoterCardImageSection> {
+class _VoterCardImageSectionState extends State<VoterCardImageSection> {
   int _selectedTab = 0; // 0: Ward Card, 1: Assembly Card, 2: Both Cards
 
   @override
@@ -8906,7 +8906,7 @@ class _VoterDetailPageState extends State<VoterDetailPage> {
                 last: true),
           ]),
           const SizedBox(height: 18),
-          _VoterCardImageSection(voter: voter),
+          VoterCardImageSection(voter: voter),
           _ProfileSection(
               title: 'पूरी जानकारी', child: DetailList(voter: voter)),
           const SizedBox(height: 12),

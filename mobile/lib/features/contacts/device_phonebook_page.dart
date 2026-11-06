@@ -1,3 +1,4 @@
+
 import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
@@ -17,6 +18,8 @@ import '../../utils/excel_generator.dart';
 import '../messages/whatsapp_page.dart';
 import '../voters/voter_edit_page.dart';
 import '../voters/voter_management_page.dart';
+import '../../widgets/voter_phonebook.dart';
+import '../../widgets/mobile_components.dart';
 
 class ContactPhoneItem {
   final String number;
@@ -66,6 +69,8 @@ class UnifiedContactItem {
   final List<ContactOrgItem> organizations;
   final List<String> notes;
   final Map<String, dynamic>? appVoter;
+  final Uint8List? photoBytes;
+  final String? photoUrl;
 
   const UnifiedContactItem({
     required this.id,
@@ -80,6 +85,8 @@ class UnifiedContactItem {
     this.organizations = const [],
     this.notes = const [],
     this.appVoter,
+    this.photoBytes,
+    this.photoUrl,
   });
 
   bool get isFavorite => appVoter?['isFavorite'] == true;
@@ -262,6 +269,7 @@ class _DevicePhonebookPageState extends State<DevicePhonebookPage>
           final resolvedDisplay = name.isNotEmpty
               ? name
               : (phones.isNotEmpty ? phones.first.number : 'अज्ञात संपर्क');
+          final photoBytes = map['photoBytes'] as Uint8List?;
 
           phoneItems.add(
             UnifiedContactItem(
@@ -275,6 +283,7 @@ class _DevicePhonebookPageState extends State<DevicePhonebookPage>
               emails: emails,
               organizations: orgs,
               notes: notes,
+              photoBytes: photoBytes,
             ),
           );
         }
@@ -364,6 +373,7 @@ class _DevicePhonebookPageState extends State<DevicePhonebookPage>
               state: vGp,
             ),
         ];
+        final vPhoto = voterPhotoUrl(v);
         mergedList[idx] = UnifiedContactItem(
           id: existing.id,
           phoneContactId: existing.phoneContactId,
@@ -381,10 +391,13 @@ class _DevicePhonebookPageState extends State<DevicePhonebookPage>
                   : const []),
           notes: extraNotes,
           appVoter: v,
+          photoBytes: existing.photoBytes,
+          photoUrl: vPhoto.isNotEmpty ? vPhoto : existing.photoUrl,
         );
         bothCounter++;
       } else {
         // App Only Contact
+        final vPhoto = voterPhotoUrl(v);
         final phones = <ContactPhoneItem>[
           if (vMobile.isNotEmpty)
             ContactPhoneItem(number: vMobile, label: 'App Mobile'),
@@ -423,6 +436,7 @@ class _DevicePhonebookPageState extends State<DevicePhonebookPage>
                 : const [],
             notes: notes,
             appVoter: v,
+            photoUrl: vPhoto.isNotEmpty ? vPhoto : null,
           ),
         );
         appOnlyCounter++;
@@ -1159,6 +1173,35 @@ class _DevicePhonebookPageState extends State<DevicePhonebookPage>
   }
 
   Widget _buildAvatar(UnifiedContactItem contact, {double size = 46}) {
+    if (contact.photoBytes != null && contact.photoBytes!.isNotEmpty) {
+      return ClipRRect(
+        borderRadius: BorderRadius.circular(size / 2),
+        child: Image.memory(
+          contact.photoBytes!,
+          width: size,
+          height: size,
+          fit: BoxFit.cover,
+          errorBuilder: (_, __, ___) => _buildInitialsAvatar(contact, size),
+        ),
+      );
+    }
+    if (contact.photoUrl != null && contact.photoUrl!.isNotEmpty) {
+      return ClipRRect(
+        borderRadius: BorderRadius.circular(size / 2),
+        child: Image.network(
+          contact.photoUrl!,
+          headers: voterPhotoHeaders(contact.photoUrl!),
+          width: size,
+          height: size,
+          fit: BoxFit.cover,
+          errorBuilder: (_, __, ___) => _buildInitialsAvatar(contact, size),
+        ),
+      );
+    }
+    return _buildInitialsAvatar(contact, size);
+  }
+
+  Widget _buildInitialsAvatar(UnifiedContactItem contact, double size) {
     final name = contact.displayName.trim();
     final letter = name.isNotEmpty ? name.characters.first.toUpperCase() : '?';
 
@@ -1644,7 +1687,7 @@ class _DevicePhonebookPageState extends State<DevicePhonebookPage>
                                           ),
                                         ),
                                       ),
-                                    _buildContactTile(contact),
+                                    _buildContactTile(contact, index: index),
                                   ],
                                 );
                               },
@@ -1795,178 +1838,287 @@ class _DevicePhonebookPageState extends State<DevicePhonebookPage>
     );
   }
 
-  Widget _buildContactTile(UnifiedContactItem contact) {
+  Widget _buildContactTile(UnifiedContactItem contact, {int index = 0}) {
     final primaryPhone =
         contact.phones.isNotEmpty ? contact.phones.first.number : '';
     final addressText = _getContactFullAddress(contact);
     final v = contact.appVoter;
+    final isPersonal = contact.source == 'phone';
     final epic = '${v?['voterId'] ?? ''}'.trim();
+    final identityText = isPersonal
+        ? '📱 फ़ोनबुक संपर्क'
+        : (epic.isEmpty ? 'EPIC उपलब्ध नहीं' : 'EPIC: $epic');
+    final guardian = '${v?['guardianName'] ?? ''}'.trim();
+    final house = '${v?['houseNumber'] ?? ''}'.trim();
     final ward = '${v?['wardNumber'] ?? ''}'.trim();
     final part = '${v?['partNumber'] ?? ''}'.trim();
+    final rawCaste = '${v?['caste'] ?? ''}'.trim();
+    final rawSubCaste = '${v?['subCaste'] ?? ''}'.trim();
+    final caste = rawSubCaste.isNotEmpty && rawSubCaste != rawCaste && rawSubCaste != 'सामान्य'
+        ? '$rawCaste ($rawSubCaste)'
+        : rawCaste;
 
-    return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 10, vertical: 2.5),
-      decoration: BoxDecoration(
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10, left: 10, right: 10),
+      child: Material(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0xffedf2f7)),
-      ),
-      child: ListTile(
-        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-        onTap: () {
-          if (widget.onSelectContact != null) {
-            widget.onSelectContact!(contact);
-            Navigator.pop(context);
-          } else {
-            _openFullContactProfile(contact);
-          }
-        },
-        leading: _buildAvatar(contact),
-        title: Row(
-          children: [
-            Expanded(
-              child: Text(
-                contact.displayName,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  fontWeight: FontWeight.w800,
-                  fontSize: 15,
-                  color: navy,
-                ),
-              ),
-            ),
-            if (contact.isFavorite)
-              const Padding(
-                padding: EdgeInsets.only(right: 4),
-                child: Icon(Icons.star_rounded, color: orange, size: 16),
-              ),
-            _buildSourceBadge(contact),
-          ],
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(18),
+          side: const BorderSide(color: border),
         ),
-        subtitle: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            if (contact.appSavedName != null &&
-                contact.phoneSavedName != null &&
-                contact.appSavedName != contact.phoneSavedName)
-              Padding(
-                padding: const EdgeInsets.only(top: 2),
-                child: Text(
-                  'मतदाता सूची नाम: ${contact.appSavedName}',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                      fontSize: 11.5,
-                      color: Color(0xff0369a1),
-                      fontWeight: FontWeight.w600),
-                ),
-              ),
-            if (primaryPhone.isNotEmpty)
-              Padding(
-                padding: const EdgeInsets.only(top: 2),
-                child: Row(
+        child: InkWell(
+          borderRadius: BorderRadius.circular(18),
+          onTap: () {
+            if (widget.onSelectContact != null) {
+              widget.onSelectContact!(contact);
+              Navigator.pop(context);
+            } else {
+              _openFullContactProfile(contact);
+            }
+          },
+          child: Padding(
+            padding: const EdgeInsets.all(12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Icon(Icons.phone_rounded, size: 13, color: muted),
-                    const SizedBox(width: 4),
-                    Text(
-                      primaryPhone,
-                      style: const TextStyle(
-                        fontSize: 13,
-                        color: navy,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                    if (contact.phones.length > 1)
-                      Padding(
-                        padding: const EdgeInsets.only(left: 6),
-                        child: Text(
-                          '+${contact.phones.length - 1} और',
-                          style: const TextStyle(
-                              fontSize: 11,
-                              color: blue,
-                              fontWeight: FontWeight.w700),
-                        ),
-                      ),
-                  ],
-                ),
-              ),
-            if (addressText.isNotEmpty ||
-                epic.isNotEmpty ||
-                ward.isNotEmpty ||
-                part.isNotEmpty)
-              Padding(
-                padding: const EdgeInsets.only(top: 3),
-                child: Wrap(
-                  spacing: 6,
-                  runSpacing: 2,
-                  crossAxisAlignment: WrapCrossAlignment.center,
-                  children: [
-                    if (addressText.isNotEmpty)
-                      Row(
-                        mainAxisSize: MainAxisSize.min,
+                    _buildAvatar(contact, size: 48),
+                    const SizedBox(width: 11),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          const Icon(Icons.location_on,
-                              size: 12, color: Colors.red),
-                          const SizedBox(width: 2),
-                          ConstrainedBox(
-                            constraints: const BoxConstraints(maxWidth: 190),
-                            child: Text(
-                              addressText,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style:
-                                  const TextStyle(fontSize: 11.5, color: muted),
+                          Row(
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 7, vertical: 3),
+                                decoration: BoxDecoration(
+                                  color: softBlue,
+                                  borderRadius: BorderRadius.circular(9),
+                                ),
+                                child: Text('#${index + 1}',
+                                    style: const TextStyle(
+                                        color: blue,
+                                        fontSize: 10,
+                                        fontWeight: FontWeight.w900)),
+                              ),
+                              const SizedBox(width: 7),
+                              Expanded(
+                                child: Text(
+                                  contact.displayName,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                      color: navy,
+                                      fontSize: 15,
+                                      fontWeight: FontWeight.w900),
+                                ),
+                              ),
+                              if (contact.isFavorite)
+                                const Padding(
+                                  padding: EdgeInsets.only(right: 5),
+                                  child: Icon(Icons.star_rounded,
+                                      color: orange, size: 16),
+                                ),
+                              if (caste.isNotEmpty) ...[
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 8, vertical: 3),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xfffef3c7),
+                                    borderRadius: BorderRadius.circular(7),
+                                    border: Border.all(
+                                        color: const Color(0xfff59e0b)
+                                            .withValues(alpha: 0.5)),
+                                  ),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      const Icon(Icons.people_alt_rounded,
+                                          size: 11, color: Color(0xffb45309)),
+                                      const SizedBox(width: 4),
+                                      Text(
+                                        caste,
+                                        style: const TextStyle(
+                                          color: Color(0xff92400e),
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.w900,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                const SizedBox(width: 6),
+                              ],
+                              _buildSourceBadge(contact),
+                            ],
+                          ),
+                          const SizedBox(height: 5),
+                          Text(
+                            guardian.isEmpty
+                                ? (contact.source == 'phone' &&
+                                        contact.organizations.isNotEmpty
+                                    ? 'संस्थान: ${contact.organizations.first.company}'
+                                    : 'पिता/पति: उपलब्ध नहीं')
+                                : 'पिता/पति: $guardian',
+                            style: const TextStyle(
+                                color: navy,
+                                fontSize: 12,
+                                fontWeight: FontWeight.w800),
+                          ),
+                          if (contact.appSavedName != null &&
+                              contact.phoneSavedName != null &&
+                              contact.appSavedName != contact.phoneSavedName)
+                            Padding(
+                              padding: const EdgeInsets.only(top: 2),
+                              child: Text(
+                                'मतदाता सूची नाम: ${contact.appSavedName}',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                    fontSize: 11.5,
+                                    color: Color(0xff0369a1),
+                                    fontWeight: FontWeight.w700),
+                              ),
                             ),
+                          const SizedBox(height: 4),
+                          Row(
+                            children: [
+                              Icon(
+                                isPersonal
+                                    ? Icons.person_pin_circle_outlined
+                                    : Icons.badge_outlined,
+                                size: 14,
+                                color: isPersonal ? purple : muted,
+                              ),
+                              const SizedBox(width: 4),
+                              Expanded(
+                                child: Text(
+                                  identityText,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                      color: isPersonal ? purple : muted,
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w800),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 6),
+                          Wrap(
+                            spacing: 6,
+                            runSpacing: 6,
+                            children: [
+                              if (house.isNotEmpty && house != '-')
+                                _ContactInfoPill(Icons.home_rounded, 'घर $house'),
+                              if (primaryPhone.isNotEmpty)
+                                _ContactInfoPill(Icons.phone_rounded, primaryPhone),
+                              if (contact.phones.length > 1)
+                                _ContactInfoPill(Icons.phone_android_rounded,
+                                    '+${contact.phones.length - 1} और'),
+                              if (ward.isNotEmpty)
+                                _ContactInfoPill(Icons.how_to_reg_rounded, 'वार्ड $ward'),
+                              if (part.isNotEmpty)
+                                _ContactInfoPill(Icons.account_balance_rounded, 'बूथ $part'),
+                              if (addressText.isNotEmpty)
+                                _ContactInfoPill(Icons.location_on_rounded, addressText),
+                              if (contact.organizations.isNotEmpty)
+                                _ContactInfoPill(Icons.business_center_rounded,
+                                    contact.organizations.first.company),
+                            ],
                           ),
                         ],
                       ),
-                    if (ward.isNotEmpty)
-                      Text(
-                        '• वार्ड $ward',
-                        style: const TextStyle(
-                            fontSize: 11,
-                            color: Color(0xff059669),
-                            fontWeight: FontWeight.w700),
-                      ),
-                    if (part.isNotEmpty)
-                      Text(
-                        '• बूथ $part',
-                        style: const TextStyle(
-                            fontSize: 11,
-                            color: blue,
-                            fontWeight: FontWeight.w700),
-                      ),
+                    ),
+                    PopupMenuButton<String>(
+                      tooltip: 'अधिक विकल्प',
+                      onSelected: (action) async {
+                        if (action == 'view') {
+                          _openFullContactProfile(contact);
+                        } else if (action == 'edit_app') {
+                          _openInAppEditDialog(contact);
+                        } else if (action == 'edit_phone') {
+                          _editInNativePhonebook(contact);
+                        } else if (action == 'sms') {
+                          sendSmsMessage(context, primaryPhone,
+                              message: 'नमस्ते ${contact.displayName} जी');
+                        }
+                      },
+                      itemBuilder: (_) => [
+                        const PopupMenuItem(
+                            value: 'view', child: Text('विस्तृत प्रोफाइल देखें')),
+                        const PopupMenuItem(
+                            value: 'edit_app', child: Text('ऐप में संपादित करें')),
+                        if (contact.phoneContactId != null)
+                          const PopupMenuItem(
+                              value: 'edit_phone',
+                              child: Text('फ़ोनबुक में संपादित करें')),
+                        if (primaryPhone.isNotEmpty)
+                          const PopupMenuItem(
+                              value: 'sms', child: Text('SMS भेजें')),
+                      ],
+                    ),
                   ],
                 ),
-              ),
-          ],
-        ),
-        trailing: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (primaryPhone.isNotEmpty) ...[
-              IconButton(
-                visualDensity: VisualDensity.compact,
-                tooltip: 'कॉल करें',
-                icon: const Icon(Icons.call_rounded, color: green, size: 20),
-                onPressed: () => callNumber(context, primaryPhone),
-              ),
-              IconButton(
-                visualDensity: VisualDensity.compact,
-                tooltip: 'WhatsApp भेजें',
-                icon: const Icon(Icons.chat_bubble_rounded,
-                    color: Color(0xff25D366), size: 19),
-                onPressed: () => _sendWhatsAppMessage(contact, primaryPhone),
-              ),
-            ],
-            IconButton(
-              visualDensity: VisualDensity.compact,
-              tooltip: 'एडिट करें',
-              icon: const Icon(Icons.edit_outlined, color: blue, size: 19),
-              onPressed: () => _openInAppEditDialog(contact),
+                const SizedBox(height: 10),
+                Row(
+                  children: [
+                    if (v != null &&
+                        '${v['partyPreference'] ?? ''}'.trim().isNotEmpty)
+                      PartyPreferenceChip(
+                        value: '${v['partyPreference'] ?? 'undecided'}',
+                      )
+                    else
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 9, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: const Color(0xfff1f5f9),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Text(
+                          contact.source == 'phone'
+                              ? '📱 फ़ोनबुक संपर्क'
+                              : '🗳️ मतदाता संपर्क',
+                          style: const TextStyle(
+                              fontSize: 11,
+                              color: muted,
+                              fontWeight: FontWeight.w700),
+                        ),
+                      ),
+                    const Spacer(),
+                    if (primaryPhone.isNotEmpty) ...[
+                      IconButton.filledTonal(
+                        tooltip: 'कॉल करें',
+                        onPressed: () => callNumber(context, primaryPhone),
+                        icon: const Icon(Icons.call_rounded,
+                            color: green, size: 19),
+                      ),
+                      const SizedBox(width: 6),
+                      IconButton.filledTonal(
+                        tooltip: 'WhatsApp भेजें',
+                        onPressed: () =>
+                            _sendWhatsAppMessage(contact, primaryPhone),
+                        icon: const Icon(Icons.chat_bubble_rounded,
+                            color: Color(0xff25D366), size: 19),
+                      ),
+                      const SizedBox(width: 6),
+                    ],
+                    IconButton.filledTonal(
+                      tooltip: 'संपादित करें',
+                      onPressed: () => _openInAppEditDialog(contact),
+                      icon:
+                          const Icon(Icons.edit_rounded, color: blue, size: 19),
+                    ),
+                  ],
+                ),
+              ],
             ),
-          ],
+          ),
         ),
       ),
     );
@@ -2138,7 +2290,7 @@ class _UnifiedContactProfilePageState extends State<UnifiedContactProfilePage> {
             icon: const Icon(Icons.edit_rounded, color: blue),
             onPressed: () async {
               await widget.onEditInApp();
-              if (mounted) Navigator.pop(context);
+              if (context.mounted) Navigator.pop(context);
             },
           ),
           IconButton(
@@ -2146,7 +2298,7 @@ class _UnifiedContactProfilePageState extends State<UnifiedContactProfilePage> {
             icon: const Icon(Icons.contact_phone_rounded, color: green),
             onPressed: () async {
               await widget.onEditInPhone();
-              if (mounted) Navigator.pop(context);
+              if (context.mounted) Navigator.pop(context);
             },
           ),
         ],
@@ -2164,22 +2316,37 @@ class _UnifiedContactProfilePageState extends State<UnifiedContactProfilePage> {
             ),
             child: Column(
               children: [
-                CircleAvatar(
-                  radius: 42,
-                  backgroundColor: const Color(0xffe8f0fe),
-                  child: Text(
-                    _contact.displayName.trim().isNotEmpty
-                        ? _contact.displayName
-                            .trim()
-                            .characters
-                            .first
-                            .toUpperCase()
-                        : '?',
-                    style: const TextStyle(
-                      fontSize: 34,
-                      fontWeight: FontWeight.w900,
-                      color: Color(0xff1967d2),
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(44),
+                  child: Container(
+                    width: 88,
+                    height: 88,
+                    decoration: const BoxDecoration(
+                      color: Color(0xffe8f0fe),
+                      shape: BoxShape.circle,
                     ),
+                    child: _contact.photoBytes != null &&
+                            _contact.photoBytes!.isNotEmpty
+                        ? Image.memory(
+                            _contact.photoBytes!,
+                            width: 88,
+                            height: 88,
+                            fit: BoxFit.cover,
+                            errorBuilder: (_, __, ___) =>
+                                _buildProfileFallbackAvatar(),
+                          )
+                        : (_contact.photoUrl != null &&
+                                _contact.photoUrl!.isNotEmpty
+                            ? Image.network(
+                                _contact.photoUrl!,
+                                headers: voterPhotoHeaders(_contact.photoUrl!),
+                                width: 88,
+                                height: 88,
+                                fit: BoxFit.cover,
+                                errorBuilder: (_, __, ___) =>
+                                    _buildProfileFallbackAvatar(),
+                              )
+                            : _buildProfileFallbackAvatar()),
                   ),
                 ),
                 const SizedBox(height: 12),
@@ -2308,7 +2475,7 @@ class _UnifiedContactProfilePageState extends State<UnifiedContactProfilePage> {
                       color: blue,
                       onTap: () async {
                         await widget.onEditInApp();
-                        if (mounted) Navigator.pop(context);
+                        if (context.mounted) Navigator.pop(context);
                       },
                     ),
                     _buildQuickAction(
@@ -2385,7 +2552,7 @@ ${v != null ? '🗳️ EPIC: ${v['voterId'] ?? '-'} | वार्ड: ${v['ward
                       ),
                       onPressed: () async {
                         await widget.onEditInPhone();
-                        if (mounted) Navigator.pop(context);
+                        if (context.mounted) Navigator.pop(context);
                       },
                       icon: const Icon(Icons.open_in_new_rounded, size: 15),
                       label: Text(
@@ -2713,7 +2880,26 @@ ${v != null ? '🗳️ EPIC: ${v['voterId'] ?? '-'} | वार्ड: ${v['ward
                 ],
               ),
             ),
+          if (v != null) ...[
+            const SizedBox(height: 16),
+            VoterCardImageSection(voter: v),
+          ],
         ],
+      ),
+    );
+  }
+
+  Widget _buildProfileFallbackAvatar() {
+    return Center(
+      child: Text(
+        _contact.displayName.trim().isNotEmpty
+            ? _contact.displayName.trim().characters.first.toUpperCase()
+            : '?',
+        style: const TextStyle(
+          fontSize: 34,
+          fontWeight: FontWeight.w900,
+          color: Color(0xff1967d2),
+        ),
       ),
     );
   }
@@ -2792,4 +2978,40 @@ ${v != null ? '🗳️ EPIC: ${v['voterId'] ?? '-'} | वार्ड: ${v['ward
       ),
     );
   }
+}
+
+class _ContactInfoPill extends StatelessWidget {
+  const _ContactInfoPill(this.icon, this.text);
+  final IconData icon;
+  final String text;
+
+  @override
+  Widget build(BuildContext context) => Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        decoration: BoxDecoration(
+          color: const Color(0xfff6f8fc),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: const Color(0xffe2e8f0)),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 12, color: blue),
+            const SizedBox(width: 4),
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 160),
+              child: Text(
+                text,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  color: navy,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
 }
