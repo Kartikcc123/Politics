@@ -427,13 +427,51 @@ exports.broadcast = async (req, res, next) => {
       if (!cleanNums.length) {
         return res.status(400).json({ message: 'कम से कम एक मान्य 10-अंकों का मोबाइल नंबर दर्ज करें।' });
       }
+
+      // Check database to resolve real names for any numbers saved in app
+      const last10s = cleanNums.map((n) => n.slice(-10));
+      const dbMembers = await Member.find({
+        $or: [
+          { mobile: { $in: cleanNums } },
+          { mobile: { $in: last10s } },
+        ],
+      }).select('name surname mobile wardNumber partNumber village guardianName').lean();
+
+      const memberMap = new Map();
+      for (const m of dbMembers) {
+        if (m.mobile) {
+          const norm = normalizeMobile(m.mobile);
+          if (m.name && m.name.trim()) memberMap.set(norm, m);
+          if (norm.length >= 10) memberMap.set(norm.slice(-10), m);
+        }
+      }
+
+      // Also check if customRecipientsWithNames was provided by app
+      const customNameMap = new Map();
+      if (Array.isArray(req.body.customRecipientsWithNames)) {
+        for (const r of req.body.customRecipientsWithNames) {
+          if (r && r.mobile && r.name) {
+            customNameMap.set(normalizeMobile(r.mobile), String(r.name).trim());
+          }
+        }
+      }
+
       totalMatched = cleanNums.length;
-      messages = cleanNums.map((num) => ({
-        name: 'साथी',
-        mobile: num,
-        status: 'queued',
-        text: renderMessage(template, { name: 'साथी', mobile: num }, req.body),
-      }));
+      messages = cleanNums.map((num) => {
+        const last10 = num.slice(-10);
+        const dbM = memberMap.get(num) || memberMap.get(last10);
+        const nameFromReq = customNameMap.get(num) || customNameMap.get(last10);
+        const resolvedName = nameFromReq || (dbM?.name ? dbM.name.trim() : 'साथी');
+        const memberContext = dbM || { name: resolvedName, mobile: num };
+
+        return {
+          member: dbM?._id,
+          name: resolvedName,
+          mobile: num,
+          status: 'queued',
+          text: renderMessage(template, { ...memberContext, name: resolvedName, mobile: num }, req.body),
+        };
+      });
     } else {
       const members = await Member.find(campaignFilter(req))
         .populate('party ward booth')

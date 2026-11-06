@@ -25,9 +25,23 @@ class PhoneContactsBridge {
   /// Lookup phonebook displayName for a phone number (returns null if not in phonebook)
   static String? lookupPhonebookName(String? phone) {
     final norm = normalize10Digit(phone);
-    if (norm.length == 10 && phoneToNameMap.containsKey(norm)) {
-      final name = phoneToNameMap[norm]?.trim();
-      if (name != null && name.isNotEmpty) return name;
+    if (norm.length == 10) {
+      if (phoneToNameMap.containsKey(norm)) {
+        final name = phoneToNameMap[norm]?.trim();
+        if (name != null && name.isNotEmpty && name != 'साथी') return name;
+      }
+      for (final c in cachedDeviceContacts) {
+        final name = '${c['displayName'] ?? ''}'.trim();
+        if (name.isEmpty || name == 'साथी') continue;
+        final phones = (c['phones'] as List?) ?? [];
+        for (final p in phones) {
+          final raw = p is Map ? '${p['number'] ?? ''}' : '$p';
+          if (normalize10Digit(raw) == norm) {
+            phoneToNameMap[norm] = name;
+            return name;
+          }
+        }
+      }
     }
     return null;
   }
@@ -38,11 +52,11 @@ class PhoneContactsBridge {
     String? fallbackName,
   ]) {
     final saved = lookupPhonebookName(phone);
-    if (saved != null && saved.isNotEmpty) {
+    if (saved != null && saved.isNotEmpty && saved != 'साथी') {
       return saved;
     }
     final fb = (fallbackName ?? '').trim();
-    if (fb.isNotEmpty && fb != '-') return fb;
+    if (fb.isNotEmpty && fb != '-' && fb != 'साथी') return fb;
     return 'साथी';
   }
 

@@ -11,6 +11,7 @@ import 'package:share_plus/share_plus.dart';
 
 import '../../core/api_client.dart';
 import '../../core/contact_actions.dart';
+import '../../core/phone_contacts_bridge.dart';
 import '../../core/theme.dart';
 import '../../layout/app_layout.dart';
 import '../../widgets/mobile_components.dart';
@@ -257,14 +258,22 @@ class _BulkMessagePageState extends State<BulkMessagePage> {
 
   String renderVoterMessage(Map<String, dynamic>? voter) {
     String msg = message.text;
-    final name = (voter?['name'] ?? voter?['fullName'] ?? '').toString().trim();
+    final mobile = (voter?['mobile'] ?? '').toString().trim();
+    final rawName = (voter?['name'] ?? voter?['fullName'] ?? '').toString().trim();
+    final resolvedName = PhoneContactsBridge.resolveNameForNumber(
+      mobile,
+      rawName.isNotEmpty && rawName != 'साथी' ? rawName : null,
+    );
+    final displayName = (resolvedName.isNotEmpty && resolvedName != 'साथी')
+        ? resolvedName
+        : (rawName.isNotEmpty && rawName != 'साथी' ? rawName : 'साथी');
     final village = (voter?['village'] ?? voter?['gramPanchayat'] ?? '').toString().trim();
     final ward = (voter?['wardNumber'] ?? voter?['partNumber'] ?? '').toString().trim();
     final guardian = (voter?['guardianName'] ?? '').toString().trim();
     final evName = eventName.text.trim();
     final dt = DateFormat('dd/MM/yyyy').format(occasionDate);
 
-    msg = msg.replaceAll('{{name}}', name.isNotEmpty ? name : 'साथी');
+    msg = msg.replaceAll('{{name}}', displayName);
     msg = msg.replaceAll('{{village}}', village);
     msg = msg.replaceAll('{{ward}}', ward);
     msg = msg.replaceAll('{{guardian}}', guardian);

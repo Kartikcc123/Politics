@@ -100,7 +100,20 @@ class _WhatsAppPageState extends State<WhatsAppPage> with SingleTickerProviderSt
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
     _messageController.text = _presets['सामान्य']!;
+    PhoneContactsBridge.fetchDeviceContacts();
+    _customPhoneController.addListener(_onCustomPhoneChanged);
     _loadAllFilters();
+  }
+
+  void _onCustomPhoneChanged() {
+    final raw = _customPhoneController.text.trim();
+    final clean = raw.replaceAll(RegExp(r'\D'), '');
+    if (clean.length >= 10) {
+      final resolved = PhoneContactsBridge.resolveNameForNumber(clean);
+      if (resolved.isNotEmpty && resolved != 'साथी' && resolved != _customContactName) {
+        setState(() => _customContactName = resolved);
+      }
+    }
   }
 
   @override
@@ -108,6 +121,7 @@ class _WhatsAppPageState extends State<WhatsAppPage> with SingleTickerProviderSt
     _tabController.dispose();
     _messageController.dispose();
     _searchController.dispose();
+    _customPhoneController.removeListener(_onCustomPhoneChanged);
     _customPhoneController.dispose();
     super.dispose();
   }
@@ -470,14 +484,20 @@ class _WhatsAppPageState extends State<WhatsAppPage> with SingleTickerProviderSt
 
   String _renderMessage(Map<String, dynamic>? voter, {int? sequenceIndex}) {
     String msg = _messageController.text;
-    final name = (voter?['name'] ?? voter?['fullName'] ?? 'साथी').toString().trim();
     final mobile = (voter?['mobile'] ?? '').toString().trim();
-    final resolvedName = PhoneContactsBridge.resolveNameForNumber(mobile, name);
+    final rawName = (voter?['name'] ?? voter?['fullName'] ?? '').toString().trim();
+    final resolvedName = PhoneContactsBridge.resolveNameForNumber(
+      mobile,
+      rawName.isNotEmpty && rawName != 'साथी' ? rawName : null,
+    );
+    final displayName = (resolvedName.isNotEmpty && resolvedName != 'साथी')
+        ? resolvedName
+        : (rawName.isNotEmpty && rawName != 'साथी' ? rawName : 'साथी');
     final village = (voter?['village'] ?? voter?['gramPanchayat'] ?? '').toString().trim();
     final ward = (voter?['wardNumber'] ?? voter?['partNumber'] ?? '').toString().trim();
     final guardian = (voter?['guardianName'] ?? '').toString().trim();
 
-    msg = msg.replaceAll('{{name}}', resolvedName.isNotEmpty ? resolvedName : 'साथी');
+    msg = msg.replaceAll('{{name}}', displayName);
     msg = msg.replaceAll('{{village}}', village);
     msg = msg.replaceAll('{{ward}}', ward);
     msg = msg.replaceAll('{{guardian}}', guardian);

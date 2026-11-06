@@ -292,17 +292,18 @@ class _DevicePhonebookPageState extends State<DevicePhonebookPage>
       }
     }
 
-    // 2. Load App Saved Voters / Contacts (from API or Offline Cache)
+    // 2. Load App Saved Voters / Contacts (Only voters with mobile numbers for Sampark)
     List<Map<String, dynamic>> appVoters = [];
     try {
       final pageRes = await OfflineVoterCache.loadPage(
-        query: const {'mobileFilter': 'has_mobile'},
+        query: const {'hasMobile': 'true'},
         page: 1,
-        limit: 4000,
+        limit: 5000,
       );
       appVoters = pageRes.items
           .whereType<Map>()
           .map((e) => Map<String, dynamic>.from(e))
+          .where((v) => '${v['mobile'] ?? v['altMobile'] ?? ''}'.trim().isNotEmpty)
           .toList();
     } catch (_) {
       try {
@@ -310,7 +311,7 @@ class _DevicePhonebookPageState extends State<DevicePhonebookPage>
         appVoters = cached
             .whereType<Map>()
             .map((e) => Map<String, dynamic>.from(e))
-            .where((v) => '${v['mobile'] ?? ''}'.trim().isNotEmpty)
+            .where((v) => '${v['mobile'] ?? v['altMobile'] ?? ''}'.trim().isNotEmpty)
             .toList();
       } catch (_) {}
     }
@@ -344,6 +345,9 @@ class _DevicePhonebookPageState extends State<DevicePhonebookPage>
       final vGuardian = '${v['guardianName'] ?? v['relativeName'] ?? ''}'.trim();
       final vPost = '${v['organizationPost'] ?? v['occupation'] ?? ''}'.trim();
       final vEpic = '${v['voterId'] ?? ''}'.trim();
+      if (vMobile.isEmpty && vAltMobile.isEmpty) {
+        continue; // Sampark directory: only show voters who have mobile numbers
+      }
       if (v['isFavorite'] == true) favCounter++;
 
       final normMobile = _normalize10Digit(vMobile);
@@ -644,10 +648,14 @@ class _DevicePhonebookPageState extends State<DevicePhonebookPage>
       final sourceLabel = c.source == 'both'
           ? 'फ़ोन + ऐप (Both)'
           : (c.source == 'phone' ? 'लोकल फ़ोनबुक (Phone)' : 'ऐप डेटा (App)');
-      final primaryPhone = c.phones.isNotEmpty ? c.phones.first.number : '';
+      final primaryPhone = c.phones.isNotEmpty
+          ? c.phones.first.number
+          : '${v?['mobile'] ?? v?['altMobile'] ?? ''}'.trim();
       final otherPhones = c.phones.length > 1
           ? c.phones.skip(1).map((p) => p.number).join(', ')
-          : '';
+          : (c.phones.isNotEmpty && '${v?['altMobile'] ?? ''}'.trim().isNotEmpty
+              ? '${v?['altMobile'] ?? ''}'.trim()
+              : '');
       final addr = _getContactFullAddress(c);
       final org =
           c.organizations.map((o) => '${o.company} ${o.title}'.trim()).join(', ');
