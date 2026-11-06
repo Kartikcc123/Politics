@@ -7,6 +7,7 @@ import '../../widgets/common.dart';
 import '../../widgets/mobile_components.dart';
 import '../activity/activity_page.dart';
 import '../areas/area_directory_page.dart';
+import '../contacts/device_phonebook_page.dart';
 import '../families/family_page.dart';
 import '../reports/configurable_print_page.dart';
 import '../uploads/upload_page.dart';
@@ -110,6 +111,15 @@ class DashboardPage extends StatelessWidget {
               _ActionGrid(actions: [
                 _ActionData(Icons.search_rounded, 'मतदाता खोजें',
                     'नाम, EPIC, मोबाइल या गाँव से', blue, () => onNavigate(1)),
+                _ActionData(
+                    Icons.contact_phone_rounded,
+                    'फ़ोनबुक व संपर्क',
+                    'लोकल फ़ोन और ऐप संपर्क, लोकेशन व Excel',
+                    const Color(0xff0284c7),
+                    () => Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                            builder: (_) => const DevicePhonebookPage()))),
                 _ActionData(
                     Icons.person_add_alt_1_rounded,
                     'नया मतदाता',
@@ -311,6 +321,15 @@ class _PhoneDashboard extends StatelessWidget {
                     color: purple,
                     onTap: () => Navigator.push(context,
                         MaterialPageRoute(builder: (_) => const FamilyPage())),
+                  ),
+                  _PhoneQuickAction(
+                    icon: Icons.contact_phone_rounded,
+                    label: 'फ़ोनबुक',
+                    color: const Color(0xff0284c7),
+                    onTap: () => Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                            builder: (_) => const DevicePhonebookPage())),
                   ),
                 ]),
           ),

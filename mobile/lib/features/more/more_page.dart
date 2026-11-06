@@ -9,6 +9,7 @@ import '../areas/area_directory_page.dart';
 import '../areas/master_data_import_page.dart';
 import '../areas/samiti_hierarchy_page.dart';
 import '../booths/booth_page.dart';
+import '../contacts/device_phonebook_page.dart';
 import '../messages/bulk_message_page.dart';
 import '../messages/whatsapp_page.dart';
 import '../reminders/reminder_dashboard_page.dart';
@@ -80,6 +81,8 @@ class MorePage extends StatelessWidget {
             const AdminReviewHubPage()),
     ];
     final workOptions = <_Option>[
+      _Option('फ़ोनबुक संपर्क (लोकल फ़ोन डायरेक्टरी)', 'फ़ोन के सभी नंबर, लोकेशन, पते, नोट्स देखें, एडिट करें और WhatsApp भेजें',
+          Icons.contact_phone_rounded, const Color(0xff0284c7), const DevicePhonebookPage()),
       if (canPrint)
         _Option('विस्तृत प्रिंट', 'चुने हुए मतदाता और जानकारी प्रिंट करें',
             Icons.print_rounded, blue, const ConfigurablePrintPage()),

@@ -10,6 +10,7 @@ import 'package:share_plus/share_plus.dart';
 import '../../core/api_client.dart';
 import '../../core/contact_actions.dart';
 import '../../core/theme.dart';
+import '../contacts/device_phonebook_page.dart';
 import 'bulk_message_page.dart';
 
 class WhatsAppPage extends StatefulWidget {
@@ -26,6 +27,7 @@ class _WhatsAppPageState extends State<WhatsAppPage> with SingleTickerProviderSt
   final TextEditingController _messageController = TextEditingController();
   final TextEditingController _searchController = TextEditingController();
   final TextEditingController _customPhoneController = TextEditingController();
+  String _customContactName = 'साथी';
 
   // Media
   String? _pickedImagePath;
@@ -1800,6 +1802,30 @@ class _WhatsAppPageState extends State<WhatsAppPage> with SingleTickerProviderSt
                         decoration: InputDecoration(
                           hintText: '10 अंकों का मोबाइल नंबर दर्ज करें',
                           prefixIcon: const Icon(Icons.phone_rounded),
+                          suffixIcon: IconButton(
+                            tooltip: 'फ़ोनबुक से चुनें',
+                            icon: const Icon(Icons.contact_phone_rounded, color: Color(0xff1d4ed8)),
+                            onPressed: () {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) => DevicePhonebookPage(
+                                    onSelectContact: (contact) {
+                                      if (contact.phones.isNotEmpty) {
+                                        setState(() {
+                                          _customPhoneController.text =
+                                              contact.phones.first.number.replaceAll(RegExp(r'\D'), '');
+                                          _customContactName = contact.displayName.trim().isNotEmpty
+                                              ? contact.displayName.trim()
+                                              : 'साथी';
+                                        });
+                                      }
+                                    },
+                                  ),
+                                ),
+                              );
+                            },
+                          ),
                           border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
                           contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
                         ),
@@ -1807,6 +1833,19 @@ class _WhatsAppPageState extends State<WhatsAppPage> with SingleTickerProviderSt
                     ),
                   ],
                 ),
+                if (_customContactName != 'साथी') ...[
+                  const SizedBox(height: 6),
+                  Row(
+                    children: [
+                      const Icon(Icons.check_circle_rounded, size: 14, color: Color(0xff16a34a)),
+                      const SizedBox(width: 4),
+                      Text(
+                        'चुना गया संपर्क: $_customContactName',
+                        style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xff16a34a)),
+                      ),
+                    ],
+                  ),
+                ],
                 const SizedBox(height: 12),
                 if (_hasPickedImage) ...[
                   Row(
@@ -1821,7 +1860,7 @@ class _WhatsAppPageState extends State<WhatsAppPage> with SingleTickerProviderSt
                               );
                               return;
                             }
-                            _sendToSingleVoter({'mobile': num, 'name': 'साथी'}, forceDirectChat: false);
+                            _sendToSingleVoter({'mobile': num, 'name': _customContactName}, forceDirectChat: false);
                           },
                           icon: const Icon(Icons.share_rounded, size: 18),
                           label: const Text('फोटो + संदेश शेयर (WhatsApp)', style: TextStyle(fontWeight: FontWeight.bold)),
@@ -1848,7 +1887,7 @@ class _WhatsAppPageState extends State<WhatsAppPage> with SingleTickerProviderSt
                               );
                               return;
                             }
-                            _sendToSingleVoter({'mobile': num, 'name': 'साथी'}, forceDirectChat: true);
+                            _sendToSingleVoter({'mobile': num, 'name': _customContactName}, forceDirectChat: true);
                           },
                           icon: const Icon(Icons.chat_bubble_outline_rounded, size: 18),
                           label: const Text('सीधा चैट (Direct WhatsApp)'),
@@ -1874,7 +1913,7 @@ class _WhatsAppPageState extends State<WhatsAppPage> with SingleTickerProviderSt
                               );
                               return;
                             }
-                            _sendToSingleVoter({'mobile': num, 'name': 'साथी'}, forceDirectChat: true);
+                            _sendToSingleVoter({'mobile': num, 'name': _customContactName}, forceDirectChat: true);
                           },
                           icon: const Icon(Icons.send_rounded, size: 18),
                           label: const Text('सीधा WhatsApp पर संदेश भेजें', style: TextStyle(fontWeight: FontWeight.bold)),

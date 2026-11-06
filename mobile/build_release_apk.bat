@@ -1,9 +1,7 @@
 @echo off
-set GRADLE_USER_HOME=D:\.gradle
-set TEMP=D:\tmp
-set TMP=D:\tmp
-if not exist D:\tmp mkdir D:\tmp
-if not exist D:\.gradle mkdir D:\.gradle
+if not exist "C:\Users\pc\.gradle\wrapper\dists" (
+    set GRADLE_USER_HOME=D:\.gradle
+)
 echo === BUILDING UNIVERSAL FAT RELEASE APK (FOR ALL PHONES / ARCHITECTURES) ===
 call flutter build apk --release --no-tree-shake-icons
 if %ERRORLEVEL% EQU 0 (

@@ -147,10 +147,10 @@ class ExcelGenerator {
       rows.add(row);
     }
 
-    return _buildXlsxArchive(headers, rows, sheetName: sheetName);
+    return buildCustomXlsx(headers, rows, sheetName: sheetName);
   }
 
-  static List<int> _buildXlsxArchive(
+  static List<int> buildCustomXlsx(
     List<String> headers,
     List<List<dynamic>> rows, {
     String sheetName = 'Sheet1',
