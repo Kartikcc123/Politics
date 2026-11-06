@@ -208,6 +208,17 @@ async function tick() {
   if (processing) return;
   processing = true;
   try {
+    // Auto-recover any messages stuck in 'processing' for more than 3 minutes due to an unexpected crash
+    const threeMinAgo = new Date(Date.now() - 3 * 60 * 1000);
+    await MessageCampaign.updateMany(
+      {
+        status: { $in: ['running', 'scheduled'] },
+        updatedAt: { $lte: threeMinAgo },
+      },
+      { $set: { 'recipients.$[elem].status': 'queued' } },
+      { arrayFilters: [{ 'elem.status': 'processing' }] }
+    ).catch(() => {});
+
     const campaign = await MessageCampaign.findOne({
       status: { $in: ['scheduled', 'running'] },
       scheduledAt: { $lte: new Date() },
@@ -222,9 +233,20 @@ async function tick() {
 }
 
 exports.startMessageWorker = () => {
+  // Immediately recover any messages stuck in 'processing' from server restart / crash
+  MessageCampaign.updateMany(
+    { status: { $in: ['running', 'scheduled'] } },
+    { $set: { 'recipients.$[elem].status': 'queued' } },
+    { arrayFilters: [{ 'elem.status': 'processing' }] }
+  ).then((res) => {
+    if (res.modifiedCount > 0) {
+      console.log(`[WhatsApp Queue] 🔄 Recovered ${res.modifiedCount} campaign(s) with stalled processing messages after restart.`);
+    }
+  }).catch((err) => console.error('[WhatsApp Queue] Recovery check error:', err.message));
+
   const timer = setInterval(tick, 15000);
   timer.unref();
-  tick();
+  setTimeout(tick, 3000);
 };
 exports.processMessageQueue = tick;
 

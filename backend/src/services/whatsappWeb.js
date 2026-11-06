@@ -17,7 +17,23 @@ try {
 
 const clients = new Map();
 const ready = new Set();
+const connectingPromises = new Map();
 const dataPath = path.resolve(process.env.WHATSAPP_SESSION_PATH || path.join(__dirname, '../../whatsapp-sessions'));
+
+function cleanupStaleLocks(dir) {
+  try {
+    if (!fs.existsSync(dir)) return;
+    const entries = fs.readdirSync(dir, { withFileTypes: true });
+    for (const entry of entries) {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        cleanupStaleLocks(full);
+      } else if (entry.name === 'SingletonLock' || entry.name === 'SingletonCookie' || entry.name === 'SingletonSocket') {
+        try { fs.unlinkSync(full); } catch (_) {}
+      }
+    }
+  } catch (_) {}
+}
 
 function sessionKey(sender) {
   return sender.sessionId || `sender-${sender._id}`;
@@ -72,148 +88,176 @@ async function connectSender(senderOrId) {
     : senderOrId;
   if (!sender || sender.provider !== 'whatsapp_web') throw new Error('QR sender नहीं मिला');
   const id = String(sender._id);
-  if (clients.has(id)) {
-    const existing = clients.get(id);
-    if (ready.has(id)) return existing;
-    try { await existing.destroy(); } catch (_) {}
-    clients.delete(id);
-    ready.delete(id);
+
+  // If already connected and ready, return immediately
+  if (clients.has(id) && ready.has(id)) {
+    return clients.get(id);
   }
-  const key = sessionKey(sender);
-  if (!sender.sessionId) await updateSender(id, { sessionId: key });
-  await updateSender(id, { connectionStatus: 'starting', lastError: '', qrCode: '' });
 
-  const puppeteer = {
-    headless: true,
-    args: [
-      '--no-sandbox',
-      '--disable-setuid-sandbox',
-      '--disable-dev-shm-usage',
-      '--disable-accelerated-2d-canvas',
-      '--no-first-run',
-      '--no-zygote',
-      '--disable-gpu',
-      '--disable-background-timer-throttling',
-      '--disable-backgrounding-occluded-windows',
-      '--disable-renderer-backgrounding',
-    ],
-  };
-  const browserCandidates = [
-    process.env.CHROME_PATH,
-    'C:\\\\Program Files\\\\Google\\\\Chrome\\\\Application\\\\chrome.exe',
-    'C:\\\\Program Files (x86)\\\\Google\\\\Chrome\\\\Application\\\\chrome.exe',
-  ].filter(Boolean);
-  const installedBrowser = browserCandidates.find((candidate) => fs.existsSync(candidate));
-  if (installedBrowser) puppeteer.executablePath = installedBrowser;
-  const client = new Client({
-    authStrategy: new LocalAuth({ clientId: key, dataPath }),
-    puppeteer,
-    qrMaxRetries: 6,
-    takeoverOnConflict: true,
-    takeoverTimeoutMs: 10000,
-    deviceName: 'Political CRM',
-    browserName: 'Chrome',
-    webVersionCache: {
-      type: 'remote',
-      remotePath: 'https://raw.githubusercontent.com/wppconnect-team/wa-version/main/html/{version}.html',
-      strict: false,
-    },
-  });
-  clients.set(id, client);
+  // If connection is already in progress, await the existing active promise (PREVENTS DUPLICATE INSTANCES)
+  if (connectingPromises.has(id)) {
+    console.log(`[WhatsApp Web] ⏳ Connection already in progress for sender ${id}, awaiting existing connection...`);
+    return await connectingPromises.get(id);
+  }
 
-  let wasEverConnected = false;
+  const connectTask = (async () => {
+    if (clients.has(id)) {
+      const existing = clients.get(id);
+      if (ready.has(id)) return existing;
+      try { await existing.destroy(); } catch (_) {}
+      clients.delete(id);
+      ready.delete(id);
+    }
+    const key = sessionKey(sender);
+    if (!sender.sessionId) await updateSender(id, { sessionId: key });
+    await updateSender(id, { connectionStatus: 'starting', lastError: '', qrCode: '' });
 
-  client.on('qr', async (qr) => {
-    try {
-      const dataUrl = await QRCode.toDataURL(qr, { width: 360, margin: 2 });
+    // Clean up any stale Chromium lock files left from a previous process crash or SIGKILL
+    const sessionDir = path.join(dataPath, `session-${key}`);
+    cleanupStaleLocks(sessionDir);
+
+    const puppeteer = {
+      headless: true,
+      args: [
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--disable-dev-shm-usage',
+        '--disable-accelerated-2d-canvas',
+        '--no-first-run',
+        '--no-zygote',
+        '--disable-gpu',
+        '--disable-background-timer-throttling',
+        '--disable-backgrounding-occluded-windows',
+        '--disable-renderer-backgrounding',
+        '--js-flags=--max-old-space-size=512',
+        '--disable-extensions',
+        '--mute-audio',
+      ],
+    };
+    const browserCandidates = [
+      process.env.CHROME_PATH,
+      'C:\\\\Program Files\\\\Google\\\\Chrome\\\\Application\\\\chrome.exe',
+      'C:\\\\Program Files (x86)\\\\Google\\\\Chrome\\\\Application\\\\chrome.exe',
+    ].filter(Boolean);
+    const installedBrowser = browserCandidates.find((candidate) => fs.existsSync(candidate));
+    if (installedBrowser) puppeteer.executablePath = installedBrowser;
+    const client = new Client({
+      authStrategy: new LocalAuth({ clientId: key, dataPath }),
+      puppeteer,
+      qrMaxRetries: 6,
+      takeoverOnConflict: true,
+      takeoverTimeoutMs: 10000,
+      deviceName: 'Political CRM',
+      browserName: 'Chrome',
+      webVersionCache: {
+        type: 'remote',
+        remotePath: 'https://raw.githubusercontent.com/wppconnect-team/wa-version/main/html/{version}.html',
+        strict: false,
+      },
+    });
+    clients.set(id, client);
+
+    let wasEverConnected = false;
+
+    client.on('qr', async (qr) => {
+      try {
+        const dataUrl = await QRCode.toDataURL(qr, { width: 360, margin: 2 });
+        await updateSender(id, {
+          connectionStatus: 'qr_ready', qrCode: dataUrl,
+          lastError: '', lastSeenAt: new Date(),
+        });
+      } catch (error) {
+        await updateSender(id, {
+          connectionStatus: 'failed', qrCode: '', lastError: error.message,
+        }).catch(() => {});
+      }
+    });
+    client.on('authenticated', () => updateSender(id, {
+      connectionStatus: 'authenticated', qrCode: '', lastSeenAt: new Date(),
+    }).catch(() => {}));
+    client.on('ready', async () => {
+      wasEverConnected = true;
+      ready.add(id);
+      console.log(`[WhatsApp Web] 🎉 Sender ${id} ready & connected!`);
+      await ensurePatchedPupPage(client);
       await updateSender(id, {
-        connectionStatus: 'qr_ready', qrCode: dataUrl,
+        connectionStatus: 'connected', qrCode: '',
+        connectedNumber: client.info?.wid?.user || sender.displayNumber,
         lastError: '', lastSeenAt: new Date(),
       });
-    } catch (error) {
+    });
+    client.on('auth_failure', async (message) => {
+      ready.delete(id);
+      clients.delete(id);
+      try { await client.destroy(); } catch (_) {}
+      await updateSender(id, { connectionStatus: 'failed', lastError: String(message), qrCode: '' });
+    });
+    client.on('disconnected', async (reason) => {
+      console.warn(`[WhatsApp Web] ⚠️ Sender ${id} disconnected. Reason: ${reason}`);
+      ready.delete(id);
+      clients.delete(id);
+      try { await client.destroy(); } catch (_) {}
+
+      const reasonStr = String(reason || '');
+      const isQrTimeout = reasonStr.toLowerCase().includes('max qrcode retries') || !wasEverConnected;
+
       await updateSender(id, {
-        connectionStatus: 'failed', qrCode: '', lastError: error.message,
-      }).catch(() => {});
-    }
-  });
-  client.on('authenticated', () => updateSender(id, {
-    connectionStatus: 'authenticated', qrCode: '', lastSeenAt: new Date(),
-  }).catch(() => {}));
-  client.on('ready', async () => {
-    wasEverConnected = true;
-    ready.add(id);
-    console.log(`[WhatsApp Web] 🎉 Sender ${id} ready & connected!`);
-    await ensurePatchedPupPage(client);
-    await updateSender(id, {
-      connectionStatus: 'connected', qrCode: '',
-      connectedNumber: client.info?.wid?.user || sender.displayNumber,
-      lastError: '', lastSeenAt: new Date(),
-    });
-  });
-  client.on('auth_failure', async (message) => {
-    ready.delete(id);
-    clients.delete(id);
-    try { await client.destroy(); } catch (_) {}
-    await updateSender(id, { connectionStatus: 'failed', lastError: String(message), qrCode: '' });
-  });
-  client.on('disconnected', async (reason) => {
-    console.warn(`[WhatsApp Web] ⚠️ Sender ${id} disconnected. Reason: ${reason}`);
-    ready.delete(id);
-    clients.delete(id);
-    try { await client.destroy(); } catch (_) {}
+        connectionStatus: 'disconnected',
+        lastError: isQrTimeout ? 'QR स्कैन का समय समाप्त हो गया। दोबारा QR बनाने के लिए "कनेक्ट" दबाएं।' : reasonStr,
+        qrCode: '',
+      });
 
-    const reasonStr = String(reason || '');
-    const isQrTimeout = reasonStr.toLowerCase().includes('max qrcode retries') || !wasEverConnected;
-
-    await updateSender(id, {
-      connectionStatus: 'disconnected',
-      lastError: isQrTimeout ? 'QR स्कैन का समय समाप्त हो गया। दोबारा QR बनाने के लिए "कनेक्ट" दबाएं।' : reasonStr,
-      qrCode: '',
-    });
-
-    // Auto-reconnect ONLY if session was previously active and dropped unexpectedly.
-    // NEVER auto-reconnect if it's an unscanned QR timeout to prevent infinite Chromium memory leak!
-    if (wasEverConnected && reason !== 'LOGOUT' && !isQrTimeout) {
-      setTimeout(async () => {
-        try {
-          const fresh = await MessageSender.findById(id);
-          if (fresh && fresh.active && fresh.provider === 'whatsapp_web') {
-            console.log(`[WhatsApp Web] 🔄 Auto-reconnecting active sender ${id} after network drop...`);
-            await connectSender(fresh);
+      // Auto-reconnect ONLY if session was previously active and dropped unexpectedly.
+      if (wasEverConnected && reason !== 'LOGOUT' && !isQrTimeout) {
+        setTimeout(async () => {
+          try {
+            const fresh = await MessageSender.findById(id);
+            if (fresh && fresh.active && fresh.provider === 'whatsapp_web') {
+              console.log(`[WhatsApp Web] 🔄 Auto-reconnecting active sender ${id} after network drop...`);
+              await connectSender(fresh);
+            }
+          } catch (err) {
+            console.error(`[WhatsApp Web] Auto-reconnect failed for ${id}:`, err.message);
           }
-        } catch (err) {
-          console.error(`[WhatsApp Web] Auto-reconnect failed for ${id}:`, err.message);
-        }
-      }, 8000);
-    }
-  });
-  client.initialize().catch(async (error) => {
-    ready.delete(id);
-    clients.delete(id);
-    try { await client.destroy(); } catch (_) {}
-    await updateSender(id, { connectionStatus: 'failed', lastError: error.message, qrCode: '' });
-  });
+        }, 8000);
+      }
+    });
+    client.initialize().catch(async (error) => {
+      ready.delete(id);
+      clients.delete(id);
+      try { await client.destroy(); } catch (_) {}
+      await updateSender(id, { connectionStatus: 'failed', lastError: error.message, qrCode: '' });
+    });
 
-  // Heartbeat keep-alive every 25 seconds to prevent Docker/OS idle throttling
-  const keepAliveTimer = setInterval(async () => {
-    if (!clients.has(id)) {
-      clearInterval(keepAliveTimer);
-      return;
-    }
-    const current = clients.get(id);
-    if (ready.has(id) && current?.pupPage) {
-      try {
-        await current.pupPage.evaluate(() => window.WWebJS ? true : false).catch(() => {});
-      } catch (_) {}
-    }
-  }, 25000);
-  keepAliveTimer.unref();
+    // Heartbeat keep-alive every 25 seconds to prevent Docker/OS idle throttling
+    const keepAliveTimer = setInterval(async () => {
+      if (!clients.has(id)) {
+        clearInterval(keepAliveTimer);
+        return;
+      }
+      const current = clients.get(id);
+      if (ready.has(id) && current?.pupPage) {
+        try {
+          await current.pupPage.evaluate(() => window.WWebJS ? true : false).catch(() => {});
+        } catch (_) {}
+      }
+    }, 25000);
+    keepAliveTimer.unref();
 
-  return client;
+    return client;
+  })();
+
+  connectingPromises.set(id, connectTask);
+  try {
+    return await connectTask;
+  } finally {
+    connectingPromises.delete(id);
+  }
 }
 
 async function disconnectSender(id, logout = false) {
   const key = String(id);
+  connectingPromises.delete(key);
   const client = clients.get(key);
   if (client) {
     try { if (logout) await client.logout(); } catch (_) {}
@@ -229,10 +273,12 @@ async function disconnectSender(id, logout = false) {
 async function sendWebMessage(sender, mobile, text, mediaObj = null) {
   const id = String(sender._id);
   let client = clients.get(id);
-  if (!client) client = await connectSender(sender);
+  if (!client || !ready.has(id)) {
+    client = await connectSender(sender);
+  }
   if (!ready.has(id)) {
-    // Wait up to 12 seconds for WhatsApp Web session to become ready
-    for (let i = 0; i < 12; i += 1) {
+    // Wait up to 20 seconds for WhatsApp Web session to become ready
+    for (let i = 0; i < 20; i += 1) {
       await new Promise((r) => setTimeout(r, 1000));
       if (ready.has(id)) break;
     }
