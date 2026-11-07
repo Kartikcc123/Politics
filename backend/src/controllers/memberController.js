@@ -527,6 +527,26 @@ exports.list = async (req, res, next) => {
     if (req.query.hasMobile === 'true') filter.mobile = { $nin: ['', null], $exists: true };
     if (req.query.missingMobile === 'true') filter.$and = [...(filter.$and || []), { $or: [{ mobile: '' }, { mobile: null }, { mobile: { $exists: false } }] }];
     if (req.query.missingHouse === 'true') filter.$and = [...(filter.$and || []), { $or: [{ houseNumber: '' }, { houseNumber: null }, { houseNumber: { $exists: false } }] }];
+    if (req.query.religion && req.query.religion !== 'all') {
+      const rel = String(req.query.religion).trim().toLowerCase();
+      const muslimCasteRegex = /^(मुस्लिम|पठान|कुरैशी|क़ुरैशी|शेख|अंसारी|सिलावट|पिंजारा|सैयद|काजी|खत्री मुस्लिम)$/i;
+      const muslimSurnameRegex = /^(खान|खां|अंसारी|कुरैशी|पठान|शेख|काजी|सैयद|अली)$/i;
+      const muslimNameRegex = /(मोह|खान|खां|अंसारी|कुरैशी|पठान|शेख|काजी|सैयद|अली|हुसैन|इरफान|अब्दुल|साकिर|शब्बीर|जावेद|रिजवान|फारुक|रफीक|सलीम|शकील|अकील|मुबारक|मुस्ताक|मुश्ताक|इस्माइल|इब्राहिम|साजिद|शाहिद|नसीर|बशीर|इकबाल|अकबर)/i;
+      if (rel === 'muslim' || rel === 'मुस्लिम') {
+        addOrClause([
+          { caste: muslimCasteRegex },
+          { surname: muslimSurnameRegex },
+          { name: muslimNameRegex }
+        ]);
+      } else if (rel === 'hindu' || rel === 'हिन्दू' || rel === 'हिंदू') {
+        filter.$and = [
+          ...(filter.$and || []),
+          { caste: { $not: muslimCasteRegex } },
+          { surname: { $not: muslimSurnameRegex } },
+          { name: { $not: muslimNameRegex } }
+        ];
+      }
+    }
     if (req.query.supplementType) {
       if (req.query.supplementType === 'addition' || req.query.supplementType === 'parivardhan') {
         filter.supplementType = { $in: ['addition', 'parivardhan'] };

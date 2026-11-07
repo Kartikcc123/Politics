@@ -138,10 +138,10 @@ class _BulkMessagePageState extends State<BulkMessagePage> {
           .toSet()
           .toList();
       body['customRecipients'] = nums;
-      body['customRecipientsWithNames'] = nums.map((num) {
-        final resName = PhoneContactsBridge.resolveNameForNumber(num);
+      body['customRecipientsWithNames'] = nums.map((phoneNum) {
+        final resName = PhoneContactsBridge.resolveNameForNumber(phoneNum);
         return {
-          'mobile': num,
+          'mobile': phoneNum,
           'name': resName.isNotEmpty && resName != 'साथी' ? resName : null,
         };
       }).toList();
@@ -807,6 +807,13 @@ class _BulkMessagePageState extends State<BulkMessagePage> {
                           () => selectFilter('gender', 'लिंग (Gender) फ़िल्टर'), () => setState(() {
                                 selectedFilters.remove('gender');
                                 selectedLabels.remove('gender');
+                                preview = null;
+                                loadPreview();
+                              })),
+                      _FilterPicker('धर्म (Religion)', Icons.temple_hindu_rounded, selectedLabels['religion'],
+                          () => selectFilter('religion', 'धर्म (Religion) फ़िल्टर'), () => setState(() {
+                                selectedFilters.remove('religion');
+                                selectedLabels.remove('religion');
                                 preview = null;
                                 loadPreview();
                               })),
@@ -1642,6 +1649,14 @@ class _MessageFilterDialogState extends State<_MessageFilterDialog> {
   }
 
   Future<void> loadOptions() async {
+    if (widget.field == 'religion') {
+      options = [
+        {'value': 'hindu', 'label': '🚩 हिन्दू (Hindu)'},
+        {'value': 'muslim', 'label': '🌙 मुस्लिम (Muslim)'},
+      ];
+      if (mounted) setState(() => loading = false);
+      return;
+    }
     if (widget.field == 'gender') {
       options = [
         {'value': 'male', 'label': '👨 पुरुष (Male)'},
@@ -1685,6 +1700,7 @@ class _MessageFilterDialogState extends State<_MessageFilterDialog> {
     if (field == 'caste') return {'caste': val};
     if (field == 'party') return {'partyPreference': val};
     if (field == 'gender') return {'gender': val};
+    if (field == 'religion') return {'religion': val};
     if (field == 'assembly') return {'assemblyName': val};
     return {field: val};
   }

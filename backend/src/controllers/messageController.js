@@ -174,6 +174,28 @@ function campaignFilter(req) {
     filter.gender = genderParam;
   }
 
+  // Religion filter: hindu, muslim
+  const religionParam = (body.religion || '').trim().toLowerCase();
+  if (religionParam && religionParam !== 'all') {
+    const muslimCasteRegex = /^(मुस्लिम|पठान|कुरैशी|क़ुरैशी|शेख|अंसारी|सिलावट|पिंजारा|सैयद|काजी|खत्री मुस्लिम)$/i;
+    const muslimSurnameRegex = /^(खान|खां|अंसारी|कुरैशी|पठान|शेख|काजी|सैयद|अली)$/i;
+    const muslimNameRegex = /(मोह|खान|खां|अंसारी|कुरैशी|पठान|शेख|काजी|सैयद|अली|हुसैन|इरफान|अब्दुल|साकिर|शब्बीर|जावेद|रिजवान|फारुक|रफीक|सलीम|शकील|अकील|मुबारक|मुस्ताक|मुश्ताक|इस्माइल|इब्राहिम|साजिद|शाहिद|नसीर|बशीर|इकबाल|अकबर)/i;
+    if (religionParam === 'muslim' || religionParam === 'मुस्लिम') {
+      addOrClause([
+        { caste: muslimCasteRegex },
+        { surname: muslimSurnameRegex },
+        { name: muslimNameRegex }
+      ]);
+    } else if (religionParam === 'hindu' || religionParam === 'हिन्दू' || religionParam === 'हिंदू') {
+      filter.$and = [
+        ...(filter.$and || []),
+        { caste: { $not: muslimCasteRegex } },
+        { surname: { $not: muslimSurnameRegex } },
+        { name: { $not: muslimNameRegex } }
+      ];
+    }
+  }
+
   // Age range filter: minAge, maxAge
   if (body.minAge || body.maxAge) {
     filter.age = {};

@@ -61,7 +61,19 @@ class _WhatsAppPageState extends State<WhatsAppPage> with SingleTickerProviderSt
   String _selectedCaste = 'all';
   String _selectedParty = 'all'; // 'all', 'congress', 'bjp', 'nota', 'other'
   String _selectedGender = 'all'; // 'all', 'male', 'female', 'other'
+  String _selectedReligion = 'all'; // 'all', 'hindu', 'muslim'
   bool _onlyWithMobile = true;
+
+  static bool isMuslim(Map<String, dynamic> v) {
+    final c = (v['caste'] ?? '').toString();
+    final s = (v['surname'] ?? '').toString();
+    final n = (v['name'] ?? v['fullName'] ?? '').toString();
+    final pattern = RegExp(
+      r'(मुस्लिम|पठान|कुरैशी|क़ुरैशी|शेख|अंसारी|सिलावट|पिंजारा|सैयद|काजी|मोह|खान|खां|अली|हुसैन|इरफान|अब्दुल|साकिर|शब्बीर|जावेद|रिजवान|फारुक|रफीक|सलीम|शकील|अकील|मुबारक|मुस्ताक|मुश्ताक|इस्माइल|इब्राहिम|साजिद|शाहिद|नसीर|बशीर|इकबाल|अकबर)',
+      caseSensitive: false,
+    );
+    return pattern.hasMatch(c) || pattern.hasMatch(s) || pattern.hasMatch(n);
+  }
 
   int _phoneCount = 0;
   int _appCount = 0;
@@ -302,6 +314,7 @@ class _WhatsAppPageState extends State<WhatsAppPage> with SingleTickerProviderSt
         if (_selectedCaste != 'all') queryParams['caste'] = _selectedCaste;
         if (_selectedParty != 'all') queryParams['partyPreference'] = _selectedParty;
         if (_selectedGender != 'all') queryParams['gender'] = _selectedGender;
+        if (_selectedReligion != 'all') queryParams['religion'] = _selectedReligion;
         final q = _searchController.text.trim();
         if (q.isNotEmpty) queryParams['q'] = q;
 
@@ -386,6 +399,15 @@ class _WhatsAppPageState extends State<WhatsAppPage> with SingleTickerProviderSt
           } else if (_selectedGender == 'female') {
             return g == 'female' || g == 'f' || g == 'महिला' || g == 'स्त्री';
           }
+          return true;
+        }).toList();
+      }
+
+      if (_selectedReligion != 'all') {
+        combined = combined.where((v) {
+          final muslim = isMuslim(v);
+          if (_selectedReligion == 'muslim') return muslim;
+          if (_selectedReligion == 'hindu') return !muslim;
           return true;
         }).toList();
       }
@@ -690,6 +712,9 @@ class _WhatsAppPageState extends State<WhatsAppPage> with SingleTickerProviderSt
     final genderText = _selectedGender == 'male'
         ? 'पुरुष '
         : (_selectedGender == 'female' ? 'महिला ' : '');
+    final religionText = _selectedReligion == 'hindu'
+        ? 'हिन्दू '
+        : (_selectedReligion == 'muslim' ? 'मुस्लिम ' : '');
 
     showModalBottomSheet(
       context: context,
@@ -733,7 +758,7 @@ class _WhatsAppPageState extends State<WhatsAppPage> with SingleTickerProviderSt
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          'बल्क संदेश माध्यम ($totalCount ${genderText}मतदाता)',
+                          'बल्क संदेश माध्यम ($totalCount $genderText$religionTextमतदाता)',
                           style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xff1e293b)),
                         ),
                         const SizedBox(height: 2),
@@ -1478,6 +1503,13 @@ class _WhatsAppPageState extends State<WhatsAppPage> with SingleTickerProviderSt
             padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
             child: _buildGenderFilterStrip(),
           ),
+          const Divider(height: 1, color: Color(0xfff1f5f9)),
+
+          // Religion Filter Strip Always visible
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
+            child: _buildReligionFilterStrip(),
+          ),
 
           // Location Filters Toggle
           InkWell(
@@ -2082,6 +2114,112 @@ class _WhatsAppPageState extends State<WhatsAppPage> with SingleTickerProviderSt
     );
   }
 
+  Widget _buildReligionFilterStrip() {
+    final muslimCount = _voters.where((v) => isMuslim(v)).length;
+    final hinduCount = _voters.length - muslimCount;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            const Icon(Icons.temple_hindu_rounded, size: 16, color: Color(0xffea580c)),
+            const SizedBox(width: 6),
+            const Text(
+              'धर्म अनुसार बल्क फ़िल्टर (Religion):',
+              style: TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: Color(0xff0f172a)),
+            ),
+            const Spacer(),
+            if (_selectedReligion != 'all')
+              GestureDetector(
+                onTap: () {
+                  setState(() => _selectedReligion = 'all');
+                  _fetchVoters();
+                },
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: Colors.red.shade50,
+                    borderRadius: BorderRadius.circular(6),
+                    border: Border.all(color: Colors.red.shade200),
+                  ),
+                  child: const Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.close_rounded, size: 12, color: Colors.red),
+                      SizedBox(width: 3),
+                      Text('फ़िल्टर हटाएं', style: TextStyle(fontSize: 10.5, color: Colors.red, fontWeight: FontWeight.bold)),
+                    ],
+                  ),
+                ),
+              ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: Row(
+            children: [
+              _buildReligionFilterChip(
+                value: 'all',
+                label: 'सभी (${_voters.length})',
+                color: const Color(0xff1e3a8a),
+                icon: Icons.people_outline_rounded,
+              ),
+              const SizedBox(width: 8),
+              _buildReligionFilterChip(
+                value: 'hindu',
+                label: '🚩 हिन्दू (${hinduCount > 0 ? hinduCount : 0})',
+                color: const Color(0xffea580c),
+                icon: Icons.temple_hindu_rounded,
+              ),
+              const SizedBox(width: 8),
+              _buildReligionFilterChip(
+                value: 'muslim',
+                label: '🌙 मुस्लिम (${muslimCount > 0 ? muslimCount : 0})',
+                color: const Color(0xff059669),
+                icon: Icons.mosque_rounded,
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildReligionFilterChip({
+    required String value,
+    required String label,
+    required Color color,
+    required IconData icon,
+  }) {
+    final isSelected = _selectedReligion == value;
+    return ChoiceChip(
+      selected: isSelected,
+      onSelected: (_) {
+        setState(() {
+          _selectedReligion = isSelected && value != 'all' ? 'all' : value;
+        });
+        _fetchVoters();
+      },
+      avatar: Icon(icon, size: 16, color: isSelected ? Colors.white : color),
+      label: Text(label),
+      labelStyle: TextStyle(
+        color: isSelected ? Colors.white : const Color(0xff0f172a),
+        fontWeight: FontWeight.w800,
+        fontSize: 12,
+      ),
+      selectedColor: color,
+      backgroundColor: Colors.white,
+      side: BorderSide(
+        color: isSelected ? color : Colors.grey.shade300,
+        width: isSelected ? 1.5 : 1,
+      ),
+      showCheckmark: false,
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+    );
+  }
+
   Widget _buildVoterListHeader(int totalWithMobile) {
     final availableVoters = _voters.where((v) => (v['mobile'] ?? '').toString().trim().isNotEmpty).toList();
     final allSelected = availableVoters.isNotEmpty && _selectedVoterIds.length >= availableVoters.length;
@@ -2129,6 +2267,24 @@ class _WhatsAppPageState extends State<WhatsAppPage> with SingleTickerProviderSt
                   fontSize: 10,
                   fontWeight: FontWeight.w900,
                   color: _selectedGender == 'female' ? const Color(0xffdb2777) : const Color(0xff0284c7),
+                ),
+              ),
+            ),
+          ],
+          if (_selectedReligion != 'all') ...[
+            const SizedBox(width: 6),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+              decoration: BoxDecoration(
+                color: (_selectedReligion == 'muslim' ? const Color(0xff059669) : const Color(0xffea580c)).withValues(alpha: 0.15),
+                borderRadius: BorderRadius.circular(6),
+              ),
+              child: Text(
+                _selectedReligion == 'muslim' ? '🌙 मुस्लिम' : '🚩 हिन्दू',
+                style: TextStyle(
+                  fontSize: 10,
+                  fontWeight: FontWeight.w900,
+                  color: _selectedReligion == 'muslim' ? const Color(0xff059669) : const Color(0xffea580c),
                 ),
               ),
             ),
@@ -2528,6 +2684,9 @@ class _WhatsAppPageState extends State<WhatsAppPage> with SingleTickerProviderSt
     final genderLabel = _selectedGender == 'male'
         ? ' (पुरुष)'
         : (_selectedGender == 'female' ? ' (महिला)' : '');
+    final religionLabel = _selectedReligion == 'hindu'
+        ? ' (हिन्दू)'
+        : (_selectedReligion == 'muslim' ? ' (मुस्लिम)' : '');
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
@@ -2547,7 +2706,7 @@ class _WhatsAppPageState extends State<WhatsAppPage> with SingleTickerProviderSt
                 onPressed: _showBulkSendOptionModal,
                 icon: const Icon(Icons.rocket_launch_rounded, color: Colors.white, size: 18),
                 label: Text(
-                  '🚀 बल्क ऑटो-सेंड ($count$partyLabel$genderLabel)',
+                  '🚀 बल्क ऑटो-सेंड ($count$partyLabel$genderLabel$religionLabel)',
                   style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w900),
                   overflow: TextOverflow.ellipsis,
                 ),
