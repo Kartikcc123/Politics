@@ -803,6 +803,13 @@ class _BulkMessagePageState extends State<BulkMessagePage> {
                                 preview = null;
                                 loadPreview();
                               })),
+                      _FilterPicker('लिंग (Gender)', Icons.wc_rounded, selectedLabels['gender'],
+                          () => selectFilter('gender', 'लिंग (Gender) फ़िल्टर'), () => setState(() {
+                                selectedFilters.remove('gender');
+                                selectedLabels.remove('gender');
+                                preview = null;
+                                loadPreview();
+                              })),
                     ]),
                     const SizedBox(height: 10),
                     Row(
@@ -1635,6 +1642,14 @@ class _MessageFilterDialogState extends State<_MessageFilterDialog> {
   }
 
   Future<void> loadOptions() async {
+    if (widget.field == 'gender') {
+      options = [
+        {'value': 'male', 'label': '👨 पुरुष (Male)'},
+        {'value': 'female', 'label': '👩 महिला (Female)'},
+      ];
+      if (mounted) setState(() => loading = false);
+      return;
+    }
     if (widget.field == 'party') {
       options = [
         {'value': 'bjp', 'label': 'भाजपा (BJP)'},
@@ -1669,6 +1684,7 @@ class _MessageFilterDialogState extends State<_MessageFilterDialog> {
     if (field == 'booth') return {'partNumber': val};
     if (field == 'caste') return {'caste': val};
     if (field == 'party') return {'partyPreference': val};
+    if (field == 'gender') return {'gender': val};
     if (field == 'assembly') return {'assemblyName': val};
     return {field: val};
   }

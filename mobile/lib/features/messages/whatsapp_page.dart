@@ -60,6 +60,7 @@ class _WhatsAppPageState extends State<WhatsAppPage> with SingleTickerProviderSt
   String _selectedPart = 'all';
   String _selectedCaste = 'all';
   String _selectedParty = 'all'; // 'all', 'congress', 'bjp', 'nota', 'other'
+  String _selectedGender = 'all'; // 'all', 'male', 'female', 'other'
   bool _onlyWithMobile = true;
 
   int _phoneCount = 0;
@@ -300,6 +301,7 @@ class _WhatsAppPageState extends State<WhatsAppPage> with SingleTickerProviderSt
         if (_selectedPart != 'all') queryParams['partNumber'] = _selectedPart;
         if (_selectedCaste != 'all') queryParams['caste'] = _selectedCaste;
         if (_selectedParty != 'all') queryParams['partyPreference'] = _selectedParty;
+        if (_selectedGender != 'all') queryParams['gender'] = _selectedGender;
         final q = _searchController.text.trim();
         if (q.isNotEmpty) queryParams['q'] = q;
 
@@ -374,6 +376,18 @@ class _WhatsAppPageState extends State<WhatsAppPage> with SingleTickerProviderSt
 
       if (_onlyWithMobile) {
         combined = combined.where((v) => '${v['mobile'] ?? ''}'.trim().isNotEmpty).toList();
+      }
+
+      if (_selectedGender != 'all') {
+        combined = combined.where((v) {
+          final g = (v['gender'] ?? '').toString().toLowerCase().trim();
+          if (_selectedGender == 'male') {
+            return g == 'male' || g == 'm' || g == 'पुरुष' || g == 'पुरूष';
+          } else if (_selectedGender == 'female') {
+            return g == 'female' || g == 'f' || g == 'महिला' || g == 'स्त्री';
+          }
+          return true;
+        }).toList();
       }
 
       if (mounted) {
@@ -673,6 +687,9 @@ class _WhatsAppPageState extends State<WhatsAppPage> with SingleTickerProviderSt
     }
 
     final totalCount = targetVoters.length;
+    final genderText = _selectedGender == 'male'
+        ? 'पुरुष '
+        : (_selectedGender == 'female' ? 'महिला ' : '');
 
     showModalBottomSheet(
       context: context,
@@ -716,7 +733,7 @@ class _WhatsAppPageState extends State<WhatsAppPage> with SingleTickerProviderSt
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          'बल्क संदेश माध्यम ($totalCount मतदाता)',
+                          'बल्क संदेश माध्यम ($totalCount ${genderText}मतदाता)',
                           style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xff1e293b)),
                         ),
                         const SizedBox(height: 2),
@@ -1454,6 +1471,13 @@ class _WhatsAppPageState extends State<WhatsAppPage> with SingleTickerProviderSt
             padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
             child: _buildPartyFilterStrip(),
           ),
+          const Divider(height: 1, color: Color(0xfff1f5f9)),
+
+          // Gender Filter Strip Always visible
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
+            child: _buildGenderFilterStrip(),
+          ),
 
           // Location Filters Toggle
           InkWell(
@@ -1946,6 +1970,118 @@ class _WhatsAppPageState extends State<WhatsAppPage> with SingleTickerProviderSt
     );
   }
 
+  Widget _buildGenderFilterStrip() {
+    final maleCount = _voters.where((v) {
+      final g = (v['gender'] ?? '').toString().toLowerCase().trim();
+      return g == 'male' || g == 'm' || g == 'पुरुष' || g == 'पुरूष';
+    }).length;
+    final femaleCount = _voters.where((v) {
+      final g = (v['gender'] ?? '').toString().toLowerCase().trim();
+      return g == 'female' || g == 'f' || g == 'महिला' || g == 'स्त्री';
+    }).length;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            const Icon(Icons.wc_rounded, size: 16, color: Color(0xff0284c7)),
+            const SizedBox(width: 6),
+            const Text(
+              'लिंग अनुसार बल्क फ़िल्टर (Gender):',
+              style: TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: Color(0xff0f172a)),
+            ),
+            const Spacer(),
+            if (_selectedGender != 'all')
+              GestureDetector(
+                onTap: () {
+                  setState(() => _selectedGender = 'all');
+                  _fetchVoters();
+                },
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: Colors.red.shade50,
+                    borderRadius: BorderRadius.circular(6),
+                    border: Border.all(color: Colors.red.shade200),
+                  ),
+                  child: const Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.close_rounded, size: 12, color: Colors.red),
+                      SizedBox(width: 3),
+                      Text('फ़िल्टर हटाएं', style: TextStyle(fontSize: 10.5, color: Colors.red, fontWeight: FontWeight.bold)),
+                    ],
+                  ),
+                ),
+              ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: Row(
+            children: [
+              _buildGenderFilterChip(
+                value: 'all',
+                label: 'सभी (${_voters.length})',
+                color: const Color(0xff1e3a8a),
+                icon: Icons.people_outline_rounded,
+              ),
+              const SizedBox(width: 8),
+              _buildGenderFilterChip(
+                value: 'male',
+                label: '👨 पुरुष (Male${maleCount > 0 ? " · $maleCount" : ""})',
+                color: const Color(0xff0284c7),
+                icon: Icons.male_rounded,
+              ),
+              const SizedBox(width: 8),
+              _buildGenderFilterChip(
+                value: 'female',
+                label: '👩 महिला (Female${femaleCount > 0 ? " · $femaleCount" : ""})',
+                color: const Color(0xffdb2777),
+                icon: Icons.female_rounded,
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildGenderFilterChip({
+    required String value,
+    required String label,
+    required Color color,
+    required IconData icon,
+  }) {
+    final isSelected = _selectedGender == value;
+    return ChoiceChip(
+      selected: isSelected,
+      onSelected: (_) {
+        setState(() {
+          _selectedGender = isSelected && value != 'all' ? 'all' : value;
+        });
+        _fetchVoters();
+      },
+      avatar: Icon(icon, size: 16, color: isSelected ? Colors.white : color),
+      label: Text(label),
+      labelStyle: TextStyle(
+        color: isSelected ? Colors.white : const Color(0xff0f172a),
+        fontWeight: FontWeight.w800,
+        fontSize: 12,
+      ),
+      selectedColor: color,
+      backgroundColor: Colors.white,
+      side: BorderSide(
+        color: isSelected ? color : Colors.grey.shade300,
+        width: isSelected ? 1.5 : 1,
+      ),
+      showCheckmark: false,
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+    );
+  }
+
   Widget _buildVoterListHeader(int totalWithMobile) {
     final availableVoters = _voters.where((v) => (v['mobile'] ?? '').toString().trim().isNotEmpty).toList();
     final allSelected = availableVoters.isNotEmpty && _selectedVoterIds.length >= availableVoters.length;
@@ -1976,6 +2112,24 @@ class _WhatsAppPageState extends State<WhatsAppPage> with SingleTickerProviderSt
               child: Text(
                 _selectedParty.toUpperCase(),
                 style: TextStyle(fontSize: 10, fontWeight: FontWeight.w900, color: _getPartyColor(_selectedParty)),
+              ),
+            ),
+          ],
+          if (_selectedGender != 'all') ...[
+            const SizedBox(width: 6),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+              decoration: BoxDecoration(
+                color: (_selectedGender == 'female' ? const Color(0xffdb2777) : const Color(0xff0284c7)).withValues(alpha: 0.15),
+                borderRadius: BorderRadius.circular(6),
+              ),
+              child: Text(
+                _selectedGender == 'female' ? '👩 महिला' : '👨 पुरुष',
+                style: TextStyle(
+                  fontSize: 10,
+                  fontWeight: FontWeight.w900,
+                  color: _selectedGender == 'female' ? const Color(0xffdb2777) : const Color(0xff0284c7),
+                ),
               ),
             ),
           ],
@@ -2047,6 +2201,7 @@ class _WhatsAppPageState extends State<WhatsAppPage> with SingleTickerProviderSt
     final village = (voter['village'] ?? voter['gramPanchayat'] ?? '').toString().trim();
     final ward = (voter['wardNumber'] ?? voter['partNumber'] ?? '').toString().trim();
     final party = (voter['partyPreference'] ?? '').toString().trim();
+    final gender = (voter['gender'] ?? '').toString().toLowerCase().trim();
     final isSelected = _selectedVoterIds.contains(id);
     final hasMobile = mobile.isNotEmpty;
 
@@ -2159,6 +2314,12 @@ class _WhatsAppPageState extends State<WhatsAppPage> with SingleTickerProviderSt
                     runSpacing: 4,
                     crossAxisAlignment: WrapCrossAlignment.center,
                     children: [
+                      if (gender.isNotEmpty) ...[
+                        if (gender == 'female' || gender == 'f' || gender == 'महिला' || gender == 'स्त्री')
+                          _smallPill(Icons.female_rounded, 'महिला', color: const Color(0xffdb2777))
+                        else if (gender == 'male' || gender == 'm' || gender == 'पुरुष' || gender == 'पुरूष')
+                          _smallPill(Icons.male_rounded, 'पुरुष', color: const Color(0xff0284c7)),
+                      ],
                       if (party.isNotEmpty && party != 'undecided')
                         _partyPill(party),
                       if (village.isNotEmpty)
@@ -2342,19 +2503,20 @@ class _WhatsAppPageState extends State<WhatsAppPage> with SingleTickerProviderSt
     );
   }
 
-  Widget _smallPill(IconData icon, String text) {
+  Widget _smallPill(IconData icon, String text, {Color? color, Color? bgColor}) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
       decoration: BoxDecoration(
-        color: Colors.grey.shade100,
+        color: bgColor ?? (color != null ? color.withValues(alpha: 0.1) : Colors.grey.shade100),
         borderRadius: BorderRadius.circular(4),
+        border: color != null ? Border.all(color: color.withValues(alpha: 0.3)) : null,
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, size: 11, color: muted),
+          Icon(icon, size: 11, color: color ?? muted),
           const SizedBox(width: 3),
-          Text(text, style: const TextStyle(fontSize: 10.5, color: Color(0xff334155), fontWeight: FontWeight.w600)),
+          Text(text, style: TextStyle(fontSize: 10.5, color: color ?? const Color(0xff334155), fontWeight: FontWeight.w700)),
         ],
       ),
     );
@@ -2363,6 +2525,9 @@ class _WhatsAppPageState extends State<WhatsAppPage> with SingleTickerProviderSt
   Widget _buildBottomActionBar() {
     final count = _selectedVoterIds.length;
     final partyLabel = _selectedParty != 'all' ? ' ${_selectedParty.toUpperCase()}' : '';
+    final genderLabel = _selectedGender == 'male'
+        ? ' (पुरुष)'
+        : (_selectedGender == 'female' ? ' (महिला)' : '');
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
@@ -2382,7 +2547,7 @@ class _WhatsAppPageState extends State<WhatsAppPage> with SingleTickerProviderSt
                 onPressed: _showBulkSendOptionModal,
                 icon: const Icon(Icons.rocket_launch_rounded, color: Colors.white, size: 18),
                 label: Text(
-                  '🚀 बल्क ऑटो-सेंड ($count$partyLabel)',
+                  '🚀 बल्क ऑटो-सेंड ($count$partyLabel$genderLabel)',
                   style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w900),
                   overflow: TextOverflow.ellipsis,
                 ),
