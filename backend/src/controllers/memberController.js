@@ -431,9 +431,17 @@ exports.list = async (req, res, next) => {
         { gramPanchayat: { $in: ['', null] }, village: gpRegex }
       ]);
     }
-    const tehsilParam = tehsil || req.query.samiti || req.query.simiti || req.query.panchayatSamiti;
-    if (tehsilParam) filter.tehsil = hindiFlexibleRegex(tehsilParam);
-    if (req.query.panchayatSamiti) filter.panchayatSamiti = req.query.panchayatSamiti;
+    if (req.query.panchayatSamiti) {
+      filter.panchayatSamiti = hindiFlexibleRegex(req.query.panchayatSamiti);
+    } else {
+      const tehsilParam = tehsil || req.query.samiti || req.query.simiti;
+      if (tehsilParam) {
+        addOrClause([
+          { panchayatSamiti: hindiFlexibleRegex(tehsilParam) },
+          { tehsil: hindiFlexibleRegex(tehsilParam) }
+        ]);
+      }
+    }
     const samitiWardParam = req.query.panchayatSamitiWard || req.query.samitiWard;
     if (samitiWardParam) filter.panchayatSamitiWard = samitiWardParam;
     if (municipality) filter.municipality = hindiFlexibleRegex(municipality);
@@ -1141,9 +1149,18 @@ exports.filterOptions = async (req, res, next) => {
     }
 
     // 2. Samiti / Tehsil
-    const tehsilParam = req.query.tehsil || req.query.samiti || req.query.simiti || req.query.panchayatSamiti;
-    if (tehsilParam) {
-      filter.$and = [...(filter.$and || []), { tehsil: hindiFlexibleRegex(tehsilParam) }];
+    if (req.query.panchayatSamiti) {
+      filter.$and = [...(filter.$and || []), { panchayatSamiti: hindiFlexibleRegex(req.query.panchayatSamiti) }];
+    } else {
+      const tehsilParam = req.query.tehsil || req.query.samiti || req.query.simiti;
+      if (tehsilParam) {
+        filter.$and = [...(filter.$and || []), {
+          $or: [
+            { panchayatSamiti: hindiFlexibleRegex(tehsilParam) },
+            { tehsil: hindiFlexibleRegex(tehsilParam) }
+          ]
+        }];
+      }
     }
 
     // 3. Gram Panchayat
