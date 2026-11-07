@@ -138,12 +138,32 @@ class _BulkMessagePageState extends State<BulkMessagePage> {
           .toSet()
           .toList();
       body['customRecipients'] = nums;
+      body['customRecipientsWithNames'] = nums.map((num) {
+        final resName = PhoneContactsBridge.resolveNameForNumber(num);
+        return {
+          'mobile': num,
+          'name': resName.isNotEmpty && resName != 'साथी' ? resName : null,
+        };
+      }).toList();
     } else {
       for (final values in selectedFilters.values) {
         body.addAll(values);
       }
       if (selectedVoterIds.isNotEmpty && previewVoters.isNotEmpty && selectedVoterIds.length < previewVoters.length) {
         body['memberIds'] = selectedVoterIds.toList();
+      }
+      final namesList = <Map<String, String>>[];
+      for (final v in previewVoters) {
+        final mob = '${v['mobile'] ?? ''}'.replaceAll(RegExp(r'\D'), '');
+        if (mob.length < 10) continue;
+        final rawName = '${v['name'] ?? ''}'.trim();
+        final resName = PhoneContactsBridge.resolveNameForNumber(mob, rawName);
+        if (resName.isNotEmpty && resName != 'साथी') {
+          namesList.add({'mobile': mob, 'name': resName});
+        }
+      }
+      if (namesList.isNotEmpty) {
+        body['customRecipientsWithNames'] = namesList;
       }
     }
     return body;

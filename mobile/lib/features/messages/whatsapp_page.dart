@@ -1,10 +1,12 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:intl/intl.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 
@@ -100,7 +102,9 @@ class _WhatsAppPageState extends State<WhatsAppPage> with SingleTickerProviderSt
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
     _messageController.text = _presets['सामान्य']!;
-    PhoneContactsBridge.fetchDeviceContacts();
+    PhoneContactsBridge.fetchDeviceContacts().then((_) {
+      if (mounted) setState(() {});
+    });
     _customPhoneController.addListener(_onCustomPhoneChanged);
     _loadAllFilters();
   }
@@ -285,7 +289,7 @@ class _WhatsAppPageState extends State<WhatsAppPage> with SingleTickerProviderSt
       List<Map<String, dynamic>> appItems = [];
       try {
         final queryParams = <String, String>{
-          'limit': '1500',
+          'limit': '3000',
           'paged': 'false',
         };
         if (_onlyWithMobile) queryParams['hasMobile'] = 'true';
@@ -652,6 +656,415 @@ class _WhatsAppPageState extends State<WhatsAppPage> with SingleTickerProviderSt
         startInAutoMode: autoMode,
       ),
     );
+  }
+
+  void _showBulkSendOptionModal() {
+    final targetVoters = _voters.where((v) {
+      final id = (v['_id'] ?? '').toString();
+      final mob = (v['mobile'] ?? '').toString().trim();
+      return _selectedVoterIds.contains(id) && mob.isNotEmpty;
+    }).toList();
+
+    if (targetVoters.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('कृपया कम से कम एक मोबाइल नंबर वाले मतदाता को चुनें।')),
+      );
+      return;
+    }
+
+    final totalCount = targetVoters.length;
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => Container(
+        padding: const EdgeInsets.fromLTRB(20, 14, 20, 24),
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        child: SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Center(
+                child: Container(
+                  width: 44,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade300,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: const Color(0xff16a34a).withValues(alpha: 0.12),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(Icons.send_rounded, color: Color(0xff16a34a), size: 24),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'बल्क संदेश माध्यम ($totalCount मतदाता)',
+                          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xff1e293b)),
+                        ),
+                        const SizedBox(height: 2),
+                        const Text(
+                          'संदेश भेजने का सुरक्षित तरीका चुनें:',
+                          style: TextStyle(fontSize: 12, color: Colors.grey),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 20),
+
+              // Option 1: Server Background Auto-Broadcast (Recommended & Zero Ban)
+              InkWell(
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _sendViaServerQueue(targetVoters);
+                },
+                borderRadius: BorderRadius.circular(16),
+                child: Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: const Color(0xfff0fdf4),
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: const Color(0xff86efac), width: 1.5),
+                    boxShadow: [
+                      BoxShadow(
+                        color: const Color(0xff16a34a).withValues(alpha: 0.08),
+                        blurRadius: 10,
+                        offset: const Offset(0, 4),
+                      ),
+                    ],
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(8),
+                            decoration: BoxDecoration(
+                              color: const Color(0xff16a34a),
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: const Icon(Icons.rocket_launch_rounded, color: Colors.white, size: 20),
+                          ),
+                          const SizedBox(width: 12),
+                          const Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  children: [
+                                    Text(
+                                      '🤖 सर्वर ऑटो-ब्रॉडकास्ट',
+                                      style: TextStyle(fontSize: 15, fontWeight: FontWeight.w900, color: Color(0xff14532d)),
+                                    ),
+                                    SizedBox(width: 6),
+                                    Chip(
+                                      label: Text('100% सुरक्षित', style: TextStyle(fontSize: 10, color: Colors.white, fontWeight: FontWeight.bold)),
+                                      backgroundColor: Color(0xff16a34a),
+                                      padding: EdgeInsets.zero,
+                                      visualDensity: VisualDensity.compact,
+                                      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                    ),
+                                  ],
+                                ),
+                                SizedBox(height: 2),
+                                Text(
+                                  'हैंड्स-फ्री · बैकग्राउंड डिलीवरी · एंटी-बैन सुरक्षित',
+                                  style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: Color(0xff15803d)),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      const Divider(height: 1, color: Color(0xffbbf7d0)),
+                      const SizedBox(height: 10),
+                      _buildModalFeatureBullet(Icons.phonelink_erase_rounded, 'फ़ोन पर WhatsApp नहीं खुलेगा (स्क्रीन एकदम फ़्री रहेगी)'),
+                      _buildModalFeatureBullet(Icons.shield_rounded, 'Anti-Ban सुरक्षा: 5-10s रैंडम डिले + हर 5 मैसेज बाद ब्रेक'),
+                      _buildModalFeatureBullet(Icons.loop_rounded, 'डायनामिक ग्रीटिंग्स (नमस्कार/प्रणाम) ताकि स्पैम न लगे'),
+                      if (_hasPickedImage)
+                        _buildModalFeatureBullet(Icons.image_rounded, 'संलग्न फ़ोटो/पोस्टर भी सर्वर से साथ जाएगा'),
+                    ],
+                  ),
+                ),
+              ),
+
+              const SizedBox(height: 14),
+
+              // Option 2: Phone WhatsApp App (Assisted)
+              InkWell(
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _startAssistedDispatch(autoMode: true);
+                },
+                borderRadius: BorderRadius.circular(16),
+                child: Container(
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: const Color(0xfff8fafc),
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: const Color(0xffcbd5e1)),
+                  ),
+                  child: Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: const Color(0xff64748b),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: const Icon(Icons.phone_android_rounded, color: Colors.white, size: 20),
+                      ),
+                      const SizedBox(width: 12),
+                      const Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              '📱 फ़ोन WhatsApp ऐप से 1-by-1 भेजें',
+                              style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Color(0xff334155)),
+                            ),
+                            SizedBox(height: 2),
+                            Text(
+                              'आपके फ़ोन का WhatsApp ऐप एक-एक करके खुलेगा',
+                              style: TextStyle(fontSize: 11, color: Color(0xff64748b)),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const Icon(Icons.chevron_right_rounded, color: Colors.grey),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildModalFeatureBullet(IconData icon, String text) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, size: 14, color: const Color(0xff16a34a)),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              text,
+              style: const TextStyle(fontSize: 11.5, color: Color(0xff1e293b), fontWeight: FontWeight.w600),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _sendViaServerQueue(List<Map<String, dynamic>> targetVoters) async {
+    List<Map<String, dynamic>> senders = [];
+    try {
+      final res = await api.list('/api/messages/senders');
+      senders = List<Map<String, dynamic>>.from(
+        res.map((item) => Map<String, dynamic>.from(item)),
+      );
+    } catch (e) {
+      debugPrint('Error fetching senders: $e');
+    }
+
+    final activeSenders = senders.where((s) => s['connectionStatus'] == 'connected').toList();
+    if (activeSenders.isEmpty) {
+      if (!mounted) return;
+      showDialog(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          icon: const Icon(Icons.warning_amber_rounded, color: Colors.orange, size: 40),
+          title: const Text('WhatsApp Sender कनेक्ट नहीं है'),
+          content: const Text(
+            'सर्वर बैकग्राउंड से ऑटो-मैसेज भेजने के लिए कम से कम एक WhatsApp नंबर कनेक्ट होना चाहिए।\n\n'
+            '1. ऊपर दाईं ओर QR आइकन दबाकर "WhatsApp बल्क अभियान" में जाएं और QR स्कैन करें।\n'
+            '2. या फिर आप सीधे "फ़ोन ऐप से भेजें" विकल्प का उपयोग कर सकते हैं।',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('रद्द करें'),
+            ),
+            FilledButton.icon(
+              onPressed: () {
+                Navigator.pop(ctx);
+                _startAssistedDispatch(autoMode: true);
+              },
+              icon: const Icon(Icons.phone_android_rounded, size: 16),
+              label: const Text('फ़ोन ऐप से भेजें'),
+              style: FilledButton.styleFrom(backgroundColor: const Color(0xff16a34a)),
+            ),
+          ],
+        ),
+      );
+      return;
+    }
+
+    final defaultSender = activeSenders.firstWhere(
+      (s) => s['isDefault'] == true,
+      orElse: () => activeSenders.first,
+    );
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        icon: const Icon(Icons.verified_user_rounded, color: Color(0xff16a34a), size: 44),
+        title: const Text('सर्वर ऑटो-ब्रॉडकास्ट शुरू करें?'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'कुल ${targetVoters.length} मतदाताओं को बैकग्राउंड में संदेश भेजा जाएगा।',
+              style: const TextStyle(fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: const Color(0xfff1f5f9),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('• प्रेषक: ${defaultSender['name']} (${defaultSender['displayNumber']})',
+                      style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+                  const Text('• 100% Anti-Ban: 5-10s रैंडम मानवीय अंतराल',
+                      style: TextStyle(fontSize: 12, color: Color(0xff16a34a), fontWeight: FontWeight.bold)),
+                  const Text('• हर 5 संदेश बाद 45-70s कूल-डाउन ब्रेक',
+                      style: TextStyle(fontSize: 12, color: Color(0xff16a34a), fontWeight: FontWeight.bold)),
+                  const Text('• फ़ोन पर WhatsApp नहीं खुलेगा (स्क्रीन फ़्री)',
+                      style: TextStyle(fontSize: 12, color: Color(0xff1e3a8a), fontWeight: FontWeight.bold)),
+                  if (_hasPickedImage)
+                    const Text('• संलग्न पोस्टर / फ़ोटो साथ जाएगी 🖼️',
+                        style: TextStyle(fontSize: 12, color: Colors.purple, fontWeight: FontWeight.bold)),
+                ],
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('रद्द करें'),
+          ),
+          FilledButton.icon(
+            onPressed: () => Navigator.pop(ctx, true),
+            icon: const Icon(Icons.rocket_launch_rounded, size: 16),
+            label: const Text('Queue & Start'),
+            style: FilledButton.styleFrom(backgroundColor: const Color(0xff16a34a)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    setState(() => _isSending = true);
+    try {
+      final customRecipientsWithNames = <Map<String, String>>[];
+      final cleanNums = <String>[];
+
+      for (final v in targetVoters) {
+        final mob = (v['mobile'] ?? '').toString().replaceAll(RegExp(r'\D'), '');
+        if (mob.length < 10) continue;
+        final rawName = (v['name'] ?? v['fullName'] ?? '').toString().trim();
+        final resName = PhoneContactsBridge.resolveNameForNumber(mob, rawName);
+        final finalName = resName.isNotEmpty && resName != 'साथी' ? resName : (rawName.isNotEmpty ? rawName : 'साथी');
+        if (!cleanNums.contains(mob)) {
+          cleanNums.add(mob);
+          customRecipientsWithNames.add({
+            'mobile': mob,
+            'name': finalName,
+          });
+        }
+      }
+
+      if (cleanNums.isEmpty) {
+        throw 'कोई वैध 10-अंकों का मोबाइल नंबर नहीं मिला।';
+      }
+
+      final body = <String, dynamic>{
+        'title': 'WhatsApp संदेश - ${DateFormat('dd MMM hh:mm a').format(DateTime.now())}',
+        'message': _messageController.text.trim().isNotEmpty
+            ? _messageController.text.trim()
+            : _presets['सामान्य']!,
+        'sender': '${defaultSender['_id']}',
+        'eventType': 'general',
+        'scheduledAt': DateTime.now().toUtc().toIso8601String(),
+        'batchSize': 10,
+        'intervalSeconds': 60,
+        'messageDelaySeconds': 15,
+        'dailyLimit': 500,
+        'quietHoursStart': 20,
+        'quietHoursEnd': 8,
+        'recipientMode': 'custom',
+        'customRecipients': cleanNums,
+        'customRecipientsWithNames': customRecipientsWithNames,
+      };
+
+      if (_hasPickedImage) {
+        try {
+          final bytes = _pickedImageBytes ?? File(_pickedImagePath!).readAsBytesSync();
+          final ext = (_pickedImageName ?? _pickedImagePath ?? '').toLowerCase();
+          final mime = ext.endsWith('.png') ? 'image/png' : 'image/jpeg';
+          body['mediaData'] = base64Encode(bytes);
+          body['mediaMimeType'] = mime;
+          body['mediaFilename'] = _pickedImageName ?? 'poster.jpg';
+        } catch (e) {
+          debugPrint('Error attaching image: $e');
+        }
+      }
+
+      final res = await api.post('/api/messages/broadcast', body);
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('🎉 ${res['total'] ?? cleanNums.length} संदेश सर्वर बैकग्राउंड कतार में जोड़े गए! आपका फ़ोन WhatsApp नहीं खोलेगा।'),
+          backgroundColor: const Color(0xff16a34a),
+          duration: const Duration(seconds: 5),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('त्रुटि: ${e.toString().replaceFirst('Exception: ', '')}'),
+          backgroundColor: Colors.redAccent,
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _isSending = false);
+    }
   }
 
   @override
@@ -1966,7 +2379,7 @@ class _WhatsAppPageState extends State<WhatsAppPage> with SingleTickerProviderSt
             Expanded(
               flex: 6,
               child: FilledButton.icon(
-                onPressed: () => _startAssistedDispatch(autoMode: true),
+                onPressed: _showBulkSendOptionModal,
                 icon: const Icon(Icons.rocket_launch_rounded, color: Colors.white, size: 18),
                 label: Text(
                   '🚀 बल्क ऑटो-सेंड ($count$partyLabel)',
