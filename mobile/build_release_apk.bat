@@ -1,4 +1,5 @@
 @echo off
+set "PATH=C:\Users\pc\dev_tools\flutter\bin;%PATH%"
 if not exist "C:\Users\pc\.gradle\wrapper\dists" (
     set GRADLE_USER_HOME=D:\.gradle
 )
