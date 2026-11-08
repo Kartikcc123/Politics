@@ -50,6 +50,11 @@ class _WhatsAppPageState extends State<WhatsAppPage> with SingleTickerProviderSt
   bool _isFiltersExpanded = false;
   bool _isSending = false;
 
+  // Live Server Campaign State & Tracking
+  Map<String, dynamic>? _activeCampaign;
+  bool _isLoadingCampaignStatus = false;
+  Timer? _campaignPollTimer;
+
   // Filter selections
   String _sourceFilter = 'all'; // 'all', 'phone', 'app', 'fav'
   bool _antiBanRotatingGreetings = true;
@@ -120,6 +125,10 @@ class _WhatsAppPageState extends State<WhatsAppPage> with SingleTickerProviderSt
     });
     _customPhoneController.addListener(_onCustomPhoneChanged);
     _loadAllFilters();
+    _loadActiveCampaign();
+    _campaignPollTimer = Timer.periodic(const Duration(seconds: 12), (_) {
+      if (mounted) _loadActiveCampaign();
+    });
   }
 
   void _onCustomPhoneChanged() {
@@ -135,12 +144,64 @@ class _WhatsAppPageState extends State<WhatsAppPage> with SingleTickerProviderSt
 
   @override
   void dispose() {
+    _campaignPollTimer?.cancel();
     _tabController.dispose();
     _messageController.dispose();
     _searchController.dispose();
     _customPhoneController.removeListener(_onCustomPhoneChanged);
     _customPhoneController.dispose();
     super.dispose();
+  }
+
+  Future<void> _loadActiveCampaign() async {
+    try {
+      final res = await api.list('/api/messages/history');
+      if (res.isNotEmpty) {
+        final campaigns = <Map<String, dynamic>>[];
+        for (final item in res) {
+          if (item is Map) {
+            campaigns.add(Map<String, dynamic>.from(item));
+          }
+        }
+        if (campaigns.isNotEmpty) {
+          final active = campaigns.firstWhere(
+            (c) => ['running', 'scheduled', 'paused'].contains(c['status']),
+            orElse: () => campaigns.first,
+          );
+          if (mounted) {
+            setState(() {
+              _activeCampaign = active;
+            });
+          }
+        }
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _controlCampaign(String id, String action) async {
+    setState(() => _isLoadingCampaignStatus = true);
+    try {
+      await api.post('/api/messages/campaigns/$id/control', {'action': action});
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(action == 'pause'
+                ? '⏸️ अभियान रोक दिया गया।'
+                : (action == 'resume' ? '▶️ अभियान फिर से शुरू किया गया।' : '⏹️ अभियान रद्द कर दिया गया।')),
+            backgroundColor: action == 'cancel' ? Colors.redAccent : const Color(0xff16a34a),
+          ),
+        );
+      }
+      await _loadActiveCampaign();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('त्रुटि: $e'), backgroundColor: Colors.redAccent),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isLoadingCampaignStatus = false);
+    }
   }
 
   Future<void> _loadAllFilters() async {
@@ -1205,6 +1266,11 @@ class _WhatsAppPageState extends State<WhatsAppPage> with SingleTickerProviderSt
         elevation: 0,
         actions: [
           IconButton(
+            tooltip: 'लाइव अभियान स्थिति (Live Campaign Tracker)',
+            icon: const Icon(Icons.analytics_outlined),
+            onPressed: _showCampaignTrackerModal,
+          ),
+          IconButton(
             tooltip: 'QR कनेक्ट व बल्क अभियान',
             icon: const Icon(Icons.qr_code_scanner_rounded),
             onPressed: () {
@@ -1238,6 +1304,391 @@ class _WhatsAppPageState extends State<WhatsAppPage> with SingleTickerProviderSt
       bottomNavigationBar: _selectedVoterIds.isNotEmpty
           ? _buildBottomActionBar()
           : null,
+    );
+  }
+
+  Widget _buildActiveCampaignBanner() {
+    if (_activeCampaign == null) return const SizedBox.shrink();
+
+    final status = (_activeCampaign!['status'] ?? '').toString();
+    final isActive = ['running', 'scheduled', 'paused'].contains(status);
+    final isRunning = status == 'running' || status == 'scheduled';
+    final isPaused = status == 'paused';
+
+    if (!isActive) {
+      return Container(
+        margin: const EdgeInsets.fromLTRB(10, 8, 10, 2),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: const Color(0xffe2e8f0)),
+        ),
+        child: Row(
+          children: [
+            Icon(
+              status == 'completed' ? Icons.check_circle_rounded : Icons.cancel_rounded,
+              color: status == 'completed' ? const Color(0xff16a34a) : Colors.grey,
+              size: 18,
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                'अंतिम अभियान: ${_activeCampaign!['title'] ?? ''} (${status == 'completed' ? "पूर्ण ✅" : "रद्द ⏹️"}) · ${_activeCampaign!['sentCount'] ?? 0}/${_activeCampaign!['totalEligible'] ?? 0} भेजे गए',
+                style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: Color(0xff475569)),
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            TextButton(
+              onPressed: _showCampaignTrackerModal,
+              style: TextButton.styleFrom(visualDensity: VisualDensity.compact, padding: EdgeInsets.zero),
+              child: const Text('सभी देखें', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+            ),
+          ],
+        ),
+      );
+    }
+
+    final total = (_activeCampaign!['totalEligible'] ?? 0) as int;
+    final sent = (_activeCampaign!['sentCount'] ?? 0) as int;
+    final failed = (_activeCampaign!['failedCount'] ?? 0) as int;
+    final pending = (total - sent - failed).clamp(0, total);
+    final double progress = total > 0 ? (sent / total).clamp(0.0, 1.0) : 0.0;
+    final percent = (progress * 100).toStringAsFixed(1);
+    final id = (_activeCampaign!['_id'] ?? '').toString();
+
+    return Container(
+      margin: const EdgeInsets.fromLTRB(10, 8, 10, 4),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: isRunning ? const Color(0xfff0fdf4) : const Color(0xfffff7ed),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: isRunning ? const Color(0xff86efac) : const Color(0xfffed7aa),
+          width: 1.5,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: (isRunning ? const Color(0xff16a34a) : Colors.orange).withValues(alpha: 0.08),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(6),
+                decoration: BoxDecoration(
+                  color: isRunning ? const Color(0xff16a34a) : Colors.orange,
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(
+                  isRunning ? Icons.rocket_launch_rounded : Icons.pause_rounded,
+                  color: Colors.white,
+                  size: 16,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      isRunning ? '📡 सर्वर बैकग्राउंड अभियान चालू है' : '⏸️ सर्वर अभियान रुका हुआ है (Paused)',
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w800,
+                        color: isRunning ? const Color(0xff14532d) : const Color(0xff9a3412),
+                      ),
+                    ),
+                    Text(
+                      _activeCampaign!['title'] ?? 'WhatsApp Campaign',
+                      style: const TextStyle(fontSize: 11.5, color: Color(0xff64748b)),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                ),
+              ),
+              IconButton(
+                icon: _isLoadingCampaignStatus
+                    ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                    : const Icon(Icons.refresh_rounded, size: 20),
+                onPressed: _loadActiveCampaign,
+                tooltip: 'ताज़ा करें',
+                visualDensity: VisualDensity.compact,
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(6),
+            child: LinearProgressIndicator(
+              value: progress,
+              backgroundColor: isRunning ? const Color(0xffdcfce7) : const Color(0xffffedd5),
+              valueColor: AlwaysStoppedAnimation<Color>(isRunning ? const Color(0xff16a34a) : Colors.orange),
+              minHeight: 8,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text('✅ भेजे: $sent / $total ($percent%)',
+                  style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold, color: Color(0xff14532d))),
+              Text('⏳ कतार: $pending',
+                  style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold, color: Color(0xff1e3a8a))),
+              if (failed > 0)
+                Text('❌ विफल: $failed',
+                    style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold, color: Colors.red)),
+            ],
+          ),
+          const SizedBox(height: 8),
+          const Divider(height: 1),
+          const SizedBox(height: 4),
+          Row(
+            children: [
+              if (isPaused)
+                TextButton.icon(
+                  onPressed: () => _controlCampaign(id, 'resume'),
+                  icon: const Icon(Icons.play_arrow_rounded, size: 16, color: Color(0xff16a34a)),
+                  label: const Text('फिर चलाएं (Resume)', style: TextStyle(fontSize: 11.5, color: Color(0xff16a34a), fontWeight: FontWeight.bold)),
+                )
+              else
+                TextButton.icon(
+                  onPressed: () => _controlCampaign(id, 'pause'),
+                  icon: const Icon(Icons.pause_rounded, size: 16, color: Colors.orange),
+                  label: const Text('रोकें (Pause)', style: TextStyle(fontSize: 11.5, color: Colors.orange, fontWeight: FontWeight.bold)),
+                ),
+              const SizedBox(width: 4),
+              TextButton.icon(
+                onPressed: () async {
+                  final confirm = await showDialog<bool>(
+                    context: context,
+                    builder: (ctx) => AlertDialog(
+                      title: const Text('अभियान रद्द करें?'),
+                      content: const Text('क्या आप सचमुच इस सर्वर अभियान को पूरी तरह रोकना व रद्द करना चाहते हैं?'),
+                      actions: [
+                        TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('नहीं')),
+                        FilledButton(
+                          onPressed: () => Navigator.pop(ctx, true),
+                          style: FilledButton.styleFrom(backgroundColor: Colors.red),
+                          child: const Text('हाँ, रद्द करें'),
+                        ),
+                      ],
+                    ),
+                  );
+                  if (confirm == true) {
+                    _controlCampaign(id, 'cancel');
+                  }
+                },
+                icon: const Icon(Icons.stop_circle_outlined, size: 16, color: Colors.red),
+                label: const Text('रद्द करें', style: TextStyle(fontSize: 11.5, color: Colors.red, fontWeight: FontWeight.bold)),
+              ),
+              const Spacer(),
+              TextButton(
+                onPressed: _showCampaignTrackerModal,
+                child: const Text('पूरा विवरण 📋', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold)),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _showCampaignTrackerModal() async {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => Container(
+        height: MediaQuery.of(context).size.height * 0.78,
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        child: Column(
+          children: [
+            Container(
+              margin: const EdgeInsets.only(top: 10, bottom: 8),
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                color: Colors.grey.shade300,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              child: Row(
+                children: [
+                  const Icon(Icons.analytics_rounded, color: Color(0xff1e3a8a), size: 24),
+                  const SizedBox(width: 10),
+                  const Expanded(
+                    child: Text(
+                      'अभियान स्थिति व इतिहास (Campaign Tracker)',
+                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xff1e293b)),
+                    ),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.close_rounded),
+                    onPressed: () => Navigator.pop(ctx),
+                  ),
+                ],
+              ),
+            ),
+            const Divider(height: 1),
+            Expanded(
+              child: FutureBuilder<List<dynamic>>(
+                future: api.list('/api/messages/history'),
+                builder: (context, snapshot) {
+                  if (snapshot.connectionState == ConnectionState.waiting) {
+                    return const Center(child: CircularProgressIndicator(color: Color(0xff16a34a)));
+                  }
+                  if (snapshot.hasError) {
+                    return Center(child: Text('त्रुटि: ${snapshot.error}'));
+                  }
+                  final list = snapshot.data is List
+                      ? List<Map<String, dynamic>>.from(
+                          snapshot.data!.map((item) => Map<String, dynamic>.from(item as Map)))
+                      : <Map<String, dynamic>>[];
+                  if (list.isEmpty) {
+                    return const Center(
+                      child: Text('अभी कोई अभियान इतिहास उपलब्ध नहीं है।', style: TextStyle(color: Colors.grey)),
+                    );
+                  }
+                  return ListView.separated(
+                    padding: const EdgeInsets.all(14),
+                    itemCount: list.length,
+                    separatorBuilder: (_, __) => const SizedBox(height: 12),
+                    itemBuilder: (context, i) {
+                      final c = list[i];
+                      final st = (c['status'] ?? '').toString();
+                      final isRun = st == 'running' || st == 'scheduled';
+                      final isPsd = st == 'paused';
+                      final tot = (c['totalEligible'] ?? 0) as int;
+                      final snt = (c['sentCount'] ?? 0) as int;
+                      final fld = (c['failedCount'] ?? 0) as int;
+                      final pnd = (tot - snt - fld).clamp(0, tot);
+                      final prg = tot > 0 ? (snt / tot).clamp(0.0, 1.0) : 0.0;
+                      final dtStr = c['createdAt'] != null
+                          ? DateFormat('dd MMM, hh:mm a').format(DateTime.parse(c['createdAt']).toLocal())
+                          : '';
+                      final cId = (c['_id'] ?? '').toString();
+
+                      return Container(
+                        padding: const EdgeInsets.all(14),
+                        decoration: BoxDecoration(
+                          color: isRun ? const Color(0xfff0fdf4) : const Color(0xfff8fafc),
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(
+                            color: isRun ? const Color(0xff86efac) : const Color(0xffe2e8f0),
+                            width: isRun ? 1.5 : 1.0,
+                          ),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    c['title'] ?? 'WhatsApp Campaign',
+                                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                                  ),
+                                ),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                  decoration: BoxDecoration(
+                                    color: isRun
+                                        ? const Color(0xff16a34a)
+                                        : (isPsd ? Colors.orange : (st == 'completed' ? Colors.blue : Colors.grey)),
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  child: Text(
+                                    isRun ? '🟢 चालू (Running)' : (isPsd ? '⏸️ रुका हुआ' : (st == 'completed' ? '✅ पूर्ण' : '⏹️ रद्द')),
+                                    style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 4),
+                            Text('दिनांक: $dtStr | प्रेषक: ${c['sender']?['name'] ?? ''} (${c['sender']?['displayNumber'] ?? ''})',
+                                style: const TextStyle(fontSize: 11, color: Color(0xff64748b))),
+                            const SizedBox(height: 8),
+                            ClipRRect(
+                              borderRadius: BorderRadius.circular(4),
+                              child: LinearProgressIndicator(
+                                value: prg,
+                                minHeight: 6,
+                                backgroundColor: Colors.grey.shade200,
+                                valueColor: AlwaysStoppedAnimation<Color>(
+                                  isRun ? const Color(0xff16a34a) : Colors.blue,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 6),
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Text('✅ भेजे: $snt', style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: Color(0xff16a34a))),
+                                Text('⏳ बाकी: $pnd', style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: Color(0xff1e3a8a))),
+                                Text('❌ विफल: $fld', style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: Colors.red)),
+                                Text('कुल: $tot', style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: Colors.grey)),
+                              ],
+                            ),
+                            if (isRun || isPsd) ...[
+                              const Divider(height: 14),
+                              Row(
+                                mainAxisAlignment: MainAxisAlignment.end,
+                                children: [
+                                  if (isPsd)
+                                    FilledButton.icon(
+                                      onPressed: () {
+                                        Navigator.pop(ctx);
+                                        _controlCampaign(cId, 'resume');
+                                      },
+                                      icon: const Icon(Icons.play_arrow_rounded, size: 14),
+                                      label: const Text('फिर चलाएं', style: TextStyle(fontSize: 11)),
+                                      style: FilledButton.styleFrom(backgroundColor: const Color(0xff16a34a), visualDensity: VisualDensity.compact),
+                                    )
+                                  else
+                                    OutlinedButton.icon(
+                                      onPressed: () {
+                                        Navigator.pop(ctx);
+                                        _controlCampaign(cId, 'pause');
+                                      },
+                                      icon: const Icon(Icons.pause_rounded, size: 14),
+                                      label: const Text('रोकें', style: TextStyle(fontSize: 11)),
+                                      style: OutlinedButton.styleFrom(visualDensity: VisualDensity.compact),
+                                    ),
+                                  const SizedBox(width: 8),
+                                  TextButton.icon(
+                                    onPressed: () {
+                                      Navigator.pop(ctx);
+                                      _controlCampaign(cId, 'cancel');
+                                    },
+                                    icon: const Icon(Icons.close_rounded, size: 14, color: Colors.red),
+                                    label: const Text('रद्द करें', style: TextStyle(fontSize: 11, color: Colors.red)),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ],
+                        ),
+                      );
+                    },
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -1482,6 +1933,7 @@ class _WhatsAppPageState extends State<WhatsAppPage> with SingleTickerProviderSt
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
+              _buildActiveCampaignBanner(),
               _buildComposerCard(),
               _buildFiltersCard(),
               _buildVoterListHeader(totalWithMobile),
@@ -2830,6 +3282,7 @@ class _WhatsAppPageState extends State<WhatsAppPage> with SingleTickerProviderSt
     return ListView(
       padding: const EdgeInsets.all(14),
       children: [
+        _buildActiveCampaignBanner(),
         _buildComposerCard(),
         const SizedBox(height: 12),
         Card(
