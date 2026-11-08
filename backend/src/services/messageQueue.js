@@ -163,7 +163,11 @@ async function processCampaign(campaign) {
     } catch (error) {
       console.error(`[WhatsApp Queue] ❌ Error sending to ${recipient.mobile}:`, error.message);
       recipient.error = error.message;
-      if (recipient.attempts < 3 && !error.message.includes('ACCESS_TOKEN')) {
+      const isUnregisteredOrPermanent = error.message.includes('पंजीकृत नहीं') ||
+        error.message.includes('No LID for user') ||
+        error.message.includes('not registered') ||
+        error.message.includes('ACCESS_TOKEN');
+      if (recipient.attempts < 3 && !isUnregisteredOrPermanent) {
         recipient.status = 'queued';
         recipient.nextAttemptAt = new Date(Date.now() + recipient.attempts * 5 * 60 * 1000);
       } else {

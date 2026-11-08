@@ -465,44 +465,45 @@ class _WhatsAppPageState extends State<WhatsAppPage> with SingleTickerProviderSt
       if (result != null && result.files.isNotEmpty) {
         final picked = result.files.first;
         final name = picked.name;
-        final bytes = picked.bytes;
+        Uint8List? rawBytes = picked.bytes;
         String? path;
         if (!kIsWeb) {
           try {
             path = picked.path;
+            if (rawBytes == null && path != null && File(path).existsSync()) {
+              rawBytes = File(path).readAsBytesSync();
+            }
           } catch (_) {}
         }
 
-        if (bytes != null) {
-          setState(() {
-            _pickedImageBytes = bytes;
-            _pickedImageName = name;
-            _pickedImagePath = path;
-          });
-        } else if (path != null && !kIsWeb) {
-          final originalFile = File(path);
-          if (await originalFile.exists()) {
-            final tempDir = await getTemporaryDirectory();
-            final ext = path.contains('.') ? path.split('.').last : 'jpg';
-            final localCopy = File('${tempDir.path}/whatsapp_poster_${DateTime.now().millisecondsSinceEpoch}.$ext');
-            await originalFile.copy(localCopy.path);
-            final diskBytes = await localCopy.readAsBytes();
-            setState(() {
-              _pickedImagePath = localCopy.path;
-              _pickedImageBytes = diskBytes;
-              _pickedImageName = name;
-            });
+        if (rawBytes != null && rawBytes.isNotEmpty) {
+          String finalPath = path ?? '';
+          if (!kIsWeb) {
+            try {
+              final tempDir = await getTemporaryDirectory();
+              final ext = name.contains('.') ? name.split('.').last : 'jpg';
+              final localCopy = File('${tempDir.path}/whatsapp_poster_${DateTime.now().millisecondsSinceEpoch}.$ext');
+              await localCopy.writeAsBytes(rawBytes);
+              finalPath = localCopy.path;
+            } catch (_) {}
           }
-        }
 
-        if (_hasPickedImage && mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('📷 फोटो/पोस्टर सफलतापूर्वक जुड़ गया है!'),
-              backgroundColor: Color(0xff16a34a),
-              duration: Duration(seconds: 2),
-            ),
-          );
+          setState(() {
+            _pickedImageBytes = rawBytes;
+            _pickedImagePath = finalPath.isNotEmpty ? finalPath : path;
+            _pickedImageName = name;
+          });
+
+          if (mounted) {
+            final sizeKb = (rawBytes.length / 1024).toStringAsFixed(1);
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text('📷 फोटो/पोस्टर तैयार है: $name ($sizeKb KB)'),
+                backgroundColor: const Color(0xff16a34a),
+                duration: const Duration(seconds: 2),
+              ),
+            );
+          }
         }
       }
     } catch (e) {
@@ -925,6 +926,65 @@ class _WhatsAppPageState extends State<WhatsAppPage> with SingleTickerProviderSt
     );
   }
 
+  Future<void> _reconnectWhatsAppSender(Map<String, dynamic> sender, List<Map<String, dynamic>> targetVoters) async {
+    final senderId = sender['_id'];
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => const AlertDialog(
+        content: Row(
+          children: [
+            CircularProgressIndicator(color: Color(0xff16a34a)),
+            SizedBox(width: 18),
+            Expanded(child: Text('WhatsApp सर्वर से पुनः कनेक्ट हो रहा है...\nकृपया 5-10 सेकंड प्रतीक्षा करें।', style: TextStyle(fontSize: 13))),
+          ],
+        ),
+      ),
+    );
+
+    try {
+      await api.post('/api/messages/senders/$senderId/connect', {});
+      bool isReady = false;
+      for (int i = 0; i < 12; i++) {
+        await Future.delayed(const Duration(seconds: 1));
+        try {
+          final statusRes = await api.get('/api/messages/senders/$senderId/status');
+          if (statusRes['connectionStatus'] == 'connected') {
+            isReady = true;
+            break;
+          }
+        } catch (_) {}
+      }
+
+      if (!mounted) return;
+      Navigator.pop(context); // close loading dialog
+
+      if (isReady) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('🎉 WhatsApp सर्वर से सफलता पूर्वक कनेक्ट हो गया!'),
+            backgroundColor: Color(0xff16a34a),
+          ),
+        );
+        _sendViaServerQueue(targetVoters);
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('⚠️ WhatsApp कनेक्ट नहीं हो सका। कृपया ऊपर QR आइकन दबाकर QR कोड स्कैन करें।'),
+            backgroundColor: Colors.orange,
+            duration: Duration(seconds: 4),
+          ),
+        );
+      }
+    } catch (e) {
+      if (!mounted) return;
+      Navigator.pop(context);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('कनेक्ट त्रुटि: $e'), backgroundColor: Colors.redAccent),
+      );
+    }
+  }
+
   Future<void> _sendViaServerQueue(List<Map<String, dynamic>> targetVoters) async {
     List<Map<String, dynamic>> senders = [];
     try {
@@ -939,29 +999,43 @@ class _WhatsAppPageState extends State<WhatsAppPage> with SingleTickerProviderSt
     final activeSenders = senders.where((s) => s['connectionStatus'] == 'connected').toList();
     if (activeSenders.isEmpty) {
       if (!mounted) return;
+      final existingSender = senders.isNotEmpty ? senders.first : null;
       showDialog(
         context: context,
         builder: (ctx) => AlertDialog(
           icon: const Icon(Icons.warning_amber_rounded, color: Colors.orange, size: 40),
           title: const Text('WhatsApp Sender कनेक्ट नहीं है'),
-          content: const Text(
-            'सर्वर बैकग्राउंड से ऑटो-मैसेज भेजने के लिए कम से कम एक WhatsApp नंबर कनेक्ट होना चाहिए।\n\n'
-            '1. ऊपर दाईं ओर QR आइकन दबाकर "WhatsApp बल्क अभियान" में जाएं और QR स्कैन करें।\n'
-            '2. या फिर आप सीधे "फ़ोन ऐप से भेजें" विकल्प का उपयोग कर सकते हैं।',
+          content: Text(
+            existingSender != null
+                ? 'सर्वर बैकग्राउंड से 100% हैंड्स-फ्री और एंटी-बैन ऑटो-मैसेज (फोटो सहित) भेजने के लिए WhatsApp कनेक्ट होना आवश्यक है।\n\n'
+                  'पंजीकृत नंबर: ${existingSender['name']} (${existingSender['displayNumber']})\n\n'
+                  'आप नीचे "पुनः कनेक्ट करें" दबाकर बिना QR स्कैन किए पुनः कनेक्ट कर सकते हैं।'
+                : 'सर्वर बैकग्राउंड से ऑटो-मैसेज भेजने के लिए कम से कम एक WhatsApp नंबर कनेक्ट होना चाहिए।\n\n'
+                  '1. ऊपर दाईं ओर QR आइकन दबाकर QR स्कैन करें।\n'
+                  '2. या फिर आप सीधे "फ़ोन ऐप से भेजें" विकल्प का उपयोग कर सकते हैं।',
           ),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(ctx),
               child: const Text('रद्द करें'),
             ),
-            FilledButton.icon(
+            if (existingSender != null)
+              FilledButton.icon(
+                onPressed: () {
+                  Navigator.pop(ctx);
+                  _reconnectWhatsAppSender(existingSender, targetVoters);
+                },
+                icon: const Icon(Icons.refresh_rounded, size: 16),
+                label: const Text('पुनः कनेक्ट करें'),
+                style: FilledButton.styleFrom(backgroundColor: const Color(0xff16a34a)),
+              ),
+            OutlinedButton.icon(
               onPressed: () {
                 Navigator.pop(ctx);
                 _startAssistedDispatch(autoMode: true);
               },
               icon: const Icon(Icons.phone_android_rounded, size: 16),
               label: const Text('फ़ोन ऐप से भेजें'),
-              style: FilledButton.styleFrom(backgroundColor: const Color(0xff16a34a)),
             ),
           ],
         ),
@@ -1006,8 +1080,8 @@ class _WhatsAppPageState extends State<WhatsAppPage> with SingleTickerProviderSt
                   const Text('• फ़ोन पर WhatsApp नहीं खुलेगा (स्क्रीन फ़्री)',
                       style: TextStyle(fontSize: 12, color: Color(0xff1e3a8a), fontWeight: FontWeight.bold)),
                   if (_hasPickedImage)
-                    const Text('• संलग्न पोस्टर / फ़ोटो साथ जाएगी 🖼️',
-                        style: TextStyle(fontSize: 12, color: Colors.purple, fontWeight: FontWeight.bold)),
+                    Text('• संलग्न पोस्टर / फ़ोटो साथ जाएगी (${_pickedImageName ?? "poster.jpg"}) 🖼️',
+                        style: const TextStyle(fontSize: 12, color: Colors.purple, fontWeight: FontWeight.bold)),
                 ],
               ),
             ),
@@ -1075,12 +1149,20 @@ class _WhatsAppPageState extends State<WhatsAppPage> with SingleTickerProviderSt
 
       if (_hasPickedImage) {
         try {
-          final bytes = _pickedImageBytes ?? File(_pickedImagePath!).readAsBytesSync();
-          final ext = (_pickedImageName ?? _pickedImagePath ?? '').toLowerCase();
-          final mime = ext.endsWith('.png') ? 'image/png' : 'image/jpeg';
-          body['mediaData'] = base64Encode(bytes);
-          body['mediaMimeType'] = mime;
-          body['mediaFilename'] = _pickedImageName ?? 'poster.jpg';
+          Uint8List? bytes = _pickedImageBytes;
+          if (bytes == null && _pickedImagePath != null && !kIsWeb && File(_pickedImagePath!).existsSync()) {
+            bytes = File(_pickedImagePath!).readAsBytesSync();
+          }
+          if (bytes != null && bytes.isNotEmpty) {
+            final ext = (_pickedImageName ?? _pickedImagePath ?? '').toLowerCase();
+            final mime = ext.endsWith('.png') ? 'image/png' : 'image/jpeg';
+            body['mediaData'] = base64Encode(bytes);
+            body['mediaMimeType'] = mime;
+            body['mediaFilename'] = _pickedImageName ?? 'poster.jpg';
+            debugPrint('[WhatsApp Bulk] Attached media: ${body['mediaFilename']} (${bytes.length} bytes)');
+          } else {
+            debugPrint('[WhatsApp Bulk] Warning: _hasPickedImage true but bytes could not be loaded');
+          }
         } catch (e) {
           debugPrint('Error attaching image: $e');
         }
@@ -1089,9 +1171,10 @@ class _WhatsAppPageState extends State<WhatsAppPage> with SingleTickerProviderSt
       final res = await api.post('/api/messages/broadcast', body);
 
       if (!mounted) return;
+      final hasMediaAttached = body.containsKey('mediaData');
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('🎉 ${res['total'] ?? cleanNums.length} संदेश सर्वर बैकग्राउंड कतार में जोड़े गए! आपका फ़ोन WhatsApp नहीं खोलेगा।'),
+          content: Text('🎉 ${res['total'] ?? cleanNums.length} संदेश ${hasMediaAttached ? "फ़ोटो/पोस्टर सहित " : ""}सर्वर बैकग्राउंड कतार में जोड़े गए! आपका फ़ोन WhatsApp नहीं खोलेगा।'),
           backgroundColor: const Color(0xff16a34a),
           duration: const Duration(seconds: 5),
         ),
@@ -3130,9 +3213,17 @@ class _AssistedDispatchSheetState extends State<_AssistedDispatchSheet>
       await Clipboard.setData(ClipboardData(text: mobile));
       final ext = (widget.imageName ?? widget.imagePath ?? '').toLowerCase();
       final mime = ext.endsWith('.png') ? 'image/png' : 'image/jpeg';
-      final xFile = widget.imageBytes != null
-          ? XFile.fromData(widget.imageBytes!, mimeType: mime, name: widget.imageName ?? 'poster.jpg')
-          : XFile(widget.imagePath!, mimeType: mime, name: widget.imageName ?? 'poster.jpg');
+      XFile xFile;
+      if (widget.imagePath != null && !kIsWeb && File(widget.imagePath!).existsSync()) {
+        xFile = XFile(widget.imagePath!, mimeType: mime, name: widget.imageName ?? 'poster.jpg');
+      } else if (widget.imageBytes != null && !kIsWeb) {
+        final tempDir = await getTemporaryDirectory();
+        final tmpFile = File('${tempDir.path}/share_poster_${DateTime.now().millisecondsSinceEpoch}.${mime.endsWith('png') ? 'png' : 'jpg'}');
+        await tmpFile.writeAsBytes(widget.imageBytes!);
+        xFile = XFile(tmpFile.path, mimeType: mime, name: widget.imageName ?? 'poster.jpg');
+      } else {
+        xFile = XFile.fromData(widget.imageBytes!, mimeType: mime, name: widget.imageName ?? 'poster.jpg');
+      }
       final textToSend = msg.trim().isNotEmpty ? msg : null;
 
       try {

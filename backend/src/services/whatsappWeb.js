@@ -118,6 +118,7 @@ async function connectSender(senderOrId) {
 
     const puppeteer = {
       headless: true,
+      protocolTimeout: 600000, // 10 minutes - prevents Runtime.callFunctionOn timeouts during media upload
       args: [
         '--no-sandbox',
         '--disable-setuid-sandbox',
@@ -129,7 +130,7 @@ async function connectSender(senderOrId) {
         '--disable-background-timer-throttling',
         '--disable-backgrounding-occluded-windows',
         '--disable-renderer-backgrounding',
-        '--js-flags=--max-old-space-size=512',
+        '--js-flags=--max-old-space-size=2048',
         '--disable-extensions',
         '--mute-audio',
       ],
@@ -199,7 +200,8 @@ async function connectSender(senderOrId) {
       try { await client.destroy(); } catch (_) {}
 
       const reasonStr = String(reason || '');
-      const isQrTimeout = reasonStr.toLowerCase().includes('max qrcode retries') || !wasEverConnected;
+      const isQrTimeout = reasonStr.toLowerCase().includes('max qrcode retries');
+      const hasSavedSession = fs.existsSync(sessionDir);
 
       await updateSender(id, {
         connectionStatus: 'disconnected',
@@ -207,19 +209,19 @@ async function connectSender(senderOrId) {
         qrCode: '',
       });
 
-      // Auto-reconnect ONLY if session was previously active and dropped unexpectedly.
-      if (wasEverConnected && reason !== 'LOGOUT' && !isQrTimeout) {
+      // Auto-reconnect if session was previously active or saved session dir exists on disk
+      if ((wasEverConnected || hasSavedSession) && reason !== 'LOGOUT' && !isQrTimeout) {
         setTimeout(async () => {
           try {
             const fresh = await MessageSender.findById(id);
             if (fresh && fresh.active && fresh.provider === 'whatsapp_web') {
-              console.log(`[WhatsApp Web] 🔄 Auto-reconnecting active sender ${id} after network drop...`);
+              console.log(`[WhatsApp Web] 🔄 Auto-reconnecting active sender ${id} after disconnect (${reasonStr})...`);
               await connectSender(fresh);
             }
           } catch (err) {
             console.error(`[WhatsApp Web] Auto-reconnect failed for ${id}:`, err.message);
           }
-        }, 8000);
+        }, 5000);
       }
     });
     client.initialize().catch(async (error) => {
@@ -293,10 +295,15 @@ async function sendWebMessage(sender, mobile, text, mediaObj = null) {
   let targetSerialized = `${digits}@c.us`;
   try {
     const numberId = await client.getNumberId(digits);
-    if (numberId?._serialized && !numberId._serialized.includes('@lid')) {
+    if (!numberId || !numberId._serialized) {
+      throw new Error(`मोबाइल नंबर WhatsApp पर पंजीकृत नहीं है (Not registered on WhatsApp)`);
+    }
+    if (!numberId._serialized.includes('@lid')) {
       targetSerialized = numberId._serialized;
     }
-  } catch (_) {}
+  } catch (err) {
+    if (err.message.includes('पंजीकृत नहीं')) throw err;
+  }
 
   // Guarantee that WWebJS and memoize patches are present before any sendMessage attempt
   await ensurePatchedPupPage(client);
@@ -324,28 +331,38 @@ async function sendWebMessage(sender, mobile, text, mediaObj = null) {
 
   let message;
   if (mediaObj && mediaObj.data && mediaObj.data.length > 50) {
+    let base64Clean = String(mediaObj.data || '').trim();
+    if (base64Clean.includes('base64,')) {
+      base64Clean = base64Clean.split('base64,')[1];
+    }
+    base64Clean = base64Clean.replace(/[\r\n\s]/g, '');
+    while (base64Clean.length % 4 !== 0) {
+      base64Clean += '=';
+    }
+    let mimeType = mediaObj.mimeType || (mediaObj.filename?.endsWith('.png') ? 'image/png' : 'image/jpeg');
+    if (mimeType === 'image/jpg') mimeType = 'image/jpeg';
+    const filename = mediaObj.filename || 'poster.jpg';
+    const media = new MessageMedia(
+      mimeType,
+      base64Clean,
+      filename
+    );
+    console.log(`[WhatsApp Web] 📤 Sending media (${mimeType}, ${filename}, ${base64Clean.length} b64 chars) with caption to ${targetSerialized}...`);
+
     try {
-      let base64Clean = String(mediaObj.data || '').trim();
-      if (base64Clean.includes('base64,')) {
-        base64Clean = base64Clean.split('base64,')[1];
-      }
-      base64Clean = base64Clean.replace(/[\r\n\s]/g, '');
-      let mimeType = mediaObj.mimeType || (mediaObj.filename?.endsWith('.png') ? 'image/png' : 'image/jpeg');
-      if (mimeType === 'image/jpg') mimeType = 'image/jpeg';
-      const filename = mediaObj.filename || 'poster.jpg';
-      const media = new MessageMedia(
-        mimeType,
-        base64Clean,
-        filename
-      );
-      console.log(`[WhatsApp Web] 📤 Sending media (${mimeType}, ${filename}, ${base64Clean.length} b64 chars) with caption to ${targetSerialized}...`);
       message = await client.sendMessage(targetSerialized, media, { caption: safeText });
       console.log(`[WhatsApp Web] ✅ Media successfully sent to ${targetSerialized}`);
     } catch (mediaError) {
-      console.error(`[WhatsApp Web] ❌ Media send FAILED to ${digits}:`, mediaError.stack || mediaError.message);
-      console.warn(`[WhatsApp Web] ⚠️ Falling back to text-only send for ${digits}`);
+      console.warn(`[WhatsApp Web] ⚠️ First media send attempt failed for ${digits}: ${mediaError.message}. Re-patching and retrying...`);
       await ensurePatchedPupPage(client);
-      message = await client.sendMessage(targetSerialized, safeText);
+      await new Promise((r) => setTimeout(r, 2000));
+      try {
+        message = await client.sendMessage(targetSerialized, media, { caption: safeText });
+        console.log(`[WhatsApp Web] ✅ Media successfully sent on retry to ${targetSerialized}`);
+      } catch (retryError) {
+        console.error(`[WhatsApp Web] ❌ Media send retry FAILED to ${digits}:`, retryError.message);
+        throw new Error(`Media send failed: ${retryError.message}`);
+      }
     }
   } else {
     message = await client.sendMessage(targetSerialized, safeText);

@@ -7,6 +7,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 
 import '../../core/api_client.dart';
@@ -191,9 +192,7 @@ class _BulkMessagePageState extends State<BulkMessagePage> {
         final file = result.files.first;
         Uint8List? bytes = file.bytes;
         String? p;
-        if (kIsWeb) {
-          p = null;
-        } else {
+        if (!kIsWeb) {
           try {
             p = file.path;
             if (bytes == null && p != null && File(p).existsSync()) {
@@ -201,12 +200,34 @@ class _BulkMessagePageState extends State<BulkMessagePage> {
             }
           } catch (_) {}
         }
-        setState(() {
-          pickedImageBytes = bytes;
-          pickedImagePath = p;
-          pickedImageName = file.name;
-          attachPhoto = true;
-        });
+        if (bytes != null && bytes.isNotEmpty) {
+          String finalPath = p ?? '';
+          if (!kIsWeb) {
+            try {
+              final tempDir = await getTemporaryDirectory();
+              final ext = file.name.contains('.') ? file.name.split('.').last : 'jpg';
+              final localCopy = File('${tempDir.path}/bulk_campaign_poster_${DateTime.now().millisecondsSinceEpoch}.$ext');
+              await localCopy.writeAsBytes(bytes);
+              finalPath = localCopy.path;
+            } catch (_) {}
+          }
+          setState(() {
+            pickedImageBytes = bytes;
+            pickedImagePath = finalPath.isNotEmpty ? finalPath : p;
+            pickedImageName = file.name;
+            attachPhoto = true;
+          });
+          if (mounted) {
+            final sizeKb = (bytes.length / 1024).toStringAsFixed(1);
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text('📷 फोटो संलग्न: ${file.name} ($sizeKb KB)'),
+                backgroundColor: const Color(0xff16a34a),
+                duration: const Duration(seconds: 2),
+              ),
+            );
+          }
+        }
       }
     } catch (e) {
       if (mounted) {
@@ -1323,9 +1344,17 @@ class _FastSendSheetState extends State<_FastSendSheet> {
       try {
         final ext = (widget.imageName ?? widget.imagePath ?? '').toLowerCase();
         final mime = ext.endsWith('.png') ? 'image/png' : 'image/jpeg';
-        final xFile = widget.imageBytes != null
-            ? XFile.fromData(widget.imageBytes!, mimeType: mime, name: widget.imageName ?? 'poster.jpg')
-            : XFile(widget.imagePath!, mimeType: mime, name: widget.imageName ?? 'poster.jpg');
+        XFile xFile;
+        if (widget.imagePath != null && !kIsWeb && File(widget.imagePath!).existsSync()) {
+          xFile = XFile(widget.imagePath!, mimeType: mime, name: widget.imageName ?? 'poster.jpg');
+        } else if (widget.imageBytes != null && !kIsWeb) {
+          final tempDir = await getTemporaryDirectory();
+          final tmpFile = File('${tempDir.path}/bulk_fast_poster_${DateTime.now().millisecondsSinceEpoch}.${mime.endsWith('png') ? 'png' : 'jpg'}');
+          await tmpFile.writeAsBytes(widget.imageBytes!);
+          xFile = XFile(tmpFile.path, mimeType: mime, name: widget.imageName ?? 'poster.jpg');
+        } else {
+          xFile = XFile.fromData(widget.imageBytes!, mimeType: mime, name: widget.imageName ?? 'poster.jpg');
+        }
         await SharePlus.instance.share(
           ShareParams(
             text: textToSend,
