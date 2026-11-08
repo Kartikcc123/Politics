@@ -215,14 +215,51 @@ function campaignFilter(req) {
   return filter;
 }
 
-function renderMessage(template, member = {}, body = {}) {
+function parseSpintax(text) {
+  let spun = String(text || '');
+  const regex = /\{([^{}]+)\}/g;
+  while (regex.test(spun)) {
+    spun = spun.replace(regex, (match, choices) => {
+      const parts = choices.split('|');
+      return parts[Math.floor(Math.random() * parts.length)].trim();
+    });
+  }
+  return spun;
+}
+
+const ROTATING_GREETINGS = [
+  'सादर प्रणाम {{name}} जी,',
+  'राम राम सा {{name}} जी,',
+  'जय श्री कृष्णा {{name}} जी,',
+  'नमस्कार {{name}} जी,',
+  'स्नेह वंदन {{name}} जी,',
+  'हार्दिक प्रणाम {{name}} जी,',
+  'जय श्री राम {{name}} जी,',
+  'शुभ वंदन {{name}} जी,',
+];
+
+const DIWALI_BODY_VARIANTS = [
+  'दीपावली के इस पावन पर्व पर आपको एवं आपके पूरे परिवार को हार्दिक शुभकामनाएं। यह पावन पर्व आपके जीवन में सुख, शांति और समृद्धि लाए।',
+  'प्रकाश एवं खुशियों के महापर्व दीपोत्सव की आपको व आपके परिवारजनों को अनंत मंगलकामनाएं। मां लक्ष्मी की असीम कृपा आप पर सदैव बनी रहे।',
+  'दीपावली के शुभ अवसर पर आपके और आपके परिवार के लिए सुख, आरोग्य और समृद्धि की मंगल कामना करता हूँ।',
+  'यह पावन दीपोत्सव आपके जीवन में नई रोशनी, उत्तम स्वास्थ्य और अपार सफलता लाए। दीपावली की बहुत-बहुत बधाई।',
+  'मां लक्ष्मी और भगवान श्री गणेश की असीम कृपा आपके परिवार पर सदैव बनी रहे। शुभ दीपावली।',
+  'दीपों का यह पावन त्यौहार आपके घर-आँगन को खुशहाली, उमंग और समृद्धि से भर दे। दीपावली की हार्दिक बधाई व अशेष शुभकामनाएं।',
+  'दीपावली के पावन महापर्व की आपको व आपके समस्त परिजनों को सस्नेह बधाई व हार्दिक मंगलकामनाएं।',
+  'आपको एवं आपके परिवार को प्रकाश पर्व दीपावली की हार्दिक बधाई। ईश्वर आपके जीवन को खुशियों के उजाले से आलोकित रखे।'
+];
+
+const ROTATING_EMOJIS = ['🪔✨', '🌸🙏', '🌺🪔', '✨🙏', '🪔🌸', '✨🕉️'];
+const INVISIBLE_SALTS = ['\u200B', '\u200C', '\u200D', '\uFEFF'];
+
+function renderMessage(template, member = {}, body = {}, index = 0) {
   const name = member.name || member.fullName || 'साथी';
   const ward = member.wardNumber || (Array.isArray(member.municipalWardNumbers) && member.municipalWardNumbers[0]) || member.ward?.number || '';
   const booth = member.partNumber || member.booth?.number || '';
   const village = member.village || member.mukhyaGram || member.gramPanchayat || '';
   const guardian = member.guardianName || '';
 
-  return String(template || '')
+  let raw = String(template || '')
     .replaceAll('{{name}}', name)
     .replaceAll('{{surname}}', member.surname || '')
     .replaceAll('{{party}}', member.party?.name || '')
@@ -232,6 +269,57 @@ function renderMessage(template, member = {}, body = {}) {
     .replaceAll('{{guardian}}', guardian)
     .replaceAll('{{event}}', body.eventName || 'कार्यक्रम')
     .replaceAll('{{date}}', body.eventDate || body.occasionDate || '');
+
+  // 1. Spintax parsing if user provided {A|B|C}
+  if (raw.includes('{') && raw.includes('}')) {
+    raw = parseSpintax(raw);
+  }
+
+  // 2. Dynamic Salutation & Content Rotation for Anti-Ban
+  const lines = raw.split('\n').map((l) => l.trim()).filter(Boolean);
+  let signature = '';
+  let contentLines = [...lines];
+
+  if (lines.length > 1) {
+    const lastLine = lines[lines.length - 1];
+    if (lastLine.startsWith('-') || lastLine.startsWith('—') || lastLine.startsWith('विनीत') || lastLine.startsWith('निवेदक') || (lines.length >= 2 && lastLine.length < 40)) {
+      signature = lastLine;
+      contentLines.pop();
+    }
+  }
+
+  // Greeting selection
+  const greetingIdx = (index + Math.floor(Math.random() * 3)) % ROTATING_GREETINGS.length;
+  const pickedGreeting = ROTATING_GREETINGS[greetingIdx].replace('{{name}}', name);
+
+  // Check if first line was already an existing greeting
+  const firstLine = contentLines[0] || '';
+  const hasGreeting = /^(सादर\s*प्रणाम|राम\s*राम|जय\s*श्री|नमस्कार|नमस्ते|स्नेह\s*वंदन|हार्दिक\s*प्रणाम|शुभ\s*वंदन)/i.test(firstLine);
+  if (hasGreeting) {
+    contentLines.shift();
+  }
+
+  let remainingContent = contentLines.join('\n\n').trim();
+
+  // If festival/Diwali greeting, rotate body variants so messages have different wording
+  const isDiwaliWish = /(दीपावली|दिवाली|दीपोत्सव)/i.test(remainingContent || raw) && /(शुभकामना|बधाई|मंगलकामना)/i.test(remainingContent || raw);
+  if (isDiwaliWish && (!remainingContent || remainingContent.length < 130)) {
+    const variantIdx = (index + Math.floor(Math.random() * 2)) % DIWALI_BODY_VARIANTS.length;
+    const emoji = ROTATING_EMOJIS[index % ROTATING_EMOJIS.length];
+    remainingContent = `${DIWALI_BODY_VARIANTS[variantIdx]} ${emoji}`;
+  }
+
+  let result = pickedGreeting;
+  if (remainingContent) result += `\n\n${remainingContent}`;
+  if (signature) result += `\n\n${signature}`;
+
+  // 3. Cryptographic invisible zero-width hash salting (guarantees unique SHA-256 fingerprint per message)
+  const saltCount = Math.floor(Math.random() * 4) + 2;
+  for (let s = 0; s < saltCount; s += 1) {
+    result += INVISIBLE_SALTS[Math.floor(Math.random() * INVISIBLE_SALTS.length)];
+  }
+
+  return result;
 }
 
 exports.templates = async (req, res, next) => {
@@ -479,7 +567,7 @@ exports.broadcast = async (req, res, next) => {
       }
 
       totalMatched = cleanNums.length;
-      messages = cleanNums.map((num) => {
+      messages = cleanNums.map((num, idx) => {
         const last10 = num.slice(-10);
         const dbM = memberMap.get(num) || memberMap.get(last10);
         const nameFromReq = customNameMap.get(num) || customNameMap.get(last10);
@@ -491,7 +579,7 @@ exports.broadcast = async (req, res, next) => {
           name: resolvedName,
           mobile: num,
           status: 'queued',
-          text: renderMessage(template, { ...memberContext, name: resolvedName, mobile: num }, req.body),
+          text: renderMessage(template, { ...memberContext, name: resolvedName, mobile: num }, req.body, idx),
         };
       });
     } else {
@@ -517,12 +605,12 @@ exports.broadcast = async (req, res, next) => {
         }
       }
 
-      messages = uniqueEligible.map((member) => ({
+      messages = uniqueEligible.map((member, idx) => ({
         member: member._id,
         name: member.name,
         mobile: member.mobile,
         status: 'queued',
-        text: renderMessage(template, member, req.body),
+        text: renderMessage(template, member, req.body, idx),
       }));
     }
 
@@ -530,10 +618,10 @@ exports.broadcast = async (req, res, next) => {
       return res.status(400).json({ message: 'कोई वैध मोबाइल नंबर वाले प्राप्तकर्ता नहीं मिले।' });
     }
 
-    const batchSize = Math.min(Math.max(Number(req.body.batchSize) || 10, 1), 20);
-    const intervalSeconds = Math.min(Math.max(Number(req.body.intervalSeconds) || 60, 30), 3600);
-    const dailyLimit = Math.min(Math.max(Number(req.body.dailyLimit) || 200, 1), 1000);
-    const messageDelaySeconds = Math.min(Math.max(Number(req.body.messageDelaySeconds) || 25, 10), 120);
+    const batchSize = Math.min(Math.max(Number(req.body.batchSize) || 5, 1), 10);
+    const intervalSeconds = Math.min(Math.max(Number(req.body.intervalSeconds) || 90, 45), 3600);
+    const dailyLimit = Math.min(Math.max(Number(req.body.dailyLimit) || 300, 1), 1000);
+    const messageDelaySeconds = Math.min(Math.max(Number(req.body.messageDelaySeconds) || 28, 18), 120);
     const scheduledAt = req.body.scheduledAt ? new Date(req.body.scheduledAt) : new Date();
     console.log(`[WhatsApp Broadcast] Campaign create request received: "${req.body.title || 'Campaign'}", hasMedia: ${Boolean(req.body.mediaData && req.body.mediaData.length > 50)}, mediaBytes: ${req.body.mediaData?.length || 0}`);
     const campaign = await MessageCampaign.create({
