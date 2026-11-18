@@ -349,7 +349,11 @@ const sectionHeaderForRecord = (record = {}, header = {}, sectionMap = safeSecti
   }
 
   const finalSecNum = secKey || recordSecNum || headerSecNum;
-  const finalSecName = mappedSectionName || recordSecName || headerSecName;
+  const mappedHasTruncatedWard = /(?:वार्ड|ward)\s*(?:नं|न॑|न०|no\.?)\s*$/i.test(mappedSectionName || '');
+  const recordHasWardNum = /(?:वार्ड|ward)\s*(?:नं|न॑|न०|no\.?)?\s*\d+/i.test(recordSecName || '');
+  const finalSecName = (recordSecName && mappedHasTruncatedWard && recordHasWardNum)
+    ? recordSecName
+    : (mappedSectionName || recordSecName || headerSecName);
 
   return {
     ...header,
@@ -864,8 +868,12 @@ const parseHeader = (text) => {
     .normalize('NFKC')
     .replace(/\s+/g, ' ')
     .trim();
+  const digits = (value) => value?.replace(/O/gi, '0').replace(/[०-९]/g, (digit) => '०१२३४५६७८९'.indexOf(digit));
   const assembly = normalized.match(
-    /(?:विधान\s*सभा\s*(?:क्षेत्र)?|assembly\s*(?:constituency)?|AC)[^:：\n]{0,110}[:：-]?\s*([0-9O०-९]{1,3})\s*(?:[-–:]\s*)?(.+?)(?=\s*(?:अनुभाग|भाग\s*(?:संख्या|नं)|section|part\s*(?:number|no)|निर्वाचक)|$)/i,
+    /(?:विधान\s*सभा\s*(?:क्षेत्र)?|assembly\s*(?:constituency)?|AC)[^:：\n]{0,110}[:：-]?\s*([0-9O०-९]{1,3})\s*(?:[-–:]\s*)?(.+?)(?=\s*(?:संसदीय|अनुभाग|भाग\s*(?:संख्या|नं)|section|part\s*(?:number|no)|निर्वाचक)|$)/i,
+  );
+  const parliamentary = normalized.match(
+    /(?:संसदीय\s*निर्वाचन\s*क्षेत्र)[^:：\n]{0,120}[:：-]?\s*([0-9O०-९]{1,3}\s*[-–:]\s*.+?)(?=\s*(?:1\.\s*पुनरीक्षण|पुनरीक्षण\s*का\s*विवरण|भाग\s*(?:संख्या|नं)|$))/i,
   );
   const part = normalized.match(
     /(?:भाग|part)\s*(?:संख्या|नं\.?|number|no\.?)?\s*[:：\s-]+\s*([0-9O\u0966-\u096f]{1,4})/i,
@@ -876,14 +884,63 @@ const parseHeader = (text) => {
   const wardMatch = normalized.match(
     /(?:वार्ड\s*(?:संख्या|नं\.?|number|no\.?)?|ward)\s*[:：-]*\s*(?:वार्ड\s*संख्या\s*)?([0-9O\u0966-\u096f]{1,4})/i,
   );
-  const digits = (value) => value?.replace(/O/gi, '0').replace(/[०-९]/g, (digit) => '०१२३४५६७८९'.indexOf(digit));
+  const mainTownMatch = normalized.match(
+    /मुख्य\s*(?:शहर|ग्राम)\s*(?:\/\s*मुख्य\s*(?:ग्राम|शहर))?\s*[:：-]?\s*(.+?)(?=\s*(?:वार्ड|पोस्ट\s*ऑफिस|पुलिस\s*थाना|तहसील|जिला|पिन\s*कोड|3\.\s*मतदान|$))/i,
+  );
+  const postOfficeMatch = normalized.match(
+    /पोस्ट\s*ऑफिस\s*[:：-]?\s*(.+?)(?=\s*(?:पुलिस\s*थाना|तहसील|जिला|पिन\s*कोड|3\.\s*मतदान|$))/i,
+  );
+  const policeStationMatch = normalized.match(
+    /पुलिस\s*थाना\s*[:：-]?\s*(.+?)(?=\s*(?:तहसील|जिला|पिन\s*कोड|3\.\s*मतदान|$))/i,
+  );
+  const tehsilMatch = normalized.match(
+    /तहसील\s*[:：-]?\s*(.+?)(?=\s*(?:जिला|पिन\s*कोड|3\.\s*मतदान|$))/i,
+  );
+  const districtMatch = normalized.match(
+    /जिला\s*[:：-]?\s*(.+?)(?=\s*(?:पिन\s*कोड|3\.\s*मतदान|$))/i,
+  );
+  const pinCodeMatch = normalized.match(
+    /पिन\s*कोड\s*[:：-]?\s*([0-9०-९]{6})/i,
+  );
+  const pollingStationMatch = normalized.match(
+    /मतदान\s*केंद्र\s*की\s*संख्या\s*व\s*नाम\s*[:：-]?\s*(.+?)(?=\s*(?:मतदान\s*केंद्र\s*का\s*भवन|मतदान\s*केन्द्र\s*की\s*विशेष|$))/i,
+  );
+  const pollingAddressMatch = normalized.match(
+    /मतदान\s*केंद्र\s*का\s*भवन\s*व\s*पता\s*[:：-]?\s*(.+?)(?=\s*(?:मतदान\s*केन्द्र\s*की\s*विशेष|4\.\s*मतदाताओं|आरंभिक\s*क्रम|$))/i,
+  );
+
+  // Extract section table from Cover Page ("भाग में आने वाले अनुभागों की संख्या और नाम")
+  const sectionMap = {};
+  const secBlockMatch = normalized.match(
+    /भाग\s*में\s*आने\s*वाले\s*अनुभागों\s*की\s*संख्या\s*और\s*नाम\s*[:：-]?\s*([\s\S]+?)(?=\s*(?:मुख्य\s*(?:शहर|ग्राम)|3\.\s*मतदान|$))/i,
+  );
+  if (secBlockMatch?.[1]) {
+    const secRegex = /(\d{1,3})\s*[-–:]\s*([^\d]+?)(?=(?:\s+\d{1,3}\s*[-–:])|$)/g;
+    let m;
+    while ((m = secRegex.exec(secBlockMatch[1])) !== null) {
+      const sNum = String(parseInt(m[1], 10));
+      const sName = cleanValue(m[2]);
+      if (sNum && sName) sectionMap[sNum] = sName;
+    }
+  }
+
   return {
     assemblyNumber: digits(assembly?.[1]),
     assemblyName: cleanValue(assembly?.[2]),
+    parliamentaryConstituency: cleanValue(parliamentary?.[1]),
     partNumber: digits(part?.[1]),
     sectionNumber: digits(section?.[1]),
     sectionName: cleanValue(section?.[2]),
     wardNumber: digits(wardMatch?.[1]),
+    village: cleanValue(mainTownMatch?.[1]),
+    postOffice: cleanValue(postOfficeMatch?.[1]),
+    policeStation: cleanValue(policeStationMatch?.[1]),
+    tehsil: cleanValue(tehsilMatch?.[1]),
+    district: cleanValue(districtMatch?.[1]),
+    pinCode: digits(pinCodeMatch?.[1]),
+    pollingStation: cleanValue(pollingStationMatch?.[1]),
+    pollingStationAddress: cleanValue(pollingAddressMatch?.[1]),
+    ...(Object.keys(sectionMap).length ? { sectionMap } : {}),
   };
 };
 
@@ -1020,9 +1077,9 @@ const extractTextWithFallback = async (filePath, importFileName, onOcrProgress) 
 };
 
 const parsePdfTextLayerMembers = async (filePath) => {
-  // pdf.js needs the complete document in Node memory. Scanned rolls have no
-  // useful text layer, so hand large files directly to streaming OCR instead.
-  const maxTextLayerBytes = Number(process.env.PDF_TEXT_LAYER_MAX_MB || 12) * 1024 * 1024;
+  // pdf.js needs the complete document in Node memory. Allow larger text-layer PDFs
+  // (photo-heavy rolls can be 20-80 MB while still containing exact Unicode text).
+  const maxTextLayerBytes = Number(process.env.PDF_TEXT_LAYER_MAX_MB || 100) * 1024 * 1024;
   if (fs.statSync(filePath).size > maxTextLayerBytes) {
     return { text: '', members: [], imageOnlyPages: [], header: {} };
   }
@@ -1047,14 +1104,19 @@ const parsePdfTextLayerMembers = async (filePath) => {
       .sort((a, b) => Math.abs(b.y - a.y) > 1 ? b.y - a.y : a.x - b.x);
     const pageText = orderedItems.map((item) => item.text).join(' ');
     const headerText = orderedItems
-      .filter((item) => item.y >= height * 0.955)
+      .filter((item) => item.y >= height * 0.91)
       .map((item) => item.text)
       .join(' ');
     documentText.push(pageText);
-    const pageHeader = parseHeader(headerText);
+    const pageHeader = parseHeader(pageNumber === 1 ? pageText : headerText);
+    const mergedSectionMap = {
+      ...(documentHeader.sectionMap || {}),
+      ...(pageHeader.sectionMap || {}),
+    };
     documentHeader = {
       ...documentHeader,
-      ...Object.fromEntries(Object.entries(pageHeader).filter(([, value]) => value)),
+      ...Object.fromEntries(Object.entries(pageHeader).filter(([, value]) => value && typeof value !== 'object')),
+      ...(Object.keys(mergedSectionMap).length ? { sectionMap: mergedSectionMap } : {}),
     };
 
     const gridTop = height * 0.969;
@@ -1082,13 +1144,18 @@ const parsePdfTextLayerMembers = async (filePath) => {
         .map((line) => line.items.sort((a, b) => a.x - b.x).map((item) => item.text).join(''))
         .join('\n');
       const voterId = extractVoterId(cardText);
-      const name = cleanValue(cardText.match(/(?:निर्वाचक|मतदाता)\s*(?:का)?\s*नाम\s*[:：ः-]?\s*([^\n]+)/i)?.[1]);
+      const name = cleanValue(cardText.match(/(?:निर्वाचक|मतदाता)\s*(?:का)?\s*नाम\s*[:：ः-]?\s*([\s\S]+?)(?=\n\s*(?:पिता|पति|माता|अन्य|संरक्षक|गृह|मकान|उम्र|आयु|लिंग|Photo|Available|$))/i)?.[1]);
       if (!name || !voterId) continue;
-      const father = cleanValue(cardText.match(/पिता\s*(?:का)?\s*नाम\s*[:：ः-]?\s*([^\n]+)/i)?.[1]);
-      const husband = cleanValue(cardText.match(/पति\s*(?:का)?\s*नाम\s*[:：ः-]?\s*([^\n]+)/i)?.[1]);
-      const mother = cleanValue(cardText.match(/माता\s*(?:का)?\s*नाम\s*[:：ः-]?\s*([^\n]+)/i)?.[1]);
-      const houseNumber = cleanValue(cardText.match(/(?:गृह|मकान)\s*संख्या\s*[:：-]?\s*([^\n]+)/i)?.[1]);
-      const ageText = cardText.match(/(?:उम्र|आयु)\s*[:：-]?\s*(\d{1,3})/i)?.[1];
+      const father = cleanValue(cardText.match(/पिता\s*(?:का)?\s*नाम\s*[:：ः-]?\s*([\s\S]+?)(?=\n\s*(?:गृह|मकान|उम्र|आयु|लिंग|Photo|Available|$))/i)?.[1]);
+      const husband = cleanValue(cardText.match(/पति\s*(?:का)?\s*नाम\s*[:：ः-]?\s*([\s\S]+?)(?=\n\s*(?:गृह|मकान|उम्र|आयु|लिंग|Photo|Available|$))/i)?.[1]);
+      const mother = cleanValue(cardText.match(/माता\s*(?:का)?\s*नाम\s*[:：ः-]?\s*([\s\S]+?)(?=\n\s*(?:गृह|मकान|उम्र|आयु|लिंग|Photo|Available|$))/i)?.[1]);
+      const rawHouseLine = cleanValue(cardText.match(/(?:गृह|मकान)\s*(?:संख्या|नं\.?)?\s*[:：-]?\s*([^\n]+)/i)?.[1]);
+      const houseNumber = cleanValue(
+        rawHouseLine
+          .replace(/[०-९]/g, (d) => String('०१२३४५६७८९'.indexOf(d)))
+          .split(/\s*(?:उम्र|आयु|लिंग|Photo|Available)\b/i)[0]
+      );
+      const ageText = cardText.match(/(?:उम्र|आयु)\s*[:：-]?\s*([0-9०-९]{1,3})/i)?.[1]?.replace(/[०-९]/g, (d) => String('०१२३४५६७८९'.indexOf(d)));
       const rawSerial = cardText.match(/^\s*(\d{1,4})/)?.[1];
       const safeSerial = (rawSerial && rawSerial !== ageText) ? rawSerial : '';
       const header = {
@@ -1119,7 +1186,16 @@ const parsePdfTextLayerMembers = async (filePath) => {
     ...member,
     assemblyNumber: member.assemblyNumber || documentHeader.assemblyNumber,
     assemblyName: member.assemblyName || documentHeader.assemblyName,
+    parliamentaryConstituency: member.parliamentaryConstituency || documentHeader.parliamentaryConstituency,
     partNumber: member.partNumber || documentHeader.partNumber,
+    village: member.village || documentHeader.village,
+    postOffice: member.postOffice || documentHeader.postOffice,
+    policeStation: member.policeStation || documentHeader.policeStation,
+    tehsil: member.tehsil || documentHeader.tehsil,
+    district: member.district || documentHeader.district,
+    pinCode: member.pinCode || documentHeader.pinCode,
+    pollingStation: member.pollingStation || documentHeader.pollingStation,
+    pollingStationAddress: member.pollingStationAddress || documentHeader.pollingStationAddress,
   }));
   return { text: documentText.join('\n'), members: normalizedMembers, imageOnlyPages, header: documentHeader };
 };
@@ -1258,14 +1334,31 @@ const parsePdfMembers = async (filePath, importFileName, onOcrProgress) => {
 
         const validOcrSerial = (ocrMem.voterSerial && /^\d{1,5}$/.test(ocrMem.voterSerial)) ? String(ocrMem.voterSerial) : '';
         const validPrevSerial = (prev.voterSerial && /^\d{1,5}$/.test(prev.voterSerial) && String(prev.voterSerial) !== ageStr) ? String(prev.voterSerial) : '';
-        const preferredSerial = validOcrSerial || validPrevSerial || '';
+        const preferredSerial = validPrevSerial || validOcrSerial || '';
+
+        const preferredSectionNumber = prev.sectionNumber || ocrMem.sectionNumber || '';
+        const preferredSectionName = cleanSectionName(prev.sectionName || '') || cleanSectionName(ocrMem.sectionName || '') || '';
+        const preferredName = cleanValue(prev.name) || cleanValue(ocrMem.name) || '';
+        const preferredGuardian = cleanValue(prev.guardianName) || cleanValue(ocrMem.guardianName) || '';
+        const preferredRelation = prev.relationType || ocrMem.relationType || '';
+        const preferredAge = (typeof prev.age === 'number' && prev.age >= 18 && prev.age <= 120) ? prev.age : ocrMem.age;
+        const preferredGender = prev.gender || ocrMem.gender || '';
 
         mergedMap.set(targetKey, {
           ...prev,
           ...ocrMem,
+          name: preferredName,
+          guardianName: preferredGuardian,
+          relationType: preferredRelation,
+          age: preferredAge,
+          gender: preferredGender,
+          sectionNumber: preferredSectionNumber,
+          sectionName: preferredSectionName,
+          location: preferredSectionName || prev.location || ocrMem.location || '',
+          address: [preferredSectionName || prev.assemblyName || ocrMem.assemblyName, preferredHouse].filter(Boolean).join(', '),
           voterId: preferredEpic,
           voterSerial: preferredSerial,
-          houseNumber: preferredHouse || ocrMem.houseNumber || '',
+          houseNumber: preferredHouse,
           photo: ocrMem.photo || prev.photo || '',
           cardImage: ocrMem.cardImage || prev.cardImage || '',
           ocrValues: ocrMem.ocrValues || prev.ocrValues,
@@ -1273,7 +1366,7 @@ const parsePdfMembers = async (filePath, importFileName, onOcrProgress) => {
           locationResolution: ocrMem.locationResolution || prev.locationResolution,
         });
       } else {
-        const key = ocrEpic || `ocr-${serial || Math.random()}`;
+        const key = ocrEpic || `ocr-${ocrMem.voterSerial || ocrMem.cardIndex || Math.random()}`;
         mergedMap.set(key, {
           ...ocrMem,
           voterId: ocrEpic || ocrMem.voterId,
@@ -1940,7 +2033,7 @@ const runPdfImport = async ({ file, body, currentUser }, uploadId) => {
         ocrCardsTotal: totalCards,
       });
     };
-    let parsed = await parsePdfMembers(file.path, file.filename, onOcrProgress);
+    let parsed = await parsePdfMembers(file.path, file.originalname || file.filename, onOcrProgress);
     const pdfVillageHint = pdfVillageHintFromName(file.originalname || file.filename);
     if (pdfVillageHint) {
       for (const member of parsed.members) applyPdfVillageHint(member, pdfVillageHint);

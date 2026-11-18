@@ -218,39 +218,10 @@ except Exception:
 
 
 def correct_name_with_dictionary(name_text):
-    """Correct Devanagari name tokens using HINDI_NAME_DICT & fuzzy matching conservatively."""
-    if not name_text or not HINDI_NAME_DICT:
-        return name_text
-    tokens = name_text.split()
-    corrected = []
-    for token in tokens:
-        clean_tok = re.sub(r"[^\u0900-\u097F]", "", token)
-        if not clean_tok or len(clean_tok) < 2:
-            corrected.append(token)
-            continue
-        if clean_tok in HINDI_NAME_DICT:
-            corrected.append(clean_tok)
-            continue
-        # Fast fuzzy check for tokens of length >= 3 with high threshold (0.90) to prevent overwriting valid names
-        best_match = None
-        best_ratio = 0.90
-        len_tok = len(clean_tok)
-        candidates = [w for w in HINDI_NAME_DICT if abs(len(w) - len_tok) <= 1 and w[0] == clean_tok[0]]
-        for candidate in candidates:
-            # Protect gender matras: never replace if ending in 'ी' or 'ा' differs
-            if clean_tok.endswith("ी") != candidate.endswith("ी"):
-                continue
-            if clean_tok.endswith("ा") != candidate.endswith("ा"):
-                continue
-            r = SequenceMatcher(None, clean_tok, candidate).ratio()
-            if r > best_ratio:
-                best_ratio = r
-                best_match = candidate
-        if best_match:
-            corrected.append(best_match)
-        else:
-            corrected.append(token)
-    return " ".join(corrected)
+    """Preserve OCR-extracted Devanagari names without fuzzy-replacing with different dictionary words."""
+    # Fuzzy SequenceMatcher replacement can overwrite valid uncommon names with a different word.
+    # Exact known OCR typo fixes are already applied deterministically in clean_person_name().
+    return name_text
 
 
 
@@ -403,13 +374,8 @@ def ocr_house(card, card_full_text=None):
     # 2. Devanagari line extraction & suffix detection:
     if eng_candidates:
         primary_eng = eng_candidates[0]
-        # If full-text OCR extracted a longer, complete house number (e.g. '52' vs single-digit '2'), prefer c_full!
+        # Prefer label-anchored c_full when it has valid digits; only use eng_candidates if c_full is empty
         if c_full and any(ch.isdigit() for ch in c_full):
-            c_full_digits = "".join(re.findall(r"\d", c_full))
-            eng_digits = "".join(re.findall(r"\d", primary_eng))
-            if len(c_full_digits) > len(eng_digits) and (c_full_digits.endswith(eng_digits) or c_full_digits.startswith(eng_digits)):
-                primary_eng = c_full
-        elif not primary_eng and c_full:
             primary_eng = c_full
 
         # Fast single pass for Devanagari suffix (e.g. 'क', 'ख')
@@ -419,7 +385,7 @@ def ocr_house(card, card_full_text=None):
         house_line = field(t_hin, house_label_pattern)
         if house_line:
             suffix_match = re.search(r"[\u0900-\u097F]+$", house_line)
-            if suffix_match and suffix_match.group(0) in ("क", "ख", "ग", "घ"):
+            if suffix_match and suffix_match.group(0) in ("क", "ख", "ग", "घ") and not primary_eng.endswith(suffix_match.group(0)):
                 primary_eng = f"{primary_eng} {suffix_match.group(0)}"
         return primary_eng
 
@@ -901,11 +867,11 @@ def parse_card(text, epic_text, photo_path, page_no, cell_no, focused_house="", 
         fallback_name = clean_person_name(field(line, name_line_pattern))
         if fallback_name:
             break
-    raw_name = field(text, r"(?:निर्वा\S*|मतदाता)\s*(?:का)?\s*नाम\s*[:：;\-]?\s*([^\n]+)")
+    raw_name = field(text, r"(?:निर्वा\S*|मतदाता)\s*(?:का)?\s*नाम\s*[:：;\-]?\s*([\s\S]+?)(?=\n\s*(?:पिता|पि\S*|पति|पत\S*|प्रति|माता|अन्य|संरक्षक|गृह|मकान|उम्र|आयु|लिंग|$))")
     name = clean_person_name(raw_name) or fallback_name
-    raw_father = field(text, r"(?:पिता|पि\S*)\s*(?:का)?\s*नाम\s*[:：;\-]?\s*([^\n]+)")
-    raw_husband = field(text, r"(?:पति|पत\S*|प्रति)\s*(?:का)?\s*नाम\s*[:：;\-]?\s*([^\n]+)")
-    raw_mother = field(text, r"माता\s*(?:का)?\s*नाम\s*[:：;\-]?\s*([^\n]+)")
+    raw_father = field(text, r"(?:पिता|पि\S*)\s*(?:का)?\s*नाम\s*[:：;\-]?\s*([\s\S]+?)(?=\n\s*(?:गृह|मकान|म\.?\s*सं|उम्र|आयु|लिंग|$))")
+    raw_husband = field(text, r"(?:पति|पत\S*|प्रति)\s*(?:का)?\s*नाम\s*[:：;\-]?\s*([\s\S]+?)(?=\n\s*(?:गृह|मकान|म\.?\s*सं|उम्र|आयु|लिंग|$))")
+    raw_mother = field(text, r"माता\s*(?:का)?\s*नाम\s*[:：;\-]?\s*([\s\S]+?)(?=\n\s*(?:गृह|मकान|म\.?\s*सं|उम्र|आयु|लिंग|$))")
     father = clean_person_name(raw_father)
     husband = clean_person_name(raw_husband)
     mother = clean_person_name(raw_mother)
@@ -1803,7 +1769,9 @@ def fixed_section_name(text):
     value = re.sub(r"\b(?:google|polling|station|view|map|after|aftet|hier|uzar|zadt|merit|oiler|sffzr|freran|ore)\b", " ", value, flags=re.IGNORECASE)
     value = re.sub(r"[A-Za-z]+", " ", value)
     value = re.sub(r"^[\s\-:;|\u0964\u09650-9\u0966-\u096f\\|/\.\,\+=\-–—><;~]+", "", value).strip()
-    value = re.sub(r"\s+\d+$", "", value).strip()
+    # Preserve ward/house numbers like 'वार्ड नं 6'; only strip stray trailing digits not preceded by वार्ड/नं/सं
+    if not re.search(r"(?:वार्ड|नं|न०|सं|क्र|no)\s*[:\.\-\s]*\d+$", value, re.IGNORECASE):
+        value = re.sub(r"\s+\d+$", "", value).strip()
     value = re.sub(r"[\s\-:;|\u0964\u0965,.<>;~]+$", "", value).strip()
     value = re.sub(r"\s*,\s*", ", ", value)
     value = re.sub(r"^(?:गम|गाम)\s+", "ग्राम ", value)
@@ -2062,58 +2030,134 @@ def read_fixed_header(page_path, is_voter_page=True):
     if image is None:
         return {}
     if is_voter_page:
-        assembly_bounds = (0.0, 0.0, 0.76, 0.035)
+        assembly_bounds = (0.0, 0.0, 0.76, 0.045)
         part_bounds = (0.70, 0.0, 0.99, 0.045)
         section_bounds = (0.0, 0.015, 0.70, 0.045)
     else:
-        assembly_bounds = (0.0, 0.0, 0.99, 0.06)
-        part_bounds = (0.70, 0.0, 0.99, 0.05)
-        section_bounds = (0.0, 0.30, 0.76, 0.43)
-        village_bounds = (0.52, 0.33, 0.92, 0.375)
-        pin_bounds = (0.52, 0.42, 0.92, 0.47)
+        assembly_bounds = (0.0, 0.065, 0.78, 0.12)
+        part_bounds = (0.76, 0.065, 0.99, 0.12)
+        section_bounds = (0.0, 0.30, 0.44, 0.54)
+        village_bounds = (0.42, 0.34, 0.96, 0.53)
+        pin_bounds = (0.52, 0.43, 0.95, 0.51)
 
-    assembly_digits = ocr_fixed_region(
-        image, assembly_bounds, psm=6, whitelist="0123456789",
-    )
+    digit_map = str.maketrans("०१२३४५६७८९", "0123456789")
+    # Read assembly number using English-only OCR on the assembly header box to avoid '1' -> '7' Devanagari confusion
+    h_img, w_img = image.shape[:2]
+    asm_crop = image[round(h_img * assembly_bounds[1]):round(h_img * assembly_bounds[3]), round(w_img * assembly_bounds[0]):round(w_img * assembly_bounds[2])]
+    if asm_crop.size > 0:
+        asm_gray = cv2.cvtColor(asm_crop, cv2.COLOR_BGR2GRAY)
+        asm_gray = cv2.resize(asm_gray, None, fx=2.0, fy=2.0, interpolation=cv2.INTER_CUBIC)
+        asm_eng = safe_image_to_string(asm_gray, lang="eng", config="--psm 6")
+    else:
+        asm_eng = ""
+    asm_match = re.search(r"[:：\-]?\s*(\d{1,3})\s*[-–]", asm_eng) or re.search(r"\b(\d{1,3})\b", asm_eng)
+    if asm_match:
+        extracted_assembly = asm_match.group(1)
+    else:
+        assembly_digits = ocr_fixed_region(
+            image, assembly_bounds, psm=6, whitelist="0123456789",
+        )
+        extracted_assembly = fixed_header_number(assembly_digits, 3, prefer_tail=False)
+
     part_digits = ocr_fixed_region(
         image, part_bounds, psm=6, whitelist="0123456789",
     )
     part_text_full = safe_image_to_string(
-        image[0:round(image.shape[0] * 0.06), round(image.shape[1] * 0.60):image.shape[1]],
+        image[0:round(image.shape[0] * 0.12), round(image.shape[1] * 0.65):image.shape[1]],
         lang="hin+eng",
         config="--psm 6"
     )
     part_match = re.search(r"(?:भाग|part)\s*(?:संख्या|सं\.?|no\.?|number)?\s*[:：;\-]*\s*([0-9\u0966-\u096f]{1,4})", part_text_full, re.IGNORECASE)
-    extracted_part = part_match.group(1).translate(str.maketrans("०१२३४५६७८९", "0123456789")) if part_match else fixed_header_number(part_digits, 4, prefer_tail=True)
+    extracted_part = part_match.group(1).translate(digit_map) if part_match else fixed_header_number(part_digits, 4, prefer_tail=True)
     fn_part_match = extract_part_from_filename(str(page_path))
     if fn_part_match:
         extracted_part = fn_part_match
 
     result = {
-        "assemblyNumber": fixed_header_number(assembly_digits, 3, prefer_tail=True),
+        "assemblyNumber": extracted_assembly,
         "partNumber": extracted_part,
     }
     if not is_voter_page:
         section_map = fixed_master_section_map(image)
         if section_map:
             result["sectionMap"] = section_map
-        village_readings = [
-            fixed_location_name(value)
-            for value in fixed_region_variants(
-                image, village_bounds, os.getenv("OCR_LANGUAGES", "hin+eng"), (6, 7, 10),
-            )
-        ]
-        village = consensus_value(village_readings, 2)
-        if village:
-            result["village"] = village
+
+        # Read Parliamentary Constituency (row below Assembly)
+        parl_crop = image[round(h_img * 0.11):round(h_img * 0.145), round(w_img * 0.01):round(w_img * 0.98)]
+        parl_text = safe_image_to_string(parl_crop, lang="hin+eng", config="--psm 6") if parl_crop.size > 0 else ""
+        parl_match = re.search(r"[:：\-]\s*([0-9\u0966-\u096f]{1,2}\s*[-–]\s*[^\n]+)", parl_text)
+        if parl_match:
+            parl_val = re.sub(r"\s*(?:\d+\.\s*)?पुनरीक्षण.*$", "", parl_match.group(1)).strip()
+            result["parliamentaryConstituency"] = clean(parl_val.translate(digit_map))
+
+        # Read Right-Column Cover Details preserving line breaks (isolated from Left-Column sections)
+        det_crop = image[round(h_img * village_bounds[1]):round(h_img * village_bounds[3]), round(w_img * village_bounds[0]):round(w_img * village_bounds[2])]
+        if det_crop.size > 0:
+            det_gray = cv2.cvtColor(det_crop, cv2.COLOR_BGR2GRAY)
+            det_gray = cv2.resize(det_gray, None, fx=1.8, fy=1.8, interpolation=cv2.INTER_CUBIC)
+            details_text = safe_image_to_string(det_gray, lang="hin+eng", config="--psm 6")
+        else:
+            details_text = ""
+        for line in details_text.splitlines():
+            clean_line = clean(line)
+            if not clean_line:
+                continue
+            if re.search(r"मुख्य\s*(?:शहर|ग्राम)|शहर\s*/\s*मुख्य", clean_line):
+                val = re.sub(r"^.*?(?:मुख्य\s*(?:शहर|ग्राम)|शहर\s*/\s*मुख्य\s*(?:ग्राम|शहर)?)\s*[:：\-\u096a4\s]*", "", clean_line)
+                val = fixed_location_name(val)
+                if val:
+                    result["village"] = val
+            elif re.search(r"वार्ड", clean_line):
+                wm = re.search(r"([0-9\u0966-\u096f]{1,4})", clean_line)
+                if wm:
+                    result["wardNumber"] = wm.group(1).translate(digit_map)
+            elif re.search(r"पोस्ट\s*ऑफिस", clean_line):
+                val = re.sub(r"^.*?पोस्ट\s*ऑफिस\s*[:：\-\u096a4\s]*", "", clean_line).strip(" -:")
+                if val:
+                    result["postOffice"] = val
+            elif re.search(r"पुलिस\s*थाना", clean_line):
+                val = re.sub(r"^.*?पुलिस\s*थाना\s*[:：\-\u096a4\s]*", "", clean_line)
+                val = fixed_location_name(val)
+                if val:
+                    result["policeStation"] = val
+            elif re.search(r"तहसील", clean_line):
+                val = re.sub(r"^.*?तहसील\s*[:：\-\u096a4\s]*", "", clean_line)
+                val = fixed_location_name(val)
+                if val:
+                    result["tehsil"] = val
+            elif re.search(r"जिला", clean_line):
+                val = re.sub(r"^.*?जिला\s*[:：\-\u096a4\s]*", "", clean_line)
+                val = fixed_location_name(val)
+                if val:
+                    result["district"] = val
+
+        if result.get("village"):
             corrected_map, raw_map, corrections = normalize_section_locations(
-                result.get("sectionMap") or {}, village,
+                result.get("sectionMap") or {}, result["village"],
             )
             if corrected_map:
                 result["sectionMap"] = corrected_map
             if raw_map:
                 result["rawSectionMap"] = raw_map
                 result["sectionCorrections"] = corrections
+
+        # Read Polling Station & Building Address (Section 3, left box) preserving newlines
+        ps_crop = image[round(h_img * 0.56):round(h_img * 0.69), round(w_img * 0.01):round(w_img * 0.45)]
+        ps_text = safe_image_to_string(ps_crop, lang="hin+eng", config="--psm 6") if ps_crop.size > 0 else ""
+        ps_lines = [clean(l) for l in ps_text.splitlines() if clean(l)]
+        for idx, pl in enumerate(ps_lines):
+            if re.search(r"संख्या\s*व\s*नाम", pl) and idx + 1 < len(ps_lines):
+                cand = ps_lines[idx + 1].translate(digit_map)
+                if re.search(r"\d", cand):
+                    if extracted_part and re.match(r"^\d+\s*[-–]", cand):
+                        cand = re.sub(r"^\d+", extracted_part, cand)
+                    result["pollingStation"] = cand
+            elif re.search(r"भवन\s*व\s*पता", pl) and idx + 1 < len(ps_lines):
+                addr = " ".join(ps_lines[idx + 1:]).strip()
+                addr = re.sub(r"\s*(?:4\.\s*)?(?:मतदाताओं\s*की\s*संख्या|आरंभिक\s*क्रम).*$", "", addr).strip()
+                if addr:
+                    result["pollingStationAddress"] = addr
+
         pin_readings = []
         for pin_text in fixed_region_variants(
             image, pin_bounds, "eng", (6, 7, 10), "0123456789",
@@ -2128,24 +2172,23 @@ def read_fixed_header(page_path, is_voter_page=True):
         ocr_lang = "hin" if "hin" in os.getenv("OCR_LANGUAGES", "hin+eng") else os.getenv("OCR_LANGUAGES", "hin+eng")
         section_text = ocr_fixed_region(
             image,
-            (0.01, 0.015, 0.68, 0.045),
+            (0.01, 0.012, 0.68, 0.034),
             lang=ocr_lang,
             psm=6,
         )
         if not section_text.strip():
             section_text = ocr_fixed_region(
                 image,
-                (0.01, 0.015, 0.68, 0.045),
+                (0.01, 0.012, 0.68, 0.034),
                 lang="hin+eng",
                 psm=6,
             )
+        # Only match the section number immediately after ':' before '-' (never grab 'वार्ड नं 5')
         sec_num_match = re.search(
-            r"(?:अनुभाग|अिुभाग|अनुमाग|section|\bsec\b)[^\d\n]{0,45}?(?:संख्या|सं\.?|क्रमांक|नं\.?)?\s*[:：;\-]?\s*([0-9\u0966-\u096f]{1,2})\b",
+            r"(?:अनुभाग|अिुभाग|अनुमाग|section|\bsec\b)[^:\n]{0,30}[:：]\s*([0-9\u0966-\u096f]{1,2})\s*[-–]",
             section_text,
             re.IGNORECASE,
         )
-        if not sec_num_match:
-            sec_num_match = re.search(r"(?:अनुभाग|section)\b[^\d\n]{0,25}\b([0-9\u0966-\u096f]{1,2})\b", section_text, re.IGNORECASE)
         if sec_num_match:
             result["sectionNumber"] = clean(sec_num_match.group(1)).translate(str.maketrans("०१२३४५६७८९", "0123456789"))
         section_name = fixed_section_name(section_text)

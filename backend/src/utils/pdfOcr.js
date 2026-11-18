@@ -438,6 +438,7 @@ const lowMemoryOcrPdf = async (pdfPath, importFileName, pageRange = {}) => {
       );
       const pageRecs = result.records || [];
       records.push(...pageRecs);
+      console.log(`[OCR] Page ${pageNumber}/${endPage} done (${pageRecs.length} voters, total cards: ${processedCards})`);
       const validSerials = pageRecs
         .map((r) => Number(r.voterSerial))
         .filter((s) => Number.isFinite(s) && s > 0)
