@@ -115,6 +115,7 @@ class _VoterManagementPageState extends State<VoterManagementPage>
   String? samitiWardFilter;
   String? samitiFilter;
   int currentPage = 1;
+  final ScrollController _scrollController = ScrollController();
   late Future<Map<String, dynamic>> dashboardFuture;
   late Future<VoterPageResult> votersFuture;
   VoterPageResult? _lastVoterPageResult;
@@ -191,6 +192,7 @@ class _VoterManagementPageState extends State<VoterManagementPage>
 
   void _refreshInPlace() {
     _checkPendingEdits();
+    final savedOffset = _scrollController.hasClients ? _scrollController.offset : null;
     if (mounted) setState(() {});
     OfflineVoterCache.loadPage(
       query: filterQuery,
@@ -202,6 +204,14 @@ class _VoterManagementPageState extends State<VoterManagementPage>
           _lastVoterPageResult = res;
           votersFuture = Future.value(res);
         });
+        if (savedOffset != null) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted && _scrollController.hasClients) {
+              final maxExt = _scrollController.position.maxScrollExtent;
+              _scrollController.jumpTo(savedOffset.clamp(0.0, maxExt));
+            }
+          });
+        }
       }
     }).catchError((_) {});
   }
@@ -309,6 +319,7 @@ class _VoterManagementPageState extends State<VoterManagementPage>
     api.dataVersion.removeListener(_onDataChanged);
     _autoSyncTimer?.cancel();
     searchDebounce?.cancel();
+    _scrollController.dispose();
     search.dispose();
     sectionNumber.dispose();
     boothNumber.dispose();
@@ -2648,6 +2659,7 @@ class _VoterManagementPageState extends State<VoterManagementPage>
           await votersFuture;
         },
         child: ListView(
+          controller: _scrollController,
           key: const PageStorageKey('voter_phonebook_list'),
           keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
           padding: const EdgeInsets.fromLTRB(16, 8, 16, 96),
