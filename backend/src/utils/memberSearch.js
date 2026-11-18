@@ -16,6 +16,7 @@ const SEARCH_SOURCE_FIELDS = [
   'municipality',
   'caste',
   'subCaste',
+  'gotra',
   'organizationPost',
   'organizationLevel',
   'occupation',
@@ -106,6 +107,7 @@ const devanagariConsonants = {
   'प': 'p', 'फ': 'ph', 'ब': 'b', 'भ': 'bh', 'म': 'm',
   'य': 'y', 'र': 'r', 'ल': 'l', 'व': 'v', 'श': 'sh',
   'ष': 'sh', 'स': 's', 'ह': 'h', 'ळ': 'l', 'ड़': 'd', 'ढ़': 'dh',
+  'ं': 'n', 'ँ': 'n',
 };
 
 const phoneticSkeleton = (value) => {
@@ -114,7 +116,13 @@ const phoneticSkeleton = (value) => {
   if (/[\u0900-\u097f]/.test(text)) {
     return [...text].map((char) => devanagariConsonants[char] || '').join('');
   }
-  return text.replace(/[^a-z]/g, '').replace(/[aeiou]/g, '');
+  return text
+    .replace(/[^a-z]/g, '')
+    .replace(/w/g, 'v')
+    .replace(/f/g, 'ph')
+    .replace(/z/g, 'j')
+    .replace(/q/g, 'k')
+    .replace(/[aeiou]/g, '');
 };
 
 const deletionKeys = (

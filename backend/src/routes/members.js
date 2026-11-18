@@ -19,6 +19,7 @@ router.get('/party-analytics', controller.partyAnalytics);
 router.post('/enrich-batch', allowRoles('admin'), controller.enrichBatch);
 router.post('/bulk-party', controller.bulkParty);
 router.post('/bulk-anubhag', controller.bulkAnubhag);
+router.post('/bulk-house', controller.bulkHouse);
 router.post('/bulk-vote-status', controller.bulkVoteStatus);
 router.post('/assign-part-to-village', allowRoles('admin'), controller.assignPartToVillage);
 router.post('/bulk-location-correction', allowRoles('admin'), controller.bulkLocationCorrection);

@@ -568,6 +568,15 @@ exports.list = async (req, res, next) => {
     } else if (req.query.isDeleted === 'false') {
       filter.isDeleted = { $ne: true };
     }
+    if (req.query.subCaste) {
+      filter.$and = [...(filter.$and || []), { subCaste: hindiFlexibleRegex(String(req.query.subCaste).trim()) }];
+    }
+    if (req.query.gotra) {
+      filter.$and = [...(filter.$and || []), { gotra: hindiFlexibleRegex(String(req.query.gotra).trim()) }];
+    }
+    if (req.query.houseFilter === 'missing') {
+      filter.$and = [...(filter.$and || []), { $or: [{ houseNumber: { $in: ['', null, '0', '00', '000', '-'] } }, { houseNumber: { $exists: false } }] }];
+    }
     if (booth && req.currentUser.role === 'admin') filter.booth = booth;
     if (q) {
       const cleanMode = qMode ? String(qMode).trim().toLowerCase() : '';
@@ -1638,6 +1647,9 @@ exports.update = async (req, res, next) => {
       }
       delete updates.voterId;
     }
+    if (updates.caste !== undefined) updates.caste = normalizeCasteText(updates.caste);
+    if (updates.subCaste !== undefined) updates.subCaste = normalizeCasteText(updates.subCaste);
+    if (updates.gotra !== undefined) updates.gotra = normalizeCasteText(updates.gotra);
     Object.assign(member, updates);
     if (Object.prototype.hasOwnProperty.call(updates, 'profileCompletionStatus')) {
       if (updates.profileCompletionStatus === 'complete') {
@@ -2485,6 +2497,32 @@ exports.bulkParty = async (req, res, next) => {
   } catch (error) { next(error); }
 };
 
+function normalizeCasteText(raw) {
+  const val = String(raw || '').replace(/\s+/g, ' ').trim();
+  if (!val) return '';
+  const key = val.toLowerCase().replace(/[\s\.\-]/g, '');
+  const aliases = {
+    'brahman': 'ब्राह्मण', 'brahmin': 'ब्राह्मण', 'ब्राहमण': 'ब्राह्मण', 'ब्राहम्ण': 'ब्राह्मण', 'ब्रह्मण': 'ब्राह्मण',
+    'trivedi': 'त्रिवेदी', 'तिवेदी': 'त्रिवेदी', 'त्रिबेदी': 'त्रिवेदी',
+    'sharma': 'शर्मा', 'सर्मा': 'शर्मा',
+    'prajapat': 'प्रजापत', 'प्रजापत्त': 'प्रजापत', 'प्रजापति': 'प्रजापत',
+    'kumawat': 'कुमावत', 'कुमावतत': 'कुमावत',
+    'gurjar': 'गुर्जर', 'gujjar': 'गुर्जर',
+    'rajput': 'राजपूत', 'राजपुत': 'राजपूत',
+    'meghwal': 'मेघवाल', 'मेघबाल': 'मेघवाल',
+    'bairwa': 'बैरवा', 'बेरवा': 'बैरवा',
+    'balai': 'बलाई', 'बलाइ': 'बलाई',
+    'vaishnav': 'वैष्णव', 'वैस्णव': 'वैष्णव',
+    'mahajan': 'महाजन', 'maheshwari': 'माहेश्वरी', 'महेश्वरी': 'माहेश्वरी',
+    'agarwal': 'अग्रवाल', 'अग्गरवाल': 'अग्रवाल',
+    'jain': 'जैन', 'jat': 'जाट', 'jaat': 'जाट',
+    'mali': 'माली', 'saini': 'सैनी', 'sen': 'सेन', 'soni': 'सोनी', 'khatik': 'खटीक',
+    'meena': 'मीणा', 'मीना': 'मीणा', 'bhil': 'भील', 'bheel': 'भील',
+    'muslim': 'मुस्लिम', 'musalman': 'मुस्लिम',
+  };
+  return aliases[key] || val;
+}
+
 exports.bulkAnubhag = async (req, res, next) => {
   try {
     const { memberIds, sectionName, sectionNumber } = req.body;
@@ -2501,6 +2539,49 @@ exports.bulkAnubhag = async (req, res, next) => {
     res.json({
       message: `${result.modifiedCount} मतदाताओं का अनुभाग सफलतापूर्वक अपडेट किया गया।`,
       modifiedCount: result.modifiedCount
+    });
+  } catch (error) { next(error); }
+};
+
+exports.bulkHouse = async (req, res, next) => {
+  try {
+    const { memberIds, houseNumber } = req.body;
+    if (!Array.isArray(memberIds) || !memberIds.length) {
+      return res.status(400).json({ message: 'मतदाता चुनें।' });
+    }
+    const cleanHouse = String(houseNumber || '').trim();
+    if (!cleanHouse) {
+      return res.status(400).json({ message: 'सही मकान नंबर दर्ज करें।' });
+    }
+    const filter = applyMemberScope(req.currentUser, { _id: { $in: memberIds } });
+    const docs = await Member.find(filter).lean();
+    if (!docs.length) {
+      return res.status(404).json({ message: 'कोई मतदाता नहीं मिला।' });
+    }
+    const ops = docs.map((doc) => {
+      const updatedAddr = [doc.sectionName || doc.location || doc.village || doc.assemblyName, cleanHouse].filter(Boolean).join(', ');
+      const merged = { ...doc, houseNumber: cleanHouse, address: updatedAddr };
+      const searchData = buildMemberSearchData(merged);
+      return {
+        updateOne: {
+          filter: { _id: doc._id },
+          update: {
+            $set: {
+              houseNumber: cleanHouse,
+              address: updatedAddr,
+              ...searchData,
+              updatedBy: req.currentUser._id,
+              updatedAt: new Date(),
+            },
+          },
+        },
+      };
+    });
+    const result = await Member.bulkWrite(ops, { ordered: false });
+    invalidateMemberData();
+    res.json({
+      message: `${result.modifiedCount} मतदाताओं का मकान नंबर (${cleanHouse}) सफलतापूर्वक अपडेट किया गया।`,
+      modifiedCount: result.modifiedCount,
     });
   } catch (error) { next(error); }
 };
@@ -2753,7 +2834,11 @@ exports.fieldValues = async (req, res, next) => {
       }
     }
     if (casteVal && casteVal !== 'all') {
-      filter.$and = [...(filter.$and || []), { caste: new RegExp(`^${escapeRegex(casteVal)}$`, 'i') }];
+      filter.$and = [...(filter.$and || []), { caste: hindiFlexibleRegex(casteVal) }];
+    }
+    const subCasteVal = (req.query.subCaste || '').trim();
+    if (subCasteVal && subCasteVal !== 'all') {
+      filter.$and = [...(filter.$and || []), { subCaste: hindiFlexibleRegex(subCasteVal) }];
     }
 
     let targetField = String(field || 'village').trim();
@@ -2771,6 +2856,10 @@ exports.fieldValues = async (req, res, next) => {
       targetField = 'assemblyName';
     } else if (['caste', 'jati'].includes(targetField.toLowerCase())) {
       targetField = 'caste';
+    } else if (['subcaste', 'upjati'].includes(targetField.toLowerCase())) {
+      targetField = 'subCaste';
+    } else if (['gotra'].includes(targetField.toLowerCase())) {
+      targetField = 'gotra';
     }
 
     const pipeline = [

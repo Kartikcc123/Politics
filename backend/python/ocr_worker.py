@@ -1285,11 +1285,11 @@ def _process_single_card(args):
 
     # Clean text-only crop: strictly excludes the right-side voter photo and top header
     card_h, card_w = card.shape[:2]
-    max_text_w = min(round(card_w * 0.68), px - 2 if px > round(card_w * 0.52) else round(card_w * 0.68))
+    max_text_w = min(round(card_w * 0.73), px - 2 if px > round(card_w * 0.52) else round(card_w * 0.73))
     body_crop = card[round(card_h * 0.14):round(card_h * 0.98), 0:max_text_w]
     if body_crop.size > 0:
         b_gray = cv2.cvtColor(body_crop, cv2.COLOR_BGR2GRAY)
-        b_res = cv2.resize(b_gray, None, fx=1.8, fy=1.8, interpolation=cv2.INTER_CUBIC)
+        b_res = cv2.resize(b_gray, None, fx=2.0, fy=2.0, interpolation=cv2.INTER_CUBIC)
         b_clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8)).apply(b_res)
         text = safe_image_to_string(b_clahe, lang="hin", config="--psm 6")
     else:
@@ -1371,11 +1371,11 @@ def process_card_image(card_path):
     height, width = card.shape[:2]
     photo_rect = detect_photo_box(card)
     px, py, pw, ph = photo_rect
-    max_text_w = min(round(width * 0.68), px - 2 if px > round(width * 0.52) else round(width * 0.68))
-    body_crop = card[round(height * 0.22):round(height * 0.98), 0:max_text_w]
+    max_text_w = min(round(width * 0.73), px - 2 if px > round(width * 0.52) else round(width * 0.73))
+    body_crop = card[round(height * 0.14):round(height * 0.98), 0:max_text_w]
     if body_crop.size > 0:
         b_gray = cv2.cvtColor(body_crop, cv2.COLOR_BGR2GRAY)
-        b_res = cv2.resize(b_gray, None, fx=1.8, fy=1.8, interpolation=cv2.INTER_CUBIC)
+        b_res = cv2.resize(b_gray, None, fx=2.0, fy=2.0, interpolation=cv2.INTER_CUBIC)
         b_clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8)).apply(b_res)
         text = safe_image_to_string(b_clahe, lang="hin", config="--psm 6")
     else:

@@ -130,6 +130,7 @@ const MemberSchema = new mongoose.Schema({
   wardSerialMap: { type: mongoose.Schema.Types.Mixed, default: {} },
   caste: { type: String, trim: true },
   subCaste: { type: String, trim: true },
+  gotra: { type: String, trim: true },
   organizationPost: { type: String, trim: true },
   organizationLevel: { type: String, trim: true },
   influenceLevel: { type: String, enum: ['high', 'medium', 'normal', ''], default: '' },
