@@ -8,6 +8,7 @@ import '../../core/picked_file_source.dart';
 import '../../core/theme.dart';
 import '../../layout/app_layout.dart';
 import '../../widgets/mobile_components.dart';
+import 'desktop_folder_sync_card.dart';
 import 'import_review_page.dart';
 import 'smart_excel_import_page.dart';
 
@@ -399,7 +400,10 @@ class _UploadPageState extends State<UploadPage> {
             enabled: !uploading,
             onTap: () => upload(false),
           ),
-          _ReviewBeforeSaveCard(
+          DesktopFolderSyncCard(
+        onCompleted: () => api.bumpDataVersion(),
+      ),
+      _ReviewBeforeSaveCard(
             enabled: !uploading,
             onTap: () => Navigator.push(
               context,
@@ -492,6 +496,9 @@ class _UploadPageState extends State<UploadPage> {
             ),
           ]);
         },
+      ),
+      DesktopFolderSyncCard(
+        onCompleted: () => api.bumpDataVersion(),
       ),
       _ReviewBeforeSaveCard(
         enabled: !uploading,
