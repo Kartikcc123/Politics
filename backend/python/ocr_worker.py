@@ -2194,6 +2194,10 @@ def read_fixed_header(page_path, is_voter_page=True):
         section_name = fixed_section_name(section_text)
         if section_name:
             result["sectionName"] = section_name
+        if re.search(r"परिवर्धन|परिवर्धित|पूरक|\bADDITION\b|\bSUPPLEMENT\b", section_text, re.IGNORECASE):
+            result["supplementType"] = "addition"
+        if re.search(r"विलोपन\s*सूची|विलोपित\s*सूची|\bDELETION\b", section_text, re.IGNORECASE):
+            result["pageIsDeleted"] = True
         result["rawSectionHeader"] = section_text
     return {key: value for key, value in result.items() if value}
 
@@ -2717,6 +2721,9 @@ def main():
 
         for record in result:
             merged = {**page_header, **{key: value for key, value in record.items() if value not in (None, "")}}
+            if page_header.get("pageIsDeleted"):
+                merged["isDeleted"] = True
+                merged["sourceAction"] = "delete"
             sec_num = hdr_sec_num or last_known_section_num or (list(page_sec_map.keys())[0] if len(page_sec_map) >= 1 else "1")
             merged["sectionNumber"] = sec_num
             if page_sec_map.get(sec_num):
