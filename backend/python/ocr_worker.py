@@ -355,7 +355,7 @@ def ocr_house(card, card_full_text=None):
     try:
         _, thresh = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
         for img_variant in [thresh, gray]:
-            res_eng = cv2.resize(img_variant, None, fx=2.0, fy=2.0, interpolation=cv2.INTER_CUBIC)
+            res_eng = cv2.resize(img_variant, None, fx=2.5, fy=2.5, interpolation=cv2.INTER_CUBIC)
             data = pytesseract.image_to_data(res_eng, lang="eng", config="--psm 6", output_type=pytesseract.Output.DICT)
             h_box, w_box = res_eng.shape[:2]
             row_tokens = []
@@ -367,7 +367,8 @@ def ocr_house(card, card_full_text=None):
                 left = data['left'][i]
                 # House row is in upper half of region (above Age row), right of Hindi label
                 if top < h_box * 0.55 and left >= w_box * 0.18:
-                    row_tokens.append((top, left, txt))
+                    txt_fixed = re.sub(r"\$(?=\d)", "5", txt)
+                    row_tokens.append((top, left, txt_fixed))
             if row_tokens:
                 row_tokens.sort(key=lambda t: (t[0], t[1]))
                 joined = clean_house(" ".join(t[2] for t in row_tokens))
@@ -381,9 +382,12 @@ def ocr_house(card, card_full_text=None):
     # 2. Devanagari line extraction & suffix detection:
     if eng_candidates:
         primary_eng = eng_candidates[0]
-        # Prefer label-anchored c_full when it has valid digits; only use eng_candidates if c_full is empty
+        # Prefer c_full ONLY when it has at least as many digits as primary_eng (never let hin drop a trailing '1' like '551' -> '55')
         if c_full and any(ch.isdigit() for ch in c_full):
-            primary_eng = c_full
+            c_full_digits = "".join(re.findall(r"\d", c_full))
+            eng_digits = "".join(re.findall(r"\d", primary_eng))
+            if len(c_full_digits) >= len(eng_digits):
+                primary_eng = c_full
 
         # Fast single pass for Devanagari suffix (e.g. 'क', 'ख')
         gray_res = cv2.resize(gray, None, fx=1.8, fy=1.8, interpolation=cv2.INTER_CUBIC)
