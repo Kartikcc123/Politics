@@ -1575,28 +1575,35 @@ def process_page(page_path, output_dir, page_no):
     records = [r for r in records if _is_real_voter_card(r)]
 
     # Repair clipped/misread voterSerials using strict consensus sequential grid progression
-    if len(records) >= 3:
+    if len(records) >= 2:
         serials = []
         for r in records:
             try:
                 serials.append(int(str(r.get("voterSerial") or "").strip()))
             except ValueError:
                 serials.append(None)
-        base_votes = {}
-        for idx, val in enumerate(serials):
-            if val is None or val <= 0:
-                continue
-            cand_base = val - idx
-            if cand_base >= 1:
-                base_votes[cand_base] = base_votes.get(cand_base, 0) + 1
-        if base_votes:
-            # Pick the base serial with the most agreeing cards (tie-break by largest base so 181 beats clipped 11)
-            best_base, best_count = max(base_votes.items(), key=lambda kv: (kv[1], kv[0]))
-            if best_count >= 2:
-                for idx, r in enumerate(records):
-                    expected = best_base + idx
-                    if expected > 0 and serials[idx] != expected:
-                        r["voterSerial"] = str(expected)
+        if len(records) == 2:
+            s0, s1 = serials[0], serials[1]
+            if s0 and s0 >= 10 and s1 and s1 != s0 + 1 and str(s0 + 1).startswith(str(s1)):
+                records[1]["voterSerial"] = str(s0 + 1)
+            elif s1 and s1 >= 10 and s0 and s0 != s1 - 1 and str(s1 - 1).startswith(str(s0)):
+                records[0]["voterSerial"] = str(s1 - 1)
+        else:
+            base_votes = {}
+            for idx, val in enumerate(serials):
+                if val is None or val <= 0:
+                    continue
+                cand_base = val - idx
+                if cand_base >= 1:
+                    base_votes[cand_base] = base_votes.get(cand_base, 0) + 1
+            if base_votes:
+                # Pick the base serial with the most agreeing cards (tie-break by largest base so 181 beats clipped 11)
+                best_base, best_count = max(base_votes.items(), key=lambda kv: (kv[1], kv[0]))
+                if best_count >= 2:
+                    for idx, r in enumerate(records):
+                        expected = best_base + idx
+                        if expected > 0 and serials[idx] != expected:
+                            r["voterSerial"] = str(expected)
 
 
     # OCR can misread a house number, but a different non-empty number is not
