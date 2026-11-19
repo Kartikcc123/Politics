@@ -2267,8 +2267,11 @@ const applyRecheckOcr = async (member, user, req) => {
         continue;
       }
       if (field === 'voterSerial') {
+        const existingSerial = String(member.voterSerial || '').trim();
+        const hasValidExistingSerial = Boolean(existingSerial && /^\d{1,5}$/.test(existingSerial) && parseInt(existingSerial, 10) > 0);
         const newSerial = String(value || '').trim();
-        if (newSerial && /^\d{1,5}$/.test(newSerial) && parseInt(newSerial, 10) > 0) {
+        // Never overwrite an already-valid voterSerial during single-card Recheck OCR
+        if (!hasValidExistingSerial && newSerial && /^\d{1,5}$/.test(newSerial) && parseInt(newSerial, 10) > 0) {
           member.voterSerial = newSerial;
         }
         continue;
