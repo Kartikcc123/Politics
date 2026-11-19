@@ -295,6 +295,9 @@ const cleanOcrLocation = (value = '', { allowSection = false } = {}) => {
   if (/[\[\]{}|\\~`$<>]/.test(text) || /(?:EPIC|RJ\/|SNE\d|google|polling|station|map|view)/i.test(text)) return '';
   const locationLabel = /(?:वार्ड\s*(?:संख्या|नं)|अनुभाग|भाग\s*(?:संख्या|नं)|मतदाता|क्रम\s*संख्या|सूची\s*का\s*भाग|विधानसभा\s*(?:संख्या|निर्वाचन))/;
   if (!allowSection && locationLabel.test(text)) return '';
+  // Reject OCR noise containing Latin words or 3+ fragmented 1-2 char Devanagari tokens (e.g. "हि हैक सा र्ड as")
+  if (!allowSection && /\b[A-Za-z]{2,}\b/.test(text)) return '';
+  if (!allowSection && /(?:^|\s)[\u0900-\u097F]{1,2}(?:\s+[\u0900-\u097F]{1,2}){2,}(?:\s|$)/.test(text)) return '';
   if ((text.match(/[A-Za-z]/g) || []).length > 5) return '';
   return text;
 };
@@ -2089,20 +2092,25 @@ const runPdfImport = async ({ file, body, currentUser }, uploadId) => {
       firstMemberWithHeader.partNumber = docPartNumber;
       for (const member of parsed.members) member.partNumber = docPartNumber;
     }
+    const masterBoothLoc = getMasterLocationForBooth(docPartNumber || firstMemberWithHeader.partNumber);
     const docVillage = cleanOcrVillage(
       pdfVillageHint
       || detectedHeader.village
       || firstMemberWithHeader.village
       || parsed.ocr?.header?.village
+      || masterBoothLoc?.village
       || detectedHeader.policeStation
       || detectedHeader.gramPanchayat
       || cleanHeaderName(detectedHeader.partName)
-    );
+    ) || cleanValue(masterBoothLoc?.village);
     if (docVillage) {
-      if (!firstMemberWithHeader.village) firstMemberWithHeader.village = docVillage;
+      if (!cleanOcrVillage(firstMemberWithHeader.village)) firstMemberWithHeader.village = docVillage;
       for (const member of parsed.members) {
         if (!cleanOcrVillage(member.village)) member.village = docVillage;
       }
+    }
+    if (masterBoothLoc?.gramPanchayat && !cleanOcrLocation(firstMemberWithHeader.gramPanchayat)) {
+      firstMemberWithHeader.gramPanchayat = masterBoothLoc.gramPanchayat;
     }
 
     const { ward, booth } = await getOrCreateImportScope({
