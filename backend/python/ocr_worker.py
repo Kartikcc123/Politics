@@ -233,6 +233,9 @@ def clean_house(value):
     normalized = (value or "").translate(
         str.maketrans("\u0966\u0967\u0968\u0969\u096a\u096b\u096c\u096d\u096e\u096f", "0123456789")
     )
+    # Recover thin '1' at start/end of house digits misread by OCR as ']', '[', '|', 'I', 'l', '!' (e.g. '55]' -> '551')
+    normalized = re.sub(r"(?<=\d)[\]\|Il!]", "1", normalized)
+    normalized = re.sub(r"[\[\|Il!](?=\d)", "1", normalized)
     # Strip noise characters around digits and join split digits (e.g. '376 1' -> '3761')
     normalized = re.sub(r"(?<=\d)\s+(?=\d)", "", normalized)
     
@@ -355,6 +358,7 @@ def ocr_house(card, card_full_text=None):
             res_eng = cv2.resize(img_variant, None, fx=2.0, fy=2.0, interpolation=cv2.INTER_CUBIC)
             data = pytesseract.image_to_data(res_eng, lang="eng", config="--psm 6", output_type=pytesseract.Output.DICT)
             h_box, w_box = res_eng.shape[:2]
+            row_tokens = []
             for i in range(len(data['text'])):
                 txt = data['text'][i].strip()
                 if not txt:
@@ -363,9 +367,12 @@ def ocr_house(card, card_full_text=None):
                 left = data['left'][i]
                 # House row is in upper half of region (above Age row), right of Hindi label
                 if top < h_box * 0.55 and left >= w_box * 0.18:
-                    c = clean_house(txt)
-                    if c and any(ch.isdigit() for ch in c):
-                        eng_candidates.append(c)
+                    row_tokens.append((top, left, txt))
+            if row_tokens:
+                row_tokens.sort(key=lambda t: (t[0], t[1]))
+                joined = clean_house(" ".join(t[2] for t in row_tokens))
+                if joined and any(ch.isdigit() for ch in joined):
+                    eng_candidates.append(joined)
             if eng_candidates:
                 break
     except Exception:
