@@ -27,7 +27,7 @@ const normalizeEpic = (value) => {
 
 const isValidEpic = (value) => (
   /^[A-Z]{3}[0-9]{7}$/.test(value)
-  || /^RJ\/[0-9]{1,3}\/[0-9]{1,3}\/[0-9]{5,8}$/.test(value)
+  || /^RJ\/[0-9]{1,3}\/[0-9]{1,3}\/[0-9]{5,8}[A-Z]?$/.test(value)
 );
 
 const requireValidEpic = (value) => {

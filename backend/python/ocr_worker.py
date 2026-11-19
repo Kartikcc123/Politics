@@ -696,15 +696,16 @@ def clean_epic(raw):
         return ""
     s_raw = str(raw).upper()
 
-    # 1. Legacy format: RJ/xx/xxx/xxxxxx
-    m_leg = re.search(r"(RJ|[A-Z]{2,3})/([0-9O]{1,3})/([0-9O]{1,3})/([0-9O]{5,6})", s_raw)
+    # 1. Legacy format: RJ/xx/xxx/xxxxxx[A-Z] (preserve trailing A/B/C family suffix!)
+    m_leg = re.search(r"(RJ|[A-Z]{2,3})/([0-9O]{1,3})/([0-9O]{1,3})/([0-9O]{5,6})([A-Z]?)", s_raw)
     if m_leg:
         p1 = "RJ" if m_leg.group(1).startswith("R") else m_leg.group(1)
         return (
             p1 + "/" +
             m_leg.group(2).replace("O", "0") + "/" +
             m_leg.group(3).replace("O", "0") + "/" +
-            m_leg.group(4).replace("O", "0")
+            m_leg.group(4).replace("O", "0") +
+            m_leg.group(5)
         )
 
     # 2. Priority 1: Exact 3 letters followed by 7 pure digits (e.g. SNE1956358 in 'a] SNE1956358 |')
@@ -994,7 +995,7 @@ def parse_card(text, epic_text, photo_path, page_no, cell_no, focused_house="", 
 def valid_epic(value):
     return bool(
         re.fullmatch(r"[A-Z]{3}\d{7}", value or "")
-        or re.fullmatch(r"RJ/\d{1,3}/\d{1,3}/\d{6}", value or "")
+        or re.fullmatch(r"RJ/\d{1,3}/\d{1,3}/\d{5,8}[A-Z]?", value or "")
     )
 
 
