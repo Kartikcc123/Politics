@@ -2474,21 +2474,28 @@ exports.recheckOcr = async (req, res, next) => {
 
 exports.hierarchicalTree = async (req, res, next) => {
   try {
-    const filter = applyMemberScope(req.currentUser, {});
+    const baseFilter = applyMemberScope(req.currentUser, {});
+    const rollType = String(req.query.rollType || '').trim().toLowerCase();
+    if (rollType === 'assembly') {
+      baseFilter.hasAssemblyMembership = true;
+      baseFilter.partNumber = { $nin: ['', null] };
+    } else if (rollType === 'municipal' || rollType === 'panchayat') {
+      baseFilter.hasMunicipalMembership = true;
+    }
     const pipeline = [
-      { $match: filter },
+      { $match: baseFilter },
       {
         $group: {
           _id: {
-            assembly: { $ifNull: ["$assemblyName", "सामान्य विधानसभा"] },
-            municipality: { $ifNull: ["$municipality", ""] },
-            village: { $ifNull: ["$village", "$location"] },
-            partNumber: { $ifNull: ["$partNumber", "अज्ञात"] },
-            sectionName: { $ifNull: ["$sectionName", "सामान्य अनुभाग"] }
+            assembly: { $ifNull: ['$assemblyName', 'सामान्य विधानसभा'] },
+            municipality: { $ifNull: ['$municipality', ''] },
+            village: { $ifNull: ['$village', '$location'] },
+            partNumber: { $ifNull: ['$partNumber', 'अज्ञात'] },
+            sectionName: { $ifNull: ['$sectionName', 'सामान्य अनुभाग'] },
           },
-          count: { $sum: 1 }
-        }
-      }
+          count: { $sum: 1 },
+        },
+      },
     ];
     const results = await Member.aggregate(pipeline);
     res.json({ tree: results });

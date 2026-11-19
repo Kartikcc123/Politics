@@ -13,9 +13,18 @@ class SamitiHierarchyPage extends StatefulWidget {
 }
 
 class _SamitiHierarchyPageState extends State<SamitiHierarchyPage> {
+  // Tab 0 (Assembly / विधानसभा) state
+  final assemblySearchController = TextEditingController();
+  String assemblyQuery = '';
+  String assemblyViewMode = 'village'; // 'village' or 'part'
+  String? expandedAssemblyVillage;
+  List<Map<String, dynamic>> _assemblyTree = [];
+  bool _loadingAssembly = true;
+
   // Tab 1 (Gram Panchayat) state
   final gpSearchController = TextEditingController();
   String gpQuery = '';
+  String selectedSamitiForGp = 'रायपुर';
   String? expandedPanchayat;
   final Map<String, Map<String, int>> _liveGpWardCounts = {};
 
@@ -31,13 +40,33 @@ class _SamitiHierarchyPageState extends State<SamitiHierarchyPage> {
   void initState() {
     super.initState();
     _fetchLiveHierarchy();
+    _fetchAssemblyTree();
   }
 
   @override
   void dispose() {
+    assemblySearchController.dispose();
     gpSearchController.dispose();
     wardSearchController.dispose();
     super.dispose();
+  }
+
+  Future<void> _fetchAssemblyTree() async {
+    try {
+      final res = await api.getQuery('/api/members/hierarchical-tree', {'rollType': 'assembly'});
+      final rawTree = (res['tree'] as List? ?? [])
+          .whereType<Map>()
+          .map((e) => Map<String, dynamic>.from(e))
+          .toList();
+      if (mounted) {
+        setState(() {
+          _assemblyTree = rawTree;
+          _loadingAssembly = false;
+        });
+      }
+    } catch (_) {
+      if (mounted) setState(() => _loadingAssembly = false);
+    }
   }
 
   Future<void> _fetchLiveHierarchy() async {
@@ -621,35 +650,45 @@ class _SamitiHierarchyPageState extends State<SamitiHierarchyPage> {
   @override
   Widget build(BuildContext context) {
     return DefaultTabController(
-      length: 2,
+      length: 3,
       child: Scaffold(
-        backgroundColor: const Color(0xfff7f8fb),
+        backgroundColor: const Color(0xffF8FAFC),
         appBar: AppBar(
+          backgroundColor: Colors.white,
+          surfaceTintColor: Colors.white,
+          elevation: 0,
           title: const Text(
             'क्षेत्र व गाँव प्रबंधन',
-            style: TextStyle(fontWeight: FontWeight.w900, fontSize: 18),
+            style: TextStyle(color: Color(0xff0F172A), fontWeight: FontWeight.w800, fontSize: 18),
           ),
-          bottom: const TabBar(
-            labelColor: Color(0xff2563eb),
-            unselectedLabelColor: muted,
-            indicatorColor: Color(0xff2563eb),
-            indicatorWeight: 3,
-            labelStyle: TextStyle(fontWeight: FontWeight.w900, fontSize: 13.5),
-            unselectedLabelStyle: TextStyle(fontWeight: FontWeight.w700, fontSize: 13.5),
-            tabs: [
-              Tab(
-                icon: Icon(Icons.location_city_rounded, size: 20),
-                text: 'ग्राम पंचायत व गाँव (29 पंचायतें)',
+          bottom: PreferredSize(
+            preferredSize: const Size.fromHeight(50),
+            child: Container(
+              decoration: const BoxDecoration(
+                color: Colors.white,
+                border: Border(bottom: BorderSide(color: Color(0xffE2E8F0))),
               ),
-              Tab(
-                icon: Icon(Icons.account_balance_rounded, size: 20),
-                text: 'पंचायत समिति वार्ड',
+              child: const TabBar(
+                isScrollable: true,
+                tabAlignment: TabAlignment.start,
+                labelColor: Color(0xff0F172A),
+                unselectedLabelColor: Color(0xff64748B),
+                indicatorColor: Color(0xff0F172A),
+                indicatorWeight: 2.5,
+                labelStyle: TextStyle(fontWeight: FontWeight.w700, fontSize: 13.5),
+                unselectedLabelStyle: TextStyle(fontWeight: FontWeight.w500, fontSize: 13.5),
+                tabs: [
+                  Tab(text: 'विधानसभा (भाग व गाँव)'),
+                  Tab(text: 'ग्राम पंचायत व गाँव'),
+                  Tab(text: 'पंचायत समिति वार्ड'),
+                ],
               ),
-            ],
+            ),
           ),
         ),
         body: TabBarView(
           children: [
+            _buildAssemblyTab(),
             _buildGramPanchayatsTab(),
             _buildSamitiWardsTab(),
           ],
@@ -659,11 +698,292 @@ class _SamitiHierarchyPageState extends State<SamitiHierarchyPage> {
   }
 
   // ============================================================================
-  // TAB 1: GRAM PANCHAYAT VIEW (Only 29 Panchayats of Raipur)
+  // TAB 0: ASSEMBLY VIEW (विधानसभा — गाँव या भाग संख्या के अनुसार)
   // ============================================================================
+  Widget _buildAssemblyTab() {
+    // Group tree rows by village -> parts and by part -> villages
+    final Map<String, Map<String, int>> byVillage = {};
+    final Map<String, Map<String, dynamic>> byPart = {};
+
+    for (final row in _assemblyTree) {
+      final id = Map<String, dynamic>.from(row['_id'] ?? {});
+      final cnt = (row['count'] as num?)?.toInt() ?? 0;
+      if (cnt <= 0) continue;
+      final vName = '${id['village'] ?? ''}'.trim();
+      final pNum = '${id['partNumber'] ?? ''}'.trim();
+      if (pNum.isEmpty || pNum == 'अज्ञात') continue;
+      final villageLabel = vName.isNotEmpty ? vName : 'भाग $pNum';
+
+      byVillage.putIfAbsent(villageLabel, () => {});
+      byVillage[villageLabel]![pNum] = (byVillage[villageLabel]![pNum] ?? 0) + cnt;
+
+      byPart.putIfAbsent(pNum, () => {'count': 0, 'villages': <String>{}});
+      byPart[pNum]!['count'] = (byPart[pNum]!['count'] as int) + cnt;
+      if (vName.isNotEmpty) (byPart[pNum]!['villages'] as Set<String>).add(vName);
+    }
+
+    final q = assemblyQuery.trim().toLowerCase();
+    final villageKeys = byVillage.keys.where((v) {
+      if (q.isEmpty) return true;
+      final partsMatch = byVillage[v]!.keys.any((p) => p.contains(q));
+      return v.toLowerCase().contains(q) || partsMatch;
+    }).toList()
+      ..sort();
+
+    final partKeys = byPart.keys.where((p) {
+      if (q.isEmpty) return true;
+      final vils = (byPart[p]!['villages'] as Set<String>).join(' ').toLowerCase();
+      return p.contains(q) || vils.contains(q);
+    }).toList()
+      ..sort((a, b) => (int.tryParse(a) ?? 99999).compareTo(int.tryParse(b) ?? 99999));
+
+    return CustomScrollView(
+      slivers: [
+        SliverToBoxAdapter(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 14, 16, 10),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // shadcn / Tremor style segmented control
+                Container(
+                  padding: const EdgeInsets.all(4),
+                  decoration: BoxDecoration(
+                    color: const Color(0xffF1F5F9),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: const Color(0xffE2E8F0)),
+                  ),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: _segmentedPill(
+                          label: 'गाँव के अनुसार (${villageKeys.length})',
+                          active: assemblyViewMode == 'village',
+                          onTap: () => setState(() => assemblyViewMode = 'village'),
+                        ),
+                      ),
+                      Expanded(
+                        child: _segmentedPill(
+                          label: 'भाग संख्या के अनुसार (${partKeys.length})',
+                          active: assemblyViewMode == 'part',
+                          onTap: () => setState(() => assemblyViewMode = 'part'),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: assemblySearchController,
+                  onChanged: (val) => setState(() => assemblyQuery = val),
+                  decoration: InputDecoration(
+                    hintText: 'गाँव या भाग संख्या खोजें (जैसे: भीटा, 186)...',
+                    prefixIcon: const Icon(Icons.search_rounded, color: Color(0xff64748B), size: 20),
+                    suffixIcon: assemblyQuery.isNotEmpty
+                        ? IconButton(
+                            icon: const Icon(Icons.close_rounded, size: 18),
+                            onPressed: () {
+                              assemblySearchController.clear();
+                              setState(() => assemblyQuery = '');
+                            },
+                          )
+                        : null,
+                    filled: true,
+                    fillColor: Colors.white,
+                    isDense: true,
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(10),
+                      borderSide: const BorderSide(color: Color(0xffE2E8F0)),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(10),
+                      borderSide: const BorderSide(color: Color(0xffE2E8F0)),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+        if (_loadingAssembly)
+          const SliverFillRemaining(child: Center(child: CircularProgressIndicator()))
+        else if (assemblyViewMode == 'village')
+          SliverPadding(
+            padding: const EdgeInsets.fromLTRB(16, 4, 16, 90),
+            sliver: SliverList(
+              delegate: SliverChildBuilderDelegate(
+                (context, index) {
+                  final vName = villageKeys[index];
+                  final partsMap = byVillage[vName]!;
+                  final sortedParts = partsMap.keys.toList()
+                    ..sort((a, b) => (int.tryParse(a) ?? 99999).compareTo(int.tryParse(b) ?? 99999));
+                  final totalVoters = partsMap.values.fold<int>(0, (s, c) => s + c);
+                  final isExpanded = expandedAssemblyVillage == vName;
+
+                  return Container(
+                    margin: const EdgeInsets.only(bottom: 10),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: isExpanded ? const Color(0xff0F172A) : const Color(0xffE2E8F0)),
+                    ),
+                    child: Column(
+                      children: [
+                        InkWell(
+                          borderRadius: BorderRadius.circular(12),
+                          onTap: () => setState(() => expandedAssemblyVillage = isExpanded ? null : vName),
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                            child: Row(
+                              children: [
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(vName, style: const TextStyle(color: Color(0xff0F172A), fontWeight: FontWeight.w700, fontSize: 15)),
+                                      const SizedBox(height: 2),
+                                      Text('${sortedParts.length} भाग · $totalVoters मतदाता', style: const TextStyle(color: Color(0xff64748B), fontSize: 12)),
+                                    ],
+                                  ),
+                                ),
+                                Icon(isExpanded ? Icons.keyboard_arrow_up_rounded : Icons.keyboard_arrow_down_rounded, color: const Color(0xff64748B)),
+                              ],
+                            ),
+                          ),
+                        ),
+                        if (isExpanded) ...[
+                          const Divider(height: 1, color: Color(0xffE2E8F0)),
+                          Padding(
+                            padding: const EdgeInsets.all(12),
+                            child: Wrap(
+                              spacing: 8,
+                              runSpacing: 8,
+                              children: [
+                                ...sortedParts.map((pNum) => ActionChip(
+                                      backgroundColor: const Color(0xffF8FAFC),
+                                      side: const BorderSide(color: Color(0xffCBD5E1)),
+                                      label: Text('भाग $pNum (${partsMap[pNum]})', style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 12.5, color: Color(0xff0F172A))),
+                                      onPressed: () => _openVoters(partNumber: pNum),
+                                    )),
+                                ActionChip(
+                                  backgroundColor: const Color(0xff0F172A),
+                                  label: Text('सभी $totalVoters देखें →', style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 12.5, color: Colors.white)),
+                                  onPressed: () => _openVoters(village: vName),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  );
+                },
+                childCount: villageKeys.length,
+              ),
+            ),
+          )
+        else
+          SliverPadding(
+            padding: const EdgeInsets.fromLTRB(16, 4, 16, 90),
+            sliver: SliverList(
+              delegate: SliverChildBuilderDelegate(
+                (context, index) {
+                  final pNum = partKeys[index];
+                  final info = byPart[pNum]!;
+                  final vils = (info['villages'] as Set<String>).join(', ');
+                  final cnt = info['count'] as int;
+                  return Container(
+                    margin: const EdgeInsets.only(bottom: 8),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: const Color(0xffE2E8F0)),
+                    ),
+                    child: ListTile(
+                      dense: true,
+                      onTap: () => _openVoters(partNumber: pNum),
+                      leading: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: const Color(0xffF1F5F9),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: const Color(0xffE2E8F0)),
+                        ),
+                        child: Text('भाग $pNum', style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 12.5, color: Color(0xff0F172A))),
+                      ),
+                      title: Text(vils.isNotEmpty ? vils : 'भाग $pNum', style: const TextStyle(fontWeight: FontWeight.w700, color: Color(0xff0F172A))),
+                      trailing: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                        decoration: BoxDecoration(color: const Color(0xffEFF6FF), borderRadius: BorderRadius.circular(20)),
+                        child: Text('$cnt मतदाता', style: const TextStyle(color: Color(0xff1D4ED8), fontWeight: FontWeight.w700, fontSize: 12)),
+                      ),
+                    ),
+                  );
+                },
+                childCount: partKeys.length,
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _segmentedPill({required String label, required bool active, required VoidCallback onTap}) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(8),
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 10),
+        decoration: BoxDecoration(
+          color: active ? Colors.white : Colors.transparent,
+          borderRadius: BorderRadius.circular(8),
+          boxShadow: active
+              ? [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 4, offset: const Offset(0, 1))]
+              : null,
+        ),
+        alignment: Alignment.center,
+        child: Text(
+          label,
+          style: TextStyle(
+            color: active ? const Color(0xff0F172A) : const Color(0xff64748B),
+            fontWeight: active ? FontWeight.w700 : FontWeight.w500,
+            fontSize: 12.5,
+          ),
+        ),
+      ),
+    );
+  }
+
+  // ============================================================================
+  // TAB 1: GRAM PANCHAYAT VIEW (रायपुर, सहाड़ा, सुवाणा)
+  // ============================================================================
+  Map<String, Map<String, dynamic>> _getPanchayatsForSamiti(String samitiKey) {
+    if (samitiKey == 'रायपुर') {
+      return raipurPanchayats;
+    }
+    final samitiObj = officialSamitiWardsData[samitiKey];
+    final wards = (samitiObj is Map ? samitiObj['wards'] : null) as Map? ?? {};
+    final Map<String, Map<String, dynamic>> collected = {};
+    for (final wEntry in wards.values) {
+      if (wEntry is! Map) continue;
+      final panchayats = wEntry['panchayats'] as Map? ?? {};
+      for (final pEntry in panchayats.entries) {
+        final pData = pEntry.value is Map ? Map<String, dynamic>.from(pEntry.value as Map) : <String, dynamic>{};
+        collected[pEntry.key.toString()] = {
+          'wards': pData['totalWards'] ?? 0,
+          'pop': pData['population'] ?? 0,
+          'villages': pData['villages'] ?? [],
+        };
+      }
+    }
+    return collected;
+  }
+
   Widget _buildGramPanchayatsTab() {
+    final activeSamitiMap = _getPanchayatsForSamiti(selectedSamitiForGp);
     final filteredPanchayats = <String, List<Map<String, dynamic>>>{};
-    for (final entry in raipurPanchayats.entries) {
+    for (final entry in activeSamitiMap.entries) {
       final gpName = entry.key;
       final villages = List<Map<String, dynamic>>.from(entry.value['villages'] ?? []);
 
@@ -695,25 +1015,57 @@ class _SamitiHierarchyPageState extends State<SamitiHierarchyPage> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Info banner for 29 GPs
+                // Samiti selector chips (रायपुर, सहाड़ा, सुवाणा)
+                SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: Row(
+                    children: ['रायपुर', 'सहाड़ा', 'सुवाणा'].map((samiti) {
+                      final active = selectedSamitiForGp == samiti;
+                      return Padding(
+                        padding: const EdgeInsets.only(right: 8),
+                        child: ChoiceChip(
+                          label: Text('$samiti पंचायत समिति'),
+                          selected: active,
+                          selectedColor: const Color(0xff0F172A),
+                          backgroundColor: Colors.white,
+                          labelStyle: TextStyle(
+                            color: active ? Colors.white : const Color(0xff0F172A),
+                            fontWeight: FontWeight.w700,
+                            fontSize: 12.5,
+                          ),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(10),
+                            side: BorderSide(color: active ? const Color(0xff0F172A) : const Color(0xffE2E8F0)),
+                          ),
+                          onSelected: (_) => setState(() {
+                            selectedSamitiForGp = samiti;
+                            expandedPanchayat = null;
+                          }),
+                        ),
+                      );
+                    }).toList(),
+                  ),
+                ),
+                const SizedBox(height: 10),
+                // Info banner
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                   decoration: BoxDecoration(
-                    color: const Color(0xffeff6ff),
-                    borderRadius: BorderRadius.circular(14),
-                    border: Border.all(color: const Color(0xffbfdbfe)),
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: const Color(0xffE2E8F0)),
                   ),
-                  child: const Row(
+                  child: Row(
                     children: [
-                      Icon(Icons.info_outline_rounded, color: Color(0xff2563eb), size: 20),
-                      SizedBox(width: 10),
+                      const Icon(Icons.info_outline_rounded, color: Color(0xff0F172A), size: 18),
+                      const SizedBox(width: 10),
                       Expanded(
                         child: Text(
-                          'रायपुर की सभी 29 अधिकृत ग्राम पंचायतें एवं उनके सम्मिलित राजस्व गाँव।',
-                          style: TextStyle(
-                            color: Color(0xff1e40af),
+                          '$selectedSamitiForGp की सभी ${activeSamitiMap.length} अधिकृत ग्राम पंचायतें एवं उनके सम्मिलित राजस्व गाँव।',
+                          style: const TextStyle(
+                            color: Color(0xff334155),
                             fontSize: 12.5,
-                            fontWeight: FontWeight.w700,
+                            fontWeight: FontWeight.w600,
                           ),
                         ),
                       ),
@@ -753,39 +1105,30 @@ class _SamitiHierarchyPageState extends State<SamitiHierarchyPage> {
                 ),
                 const SizedBox(height: 12),
 
-                // Full Raipur Voter button
+                // Full Samiti Voter button
                 InkWell(
-                  onTap: () => _openVoters(tehsil: 'रायपुर'),
-                  borderRadius: BorderRadius.circular(14),
+                  onTap: () => _openVoters(tehsil: selectedSamitiForGp),
+                  borderRadius: BorderRadius.circular(10),
                   child: Container(
                     padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                     decoration: BoxDecoration(
-                      gradient: const LinearGradient(
-                        colors: [Color(0xff1e3a8a), Color(0xff2563eb)],
-                      ),
-                      borderRadius: BorderRadius.circular(14),
-                      boxShadow: [
-                        BoxShadow(
-                          color: const Color(0xff2563eb).withValues(alpha: 0.25),
-                          blurRadius: 10,
-                          offset: const Offset(0, 4),
-                        ),
-                      ],
+                      color: const Color(0xff0F172A),
+                      borderRadius: BorderRadius.circular(10),
                     ),
-                    child: const Row(
+                    child: Row(
                       children: [
-                        Icon(Icons.groups_rounded, color: Colors.white, size: 22),
-                        SizedBox(width: 10),
+                        const Icon(Icons.groups_rounded, color: Colors.white, size: 20),
+                        const SizedBox(width: 10),
                         Text(
-                          '👥 पूरी रायपुर (सभी 29 पंचायतें) के कुल मतदाता देखें',
-                          style: TextStyle(
-                            fontWeight: FontWeight.w900,
-                            fontSize: 14,
+                          'पूरी $selectedSamitiForGp (सभी ${activeSamitiMap.length} पंचायतें) के कुल मतदाता देखें',
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w700,
+                            fontSize: 13.5,
                             color: Colors.white,
                           ),
                         ),
-                        Spacer(),
-                        Icon(Icons.arrow_forward_ios_rounded, size: 14, color: Colors.white),
+                        const Spacer(),
+                        const Icon(Icons.arrow_forward_ios_rounded, size: 14, color: Colors.white),
                       ],
                     ),
                   ),
@@ -852,7 +1195,7 @@ class _SamitiHierarchyPageState extends State<SamitiHierarchyPage> {
                           ),
                         ),
                         subtitle: Builder(builder: (context) {
-                          final gpInfo = raipurPanchayats[gpName] ?? {};
+                          final gpInfo = activeSamitiMap[gpName] ?? {};
                           final wardCount = gpInfo['wards'] as int? ?? villages.length;
                           final popCount = gpInfo['pop'] as int? ?? 0;
                           final gpParts = getGpParts(gpName);
@@ -867,7 +1210,7 @@ class _SamitiHierarchyPageState extends State<SamitiHierarchyPage> {
                           Container(
                             padding: const EdgeInsets.fromLTRB(14, 0, 14, 12),
                             child: Builder(builder: (context) {
-                              final gpInfo = raipurPanchayats[gpName] ?? {};
+                              final gpInfo = activeSamitiMap[gpName] ?? {};
                               final wardCount = gpInfo['wards'] as int? ?? 0;
                               final gpParts = getGpParts(gpName);
 
