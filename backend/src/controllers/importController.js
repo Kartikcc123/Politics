@@ -2437,7 +2437,46 @@ const runPdfImport = async ({ file, body, currentUser }, uploadId) => {
         if (createErr.code === 11000 || (createErr.message && createErr.message.includes('11000'))) {
           try {
             const collision = await Member.findOne({ voterId: item.voterId });
-            if (collision) {
+            const colSerial = String(collision?.voterSerial || '').replace(/\D/g, '').trim();
+            const isSamePartDifferentSlot = collision && docPartNumber && String(collision.partNumber || '') === String(docPartNumber) && cleanSer && colSerial && colSerial !== cleanSer;
+            if (isSamePartDifferentSlot) {
+              // Never overwrite an existing voter at another serial (e.g. #205 overwritten by #824); create a separate record with -REV-serial
+              const revVoterId = `${item.voterId}-REV-${cleanSer}`;
+              const existingRev = await Member.findOne({ voterId: revVoterId });
+              if (!existingRev) {
+                const revMember = await Member.create({
+                  name: item.name,
+                  surname: item.surname || '',
+                  relativeName: item.relativeName || item.guardianName || '',
+                  guardianName: item.guardianName || '',
+                  relationType: item.relationType || '',
+                  houseNumber: item.houseNumber || '',
+                  voterSerial: cleanSer,
+                  voterId: revVoterId,
+                  age: item.age,
+                  estimatedDob: item.estimatedDob,
+                  gender: item.gender || '',
+                  assemblyNumber: item.assemblyNumber || '',
+                  assemblyName: item.assemblyName || '',
+                  partNumber: item.partNumber || docPartNumber || '',
+                  sectionNumber: item.sectionNumber || '',
+                  sectionName: item.sectionName || '',
+                  tehsil: item.tehsil || '',
+                  gramPanchayat: item.gramPanchayat || '',
+                  village: item.village || '',
+                  booth,
+                  ward,
+                  contactType: 'electoral',
+                  hasAssemblyMembership: true,
+                  verificationStatus: 'needs_review',
+                  ocrNeedsReview: true,
+                  ocrReviewReasons: ['duplicate_epic_in_part'],
+                  photo: item.photo || '',
+                  cardImage: item.cardImage || '',
+                });
+                created.push(revMember);
+              }
+            } else if (collision) {
               assignNonEmptyFields(collision, item, ['photo', 'cardImage', 'name', 'guardianName', 'houseNumber', 'age', 'gender', 'voterSerial']);
               await collision.save();
               created.push(collision);
