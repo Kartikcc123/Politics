@@ -699,10 +699,12 @@ def clean_epic(raw):
     # 1. Legacy format: RJ/xx/xxx/xxxxxx[A-Z] (preserve trailing A/B/C family suffix!)
     m_leg = re.search(r"(RJ|[A-Z]{2,3})/([0-9O]{1,3})/([0-9O]{1,3})/([0-9O]{5,6})([A-Z]?)", s_raw)
     if m_leg:
-        p1 = "RJ" if m_leg.group(1).startswith("R") else m_leg.group(1)
+        raw_state = m_leg.group(1)
+        st_num = m_leg.group(2).replace("O", "0")
+        p1 = "RJ" if (raw_state.startswith("R") or (st_num == "20" and raw_state in ("AJ", "PJ", "BJ", "NJ", "KJ"))) else raw_state
         return (
             p1 + "/" +
-            m_leg.group(2).replace("O", "0") + "/" +
+            st_num + "/" +
             m_leg.group(3).replace("O", "0") + "/" +
             m_leg.group(4).replace("O", "0") +
             m_leg.group(5)
