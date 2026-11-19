@@ -382,22 +382,38 @@ def ocr_house(card, card_full_text=None):
     # 2. Devanagari line extraction & suffix detection:
     if eng_candidates:
         primary_eng = eng_candidates[0]
-        # Prefer c_full ONLY when it has at least as many digits as primary_eng (never let hin drop a trailing '1' like '551' -> '55')
+        # Prefer c_full when:
+        # (a) c_full has >= digits than primary_eng, OR
+        # (b) c_full has a Hindi letter suffix (क/ख/ग/घ) and eng misread that suffix as a trailing digit (e.g. '542ख' -> '5424')
         if c_full and any(ch.isdigit() for ch in c_full):
             c_full_digits = "".join(re.findall(r"\d", c_full))
             eng_digits = "".join(re.findall(r"\d", primary_eng))
-            if len(c_full_digits) >= len(eng_digits):
+            c_full_has_hindi_suffix = bool(re.search(r"[कखगघ]$", c_full.strip()))
+            eng_misread_suffix = (
+                c_full_has_hindi_suffix
+                and len(eng_digits) == len(c_full_digits) + 1
+                and eng_digits.startswith(c_full_digits)
+            )
+            if len(c_full_digits) >= len(eng_digits) or eng_misread_suffix:
                 primary_eng = c_full
 
         # Fast single pass for Devanagari suffix (e.g. 'क', 'ख')
-        gray_res = cv2.resize(gray, None, fx=1.8, fy=1.8, interpolation=cv2.INTER_CUBIC)
-        clahe_img = cv2.createCLAHE(2.5, (8, 8)).apply(gray_res)
-        t_hin = safe_image_to_string(clahe_img, lang="hin+eng", config="--psm 6")
-        house_line = field(t_hin, house_label_pattern)
-        if house_line:
-            suffix_match = re.search(r"[\u0900-\u097F]+$", house_line)
-            if suffix_match and suffix_match.group(0) in ("क", "ख", "ग", "घ") and not primary_eng.endswith(suffix_match.group(0)):
-                primary_eng = f"{primary_eng} {suffix_match.group(0)}"
+        if not re.search(r"[कखगघ]$", primary_eng.strip()):
+            gray_res = cv2.resize(gray, None, fx=1.8, fy=1.8, interpolation=cv2.INTER_CUBIC)
+            clahe_img = cv2.createCLAHE(2.5, (8, 8)).apply(gray_res)
+            t_hin = safe_image_to_string(clahe_img, lang="hin+eng", config="--psm 6")
+            house_line = field(t_hin, house_label_pattern)
+            if house_line:
+                suffix_match = re.search(r"[\u0900-\u097F]+$", house_line)
+                if suffix_match and suffix_match.group(0) in ("क", "ख", "ग", "घ"):
+                    # If t_hin has fewer digits + suffix (e.g. '542 ख') while eng had '5424', drop the misread digit
+                    t_hin_clean = clean_house(house_line)
+                    t_hin_digits = "".join(re.findall(r"\d", t_hin_clean))
+                    eng_digits = "".join(re.findall(r"\d", primary_eng))
+                    if t_hin_digits and len(eng_digits) == len(t_hin_digits) + 1 and eng_digits.startswith(t_hin_digits):
+                        primary_eng = f"{t_hin_digits} {suffix_match.group(0)}"
+                    else:
+                        primary_eng = f"{primary_eng} {suffix_match.group(0)}"
         return primary_eng
 
     # If no English bounding box digits, run focused Devanagari passes (CLAHE & Otsu)
