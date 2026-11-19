@@ -172,6 +172,8 @@ def clean_person_name(value):
     text = re.sub(r"(?:^|\s)(?:लाटुलाल|लाडुलाल|लादुलाल)(?=$|\s)", " लादूलाल ", text)
     text = re.sub(r"(?:^|\s)(?:लाटु|लाडु|लादु)(?=$|\s)", " लादू ", text)
     text = re.sub(r"(?:^|\s)डालु(?=$|\s)", " डालू ", text)
+    text = re.sub(r"(?:^|\s)विश्[रल]ो[र्टर्दईय]+(?=$|\s)", " विश्नोई ", text)
+    text = re.sub(r"(?:^|\s)विश्लोई(?=$|\s)", " विश्नोई ", text)
     text = re.sub(r"(?<=\u0900-\u097F)ताल\b", "लाल", text)
     text = re.sub(r"\bअरजुर्नलाल\b|\bअरजुनलाल\b|\bअजुर्नलाल\b|\bअजपुर्नताल\b|\bअजपुर्नलाल\b|\bअर्जुुनलाल\b", "अर्जुनलाल", text)
     text = re.sub(r"(?<=\u0900-\u097F)ताम\b", "राम", text)
@@ -246,8 +248,8 @@ def clean_house(value):
         return ""
     val = match.group(1)
     raw_suffix = match.group(2) if match.group(2) else ""
-    # Filter out single-character Hindi/English noise letters (e.g., 'ह', 'x', 'r') attached to house numbers
-    suffix = raw_suffix if (raw_suffix and (raw_suffix in ("क", "ख", "ग", "घ", "A", "B", "C", "D", "E", "F", "K"))) else ""
+    # Filter out single-character Hindi/English noise letters (e.g., 'ह', 'x', 'r', 'F' from Photo box)
+    suffix = raw_suffix if (raw_suffix and (raw_suffix in ("क", "ख", "ग", "घ", "A", "B", "C", "D", "E", "K"))) else ""
 
     # If hyphenated with identical numbers (e.g., 3-3 -> 3, 56-56 -> 56)
     if "-" in val or "/" in val:
@@ -1559,6 +1561,31 @@ def process_page(page_path, output_dir, page_no):
         return False
 
     records = [r for r in records if _is_real_voter_card(r)]
+
+    # Repair clipped/misread voterSerials using strict sequential grid progression between matching anchors
+    if len(records) >= 3:
+        serials = []
+        for r in records:
+            try:
+                serials.append(int(str(r.get("voterSerial") or "").strip()))
+            except ValueError:
+                serials.append(None)
+        # Find anchors that agree with at least one other anchor at the exact index delta
+        anchors = []
+        for idx, val in enumerate(serials):
+            if val is None or val <= 0:
+                continue
+            if any(
+                j != idx and serials[j] is not None and (serials[j] - val) == (j - idx)
+                for j in range(len(serials))
+            ):
+                anchors.append((idx, val))
+        if anchors:
+            base_idx, base_val = anchors[0]
+            for idx, r in enumerate(records):
+                expected = base_val + (idx - base_idx)
+                if expected > 0 and serials[idx] != expected:
+                    r["voterSerial"] = str(expected)
 
 
     # OCR can misread a house number, but a different non-empty number is not
