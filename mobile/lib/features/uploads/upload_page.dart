@@ -401,7 +401,7 @@ class _UploadPageState extends State<UploadPage> {
             onTap: () => upload(false),
           ),
           DesktopFolderSyncCard(
-        onCompleted: () => api.bumpDataVersion(),
+        onCompleted: () => api.notifyDataChanged(),
       ),
       _ReviewBeforeSaveCard(
             enabled: !uploading,
@@ -498,7 +498,7 @@ class _UploadPageState extends State<UploadPage> {
         },
       ),
       DesktopFolderSyncCard(
-        onCompleted: () => api.bumpDataVersion(),
+        onCompleted: () => api.notifyDataChanged(),
       ),
       _ReviewBeforeSaveCard(
         enabled: !uploading,
