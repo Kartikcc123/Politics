@@ -394,7 +394,7 @@ def ocr_house(card, card_full_text=None):
                 and len(eng_digits) == len(c_full_digits) + 1
                 and eng_digits.startswith(c_full_digits)
             )
-            if len(c_full_digits) >= len(eng_digits) or eng_misread_suffix:
+            if len(c_full_digits) > len(eng_digits) or eng_misread_suffix:
                 primary_eng = c_full
 
         # Fast single pass for Devanagari suffix (e.g. 'क', 'ख')
