@@ -2259,12 +2259,27 @@ const applyRecheckOcr = async (member, user, req) => {
           }
         }
 
+        // Never truncate an already fuller house number (e.g. keep '551' over '55')
+        if (currentHouse && currentHouse !== '0' && currentHouse.length > newHouse.length
+          && (currentHouse.startsWith(newHouse) || currentHouse.endsWith(newHouse))) {
+          continue;
+        }
+
         // If new house is empty or '0', keep existing valid house
         if (currentHouse && currentHouse !== '0' && (!newHouse || newHouse === '0')) {
           continue;
         }
         member.houseNumber = newHouse;
         continue;
+      }
+      if (field === 'name' || field === 'guardianName') {
+        const existingVal = String(member[field] || '').trim();
+        const newVal = String(value || '').trim();
+        const existingDeva = (existingVal.match(/[\u0900-\u097F]/g) || []).length;
+        const newDeva = (newVal.match(/[\u0900-\u097F]/g) || []).length;
+        if (existingDeva >= 3 && newDeva < existingDeva - 2 && existingVal.includes(newVal)) {
+          continue;
+        }
       }
       if (field === 'voterSerial') {
         const existingSerial = String(member.voterSerial || '').trim();
