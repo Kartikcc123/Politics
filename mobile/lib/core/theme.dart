@@ -1,12 +1,12 @@
 import 'package:flutter/material.dart';
 
-const blue = Color(0xff1457f5);
-const royalBlue = Color(0xff073bb5);
-const navy = Color(0xff071b4b);
-const deepNavy = Color(0xff03122b);
-const bg = Color(0xfff7f9fd);
-const border = Color(0xffdde5f3);
-const muted = Color(0xff667394);
+const blue = Color(0xff2563EB);
+const royalBlue = Color(0xff1D4ED8);
+const navy = Color(0xff0F172A);
+const deepNavy = Color(0xff020617);
+const bg = Color(0xffF8FAFC);
+const border = Color(0xffE2E8F0);
+const muted = Color(0xff64748B);
 const green = Color(0xff19a957);
 const orange = Color(0xffff8500);
 const purple = Color(0xff7a3ff2);
@@ -70,11 +70,11 @@ ThemeData buildAppTheme() {
     cardTheme: CardThemeData(
       color: Colors.white,
       elevation: 0,
-      shadowColor: const Color(0x14071b4b),
+      shadowColor: const Color(0x0A0F172A),
       margin: EdgeInsets.zero,
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(20),
-        side: const BorderSide(color: Color(0xffe8edf5)),
+        borderRadius: BorderRadius.circular(14),
+        side: const BorderSide(color: Color(0xffE2E8F0)),
       ),
     ),
     listTileTheme: const ListTileThemeData(
