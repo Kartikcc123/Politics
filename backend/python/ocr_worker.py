@@ -172,8 +172,7 @@ def clean_person_name(value):
     text = re.sub(r"(?:^|\s)(?:लाटुलाल|लाडुलाल|लादुलाल)(?=$|\s)", " लादूलाल ", text)
     text = re.sub(r"(?:^|\s)(?:लाटु|लाडु|लादु)(?=$|\s)", " लादू ", text)
     text = re.sub(r"(?:^|\s)डालु(?=$|\s)", " डालू ", text)
-    text = re.sub(r"(?:^|\s)विश्[रल]ो[र्टर्दईय]+(?=$|\s)", " विश्नोई ", text)
-    text = re.sub(r"(?:^|\s)विश्लोई(?=$|\s)", " विश्नोई ", text)
+    text = re.sub(r"(?:^|\s)विश्[नरल]?ो(?:ई|र्ड|र्ट|र्ई|र्द|इ)(?=$|\s)", " विश्नोई ", text)
     text = re.sub(r"(?<=\u0900-\u097F)ताल\b", "लाल", text)
     text = re.sub(r"\bअरजुर्नलाल\b|\bअरजुनलाल\b|\bअजुर्नलाल\b|\bअजपुर्नताल\b|\bअजपुर्नलाल\b|\bअर्जुुनलाल\b", "अर्जुनलाल", text)
     text = re.sub(r"(?<=\u0900-\u097F)ताम\b", "राम", text)
@@ -1371,7 +1370,7 @@ def _process_single_card(args):
     name_devanagari = len(re.findall(r"[\u0900-\u097F]", parsed_name))
     guardian_devanagari = len(re.findall(r"[\u0900-\u097F]", parsed_guardian))
 
-    if not parsed_name or name_devanagari < 2 or not parsed_guardian or guardian_devanagari < 2 or suspicious_person_name(parsed_name):
+    if not parsed_name or name_devanagari < 3 or not parsed_guardian or guardian_devanagari < 2 or suspicious_person_name(parsed_name) or suspicious_person_name(parsed_guardian):
         identity_suggestion, identity_disagreement = ocr_identity(card)
         if identity_suggestion.get("name"):
             rec["name"] = identity_suggestion["name"]
