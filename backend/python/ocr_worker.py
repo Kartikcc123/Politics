@@ -1783,18 +1783,37 @@ def fixed_header_number(text, max_digits, prefer_tail=False):
     return value
 
 
+def extract_valid_supplement_date(text):
+    """Extract a valid DD-MM-YYYY date from supplement header text; reject OCR garbage like 76-72-2025."""
+    normalized = clean(text or "").translate(str.maketrans("०१२३४५६७८९", "0123456789"))
+    matches = re.findall(r"\b(\d{1,2})[-/\.](\d{1,2})[-/\.](20\d{2})\b", normalized)
+    valid = []
+    for d_str, m_str, y_str in matches:
+        d, m, y = int(d_str), int(m_str), int(y_str)
+        if 1 <= d <= 31 and 1 <= m <= 12 and 2000 <= y <= 2099:
+            valid.append(f"{d:02d}-{m:02d}-{y}")
+    return valid[-1] if valid else ""
+
+
 def fixed_section_name(text):
     value = clean(text)
     # Remove leading assembly name / header text if read before colon
     value = re.sub(r"^[^\n:：;]*?(?:अनुभाग\s*(?:की\s*संख्या\s*व\s*नाम|संख्या|नाम)|section\s*name)[^\n:：;]*[:：;]", "", value, flags=re.IGNORECASE)
     if ":" in value:
         value = value.rsplit(":", 1)[1]
+    # Reject supplement headers (परिवर्धन सूची / विलोपन सूची / घटक I) so they never become sectionName
+    if re.search(r"परिवर्धन\s*सूची|विलोपन\s*सूची|संशोधन\s*सूची|घटक\s*[I1l।]+\s*[-–]|^\s*से\s+[0-9\-\s]+तक", value):
+        return ""
     value = re.sub(r"\[.*?\]", "", value)
     value = re.sub(r"\b[A-Z0-9]{10}\b", "", value)
     value = re.sub(r"[\|=_\"`{}><;~!\?\u0964\u0965]", "", value)
+    value = value.replace("\u0951", "\u0902")  # fix OCR 'न॑' -> 'नं'
     # Strip noise phrases and English/Latin characters
     value = re.sub(r"\b(?:google|polling|station|view|map|after|aftet|hier|uzar|zadt|merit|oiler|sffzr|freran|ore)\b", " ", value, flags=re.IGNORECASE)
     value = re.sub(r"[A-Za-z]+", " ", value)
+    # Strip trailing OCR map-box junk (repeated consonant-halant clusters or long digit blocks)
+    value = re.sub(r"\s+(?:[^\s]*[\u094d][^\s]*[\u094d][^\s]*[\u094d].*)$", "", value)
+    value = re.sub(r"\s+\d{4,}.*$", "", value)
     value = re.sub(r"^[\s\-:;|\u0964\u09650-9\u0966-\u096f\\|/\.\,\+=\-–—><;~]+", "", value).strip()
     # Preserve ward/house numbers like 'वार्ड नं 6'; only strip stray trailing digits not preceded by वार्ड/नं/सं
     if not re.search(r"(?:वार्ड|नं|न०|सं|क्र|no)\s*[:\.\-\s]*\d+$", value, re.IGNORECASE):
@@ -2223,8 +2242,14 @@ def read_fixed_header(page_path, is_voter_page=True):
             result["sectionName"] = section_name
         if re.search(r"परिवर्धन|परिवर्धित|पूरक|\bADDITION\b|\bSUPPLEMENT\b", section_text, re.IGNORECASE):
             result["supplementType"] = "addition"
+            supp_date = extract_valid_supplement_date(section_text)
+            if supp_date:
+                result["supplementDate"] = supp_date
         if re.search(r"विलोपन\s*सूची|विलोपित\s*सूची|\bDELETION\b", section_text, re.IGNORECASE):
             result["pageIsDeleted"] = True
+            supp_date = extract_valid_supplement_date(section_text)
+            if supp_date:
+                result["supplementDate"] = supp_date
         result["rawSectionHeader"] = section_text
     return {key: value for key, value in result.items() if value}
 

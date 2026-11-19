@@ -265,14 +265,30 @@ const looksLikeBadLatinSection = (value = '') => {
   const latinCount = (text.match(/[A-Za-z]/g) || []).length;
   return latinCount > 3;
 };
+const cleanSupplementDate = (value = '') => {
+  const text = cleanValue(value).replace(/[०-९]/g, (d) => '0123456789'['०१२३४५६७८९'.indexOf(d)]);
+  const m = text.match(/^(\d{1,2})[-/.](\d{1,2})[-/.](20\d{2})$/);
+  if (!m) return '';
+  const day = Number(m[1]);
+  const month = Number(m[2]);
+  const year = Number(m[3]);
+  if (day < 1 || day > 31 || month < 1 || month > 12 || year < 2000 || year > 2099) return '';
+  return `${String(day).padStart(2, '0')}-${String(month).padStart(2, '0')}-${year}`;
+};
 const cleanSectionName = (value = '') => {
   let text = cleanHeaderName(value);
   if (!text) return '';
   if (/EPIC|RJ\//i.test(text)) return '';
+  // Reject supplement headers so "परिवर्धन सूची ... (76-2-2025 से ...)" never becomes sectionName
+  if (/(?:परिवर्धन\s*सूची|विलोपन\s*सूची|संशोधन\s*सूची|घटक\s*[I1l।]+\s*[-–]|^\s*से\s+[0-9\-\s]+तक)/u.test(text)) return '';
+  text = text.replace(/\u0951/g, '\u0902');
   // Remove known noise phrases and words
   text = text.replace(/\b(?:google|polling|station|view|map|after|aftet|hier|uzar|zadt|merit|oiler|sffzr|freran|ore)\b/gi, ' ');
   // Strip any remaining Latin / English letters/words (e.g. BHPATea, Village, etc.)
   text = text.replace(/[A-Za-z]+/g, ' ');
+  // Strip trailing OCR map-box junk (repeated halant clusters or 4+ digit garbage)
+  text = text.replace(/\s+\S*[\u094d]\S*[\u094d]\S*[\u094d].*$/u, '');
+  text = text.replace(/\s+\d{4,}.*$/u, '');
   text = text.replace(/\s+/g, ' ').trim();
   // Reject OCR noise with repetitive identical characters (e.g. चच्चच्चच or 555)
   if (/([^\s])\1{3,}/.test(text)) return '';
@@ -280,7 +296,9 @@ const cleanSectionName = (value = '') => {
   if (/\b\d+\.\d+\.\s*\d+/.test(text)) return '';
   // Clean punctuation and non-Devanagari noise at start/end
   text = text.replace(/^[^\u0900-\u097F]+/, '').trim();
-  text = text.replace(/\s+\d+$/, '').trim();
+  if (!/(?:वार्ड|नं|न०|सं|क्र|no)\s*[:.\-\s]*\d+$/i.test(text)) {
+    text = text.replace(/\s+\d+$/, '').trim();
+  }
   text = text.replace(/[\s\-_,:;|/\\+=–—\u0964\u0965]+$/, '').trim();
   text = text.replace(/\s*,\s*/g, ', ').replace(/\s{2,}/g, ' ').trim();
   if (text.length > 150) return '';
@@ -1386,7 +1404,7 @@ const parsePdfMembers = async (filePath, importFileName, onOcrProgress) => {
     ...(extracted.ocr?.header || {}),
   };
   header.assemblyName = cleanHeaderName(header.assemblyName, /भाग\s*संख्या|अनुभाग/i);
-  header.sectionName = cleanHeaderName(header.sectionName, /भाग\s*संख्या|विधान\s*सभा/i);
+  header.sectionName = cleanSectionName(header.sectionName);
   const docSectionMap = safeSectionMap(header.sectionMap || extracted.ocr?.header?.sectionMap);
   const voterRollMembers = extracted.ocr?.voterRecords?.length
     ? extracted.ocr.voterRecords.flatMap((record) => {
@@ -1411,6 +1429,7 @@ const parsePdfMembers = async (filePath, importFileName, onOcrProgress) => {
           voterSerial: record.voterSerial || undefined,
           voterId: record.voterId || undefined,
           supplementType: record.supplementType || '',
+          supplementDate: cleanSupplementDate(record.supplementDate || header.supplementDate || ''),
           isDeleted: Boolean(record.isDeleted || record.sourceAction === 'delete'),
           sourceAction: record.sourceAction || (record.isDeleted ? 'delete' : 'upsert'),
           mobile: '',
