@@ -480,8 +480,16 @@ exports.list = async (req, res, next) => {
     }
     if (sectionName && !filter.sectionName) filter.sectionName = searchRegex(sectionName);    if (assemblyNumber) filter.assemblyNumber = assemblyNumber;
     if (assemblyName) filter.assemblyName = searchRegex(assemblyName);
-    if (partNumber) {
-      const parts = String(partNumber).split(',').map((p) => p.trim()).filter(Boolean);
+    const rawPartFilter = partNumber || req.query.boothNumber || req.query.part;
+    if (rawPartFilter) {
+      const parts = String(rawPartFilter)
+        .split(',')
+        .map((p) => {
+          const trimmed = p.trim();
+          const digitsOnly = trimmed.replace(/[\u0966-\u096f]/g, (d) => String('०१२३४५६७८९'.indexOf(d))).match(/\d+/);
+          return digitsOnly ? String(parseInt(digitsOnly[0], 10)) : trimmed;
+        })
+        .filter(Boolean);
       if (parts.length > 1) {
         filter.partNumber = { $in: parts };
       } else if (parts.length === 1) {
