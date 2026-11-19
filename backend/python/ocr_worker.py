@@ -854,15 +854,19 @@ def ocr_name_focused(card):
 
 
 def ocr_identity(card):
-    """Cross-check fixed name/guardian lines with CLAHE and threshold passes."""
+    """Cross-check fixed name/guardian lines with high-res grayscale, CLAHE, and Otsu passes."""
     height, width = card.shape[:2]
-    region = card[round(height * 0.16):round(height * 0.54), 0:round(width * 0.62)]
+    photo_rect = detect_photo_box(card)
+    px = photo_rect[0]
+    max_w = min(round(width * 0.73), px - 2 if px > round(width * 0.52) else round(width * 0.73))
+    region = card[round(height * 0.14):round(height * 0.56), 0:max_w]
     if region.size == 0:
         return {}, False
     gray = cv2.cvtColor(region, cv2.COLOR_BGR2GRAY)
-    gray = cv2.resize(gray, None, fx=1.5, fy=1.5, interpolation=cv2.INTER_CUBIC)
+    gray = cv2.resize(gray, None, fx=2.5, fy=2.5, interpolation=cv2.INTER_CUBIC)
     variants = [
-        cv2.createCLAHE(3.0, (8, 8)).apply(gray),
+        gray,
+        cv2.createCLAHE(1.5, (8, 8)).apply(gray),
         cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)[1],
     ]
     results = []
@@ -1317,8 +1321,8 @@ def _process_single_card(args):
     body_crop = card[round(card_h * 0.14):round(card_h * 0.98), 0:max_text_w]
     if body_crop.size > 0:
         b_gray = cv2.cvtColor(body_crop, cv2.COLOR_BGR2GRAY)
-        b_res = cv2.resize(b_gray, None, fx=2.0, fy=2.0, interpolation=cv2.INTER_CUBIC)
-        b_clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8)).apply(b_res)
+        b_res = cv2.resize(b_gray, None, fx=2.5, fy=2.5, interpolation=cv2.INTER_CUBIC)
+        b_clahe = cv2.createCLAHE(clipLimit=1.5, tileGridSize=(8, 8)).apply(b_res)
         text = safe_image_to_string(b_clahe, lang="hin", config="--psm 6")
     else:
         gray = cv2.cvtColor(card, cv2.COLOR_BGR2GRAY)
@@ -1403,8 +1407,8 @@ def process_card_image(card_path):
     body_crop = card[round(height * 0.14):round(height * 0.98), 0:max_text_w]
     if body_crop.size > 0:
         b_gray = cv2.cvtColor(body_crop, cv2.COLOR_BGR2GRAY)
-        b_res = cv2.resize(b_gray, None, fx=2.0, fy=2.0, interpolation=cv2.INTER_CUBIC)
-        b_clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8)).apply(b_res)
+        b_res = cv2.resize(b_gray, None, fx=2.5, fy=2.5, interpolation=cv2.INTER_CUBIC)
+        b_clahe = cv2.createCLAHE(clipLimit=1.5, tileGridSize=(8, 8)).apply(b_res)
         text = safe_image_to_string(b_clahe, lang="hin", config="--psm 6")
     else:
         gray = cv2.cvtColor(card, cv2.COLOR_BGR2GRAY)

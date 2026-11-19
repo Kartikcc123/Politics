@@ -392,7 +392,7 @@ const lowMemoryOcrPdf = async (pdfPath, importFileName, pageRange = {}) => {
 
   const triggerRender = (pg) => {
     const isMaster = pg === Number(process.env.OCR_MASTER_PAGE || 1);
-    const dpi = isMaster ? (process.env.OCR_MASTER_DPI || '250') : (process.env.OCR_DPI || '200');
+    const dpi = isMaster ? (process.env.OCR_MASTER_DPI || '250') : (process.env.OCR_DPI || '250');
     return renderPage(pdfPath, workDir, pg, dpi);
   };
 
