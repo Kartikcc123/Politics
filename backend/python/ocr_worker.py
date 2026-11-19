@@ -748,13 +748,14 @@ def epic_from(text):
 
 def ocr_epic(card, reference=""):
     height, width = card.shape[:2]
-    # Precise ROI: top-right area above voter photo (widen to 0.38 to capture full legacy RJ/.. EPIC strings)
-    crop = card[0:round(height * 0.28), round(width * 0.38):width]
+    # Precise ROI: top-right area above voter photo, excluding top/right box border lines
+    crop = card[round(height * 0.04):round(height * 0.25), round(width * 0.40):round(width * 0.98)]
     if crop.size == 0:
         return "", False
 
     gray = cv2.cvtColor(crop, cv2.COLOR_BGR2GRAY)
-    res = cv2.resize(gray, None, fx=3.2, fy=3.2, interpolation=cv2.INTER_CUBIC)
+    epic_scale = min(3.2, max(1.8, 720.0 / max(1, crop.shape[1])))
+    res = cv2.resize(gray, None, fx=epic_scale, fy=epic_scale, interpolation=cv2.INTER_CUBIC)
     pad = cv2.copyMakeBorder(res, 15, 15, 15, 15, cv2.BORDER_CONSTANT, value=255)
 
     whitelist_cfg = "-c tessedit_char_whitelist=ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789/"
