@@ -87,85 +87,99 @@ class _PartyAnalyticsPageState extends State<PartyAnalyticsPage> {
     final leadText = lead > 0
         ? '✋ कांग्रेस +$lead बढ़त पर'
         : (lead < 0 ? '🪷 भाजपा +${lead.abs()} बढ़त पर' : 'बराबर (Tie)');
+    final leadBg = lead > 0
+        ? const Color(0xffdcfce7)
+        : (lead < 0 ? const Color(0xfffee2e2) : const Color(0xfff1f5f9));
+    final leadFg = lead > 0
+        ? const Color(0xff15803d)
+        : (lead < 0 ? const Color(0xffb91c1c) : muted);
 
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          colors: [deepNavy, royalBlue],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-        borderRadius: BorderRadius.circular(20),
-        boxShadow: [
-          BoxShadow(
-            color: royalBlue.withValues(alpha: .3),
-            blurRadius: 15,
-            offset: const Offset(0, 6),
-          ),
-        ],
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: border),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              const Row(
-                children: [
-                  Icon(Icons.analytics_rounded, color: Colors.white, size: 24),
-                  SizedBox(width: 8),
-                  Text(
-                    'लाइव पार्टी गणना व विश्लेषण',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 17,
-                      fontWeight: FontWeight.w900,
-                    ),
-                  ),
-                ],
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: softBlue,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: const Icon(Icons.analytics_rounded, color: blue, size: 20),
               ),
-              IconButton(
-                icon: const Icon(Icons.refresh_rounded, color: Colors.white70),
+              const SizedBox(width: 10),
+              const Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'लाइव पार्टी गणना व विश्लेषण',
+                      style: TextStyle(
+                        color: navy,
+                        fontSize: 16,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    Text(
+                      'बूथ, पंचायत व वार्ड स्तर की रियल-टाइम स्थिति',
+                      style: TextStyle(color: muted, fontSize: 11.5),
+                    ),
+                  ],
+                ),
+              ),
+              IconButton.outlined(
+                style: IconButton.styleFrom(
+                  side: const BorderSide(color: border),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10)),
+                ),
+                icon: const Icon(Icons.refresh_rounded, color: navy, size: 18),
                 onPressed: refresh,
                 tooltip: 'रिफ्रेश करें',
               ),
             ],
           ),
-          const SizedBox(height: 6),
+          const SizedBox(height: 10),
           Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
             decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: .15),
-              borderRadius: BorderRadius.circular(10),
+              color: leadBg,
+              borderRadius: BorderRadius.circular(8),
             ),
             child: Text(
               leadText,
-              style: const TextStyle(
-                color: Colors.white,
-                fontWeight: FontWeight.bold,
-                fontSize: 13,
+              style: TextStyle(
+                color: leadFg,
+                fontWeight: FontWeight.w800,
+                fontSize: 12.5,
               ),
             ),
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 14),
           Row(
             children: [
-              _metricBox('कुल मतदाता', '$totalVoters', Colors.white),
+              _metricBox('कुल मतदाता', '$totalVoters', navy, const Color(0xfff8fafc)),
               const SizedBox(width: 8),
-              _metricBox('✋ कांग्रेस', '$congress', const Color(0xff4ade80)),
+              _metricBox('✋ कांग्रेस', '$congress', const Color(0xff15803d), const Color(0xfff0fdf4)),
               const SizedBox(width: 8),
-              _metricBox('🪷 भाजपा', '$bjp', const Color(0xfff87171)),
+              _metricBox('🪷 भाजपा', '$bjp', const Color(0xffb91c1c), const Color(0xfffef2f2)),
             ],
           ),
           const SizedBox(height: 8),
           Row(
             children: [
-              _metricBox('अनिर्णीत', '$undecided', Colors.white70),
+              _metricBox('अनिर्णीत', '$undecided', muted, const Color(0xfff8fafc)),
               const SizedBox(width: 8),
-              _metricBox('🗳️ वोट डले', '$voted', const Color(0xff60a5fa)),
+              _metricBox('🗳️ वोट डले', '$voted', blue, softBlue),
               const SizedBox(width: 8),
-              _metricBox('बाकी वोट', '$pending', Colors.white70),
+              _metricBox('बाकी वोट', '$pending', const Color(0xffb45309), const Color(0xfffffbeb)),
             ],
           ),
         ],
@@ -173,24 +187,25 @@ class _PartyAnalyticsPageState extends State<PartyAnalyticsPage> {
     );
   }
 
-  Widget _metricBox(String title, String value, Color valColor) {
+  Widget _metricBox(String title, String value, Color valColor, Color bgColor) {
     return Expanded(
       child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 8),
+        padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 8),
         decoration: BoxDecoration(
-          color: Colors.white.withValues(alpha: .1),
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: Colors.white.withValues(alpha: .15)),
+          color: bgColor,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: border),
         ),
         child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
               title,
-              style: const TextStyle(color: Colors.white70, fontSize: 11),
+              style: const TextStyle(color: muted, fontSize: 11, fontWeight: FontWeight.w600),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
             ),
-            const SizedBox(height: 2),
+            const SizedBox(height: 3),
             Text(
               value,
               style: TextStyle(
@@ -207,9 +222,10 @@ class _PartyAnalyticsPageState extends State<PartyAnalyticsPage> {
 
   Widget _scopeToggle() {
     return Container(
+      padding: const EdgeInsets.all(4),
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(14),
+        color: const Color(0xfff1f5f9),
+        borderRadius: BorderRadius.circular(12),
         border: Border.all(color: border),
       ),
       child: Row(
@@ -227,20 +243,28 @@ class _PartyAnalyticsPageState extends State<PartyAnalyticsPage> {
     return Expanded(
       child: InkWell(
         onTap: () => setState(() => groupBy = value),
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(9),
         child: Container(
-          padding: const EdgeInsets.symmetric(vertical: 10),
+          padding: const EdgeInsets.symmetric(vertical: 9),
           alignment: Alignment.center,
           decoration: BoxDecoration(
-            color: isSel ? blue : Colors.transparent,
-            borderRadius: BorderRadius.circular(12),
+            color: isSel ? Colors.white : Colors.transparent,
+            borderRadius: BorderRadius.circular(9),
+            boxShadow: isSel
+                ? const [
+                    BoxShadow(
+                        color: Color(0x0D0F172A),
+                        blurRadius: 4,
+                        offset: Offset(0, 1))
+                  ]
+                : null,
           ),
           child: Text(
             label,
             style: TextStyle(
-              color: isSel ? Colors.white : navy,
-              fontWeight: isSel ? FontWeight.w900 : FontWeight.w600,
-              fontSize: 13,
+              color: isSel ? navy : muted,
+              fontWeight: isSel ? FontWeight.w800 : FontWeight.w600,
+              fontSize: 12.5,
             ),
           ),
         ),

@@ -1256,10 +1256,12 @@ class _DevicePhonebookPageState extends State<DevicePhonebookPage>
   Widget build(BuildContext context) {
     super.build(context);
     return Scaffold(
-      backgroundColor: const Color(0xfff8fafc),
+      backgroundColor: bg,
       floatingActionButton: FloatingActionButton.extended(
-        backgroundColor: const Color(0xff1a73e8),
+        backgroundColor: blue,
         foregroundColor: Colors.white,
+        elevation: 2,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
         onPressed: _openCreateNewContactDialog,
         icon: const Icon(Icons.person_add_alt_1_rounded),
         label: const Text('नया संपर्क',
@@ -1282,9 +1284,14 @@ class _DevicePhonebookPageState extends State<DevicePhonebookPage>
               ? _buildPermissionDeniedView()
               : Column(
                   children: [
-                    // 1. Google Contacts-Style Search Pill & Action Bar
+                    // 1. Google Contacts + shadcn-Style Search Pill & Action Bar
                     Container(
-                      color: Colors.white,
+                      decoration: const BoxDecoration(
+                        color: Colors.white,
+                        border: Border(
+                          bottom: BorderSide(color: border),
+                        ),
+                      ),
                       padding: const EdgeInsets.fromLTRB(12, 10, 12, 8),
                       child: Column(
                         children: [
@@ -1293,8 +1300,9 @@ class _DevicePhonebookPageState extends State<DevicePhonebookPage>
                               Expanded(
                                 child: Container(
                                   decoration: BoxDecoration(
-                                    color: const Color(0xfff1f5f9),
-                                    borderRadius: BorderRadius.circular(28),
+                                    color: bg,
+                                    borderRadius: BorderRadius.circular(12),
+                                    border: Border.all(color: border),
                                   ),
                                   child: TextField(
                                     controller: _searchCtrl,

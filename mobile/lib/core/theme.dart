@@ -31,12 +31,13 @@ ThemeData buildAppTheme() {
       backgroundColor: Colors.white,
       foregroundColor: navy,
       elevation: 0,
+      scrolledUnderElevation: 0,
       centerTitle: false,
       titleTextStyle:
-          TextStyle(color: navy, fontSize: 18, fontWeight: FontWeight.w900),
+          TextStyle(color: navy, fontSize: 17, fontWeight: FontWeight.w800),
       surfaceTintColor: Colors.transparent,
     ),
-    dividerTheme: const DividerThemeData(color: Color(0xffedf0f5), space: 1),
+    dividerTheme: const DividerThemeData(color: Color(0xffE2E8F0), space: 1),
     bottomSheetTheme: const BottomSheetThemeData(
       backgroundColor: Colors.white,
       surfaceTintColor: Colors.transparent,
@@ -45,21 +46,36 @@ ThemeData buildAppTheme() {
     dialogTheme: DialogThemeData(
       backgroundColor: Colors.white,
       surfaceTintColor: Colors.transparent,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: const BorderSide(color: Color(0xffE2E8F0)),
+      ),
     ),
     snackBarTheme: SnackBarThemeData(
       behavior: SnackBarBehavior.floating,
       backgroundColor: deepNavy,
       contentTextStyle:
           const TextStyle(color: Colors.white, fontWeight: FontWeight.w700),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
     ),
-    navigationBarTheme: const NavigationBarThemeData(
+    navigationBarTheme: NavigationBarThemeData(
       backgroundColor: Colors.white,
+      surfaceTintColor: Colors.transparent,
       indicatorColor: softBlue,
-      labelTextStyle: WidgetStatePropertyAll(
-        TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: navy),
-      ),
+      iconTheme: WidgetStateProperty.resolveWith((states) {
+        if (states.contains(WidgetState.selected)) {
+          return const IconThemeData(color: blue, size: 22);
+        }
+        return const IconThemeData(color: muted, size: 22);
+      }),
+      labelTextStyle: WidgetStateProperty.resolveWith((states) {
+        if (states.contains(WidgetState.selected)) {
+          return const TextStyle(
+              fontSize: 11, fontWeight: FontWeight.w800, color: blue);
+        }
+        return const TextStyle(
+            fontSize: 11, fontWeight: FontWeight.w600, color: muted);
+      }),
     ),
     textTheme: const TextTheme(
       headlineSmall: TextStyle(color: navy, fontWeight: FontWeight.w800),

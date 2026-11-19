@@ -71,8 +71,9 @@ class MorePage extends StatelessWidget {
         _Option('PDF / Excel अपलोड', 'मतदाता सूची से एक साथ रिकॉर्ड जोड़ें',
             Icons.cloud_upload_rounded, orange, const UploadPage()),
       if (isAdmin)
-        _Option('Excel का विस्तृत आयात', 'कॉलम मिलाएं और रिकॉर्ड पहले जांचें',
-            Icons.rule_folder_rounded, green, const SmartExcelImportPage()),
+        _Option('कस्टम Excel अपलोड व मैपिंग',
+            'अपनी मर्ज़ी के कॉलम मिलाएं — किसी तय फ़ॉर्मेट की ज़रूरत नहीं',
+            Icons.tune_rounded, green, const SmartExcelImportPage()),
       if (isAdmin)
         _Option(
             'Admin Review',
@@ -130,18 +131,22 @@ class MorePage extends StatelessWidget {
         padding: const EdgeInsets.fromLTRB(16, 14, 16, 110),
         children: [
           Container(
-            padding: const EdgeInsets.all(18),
+            padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
               color: Colors.white,
-              borderRadius: BorderRadius.circular(20),
+              borderRadius: BorderRadius.circular(14),
               border: Border.all(color: border),
             ),
             child: Row(children: [
-              const CircleAvatar(
-                radius: 27,
-                backgroundColor: softBlue,
-                foregroundColor: blue,
-                child: Icon(Icons.person_rounded, size: 28),
+              Container(
+                width: 48,
+                height: 48,
+                decoration: BoxDecoration(
+                  color: softBlue,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: const Color(0xffbfdbfe)),
+                ),
+                child: const Icon(Icons.person_rounded, size: 26, color: blue),
               ),
               const SizedBox(width: 13),
               Expanded(
@@ -151,16 +156,34 @@ class MorePage extends StatelessWidget {
                       Text('${api.user?['name'] ?? 'User'}',
                           style: const TextStyle(
                               color: navy,
-                              fontSize: 17,
-                              fontWeight: FontWeight.w900)),
-                      Text(role == 'admin' ? 'Administrator' : 'Booth Manager',
-                          style: const TextStyle(color: muted, fontSize: 11)),
+                              fontSize: 16.5,
+                              fontWeight: FontWeight.w800)),
+                      const SizedBox(height: 2),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 8, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: const Color(0xfff1f5f9),
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: Text(
+                            role == 'admin' ? 'Administrator' : 'Booth Manager',
+                            style: const TextStyle(
+                                color: muted,
+                                fontSize: 11,
+                                fontWeight: FontWeight.w700)),
+                      ),
                     ]),
               ),
-              IconButton.filledTonal(
+              IconButton.outlined(
+                style: IconButton.styleFrom(
+                  side: const BorderSide(color: border),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10)),
+                ),
                 onPressed: () =>
                     _open(context, const SettingsPage(), 'सेटिंग्स'),
-                icon: const Icon(Icons.settings_rounded, color: blue),
+                icon: const Icon(Icons.settings_rounded, color: navy, size: 20),
               ),
             ]),
           ),

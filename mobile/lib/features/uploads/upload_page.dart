@@ -736,34 +736,41 @@ class _ReviewBeforeSaveCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) => InkWell(
         onTap: enabled ? onTap : null,
-        borderRadius: BorderRadius.circular(20),
+        borderRadius: BorderRadius.circular(14),
         child: Container(
-          padding: const EdgeInsets.all(16),
+          padding: const EdgeInsets.all(14),
           decoration: BoxDecoration(
-            color: const Color(0xfff7fff9),
-            borderRadius: BorderRadius.circular(20),
-            border: Border.all(color: green.withValues(alpha: .24)),
+            color: const Color(0xfff0fdf4),
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: const Color(0xffbbf7d0)),
           ),
-          child: const Row(children: [
-            CircleAvatar(
-              backgroundColor: softGreen,
-              child: Icon(Icons.rule_folder_rounded, color: green),
+          child: Row(children: [
+            Container(
+              width: 42,
+              height: 42,
+              decoration: BoxDecoration(
+                color: const Color(0xffdcfce7),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: const Icon(Icons.tune_rounded, color: Color(0xff15803d)),
             ),
-            SizedBox(width: 12),
-            Expanded(
+            const SizedBox(width: 12),
+            const Expanded(
               child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('Excel review before save',
+                    Text('कस्टम Excel अपलोड (कॉलम मैपिंग)',
                         style: TextStyle(
-                            color: navy, fontWeight: FontWeight.w900)),
+                            color: navy,
+                            fontSize: 14.5,
+                            fontWeight: FontWeight.w800)),
                     SizedBox(height: 3),
                     Text(
-                        'कॉलम मिलाएं, duplicate/missing summary देखें, फिर import करें।',
+                        'अपनी किसी भी Excel/CSV फ़ाइल के कॉलम खुद चुनें — किसी तय फ़ॉर्मेट की ज़रूरत नहीं।',
                         style: TextStyle(color: muted, fontSize: 12)),
                   ]),
             ),
-            Icon(Icons.chevron_right_rounded, color: muted),
+            const Icon(Icons.chevron_right_rounded, color: Color(0xff15803d)),
           ]),
         ),
       );
