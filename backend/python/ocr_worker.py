@@ -125,7 +125,7 @@ def clean_person_name(value):
         return ""
     # Split raw value on field label headers to prevent concatenating adjacent fields/labels
     parts = re.split(
-        r"(?:निर्वाचक\s*(?:का)?\s*नाम|मतदाता\s*(?:का)?\s*नाम|(?:^|\s)नाम(?:\s|$)|(?:पिता|पति|पत्ति|पती|माता)\s*(?:का)?\s*नाम|गृह\s*संख्या|उम्र|लिंग|का\s+नाम)",
+        r"(?:निर्वा[चव]क\s*(?:का)?\s*(?:नाम|नाप्त)|मतदाता\s*(?:का)?\s*(?:नाम|नाप्त)|(?:^|\s)नाम(?:\s|$)|(?:पिता|पति|पत्ति|पती|माता)\s*(?:का)?\s*(?:नाम|नाप्त)|(?:गृह|गुह|गुड़|गुड्ठ|गुट|गुह्न|एृह)\s*संख्या|उम्र|लिंग|का\s+(?:नाम|नाप्त))",
         value,
         flags=re.IGNORECASE,
     )
@@ -142,6 +142,8 @@ def clean_person_name(value):
     text = re.sub(r"[\u0964\u0965\u0966-\u096f]", " ", target)
     # Fix broken halant conjuncts like 'सन् ्वरा' -> 'सन्वरा'
     text = re.sub(r"\s*([\u094d])\s*", r"\1", text)
+    text = re.sub(r"^[\u094d\u093e-\u094c\u0901-\u0903\s]+", "", text)
+    text = re.sub(r"^(?:[\u0915-\u0939]?\u094d[\u0915-\u0939]?)\s+", "", text)
     text = clean(text).strip(" .-|:")
     if not text:
         return ""
@@ -863,7 +865,8 @@ def ocr_identity(card):
     if region.size == 0:
         return {}, False
     gray = cv2.cvtColor(region, cv2.COLOR_BGR2GRAY)
-    gray = cv2.resize(gray, None, fx=2.5, fy=2.5, interpolation=cv2.INTER_CUBIC)
+    scale = min(2.2, max(1.2, 560.0 / max(1, region.shape[1])))
+    gray = cv2.resize(gray, None, fx=scale, fy=scale, interpolation=cv2.INTER_CUBIC)
     variants = [
         gray,
         cv2.createCLAHE(1.5, (8, 8)).apply(gray),
@@ -1321,7 +1324,8 @@ def _process_single_card(args):
     body_crop = card[round(card_h * 0.14):round(card_h * 0.98), 0:max_text_w]
     if body_crop.size > 0:
         b_gray = cv2.cvtColor(body_crop, cv2.COLOR_BGR2GRAY)
-        b_res = cv2.resize(b_gray, None, fx=2.5, fy=2.5, interpolation=cv2.INTER_CUBIC)
+        scale = min(2.2, max(1.2, 560.0 / max(1, body_crop.shape[1])))
+        b_res = cv2.resize(b_gray, None, fx=scale, fy=scale, interpolation=cv2.INTER_CUBIC)
         b_clahe = cv2.createCLAHE(clipLimit=1.5, tileGridSize=(8, 8)).apply(b_res)
         text = safe_image_to_string(b_clahe, lang="hin", config="--psm 6")
     else:
@@ -1407,7 +1411,8 @@ def process_card_image(card_path):
     body_crop = card[round(height * 0.14):round(height * 0.98), 0:max_text_w]
     if body_crop.size > 0:
         b_gray = cv2.cvtColor(body_crop, cv2.COLOR_BGR2GRAY)
-        b_res = cv2.resize(b_gray, None, fx=2.5, fy=2.5, interpolation=cv2.INTER_CUBIC)
+        scale = min(2.2, max(1.2, 560.0 / max(1, body_crop.shape[1])))
+        b_res = cv2.resize(b_gray, None, fx=scale, fy=scale, interpolation=cv2.INTER_CUBIC)
         b_clahe = cv2.createCLAHE(clipLimit=1.5, tileGridSize=(8, 8)).apply(b_res)
         text = safe_image_to_string(b_clahe, lang="hin", config="--psm 6")
     else:
@@ -1565,7 +1570,7 @@ def process_page(page_path, output_dir, page_no):
 
     records = [r for r in records if _is_real_voter_card(r)]
 
-    # Repair clipped/misread voterSerials using strict sequential grid progression between matching anchors
+    # Repair clipped/misread voterSerials using strict consensus sequential grid progression
     if len(records) >= 3:
         serials = []
         for r in records:
@@ -1573,22 +1578,21 @@ def process_page(page_path, output_dir, page_no):
                 serials.append(int(str(r.get("voterSerial") or "").strip()))
             except ValueError:
                 serials.append(None)
-        # Find anchors that agree with at least one other anchor at the exact index delta
-        anchors = []
+        base_votes = {}
         for idx, val in enumerate(serials):
             if val is None or val <= 0:
                 continue
-            if any(
-                j != idx and serials[j] is not None and (serials[j] - val) == (j - idx)
-                for j in range(len(serials))
-            ):
-                anchors.append((idx, val))
-        if anchors:
-            base_idx, base_val = anchors[0]
-            for idx, r in enumerate(records):
-                expected = base_val + (idx - base_idx)
-                if expected > 0 and serials[idx] != expected:
-                    r["voterSerial"] = str(expected)
+            cand_base = val - idx
+            if cand_base >= 1:
+                base_votes[cand_base] = base_votes.get(cand_base, 0) + 1
+        if base_votes:
+            # Pick the base serial with the most agreeing cards (tie-break by largest base so 181 beats clipped 11)
+            best_base, best_count = max(base_votes.items(), key=lambda kv: (kv[1], kv[0]))
+            if best_count >= 2:
+                for idx, r in enumerate(records):
+                    expected = best_base + idx
+                    if expected > 0 and serials[idx] != expected:
+                        r["voterSerial"] = str(expected)
 
 
     # OCR can misread a house number, but a different non-empty number is not
