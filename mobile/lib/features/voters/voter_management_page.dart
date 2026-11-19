@@ -79,6 +79,8 @@ class _VoterManagementPageState extends State<VoterManagementPage>
   final municipality = TextEditingController();
   final municipalWardNumber = TextEditingController();
   final caste = TextEditingController();
+  final subCaste = TextEditingController();
+  final gotra = TextEditingController();
   final occupation = TextEditingController();
   final organizationPost = TextEditingController();
   final sectionName = TextEditingController();
@@ -111,6 +113,7 @@ class _VoterManagementPageState extends State<VoterManagementPage>
   String supplementTypeFilter = '';
   String supplementDateFilter = '';
   String isDeletedFilter = '';
+  String houseFilter = '';
   String mobileFilter = ''; // '' = all, 'has_mobile' = with mobile, 'no_mobile' = without mobile
   String? samitiWardFilter;
   String? samitiFilter;
@@ -332,6 +335,8 @@ class _VoterManagementPageState extends State<VoterManagementPage>
     municipality.dispose();
     municipalWardNumber.dispose();
     caste.dispose();
+    subCaste.dispose();
+    gotra.dispose();
     occupation.dispose();
     organizationPost.dispose();
     sectionName.dispose();
@@ -364,6 +369,9 @@ class _VoterManagementPageState extends State<VoterManagementPage>
       'municipalWard': municipalWardNumber.text.trim(),
       'wardNumber': municipalWardNumber.text.trim(),
       'caste': caste.text.trim(),
+      'subCaste': subCaste.text.trim(),
+      'gotra': gotra.text.trim(),
+      if (houseFilter.isNotEmpty) 'houseFilter': houseFilter,
       'occupation': occupation.text.trim(),
       'organizationPost': organizationPost.text.trim(),
       'contactType': api.user?['role'] == 'booth' ? 'voter' : contactTypeFilter,
@@ -448,6 +456,8 @@ class _VoterManagementPageState extends State<VoterManagementPage>
       municipality,
       municipalWardNumber,
       caste,
+      subCaste,
+      gotra,
       occupation,
       organizationPost,
     ]) {
@@ -471,6 +481,7 @@ class _VoterManagementPageState extends State<VoterManagementPage>
       supplementTypeFilter = '';
       supplementDateFilter = '';
       isDeletedFilter = '';
+      houseFilter = '';
       mobileFilter = '';
       currentPage = 1;
       selectedIds.clear();
@@ -1461,12 +1472,152 @@ class _VoterManagementPageState extends State<VoterManagementPage>
     }
   }
 
+  static const Map<String, List<String>> _defaultCasteSubCastes = {
+    'जाट': ['चौधरी', 'पूनिया', 'बेनीवाल', 'कस्वां', 'गोदारा', 'महिया', 'सियाग', 'डूडी', 'मूंड', 'ताखर'],
+    'राजपूत': ['राठौड़', 'चौहान', 'शेखावत', 'सिसोदिया', 'भाटी', 'सोलंकी', 'पंवार', 'गहलोत'],
+    'ब्राह्मण': ['शर्मा', 'पारीक', 'जोशी', 'दाधीच', 'गौड़', 'पालीवाल', 'तिवारी'],
+    'गुर्जर': ['भाटी', 'कसाना', 'बैंसला', 'चंदीला', 'तंवर'],
+    'मीणा': ['जमींदार', 'चौकीदार', 'रावत', 'मीना'],
+    'कुम्हार / प्रजापत': ['प्रजापत', 'कुम्हार'],
+    'जांगिड़ / सुथार': ['जांगिड़', 'सुथार', 'खाती'],
+    'वैश्य / महाजन': ['अग्रवाल', 'जैन', 'माहेश्वरी', 'खंडेलवाल', 'ओसवाल'],
+    'माली / सैनी': ['माली', 'सैनी', 'कच्छवाहा'],
+    'कुमावत': ['कुमावत'],
+    'मेघवाल / SC': ['मेघवाल', 'बैरवा', 'रेगर', 'वाल्मीकि', 'बलाई'],
+    'भील / ST': ['भील', 'गरासिया', 'डामोर'],
+    'मुस्लिम': ['कायमखानी', 'पठान', 'खान', 'शेख', 'कुरैशी', 'मंसूरी'],
+    'यादव / अहीर': ['यादव', 'अहीर'],
+    'नाई / सेन': ['सेन', 'नाई'],
+    'तेली / राठौर': ['राठौर', 'साहू', 'तेली'],
+  };
+
+  Future<String?> _pickCasteCascadeOption({
+    required String field,
+    required String title,
+    String currentCaste = '',
+    String currentSubCaste = '',
+  }) async {
+    final queryParams = <String, String?>{'field': field};
+    if (currentCaste.trim().isNotEmpty) {
+      queryParams['caste'] = currentCaste.trim();
+    }
+    if (field == 'gotra' && currentSubCaste.trim().isNotEmpty) {
+      queryParams['subCaste'] = currentSubCaste.trim();
+    }
+
+    final counts = <String, int>{};
+    try {
+      final res = await api.getQuery('/api/members/field-values', queryParams);
+      final items = (res['items'] as List? ?? const []);
+      for (final item in items) {
+        if (item is Map) {
+          final val = '${item['value'] ?? ''}'.trim();
+          final cnt = int.tryParse('${item['count'] ?? 0}') ?? 0;
+          if (val.isNotEmpty) counts[val] = cnt;
+        }
+      }
+    } catch (_) {}
+
+    final merged = <String>{...counts.keys};
+    if (field == 'caste') {
+      merged.addAll(_defaultCasteSubCastes.keys);
+    } else if (field == 'subCaste') {
+      if (currentCaste.isNotEmpty && _defaultCasteSubCastes.containsKey(currentCaste)) {
+        merged.addAll(_defaultCasteSubCastes[currentCaste]!);
+      } else if (currentCaste.isEmpty) {
+        for (final subs in _defaultCasteSubCastes.values) {
+          merged.addAll(subs);
+        }
+      }
+    }
+
+    final sorted = merged.toList()
+      ..sort((a, b) {
+        final ca = counts[a] ?? 0;
+        final cb = counts[b] ?? 0;
+        if (ca != cb) return cb.compareTo(ca);
+        return a.compareTo(b);
+      });
+
+    if (!mounted) return null;
+    final searchCtrl = TextEditingController();
+    final picked = await showDialog<String>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDlgState) {
+          final q = searchCtrl.text.trim().toLowerCase();
+          final filtered = q.isEmpty
+              ? sorted
+              : sorted.where((e) => e.toLowerCase().contains(q)).toList();
+          return AlertDialog(
+            title: Text(title, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800)),
+            content: SizedBox(
+              width: 360,
+              height: 400,
+              child: Column(
+                children: [
+                  TextField(
+                    controller: searchCtrl,
+                    decoration: const InputDecoration(
+                      hintText: 'खोजें...',
+                      prefixIcon: Icon(Icons.search_rounded),
+                      isDense: true,
+                    ),
+                    onChanged: (_) => setDlgState(() {}),
+                  ),
+                  const SizedBox(height: 8),
+                  Expanded(
+                    child: filtered.isEmpty
+                        ? const Center(child: Text('कोई विकल्प नहीं मिला'))
+                        : ListView.separated(
+                            itemCount: filtered.length + 1,
+                            separatorBuilder: (_, __) => const Divider(height: 1),
+                            itemBuilder: (_, idx) {
+                              if (idx == 0) {
+                                return ListTile(
+                                  dense: true,
+                                  leading: const Icon(Icons.clear_all_rounded, size: 18),
+                                  title: const Text('सभी (फ़िल्टर हटाएं)',
+                                      style: TextStyle(fontWeight: FontWeight.w700)),
+                                  onTap: () => Navigator.pop(ctx, ''),
+                                );
+                              }
+                              final val = filtered[idx - 1];
+                              final cnt = counts[val];
+                              return ListTile(
+                                dense: true,
+                                title: Text(val, style: const TextStyle(fontWeight: FontWeight.w600)),
+                                trailing: cnt != null && cnt > 0
+                                    ? Text('$cnt',
+                                        style: const TextStyle(
+                                            color: Color(0xff64748b), fontWeight: FontWeight.w700))
+                                    : null,
+                                onTap: () => Navigator.pop(ctx, val),
+                              );
+                            },
+                          ),
+                  ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('बंद करें')),
+            ],
+          );
+        },
+      ),
+    );
+    searchCtrl.dispose();
+    return picked;
+  }
+
   Future<void> openPhoneFilters() async {
     var nextSupport = support;
     var nextGender = gender;
     var nextVerification = verificationStatus;
     var nextProfileCompletion = profileCompletionStatus;
     var nextMobileFilter = mobileFilter;
+    var nextHouseFilter = houseFilter;
     var nextSupplementType = supplementTypeFilter.isNotEmpty
         ? supplementTypeFilter
         : (isDeletedFilter == 'true' ? 'deleted' : '');
@@ -1481,6 +1632,9 @@ class _VoterManagementPageState extends State<VoterManagementPage>
     );
     final nextPosition = TextEditingController(text: organizationPost.text);
     final nextOccupation = TextEditingController(text: occupation.text);
+    final nextCaste = TextEditingController(text: caste.text);
+    final nextSubCaste = TextEditingController(text: subCaste.text);
+    final nextGotra = TextEditingController(text: gotra.text);
     final nextPinCode = TextEditingController(text: pinCode.text);
     final nextVoterSerial = TextEditingController(text: voterSerial.text);
 
@@ -1490,6 +1644,7 @@ class _VoterManagementPageState extends State<VoterManagementPage>
           verificationStatus = nextVerification;
           profileCompletionStatus = nextProfileCompletion;
           mobileFilter = nextMobileFilter;
+          houseFilter = nextHouseFilter;
           if (nextSupplementType == 'addition') {
             supplementTypeFilter = 'addition';
             isDeletedFilter = 'false';
@@ -1519,6 +1674,9 @@ class _VoterManagementPageState extends State<VoterManagementPage>
           sectionName.text = nextSectionName.text.trim();
           organizationPost.text = nextPosition.text.trim();
           occupation.text = nextOccupation.text.trim();
+          caste.text = nextCaste.text.trim();
+          subCaste.text = nextSubCaste.text.trim();
+          gotra.text = nextGotra.text.trim();
           pinCode.text = nextPinCode.text.trim();
           // Always apply voterSerial directly — backend no longer requires location scope
           voterSerial.text = nextVoterSerial.text.trim();
@@ -1820,6 +1978,117 @@ class _VoterManagementPageState extends State<VoterManagementPage>
                     setSheetState(() => nextVerification = value ?? ''),
               ),
               const SizedBox(height: 12),
+              TextField(
+                controller: nextCaste,
+                readOnly: true,
+                decoration: InputDecoration(
+                  labelText: 'जाति (Caste)',
+                  prefixIcon: const Icon(Icons.groups_2_outlined),
+                  suffixIcon: nextCaste.text.isNotEmpty
+                      ? IconButton(
+                          icon: const Icon(Icons.close_rounded, size: 18),
+                          onPressed: () => setSheetState(() {
+                            nextCaste.clear();
+                            nextSubCaste.clear();
+                            nextGotra.clear();
+                          }),
+                        )
+                      : const Icon(Icons.arrow_drop_down_rounded),
+                ),
+                onTap: () async {
+                  final picked = await _pickCasteCascadeOption(
+                    field: 'caste',
+                    title: 'जाति चुनें',
+                  );
+                  if (picked != null) {
+                    setSheetState(() {
+                      if (nextCaste.text != picked) {
+                        nextSubCaste.clear();
+                        nextGotra.clear();
+                      }
+                      nextCaste.text = picked;
+                    });
+                  }
+                },
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: nextSubCaste,
+                readOnly: true,
+                decoration: InputDecoration(
+                  labelText: nextCaste.text.isNotEmpty
+                      ? 'उपजाति (${nextCaste.text})'
+                      : 'उपजाति (Sub-Caste)',
+                  prefixIcon: const Icon(Icons.account_tree_outlined),
+                  suffixIcon: nextSubCaste.text.isNotEmpty
+                      ? IconButton(
+                          icon: const Icon(Icons.close_rounded, size: 18),
+                          onPressed: () => setSheetState(() {
+                            nextSubCaste.clear();
+                            nextGotra.clear();
+                          }),
+                        )
+                      : const Icon(Icons.arrow_drop_down_rounded),
+                ),
+                onTap: () async {
+                  final picked = await _pickCasteCascadeOption(
+                    field: 'subCaste',
+                    title: nextCaste.text.isNotEmpty
+                        ? '${nextCaste.text} - उपजाति चुनें'
+                        : 'उपजाति चुनें',
+                    currentCaste: nextCaste.text,
+                  );
+                  if (picked != null) {
+                    setSheetState(() {
+                      if (nextSubCaste.text != picked) {
+                        nextGotra.clear();
+                      }
+                      nextSubCaste.text = picked;
+                    });
+                  }
+                },
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: nextGotra,
+                readOnly: true,
+                decoration: InputDecoration(
+                  labelText: 'गोत्र (Gotra)',
+                  prefixIcon: const Icon(Icons.diversity_3_outlined),
+                  suffixIcon: nextGotra.text.isNotEmpty
+                      ? IconButton(
+                          icon: const Icon(Icons.close_rounded, size: 18),
+                          onPressed: () => setSheetState(() => nextGotra.clear()),
+                        )
+                      : const Icon(Icons.arrow_drop_down_rounded),
+                ),
+                onTap: () async {
+                  final picked = await _pickCasteCascadeOption(
+                    field: 'gotra',
+                    title: 'गोत्र चुनें',
+                    currentCaste: nextCaste.text,
+                    currentSubCaste: nextSubCaste.text,
+                  );
+                  if (picked != null) {
+                    setSheetState(() => nextGotra.text = picked);
+                  }
+                },
+              ),
+              const SizedBox(height: 12),
+              DropdownButtonFormField<String>(
+                value: nextHouseFilter,
+                decoration: const InputDecoration(
+                    labelText: 'मकान नंबर फ़िल्टर',
+                    prefixIcon: Icon(Icons.home_work_outlined)),
+                items: const [
+                  DropdownMenuItem(value: '', child: Text('सभी')),
+                  DropdownMenuItem(
+                      value: 'missing', child: Text('खाली / 0 मकान नंबर')),
+                ],
+                onChanged: (value) =>
+                    setSheetState(() => nextHouseFilter = value ?? ''),
+              ),
+              const SizedBox(height: 12),
               DropdownButtonFormField<String>(
                 value: nextProfileCompletion,
                 decoration: const InputDecoration(
@@ -1861,6 +2130,9 @@ class _VoterManagementPageState extends State<VoterManagementPage>
     nextSection.dispose();
     nextPosition.dispose();
     nextOccupation.dispose();
+    nextCaste.dispose();
+    nextSubCaste.dispose();
+    nextGotra.dispose();
     nextPinCode.dispose();
     nextVoterSerial.dispose();
     nextSupplementDate.dispose();
@@ -3031,6 +3303,133 @@ class _VoterManagementPageState extends State<VoterManagementPage>
         ),
       );
 
+  Future<void> _bulkHouse() async {
+    if (selectedIds.isEmpty) return;
+    final houseCtrl = TextEditingController();
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('मकान नंबर बदलें (${selectedIds.length} मतदाता)'),
+        content: TextField(
+          controller: houseCtrl,
+          autofocus: true,
+          decoration: const InputDecoration(
+            labelText: 'नया मकान नंबर',
+            hintText: 'जैसे: 125 या 542 ख',
+            prefixIcon: Icon(Icons.home_outlined),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('रद्द करें'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('अपडेट करें'),
+          ),
+        ],
+      ),
+    );
+    final newHouse = houseCtrl.text.trim();
+    houseCtrl.dispose();
+    if (confirmed != true || newHouse.isEmpty) return;
+    try {
+      await api.post('/api/members/bulk-house', {
+        'memberIds': selectedIds.toList(),
+        'houseNumber': newHouse,
+      });
+      if (!mounted) return;
+      setState(() => selectedIds.clear());
+      api.notifyDataChanged();
+      _refreshInPlace();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('मकान नंबर "$newHouse" अपडेट हो गया')),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('$error')));
+    }
+  }
+
+  Widget? _buildStickySelectionBar() {
+    if (selectedIds.isEmpty) return null;
+    return Material(
+      elevation: 12,
+      color: const Color(0xff0f172a),
+      child: SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          child: SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: const Color(0xff2563eb),
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Text(
+                    '${selectedIds.length} चयनित',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w800,
+                      fontSize: 12,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                FilledButton.tonalIcon(
+                  onPressed: _bulkHouse,
+                  icon: const Icon(Icons.home_work_outlined, size: 16),
+                  label: const Text('मकान नं.'),
+                ),
+                const SizedBox(width: 6),
+                FilledButton.tonalIcon(
+                  onPressed: _bulkAnubhag,
+                  icon: const Icon(Icons.map_outlined, size: 16),
+                  label: const Text('अनुभाग'),
+                ),
+                const SizedBox(width: 6),
+                FilledButton.tonalIcon(
+                  onPressed: _bulkParty,
+                  icon: const Icon(Icons.flag_outlined, size: 16),
+                  label: const Text('पार्टी'),
+                ),
+                const SizedBox(width: 6),
+                FilledButton.tonalIcon(
+                  onPressed: _bulkGroup,
+                  icon: const Icon(Icons.group_add_outlined, size: 16),
+                  label: const Text('ग्रुप'),
+                ),
+                const SizedBox(width: 6),
+                FilledButton.tonalIcon(
+                  onPressed: deleteSelectedContacts,
+                  style: FilledButton.styleFrom(
+                    backgroundColor: const Color(0xff991b1b),
+                    foregroundColor: Colors.white,
+                  ),
+                  icon: const Icon(Icons.delete_outline_rounded, size: 16),
+                  label: const Text('हटाएं'),
+                ),
+                const SizedBox(width: 6),
+                TextButton.icon(
+                  onPressed: () => setState(() => selectedIds.clear()),
+                  style: TextButton.styleFrom(foregroundColor: Colors.white70),
+                  icon: const Icon(Icons.close_rounded, size: 16),
+                  label: const Text('Clear'),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final body = Center(
@@ -3065,12 +3464,14 @@ class _VoterManagementPageState extends State<VoterManagementPage>
           ),
         ),
         body: body,
+        bottomNavigationBar: _buildStickySelectionBar(),
       );
     }
 
     return Scaffold(
       backgroundColor: const Color(0xfff7f8fb),
       body: body,
+      bottomNavigationBar: _buildStickySelectionBar(),
     );
   }
 

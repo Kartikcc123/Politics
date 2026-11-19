@@ -42,92 +42,150 @@ class _LoginPageState extends State<LoginPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: Stack(children: [
-        Container(
-          height: 280,
-          decoration: const BoxDecoration(
-            gradient: LinearGradient(colors: [royalBlue, Color(0xff0456d6)]),
-            borderRadius: BorderRadius.vertical(bottom: Radius.circular(28)),
-          ),
-        ),
-        SafeArea(
-          child: Center(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.all(22),
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 430),
-                child: Column(children: [
-                  const CongressMark(size: 72),
-                  const SizedBox(height: 12),
-                  const Text('Voter Phone Book',
-                      style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 26,
-                          fontWeight: FontWeight.w900)),
-                  const Text('डिजिटल वोटर फ़ोन बुक निर्देशिका',
-                      style: TextStyle(color: Colors.white70)),
-                  const SizedBox(height: 28),
-                  Card(
-                    child: Padding(
-                      padding: const EdgeInsets.all(22),
-                      child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                            Text('स्वागत है',
-                                style:
-                                    Theme.of(context).textTheme.headlineSmall),
-                            const SizedBox(height: 4),
-                            const Text('अपने खाते में सुरक्षित लॉगिन करें',
-                                style: TextStyle(color: muted)),
-                            const SizedBox(height: 22),
-                            TextField(
-                                controller: email,
-                                decoration: const InputDecoration(
-                                    labelText: 'मोबाइल / ईमेल',
-                                    prefixIcon: Icon(Icons.mail_outline))),
-                            const SizedBox(height: 12),
-                            TextField(
-                                controller: password,
-                                obscureText: !showPassword,
-                                decoration: InputDecoration(
-                                    labelText: 'पासवर्ड',
-                                    prefixIcon: const Icon(Icons.lock_outline),
-                                    suffixIcon: IconButton(
-                                      icon: Icon(showPassword
-                                          ? Icons.visibility_off
-                                          : Icons.visibility),
-                                      onPressed: () => setState(() =>
-                                          showPassword = !showPassword),
-                                    ))),
-                            Align(
-                                alignment: Alignment.centerRight,
-                                child: TextButton(
-                                    onPressed: () {},
-                                    child: const Text('पासवर्ड भूल गए?'))),
-                            if (error.isNotEmpty)
-                              Text(error,
-                                  style: const TextStyle(color: Colors.red)),
-                            const SizedBox(height: 8),
-                            FilledButton.icon(
-                              onPressed: loading ? null : login,
-                              icon: loading
-                                  ? const SizedBox(
-                                      width: 18,
-                                      height: 18,
-                                      child: CircularProgressIndicator(
-                                          strokeWidth: 2))
-                                  : const Icon(Icons.login),
-                              label: const Text('लॉगिन'),
-                            ),
-                          ]),
+      backgroundColor: bg,
+      body: SafeArea(
+        child: Center(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(24),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 420),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Center(
+                    child: Container(
+                      padding: const EdgeInsets.all(14),
+                      decoration: BoxDecoration(
+                        color: const Color(0xff0F172A),
+                        borderRadius: BorderRadius.circular(18),
+                      ),
+                      child: const CongressMark(size: 48),
                     ),
                   ),
-                ]),
+                  const SizedBox(height: 16),
+                  const Text(
+                    'Voter Phone Book',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: Color(0xff0F172A),
+                      fontSize: 24,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: -0.4,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  const Text(
+                    'डिजिटल वोटर फ़ोन बुक एवं बूथ प्रबंधन',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(color: muted, fontSize: 13.5),
+                  ),
+                  const SizedBox(height: 24),
+                  Container(
+                    padding: const EdgeInsets.all(22),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: border),
+                      boxShadow: [
+                        BoxShadow(
+                          color: const Color(0xff0F172A).withValues(alpha: 0.04),
+                          blurRadius: 16,
+                          offset: const Offset(0, 6),
+                        ),
+                      ],
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        const Text(
+                          'लॉगिन करें',
+                          style: TextStyle(
+                            color: Color(0xff0F172A),
+                            fontSize: 18,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        const Text(
+                          'अपने एडमिन या बूथ खाते से प्रवेश करें',
+                          style: TextStyle(color: muted, fontSize: 12.5),
+                        ),
+                        const SizedBox(height: 20),
+                        TextField(
+                          controller: email,
+                          keyboardType: TextInputType.emailAddress,
+                          textInputAction: TextInputAction.next,
+                          decoration: const InputDecoration(
+                            labelText: 'मोबाइल / ईमेल',
+                            prefixIcon: Icon(Icons.mail_outline_rounded, size: 20),
+                            border: OutlineInputBorder(),
+                          ),
+                        ),
+                        const SizedBox(height: 14),
+                        TextField(
+                          controller: password,
+                          obscureText: !showPassword,
+                          textInputAction: TextInputAction.done,
+                          onSubmitted: (_) => loading ? null : login(),
+                          decoration: InputDecoration(
+                            labelText: 'पासवर्ड',
+                            prefixIcon: const Icon(Icons.lock_outline_rounded, size: 20),
+                            border: const OutlineInputBorder(),
+                            suffixIcon: IconButton(
+                              icon: Icon(
+                                showPassword ? Icons.visibility_off_rounded : Icons.visibility_rounded,
+                                size: 20,
+                              ),
+                              onPressed: () => setState(() => showPassword = !showPassword),
+                            ),
+                          ),
+                        ),
+                        if (error.isNotEmpty) ...[
+                          const SizedBox(height: 12),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                            decoration: BoxDecoration(
+                              color: const Color(0xffFEF2F2),
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(color: const Color(0xffFECACA)),
+                            ),
+                            child: Text(
+                              error,
+                              style: const TextStyle(color: Color(0xffB91C1C), fontSize: 12.5, fontWeight: FontWeight.w600),
+                            ),
+                          ),
+                        ],
+                        const SizedBox(height: 18),
+                        SizedBox(
+                          height: 48,
+                          child: FilledButton.icon(
+                            style: FilledButton.styleFrom(
+                              backgroundColor: const Color(0xff0F172A),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                            ),
+                            onPressed: loading ? null : login,
+                            icon: loading
+                                ? const SizedBox(
+                                    width: 18,
+                                    height: 18,
+                                    child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                                  )
+                                : const Icon(Icons.login_rounded, size: 20),
+                            label: Text(
+                              loading ? 'जाँच हो रही है…' : 'लॉगिन करें',
+                              style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
               ),
             ),
           ),
         ),
-      ]),
+      ),
     );
   }
 }
