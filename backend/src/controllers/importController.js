@@ -2253,11 +2253,23 @@ const runPdfImport = async ({ file, body, currentUser }, uploadId) => {
       }
 
       // 2. Secondary: Match by voterId strictly scoped to the same booth/part
+      // NEVER merge into an existing record that already belongs to a DIFFERENT voterSerial slot in the same part!
       if (!existing && item.voterId && !item.voterId.startsWith('REV-') && !item.voterId.startsWith('TMP-') && isValidEpic(item.voterId)) {
+        let candidateByEpic = null;
         if (booth) {
-          existing = await Member.findOne({ booth, voterId: item.voterId });
+          candidateByEpic = await Member.findOne({ booth, voterId: item.voterId });
         } else if (docPartNumber) {
-          existing = await Member.findOne({ partNumber: docPartNumber, voterId: item.voterId });
+          candidateByEpic = await Member.findOne({ partNumber: docPartNumber, voterId: item.voterId });
+        }
+        if (candidateByEpic) {
+          const candSer = String(candidateByEpic.voterSerial || '').replace(/\D/g, '').trim();
+          if (cleanSer && candSer && candSer !== cleanSer) {
+            item.voterId = `${item.voterId}-REV-${cleanSer}`;
+            item.ocrNeedsReview = true;
+            item.ocrReviewReasons = [...new Set([...(item.ocrReviewReasons || []), 'duplicate_epic_in_part'])];
+          } else {
+            existing = candidateByEpic;
+          }
         }
       }
       if (existing) {
@@ -2438,10 +2450,13 @@ const runPdfImport = async ({ file, body, currentUser }, uploadId) => {
           try {
             const collision = await Member.findOne({ voterId: item.voterId });
             const colSerial = String(collision?.voterSerial || '').replace(/\D/g, '').trim();
-            const isSamePartDifferentSlot = collision && docPartNumber && String(collision.partNumber || '') === String(docPartNumber) && cleanSer && colSerial && colSerial !== cleanSer;
-            if (isSamePartDifferentSlot) {
-              // Never overwrite an existing voter at another serial (e.g. #205 overwritten by #824); create a separate record with -REV-serial
-              const revVoterId = `${item.voterId}-REV-${cleanSer}`;
+            const isDifferentSlotOrPart = collision && (
+              (docPartNumber && String(collision.partNumber || '') !== String(docPartNumber)) ||
+              (cleanSer && colSerial && colSerial !== cleanSer)
+            );
+            if (isDifferentSlotOrPart) {
+              // Never overwrite an existing voter at another serial or in another part; create a separate record with -REV-part-serial
+              const revVoterId = `${item.voterId}-REV-${docPartNumber || 'P'}-${cleanSer || Date.now()}`;
               const existingRev = await Member.findOne({ voterId: revVoterId });
               if (!existingRev) {
                 const revMember = await Member.create({

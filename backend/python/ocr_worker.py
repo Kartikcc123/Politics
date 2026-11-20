@@ -1115,8 +1115,18 @@ def preserve_card_serials(records, global_start_serial):
             if top_count >= min_agreed or top_count >= len(records) * 0.20:
                 consensus_start = top_start
 
-    # 2. Prefer page physical card consensus; only fall back to global_start_serial if no card consensus exists
-    if consensus_start is not None:
+    # 2. Prefer page physical card consensus, EXCEPT on tiny partial pages (<= 4 cards, e.g. Page 12 with 2 cards)
+    # where OCR digit misread (266,267 -> 286,287) would jump away from global_start_serial (266)
+    if (
+        len(records) <= 4
+        and isinstance(global_start_serial, int)
+        and global_start_serial > 0
+        and consensus_start is not None
+        and consensus_start != global_start_serial
+        and abs(consensus_start - global_start_serial) <= 30
+    ):
+        start_serial = global_start_serial
+    elif consensus_start is not None:
         start_serial = consensus_start
     elif isinstance(global_start_serial, int) and global_start_serial > 0:
         start_serial = global_start_serial
